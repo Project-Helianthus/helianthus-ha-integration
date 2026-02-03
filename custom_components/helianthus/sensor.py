@@ -210,9 +210,8 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
 class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
     """Energy total sensor (kWh)."""
 
-    entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(self, coordinator, source: str, usage: str) -> None:
