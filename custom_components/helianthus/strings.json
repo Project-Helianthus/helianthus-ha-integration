@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Helianthus",
+        "description": "Enter the Helianthus GraphQL host and port."
+      }
+    },
+    "abort": {
+      "already_configured": "This Helianthus endpoint is already configured.",
+      "invalid_discovery_info": "Discovery data is invalid."
+    }
+  }
+}
