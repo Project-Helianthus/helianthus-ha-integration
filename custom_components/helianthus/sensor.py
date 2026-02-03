@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import EntityCategory
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.const import EntityCategory, PERCENTAGE
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -41,6 +41,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
     status_coordinator = data["status_coordinator"]
+    semantic_coordinator = data.get("semantic_coordinator")
 
     sensors: list[HelianthusInventorySensor] = []
     for device in device_coordinator.data or []:
@@ -64,6 +65,26 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusStatusSensor(status_coordinator, "Adapter", adapter_status, adapter_identifier, field)
         for field in STATUS_FIELDS
     )
+
+    if semantic_coordinator and semantic_coordinator.data:
+        zones = semantic_coordinator.data.get("zones", []) or []
+        for zone in zones:
+            zone_id = zone.get("id")
+            if zone_id:
+                sensors.append(
+                    HelianthusDemandSensor(
+                        semantic_coordinator,
+                        f"Zone {zone_id}",
+                        ("zone", zone_id),
+                    )
+                )
+        sensors.append(
+            HelianthusDemandSensor(
+                semantic_coordinator,
+                "DHW",
+                ("dhw", None),
+            )
+        )
 
     async_add_entities(sensors)
 
@@ -135,3 +156,38 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self._status.get(self._field.key)
+
+
+class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
+    """Heating demand sensor (percentage)."""
+
+    entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, label: str, target: tuple[str, str | None]) -> None:
+        super().__init__(coordinator)
+        self._target = target
+        self._attr_name = f"{label} Heating Demand"
+        self._attr_unique_id = f"{target[0]}-{target[1] or 'dhw'}-heating-demand"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        if self._target[0] == "zone":
+            identifier = (DOMAIN, f"zone-{self._target[1]}")
+        else:
+            identifier = (DOMAIN, "dhw")
+        return DeviceInfo(identifiers={identifier})
+
+    @property
+    def native_value(self) -> Any:
+        if not self.coordinator.data:
+            return None
+        kind, zone_id = self._target
+        if kind == "zone":
+            for zone in self.coordinator.data.get("zones", []) or []:
+                if zone.get("id") == zone_id:
+                    return zone.get("heatingDemand")
+            return None
+        dhw = self.coordinator.data.get("dhw") or {}
+        return dhw.get("heatingDemand")
