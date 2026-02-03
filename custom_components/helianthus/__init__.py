@@ -22,7 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from homeassistant.const import CONF_HOST, CONF_PORT
     from .graphql import GraphQLClient, build_graphql_url
-    from .coordinator import HelianthusCoordinator
+    from .coordinator import HelianthusCoordinator, HelianthusStatusCoordinator
     from .device_ids import build_device_id, virtual_device_id
 
     device_registry = dr.async_get(hass)
@@ -55,10 +55,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     session = async_get_clientsession(hass)
     client = GraphQLClient(session=session, url=build_graphql_url(host, port))
-    coordinator = HelianthusCoordinator(hass, client)
-    await coordinator.async_config_entry_first_refresh()
+    device_coordinator = HelianthusCoordinator(hass, client)
+    status_coordinator = HelianthusStatusCoordinator(hass, client)
+    await device_coordinator.async_config_entry_first_refresh()
+    await status_coordinator.async_config_entry_first_refresh()
 
-    devices = coordinator.data or []
+    devices = device_coordinator.data or []
 
     for device in devices:
         address = device.get("address")
@@ -104,7 +106,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "coordinator": coordinator,
+        "device_coordinator": device_coordinator,
+        "status_coordinator": status_coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
