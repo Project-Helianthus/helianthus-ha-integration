@@ -1,0 +1,10 @@
+{
+  "domain": "helianthus",
+  "name": "Helianthus",
+  "version": "0.0.0",
+  "documentation": "https://github.com/d3vi1/helianthus-ha-integration",
+  "requirements": [],
+  "codeowners": ["@d3vi1"],
+  "config_flow": false,
+  "iot_class": "local_polling"
+}
