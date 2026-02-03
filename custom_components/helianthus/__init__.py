@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from .const import DOMAIN
 
+PLATFORMS: list[str] = ["sensor"]
+
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
@@ -19,8 +21,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from homeassistant.const import CONF_HOST, CONF_PORT
-    from .graphql import GraphQLClient, GraphQLClientError, build_graphql_url
-    from .graphql import GraphQLResponseError
+    from .graphql import GraphQLClient, build_graphql_url
+    from .coordinator import HelianthusCoordinator
     from .device_ids import build_device_id, virtual_device_id
 
     device_registry = dr.async_get(hass)
@@ -53,64 +55,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     session = async_get_clientsession(hass)
     client = GraphQLClient(session=session, url=build_graphql_url(host, port))
+    coordinator = HelianthusCoordinator(hass, client)
+    await coordinator.async_config_entry_first_refresh()
 
-    query_extended = """
-    query Devices {
-      devices {
-        address
-        manufacturer
-        deviceId
-        serialNumber
-        macAddress
-        softwareVersion
-        hardwareVersion
-      }
-    }
-    """
-
-    query_base = """
-    query Devices {
-      devices {
-        address
-        manufacturer
-        deviceId
-        softwareVersion
-        hardwareVersion
-      }
-    }
-    """
-
-    async def fetch_devices(query: str) -> list[dict[str, object]]:
-        payload = await client.execute(query)
-        if isinstance(payload, dict):
-            return list(payload.get("devices", []))
-        return []
-
-    def is_missing_field_error(errors: object, fields: list[str]) -> bool:
-        if not isinstance(errors, list):
-            return False
-        for error in errors:
-            message = ""
-            if isinstance(error, dict):
-                message = str(error.get("message", ""))
-            else:
-                message = str(error)
-            for field in fields:
-                if f'Cannot query field "{field}"' in message:
-                    return True
-        return False
-
-    try:
-        devices = await fetch_devices(query_extended)
-    except GraphQLResponseError as exc:
-        if is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
-            devices = await fetch_devices(query_base)
-        else:
-            _LOGGER.warning("GraphQL device query failed: %s", exc)
-            return True
-    except GraphQLClientError as exc:
-        _LOGGER.warning("GraphQL device query failed: %s", exc)
-        return True
+    devices = coordinator.data or []
 
     for device in devices:
         address = device.get("address")
@@ -155,9 +103,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             via_device=bus_identifier,
         )
 
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "coordinator": coordinator,
+    }
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    return True
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok and DOMAIN in hass.data:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+    return unload_ok
