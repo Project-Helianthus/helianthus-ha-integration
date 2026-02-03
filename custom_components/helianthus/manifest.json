@@ -5,7 +5,7 @@
   "documentation": "https://github.com/d3vi1/helianthus-ha-integration",
   "requirements": [],
   "codeowners": ["@d3vi1"],
-  "config_flow": false,
+  "config_flow": true,
   "zeroconf": [
     { "type": "_helianthus-graphql._tcp.local." }
   ],
