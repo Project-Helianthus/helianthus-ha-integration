@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device_ids import build_device_id
+from .energy import compute_total
 
 
 @dataclass(frozen=True)
@@ -242,8 +243,4 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         series = self._series()
         yearly = series.get("yearly", []) if isinstance(series, dict) else []
         today = series.get("today", 0.0) if isinstance(series, dict) else 0.0
-        try:
-            total = float(today) + sum(float(value) for value in yearly)
-        except (TypeError, ValueError):
-            return None
-        return total
+        return compute_total(yearly, today)
