@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from .const import DOMAIN
 
-PLATFORMS: list[str] = ["sensor", "climate"]
+PLATFORMS: list[str] = ["sensor", "climate", "water_heater"]
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
