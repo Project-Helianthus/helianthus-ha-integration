@@ -28,6 +28,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusSemanticCoordinator,
         HelianthusStatusCoordinator,
     )
+    from .subscriptions import start_subscriptions
     from .device_ids import build_device_id, virtual_device_id
 
     device_registry = dr.async_get(hass)
@@ -59,7 +60,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return True
 
     session = async_get_clientsession(hass)
-    client = GraphQLClient(session=session, url=build_graphql_url(host, port))
+    graphql_url = build_graphql_url(host, port)
+    client = GraphQLClient(session=session, url=graphql_url)
     device_coordinator = HelianthusCoordinator(hass, client)
     status_coordinator = HelianthusStatusCoordinator(hass, client)
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client)
@@ -114,11 +116,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             via_device=bus_identifier,
         )
 
+    subscription_task = await start_subscriptions(
+        session, graphql_url, semantic_coordinator, energy_coordinator
+    )
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
+        "subscription_task": subscription_task,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -130,5 +137,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok and DOMAIN in hass.data:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        task = None if data is None else data.get("subscription_task")
+        if task:
+            task.cancel()
     return unload_ok
