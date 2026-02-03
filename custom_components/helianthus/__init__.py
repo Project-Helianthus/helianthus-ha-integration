@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from .const import DOMAIN
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS: list[str] = ["sensor", "climate"]
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -22,7 +22,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from homeassistant.const import CONF_HOST, CONF_PORT
     from .graphql import GraphQLClient, build_graphql_url
-    from .coordinator import HelianthusCoordinator, HelianthusStatusCoordinator
+    from .coordinator import (
+        HelianthusCoordinator,
+        HelianthusSemanticCoordinator,
+        HelianthusStatusCoordinator,
+    )
     from .device_ids import build_device_id, virtual_device_id
 
     device_registry = dr.async_get(hass)
@@ -57,8 +61,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = GraphQLClient(session=session, url=build_graphql_url(host, port))
     device_coordinator = HelianthusCoordinator(hass, client)
     status_coordinator = HelianthusStatusCoordinator(hass, client)
+    semantic_coordinator = HelianthusSemanticCoordinator(hass, client)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
+    await semantic_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
 
@@ -108,6 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
+        "semantic_coordinator": semantic_coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -52,6 +52,26 @@ query Status {
 }
 """
 
+QUERY_SEMANTIC = """
+query Semantic {
+  zones {
+    id
+    name
+    operatingMode
+    preset
+    currentTempC
+    targetTempC
+    heatingDemand
+  }
+  dhw {
+    operatingMode
+    preset
+    currentTempC
+    targetTempC
+    heatingDemand
+  }
+}
+"""
 
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
@@ -120,3 +140,48 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
             "daemon": payload.get("daemonStatus", {}) or {},
             "adapter": payload.get("adapterStatus", {}) or {},
         }
+
+
+class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching semantic zone/DHW data."""
+
+    def __init__(self, hass, client: GraphQLClient) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_semantic",
+            update_interval=timedelta(seconds=60),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            payload = await self._client.execute(QUERY_SEMANTIC)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
+                return {"zones": [], "dhw": None}
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return {"zones": [], "dhw": None}
+        return {
+            "zones": payload.get("zones", []) or [],
+            "dhw": payload.get("dhw"),
+        }
+
+
+def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
+    if not isinstance(errors, list):
+        return False
+    for error in errors:
+        message = ""
+        if isinstance(error, dict):
+            message = str(error.get("message", ""))
+        else:
+            message = str(error)
+        for field in fields:
+            if f'Cannot query field "{field}"' in message:
+                return True
+    return False
