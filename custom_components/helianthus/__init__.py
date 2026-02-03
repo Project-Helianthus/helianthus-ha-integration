@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .const import DOMAIN
+from .const import (
+    CONF_USE_SUBSCRIPTIONS,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_USE_SUBSCRIPTIONS,
+    DOMAIN,
+)
 
 PLATFORMS: list[str] = ["sensor", "climate", "water_heater"]
 
@@ -20,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
-    from homeassistant.const import CONF_HOST, CONF_PORT
+    from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
         HelianthusCoordinator,
@@ -62,10 +67,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     graphql_url = build_graphql_url(host, port)
     client = GraphQLClient(session=session, url=graphql_url)
-    device_coordinator = HelianthusCoordinator(hass, client)
-    status_coordinator = HelianthusStatusCoordinator(hass, client)
-    semantic_coordinator = HelianthusSemanticCoordinator(hass, client)
-    energy_coordinator = HelianthusEnergyCoordinator(hass, client)
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    device_coordinator = HelianthusCoordinator(hass, client, scan_interval)
+    status_coordinator = HelianthusStatusCoordinator(hass, client, scan_interval)
+    semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
+    energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
@@ -116,9 +122,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             via_device=bus_identifier,
         )
 
-    subscription_task = await start_subscriptions(
-        session, graphql_url, semantic_coordinator, energy_coordinator
-    )
+    use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
+    subscription_task = None
+    if use_subscriptions:
+        subscription_task = await start_subscriptions(
+            session, graphql_url, semantic_coordinator, energy_coordinator
+        )
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
