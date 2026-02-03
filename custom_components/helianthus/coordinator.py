@@ -86,12 +86,12 @@ query Energy {
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
 
-    def __init__(self, hass, client: GraphQLClient) -> None:
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
             name="helianthus_devices",
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
 
@@ -129,12 +129,12 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinator fetching GraphQL service status."""
 
-    def __init__(self, hass, client: GraphQLClient) -> None:
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
             name="helianthus_status",
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
 
@@ -155,12 +155,12 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
 class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic zone/DHW data."""
 
-    def __init__(self, hass, client: GraphQLClient) -> None:
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
             name="helianthus_semantic",
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
 
@@ -185,12 +185,12 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching energy totals."""
 
-    def __init__(self, hass, client: GraphQLClient) -> None:
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
             name="helianthus_energy",
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
 

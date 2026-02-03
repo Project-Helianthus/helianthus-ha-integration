@@ -13,6 +13,7 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .const import DOMAIN
 from .discovery import parse_mdns_service
+from .options_flow import HelianthusOptionsFlow
 
 
 class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -20,6 +21,10 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     _discovery: dict[str, Any] | None = None
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        return HelianthusOptionsFlow(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
