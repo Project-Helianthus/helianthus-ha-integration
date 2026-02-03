@@ -73,6 +73,16 @@ query Semantic {
 }
 """
 
+QUERY_ENERGY = """
+query Energy {
+  energyTotals {
+    gas { dhw { today yearly } climate { today yearly } }
+    electric { dhw { today yearly } climate { today yearly } }
+    solar { dhw { today yearly } climate { today yearly } }
+  }
+}
+"""
+
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
 
@@ -170,6 +180,33 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "zones": payload.get("zones", []) or [],
             "dhw": payload.get("dhw"),
         }
+
+
+class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching energy totals."""
+
+    def __init__(self, hass, client: GraphQLClient) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_energy",
+            update_interval=timedelta(seconds=60),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            payload = await self._client.execute(QUERY_ENERGY)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["energyTotals"]):
+                return {"energyTotals": None}
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return {"energyTotals": None}
+        return {"energyTotals": payload.get("energyTotals")}
 
 
 def _is_missing_field_error(errors: object, fields: list[str]) -> bool:

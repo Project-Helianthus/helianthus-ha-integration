@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory, PERCENTAGE
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfEnergy
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -42,6 +42,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     device_coordinator = data["device_coordinator"]
     status_coordinator = data["status_coordinator"]
     semantic_coordinator = data.get("semantic_coordinator")
+    energy_coordinator = data.get("energy_coordinator")
 
     sensors: list[HelianthusInventorySensor] = []
     for device in device_coordinator.data or []:
@@ -84,6 +85,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 "DHW",
                 ("dhw", None),
             )
+        )
+
+    if energy_coordinator and energy_coordinator.data:
+        sensors.extend(
+            [
+                HelianthusEnergySensor(energy_coordinator, "gas", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, "gas", "climate"),
+                HelianthusEnergySensor(energy_coordinator, "electric", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, "electric", "climate"),
+                HelianthusEnergySensor(energy_coordinator, "solar", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, "solar", "climate"),
+            ]
         )
 
     async_add_entities(sensors)
@@ -191,3 +204,46 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
             return None
         dhw = self.coordinator.data.get("dhw") or {}
         return dhw.get("heatingDemand")
+
+
+class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
+    """Energy total sensor (kWh)."""
+
+    entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, coordinator, source: str, usage: str) -> None:
+        super().__init__(coordinator)
+        self._source = source
+        self._usage = usage
+        self._attr_name = f"{source.capitalize()} {usage.upper()} Energy"
+        self._attr_unique_id = f"energy-{source}-{usage}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = (DOMAIN, "energy")
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer="Helianthus",
+            model="Virtual Energy",
+            name="Energy",
+        )
+
+    def _series(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        totals = payload.get("energyTotals") or {}
+        channel = totals.get(self._source, {}) if isinstance(totals, dict) else {}
+        return channel.get(self._usage, {}) if isinstance(channel, dict) else {}
+
+    @property
+    def native_value(self) -> Any:
+        series = self._series()
+        yearly = series.get("yearly", []) if isinstance(series, dict) else []
+        today = series.get("today", 0.0) if isinstance(series, dict) else 0.0
+        try:
+            total = float(today) + sum(float(value) for value in yearly)
+        except (TypeError, ValueError):
+            return None
+        return total

@@ -24,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
         HelianthusCoordinator,
+        HelianthusEnergyCoordinator,
         HelianthusSemanticCoordinator,
         HelianthusStatusCoordinator,
     )
@@ -62,9 +63,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_coordinator = HelianthusCoordinator(hass, client)
     status_coordinator = HelianthusStatusCoordinator(hass, client)
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client)
+    energy_coordinator = HelianthusEnergyCoordinator(hass, client)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
+    await energy_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
 
@@ -115,6 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
+        "energy_coordinator": energy_coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
