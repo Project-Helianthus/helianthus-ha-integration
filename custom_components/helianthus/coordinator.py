@@ -37,6 +37,21 @@ query Devices {
 }
 """
 
+QUERY_STATUS = """
+query Status {
+  daemonStatus {
+    status
+    firmwareVersion
+    updatesAvailable
+  }
+  adapterStatus {
+    status
+    firmwareVersion
+    updatesAvailable
+  }
+}
+"""
+
 
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
@@ -79,3 +94,29 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
+
+
+class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
+    """Coordinator fetching GraphQL service status."""
+
+    def __init__(self, hass, client: GraphQLClient) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_status",
+            update_interval=timedelta(seconds=60),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, dict[str, Any]]:
+        try:
+            payload = await self._client.execute(QUERY_STATUS)
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return {"daemon": {}, "adapter": {}}
+        return {
+            "daemon": payload.get("daemonStatus", {}) or {},
+            "adapter": payload.get("adapterStatus", {}) or {},
+        }
