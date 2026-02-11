@@ -44,6 +44,7 @@ Loop:
 - **No code changes outside issues.**
 - **Branch naming:** `issue/<number>-<short-slug>`
 - **GitHub artifacts in English.**
+- **Review comments:** react (emoji) to every review comment to signal it has been seen, and reply with status when actioned.
 
 ---
 
