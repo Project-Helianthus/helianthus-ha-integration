@@ -68,6 +68,10 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 user_input.pop(CONF_VERSION, None)
 
+            unique_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+
             connection_error = await self._async_validate_connection(
                 host=str(user_input[CONF_HOST]),
                 port=int(user_input[CONF_PORT]),
@@ -77,10 +81,6 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if connection_error:
                 errors["base"] = connection_error
             else:
-                unique_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
-                await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_configured()
-
                 return self.async_create_entry(
                     title=user_input[CONF_HOST], data=user_input
                 )
