@@ -3,7 +3,19 @@
     "step": {
       "user": {
         "title": "Connect to Helianthus",
-        "description": "Enter the Helianthus GraphQL host and port."
+        "description": "Enter the Helianthus GraphQL host and port.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "path": "GraphQL path",
+          "transport": "Transport",
+          "version": "API version"
+        },
+        "data_description": {
+          "path": "GraphQL endpoint path (default /graphql).",
+          "transport": "Transport scheme (http/https).",
+          "version": "Discovered API version (optional)."
+        }
       }
     },
     "abort": {

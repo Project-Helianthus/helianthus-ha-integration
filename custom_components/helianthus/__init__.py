@@ -6,8 +6,12 @@ import logging
 from typing import TYPE_CHECKING
 
 from .const import (
+    CONF_PATH,
+    CONF_TRANSPORT,
     CONF_USE_SUBSCRIPTIONS,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_GRAPHQL_PATH,
+    DEFAULT_GRAPHQL_TRANSPORT,
     DEFAULT_USE_SUBSCRIPTIONS,
     DOMAIN,
 )
@@ -65,7 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return True
 
     session = async_get_clientsession(hass)
-    graphql_url = build_graphql_url(host, port)
+    path = entry.data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
+    transport = entry.data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+    graphql_url = build_graphql_url(host, port, path=path, transport=transport)
     client = GraphQLClient(session=session, url=graphql_url)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     device_coordinator = HelianthusCoordinator(hass, client, scan_interval)
