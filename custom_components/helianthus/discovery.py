@@ -47,7 +47,7 @@ def _parse_txt(properties: Mapping[object, object] | None) -> dict[str, str]:
         return {}
     parsed: dict[str, str] = {}
     for key, value in properties.items():
-        key_str = _decode_txt_value(key).strip()
+        key_str = _decode_txt_value(key).strip().lower()
         if isinstance(value, (list, tuple)):
             value = value[0] if value else b""
         value_str = _decode_txt_value(value).strip()

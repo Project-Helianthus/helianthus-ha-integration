@@ -43,9 +43,9 @@ def test_parse_mdns_service_txt_fields() -> None:
         port=8443,
         addresses=[ip_address("10.0.0.5").packed],
         properties={
-            b"path": b"/gql",
-            b"version": b"1.2.3",
-            b"transport": b"https",
+            b"Path": b"/gql",
+            b"VERSION": b"1.2.3",
+            b"Transport": b"https",
         },
     )
 
