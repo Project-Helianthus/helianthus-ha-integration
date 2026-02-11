@@ -7,7 +7,16 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI/test envs
+    class _AioHTTPFallback:
+        class ClientError(Exception):
+            pass
+
+        ClientSession = Any
+
+    aiohttp = _AioHTTPFallback()  # type: ignore[assignment]
 
 
 class GraphQLClientError(RuntimeError):

@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-import aiohttp
-
+import custom_components.helianthus.graphql as gql
 from custom_components.helianthus.graphql import (
     GraphQLClient,
     GraphQLRequestError,
@@ -61,7 +60,7 @@ class _FakeSession:
 def test_execute_retries_on_transport_error() -> None:
     session = _FakeSession(
         post_actions=[
-            aiohttp.ClientError("temporary failure"),
+            gql.aiohttp.ClientError("temporary failure"),
             _FakeResponse(payload={"data": {"ok": True}}),
         ]
     )
@@ -142,7 +141,7 @@ def test_fetch_schema_snapshot_uses_snapshot_path() -> None:
 
 
 def test_fetch_snapshot_maps_transport_error() -> None:
-    session = _FakeSession(get_actions=[aiohttp.ClientError("broken")])
+    session = _FakeSession(get_actions=[gql.aiohttp.ClientError("broken")])
     client = GraphQLClient(session=session, url="http://gateway.local:8080/graphql", retries=0)
 
     try:
