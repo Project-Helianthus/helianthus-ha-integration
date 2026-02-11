@@ -37,17 +37,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusSemanticCoordinator,
         HelianthusStatusCoordinator,
     )
+    from .device_ids import (
+        adapter_identifier,
+        build_device_id,
+        bus_identifier,
+        daemon_identifier,
+        virtual_identifier,
+    )
     from .subscriptions import start_subscriptions
-    from .device_ids import build_device_id, virtual_device_id
 
     device_registry = dr.async_get(hass)
 
-    daemon_identifier = (DOMAIN, "daemon")
-    adapter_identifier = (DOMAIN, f"adapter-{entry.entry_id}")
+    daemon_device_id = daemon_identifier()
+    adapter_device_id = adapter_identifier(entry.entry_id)
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={daemon_identifier},
+        identifiers={daemon_device_id},
         manufacturer="Helianthus",
         model="Helianthus Daemon",
         name="Helianthus Daemon",
@@ -55,11 +61,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={adapter_identifier},
+        identifiers={adapter_device_id},
         manufacturer="Helianthus",
         model="eBUS Adapter",
         name="eBUS Adapter",
-        via_device=daemon_identifier,
+        via_device=daemon_device_id,
     )
 
     host = entry.data.get(CONF_HOST)
@@ -106,26 +112,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             software_version=str(sw_version) if sw_version else None,
         )
 
-        bus_identifier = (DOMAIN, resolved_id)
+        bus_device_id = bus_identifier(resolved_id)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
-            identifiers={bus_identifier},
+            identifiers={bus_device_id},
             manufacturer=manufacturer,
             model=device_id,
             name=f"{manufacturer} {device_id}",
             sw_version=sw_version,
             hw_version=hw_version,
-            via_device=adapter_identifier,
+            via_device=adapter_device_id,
         )
 
-        virtual_identifier = (DOMAIN, virtual_device_id(resolved_id))
+        virtual_device_id = virtual_identifier(resolved_id)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
-            identifiers={virtual_identifier},
+            identifiers={virtual_device_id},
             manufacturer="Helianthus",
             model="Virtual Device",
             name=f"Virtual {device_id}",
-            via_device=bus_identifier,
+            via_device=bus_device_id,
         )
 
     use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)

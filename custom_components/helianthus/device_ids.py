@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .const import DOMAIN
+
 
 def _token(value: object | None) -> str:
     if value is None:
@@ -31,3 +33,19 @@ def build_device_id(
 
 def virtual_device_id(base_device_id: str) -> str:
     return f"{base_device_id}-virtual"
+
+
+def daemon_identifier() -> tuple[str, str]:
+    return (DOMAIN, "daemon")
+
+
+def adapter_identifier(config_entry_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"adapter-{_token(config_entry_id)}")
+
+
+def bus_identifier(resolved_id: str) -> tuple[str, str]:
+    return (DOMAIN, _token(resolved_id))
+
+
+def virtual_identifier(base_device_id: str) -> tuple[str, str]:
+    return (DOMAIN, virtual_device_id(_token(base_device_id)))
