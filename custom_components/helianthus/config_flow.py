@@ -11,7 +11,14 @@ from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import DOMAIN
+from .const import (
+    CONF_PATH,
+    CONF_TRANSPORT,
+    CONF_VERSION,
+    DEFAULT_GRAPHQL_PATH,
+    DEFAULT_GRAPHQL_TRANSPORT,
+    DOMAIN,
+)
 from .discovery import parse_mdns_service
 from .options_flow import HelianthusOptionsFlow
 
@@ -32,6 +39,19 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            path = user_input.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
+            transport = user_input.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+            version = (user_input.get(CONF_VERSION) or "").strip() or None
+            user_input = {
+                **user_input,
+                CONF_PATH: path,
+                CONF_TRANSPORT: transport,
+            }
+            if version:
+                user_input[CONF_VERSION] = version
+            else:
+                user_input.pop(CONF_VERSION, None)
+
             unique_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
             await self.async_set_unique_id(unique_id)
             self._abort_if_unique_id_configured()
@@ -42,10 +62,22 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         default_host = self._discovery[CONF_HOST] if self._discovery else ""
         default_port = self._discovery[CONF_PORT] if self._discovery else 80
+        default_path = (
+            self._discovery[CONF_PATH] if self._discovery else DEFAULT_GRAPHQL_PATH
+        )
+        default_transport = (
+            self._discovery[CONF_TRANSPORT]
+            if self._discovery
+            else DEFAULT_GRAPHQL_TRANSPORT
+        )
+        default_version = self._discovery.get(CONF_VERSION, "") if self._discovery else ""
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=default_host): str,
                 vol.Required(CONF_PORT, default=default_port): int,
+                vol.Optional(CONF_PATH, default=default_path): str,
+                vol.Optional(CONF_TRANSPORT, default=default_transport): str,
+                vol.Optional(CONF_VERSION, default=default_version): str,
             }
         )
 
@@ -69,6 +101,12 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         self.context["title_placeholders"] = {"name": record.name or record.host}
 
-        self._discovery = {CONF_HOST: record.host, CONF_PORT: record.port}
+        self._discovery = {
+            CONF_HOST: record.host,
+            CONF_PORT: record.port,
+            CONF_PATH: record.path,
+            CONF_TRANSPORT: record.transport,
+            CONF_VERSION: record.version or "",
+        }
 
         return await self.async_step_user()
