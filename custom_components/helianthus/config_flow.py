@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_PATH,
@@ -20,7 +21,22 @@ from .const import (
     DOMAIN,
 )
 from .discovery import normalize_transport, parse_mdns_service
+from .graphql import (
+    GraphQLRequestError,
+    GraphQLResponseError,
+    GraphQLTimeoutError,
+    GraphQLClient,
+    build_graphql_url,
+)
 from .options_flow import HelianthusOptionsFlow
+
+_SCHEMA_QUERY = """
+query HelianthusSchema {
+  __schema {
+    queryType { name }
+  }
+}
+"""
 
 
 class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -52,13 +68,30 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 user_input.pop(CONF_VERSION, None)
 
-            unique_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
-            await self.async_set_unique_id(unique_id)
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=user_input[CONF_HOST], data=user_input
+            connection_error = await self._async_validate_connection(
+                host=str(user_input[CONF_HOST]),
+                port=int(user_input[CONF_PORT]),
+                path=path,
+                transport=transport,
             )
+            if connection_error:
+                errors["base"] = connection_error
+            else:
+                unique_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=user_input[CONF_HOST], data=user_input
+                )
+
+            self._discovery = {
+                CONF_HOST: user_input[CONF_HOST],
+                CONF_PORT: user_input[CONF_PORT],
+                CONF_PATH: path,
+                CONF_TRANSPORT: transport,
+                CONF_VERSION: version or "",
+            }
 
         default_host = self._discovery[CONF_HOST] if self._discovery else ""
         default_port = self._discovery[CONF_PORT] if self._discovery else 80
@@ -86,6 +119,28 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=schema,
             errors=errors,
         )
+
+    async def _async_validate_connection(
+        self, host: str, port: int, path: str, transport: str
+    ) -> str | None:
+        url = build_graphql_url(host, port, path=path, transport=transport)
+        client = GraphQLClient(
+            session=async_get_clientsession(self.hass),
+            url=url,
+            timeout=5.0,
+        )
+        try:
+            data = await client.execute(_SCHEMA_QUERY)
+        except (GraphQLTimeoutError, GraphQLRequestError):
+            return "cannot_connect"
+        except GraphQLResponseError:
+            return "invalid_response"
+        except Exception:  # pragma: no cover - unexpected errors
+            return "unknown"
+
+        if not isinstance(data, dict) or "__schema" not in data:
+            return "invalid_response"
+        return None
 
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo
