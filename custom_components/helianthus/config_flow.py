@@ -19,7 +19,7 @@ from .const import (
     DEFAULT_GRAPHQL_TRANSPORT,
     DOMAIN,
 )
-from .discovery import parse_mdns_service
+from .discovery import normalize_transport, parse_mdns_service
 from .options_flow import HelianthusOptionsFlow
 
 
@@ -40,7 +40,7 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             path = user_input.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
-            transport = user_input.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+            transport = normalize_transport(user_input.get(CONF_TRANSPORT))
             version = (user_input.get(CONF_VERSION) or "").strip() or None
             user_input = {
                 **user_input,

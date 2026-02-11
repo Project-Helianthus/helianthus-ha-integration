@@ -8,6 +8,8 @@ from typing import Iterable, Mapping, Sequence
 
 from .const import DEFAULT_GRAPHQL_PATH, DEFAULT_GRAPHQL_TRANSPORT
 
+_VALID_TRANSPORTS = {"http", "https"}
+
 
 @dataclass(frozen=True)
 class MdnsService:
@@ -56,6 +58,13 @@ def _parse_txt(properties: Mapping[object, object] | None) -> dict[str, str]:
     return parsed
 
 
+def normalize_transport(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in _VALID_TRANSPORTS:
+        return normalized
+    return DEFAULT_GRAPHQL_TRANSPORT
+
+
 def parse_mdns_service(info: object) -> MdnsService:
     """Parse a Zeroconf-style object into a normalized record."""
 
@@ -65,7 +74,7 @@ def parse_mdns_service(info: object) -> MdnsService:
     addresses = _format_addresses(getattr(info, "addresses", None))
     txt = _parse_txt(getattr(info, "properties", None))
     path = txt.get("path") or DEFAULT_GRAPHQL_PATH
-    transport = txt.get("transport") or DEFAULT_GRAPHQL_TRANSPORT
+    transport = normalize_transport(txt.get("transport"))
     version = txt.get("version") or None
 
     if not host or port is None:

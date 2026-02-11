@@ -54,3 +54,19 @@ def test_parse_mdns_service_txt_fields() -> None:
     assert record.path == "/gql"
     assert record.transport == "https"
     assert record.version == "1.2.3"
+
+
+def test_parse_mdns_service_invalid_transport_falls_back() -> None:
+    info = FakeInfo(
+        name="helianthus-3",
+        host="helianthus-3.local",
+        port=8080,
+        addresses=[ip_address("10.0.0.6").packed],
+        properties={
+            b"transport": b"https://",
+        },
+    )
+
+    record = parse_mdns_service(info)
+
+    assert record.transport == "http"
