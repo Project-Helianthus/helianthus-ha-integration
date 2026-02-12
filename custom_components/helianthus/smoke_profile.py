@@ -215,14 +215,21 @@ def _check_connection(execute: GraphQLExecutor) -> SmokeCheck:
 
 
 def _check_subscriptions_fallback(execute: GraphQLExecutor) -> SmokeCheck:
-    try:
-        response = execute(QUERY_SUBSCRIPTION_INTROSPECTION)
-    except RuntimeError as exc:
-        return SmokeCheck("subscriptions_fallback", False, str(exc))
+    response, execution_error = _execute_graphql(
+        execute,
+        QUERY_SUBSCRIPTION_INTROSPECTION,
+        "subscription introspection",
+    )
+    if execution_error:
+        return _polling_fallback_with_introspection_error(execution_error)
+    if response is None:
+        return _polling_fallback_with_introspection_error(
+            "subscription introspection query returned no response",
+        )
 
     data, error = _extract_data(response)
     if error:
-        return SmokeCheck("subscriptions_fallback", False, error)
+        return _polling_fallback_with_introspection_error(error)
 
     subscription_name = ""
     if isinstance(data, dict):
@@ -248,64 +255,75 @@ def _check_subscriptions_fallback(execute: GraphQLExecutor) -> SmokeCheck:
 
 
 def _check_entity_creation(execute: GraphQLExecutor) -> SmokeCheck:
-    devices, devices_source, error = _fetch_devices(execute)
-    if error:
-        return SmokeCheck("entity_creation", False, error)
+    try:
+        devices, devices_source, error = _fetch_devices(execute)
+        if error:
+            return SmokeCheck("entity_creation", False, error)
 
-    status_data, error = _fetch_status(execute)
-    if error:
-        return SmokeCheck("entity_creation", False, error)
+        status_data, error = _fetch_status(execute)
+        if error:
+            return SmokeCheck("entity_creation", False, error)
 
-    semantic_data, semantic_mode, error = _fetch_semantic(execute)
-    if error:
-        return SmokeCheck("entity_creation", False, error)
+        semantic_data, semantic_mode, error = _fetch_semantic(execute)
+        if error:
+            return SmokeCheck("entity_creation", False, error)
 
-    _, energy_mode, error = _fetch_energy(execute)
-    if error:
-        return SmokeCheck("entity_creation", False, error)
+        _, energy_mode, error = _fetch_energy(execute)
+        if error:
+            return SmokeCheck("entity_creation", False, error)
 
-    daemon_status = status_data.get("daemonStatus")
-    adapter_status = status_data.get("adapterStatus")
-    if not isinstance(daemon_status, dict) or not isinstance(adapter_status, dict):
-        return SmokeCheck(
-            "entity_creation",
-            False,
-            "status payload must include daemonStatus and adapterStatus objects",
+        daemon_status = status_data.get("daemonStatus")
+        adapter_status = status_data.get("adapterStatus")
+        if not isinstance(daemon_status, dict) or not isinstance(adapter_status, dict):
+            return SmokeCheck(
+                "entity_creation",
+                False,
+                "status payload must include daemonStatus and adapterStatus objects",
+            )
+
+        valid_devices = [
+            device
+            for device in devices
+            if isinstance(device, dict) and device.get("address") is not None and device.get("deviceId")
+        ]
+        if len(valid_devices) == 0:
+            return SmokeCheck("entity_creation", False, "no devices discovered for entity creation")
+
+        zones_raw = semantic_data.get("zones", []) if isinstance(semantic_data, dict) else []
+        zones = [zone for zone in zones_raw if isinstance(zone, dict) and zone.get("id")]
+        zone_count = len(zones)
+        dhw_present = bool(isinstance(semantic_data, dict) and semantic_data.get("dhw") is not None)
+
+        diagnostics_count = (
+            len(valid_devices) * INVENTORY_FIELD_COUNT
+            + STATUS_FIELD_COUNT * 2
+            + zone_count
+            + 1
         )
-
-    valid_devices = [
-        device
-        for device in devices
-        if isinstance(device, dict) and device.get("address") is not None and device.get("deviceId")
-    ]
-    if len(valid_devices) == 0:
-        return SmokeCheck("entity_creation", False, "no devices discovered for entity creation")
-
-    zones_raw = semantic_data.get("zones", []) if isinstance(semantic_data, dict) else []
-    zones = [zone for zone in zones_raw if isinstance(zone, dict) and zone.get("id")]
-    zone_count = len(zones)
-    dhw_present = bool(isinstance(semantic_data, dict) and semantic_data.get("dhw") is not None)
-
-    diagnostics_count = (
-        len(valid_devices) * INVENTORY_FIELD_COUNT
-        + STATUS_FIELD_COUNT * 2
-        + zone_count
-        + 1
-    )
-    details = (
-        f"devices={len(valid_devices)} diagnostics_sensors={diagnostics_count} "
-        f"climate_entities={zone_count} dhw_entities={1 if dhw_present else 0} "
-        f"energy_sensors=6 devices_query={devices_source} "
-        f"semantic_mode={semantic_mode} energy_mode={energy_mode}"
-    )
-    return SmokeCheck("entity_creation", True, details)
+        details = (
+            f"devices={len(valid_devices)} diagnostics_sensors={diagnostics_count} "
+            f"climate_entities={zone_count} dhw_entities={1 if dhw_present else 0} "
+            f"energy_sensors=6 devices_query={devices_source} "
+            f"semantic_mode={semantic_mode} energy_mode={energy_mode}"
+        )
+        return SmokeCheck("entity_creation", True, details)
+    except Exception as exc:
+        return SmokeCheck("entity_creation", False, f"entity creation probe failed: {exc}")
 
 
 def _fetch_devices(execute: GraphQLExecutor) -> tuple[list[dict[str, Any]], str, str | None]:
-    response = execute(QUERY_DEVICES_EXTENDED)
+    response, execution_error = _execute_graphql(execute, QUERY_DEVICES_EXTENDED, "devices extended")
+    if execution_error:
+        return [], "", execution_error
+    if response is None:
+        return [], "", "devices extended query returned no response"
     data, error, errors = _extract_data_with_errors(response)
     if error and _is_missing_field_error(errors, MISSING_DEVICE_FIELDS):
-        fallback = execute(QUERY_DEVICES_BASE)
+        fallback, execution_error = _execute_graphql(execute, QUERY_DEVICES_BASE, "devices base")
+        if execution_error:
+            return [], "", execution_error
+        if fallback is None:
+            return [], "", "devices base query returned no response"
         data, error = _extract_data(fallback)
         if error:
             return [], "", f"devices base query failed: {error}"
@@ -322,7 +340,11 @@ def _fetch_devices(execute: GraphQLExecutor) -> tuple[list[dict[str, Any]], str,
 
 
 def _fetch_status(execute: GraphQLExecutor) -> tuple[dict[str, Any], str | None]:
-    response = execute(QUERY_STATUS)
+    response, execution_error = _execute_graphql(execute, QUERY_STATUS, "status")
+    if execution_error:
+        return {}, execution_error
+    if response is None:
+        return {}, "status query returned no response"
     data, error = _extract_data(response)
     if error:
         return {}, f"status query failed: {error}"
@@ -332,7 +354,11 @@ def _fetch_status(execute: GraphQLExecutor) -> tuple[dict[str, Any], str | None]
 
 
 def _fetch_semantic(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str | None]:
-    response = execute(QUERY_SEMANTIC)
+    response, execution_error = _execute_graphql(execute, QUERY_SEMANTIC, "semantic")
+    if execution_error:
+        return {}, "", execution_error
+    if response is None:
+        return {}, "", "semantic query returned no response"
     data, error, errors = _extract_data_with_errors(response)
     if error and _is_missing_field_error(errors, ["zones", "dhw"]):
         return {"zones": [], "dhw": None}, "fallback_missing_fields", None
@@ -344,7 +370,11 @@ def _fetch_semantic(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str 
 
 
 def _fetch_energy(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str | None]:
-    response = execute(QUERY_ENERGY)
+    response, execution_error = _execute_graphql(execute, QUERY_ENERGY, "energy")
+    if execution_error:
+        return {}, "", execution_error
+    if response is None:
+        return {}, "", "energy query returned no response"
     data, error, errors = _extract_data_with_errors(response)
     if error and _is_missing_field_error(errors, ["energyTotals"]):
         return {"energyTotals": None}, "fallback_missing_field", None
@@ -398,6 +428,28 @@ def _is_missing_field_error(errors: list[Any], fields: list[str]) -> bool:
             if f'Cannot query field "{field}"' in message:
                 return True
     return False
+
+
+def _execute_graphql(
+    execute: GraphQLExecutor,
+    query: str,
+    label: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        return execute(query), None
+    except Exception as exc:
+        return None, f"{label} query execution failed: {exc}"
+
+
+def _polling_fallback_with_introspection_error(details: str) -> SmokeCheck:
+    normalized = " ".join(str(details).strip().split())
+    if not normalized:
+        normalized = "unknown introspection failure"
+    return SmokeCheck(
+        "subscriptions_fallback",
+        True,
+        f"mode=polling_fallback subscription_type=none introspection_error={normalized}",
+    )
 
 
 def _parse_args() -> argparse.Namespace:

@@ -6,14 +6,17 @@ from custom_components.helianthus import smoke_profile
 
 
 class FakeExecutor:
-    def __init__(self, responses: dict[str, dict]) -> None:
+    def __init__(self, responses: dict[str, dict | Exception]) -> None:
         self.responses = responses
         self.calls: list[str] = []
 
     def __call__(self, query: str) -> dict:
         operation = self._operation_name(query)
         self.calls.append(operation)
-        return self.responses[operation]
+        response = self.responses[operation]
+        if isinstance(response, Exception):
+            raise response
+        return response
 
     @staticmethod
     def _operation_name(query: str) -> str:
@@ -145,3 +148,77 @@ def test_run_smoke_profile_fails_when_no_devices() -> None:
     assert result.checks[2].name == "entity_creation"
     assert result.checks[2].ok is False
     assert "no devices discovered" in result.checks[2].details
+
+
+def test_run_smoke_profile_subscription_introspection_error_uses_polling_fallback() -> None:
+    executor = FakeExecutor(
+        {
+            "SmokeConnection": {"data": {"__typename": "Query"}},
+            "SmokeSubscriptionIntrospection": {
+                "errors": [{"message": "Introspection has been disabled"}]
+            },
+            "SmokeDevicesExtended": {
+                "data": {
+                    "devices": [
+                        {
+                            "address": 8,
+                            "manufacturer": "Vaillant",
+                            "deviceId": "BAI00",
+                            "serialNumber": "SER123",
+                            "macAddress": "AA:BB:CC:DD:EE:FF",
+                            "softwareVersion": "0102",
+                            "hardwareVersion": "7603",
+                        }
+                    ]
+                }
+            },
+            "SmokeStatus": {
+                "data": {
+                    "daemonStatus": {"status": "ok"},
+                    "adapterStatus": {"status": "ok"},
+                }
+            },
+            "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
+            "SmokeEnergy": {"data": {"energyTotals": {}}},
+        }
+    )
+
+    result = smoke_profile.run_smoke_profile("http://127.0.0.1:8080/graphql", executor=executor)
+
+    assert result.ok is True
+    assert result.checks[1].name == "subscriptions_fallback"
+    assert result.checks[1].ok is True
+    assert "mode=polling_fallback" in result.checks[1].details
+    assert "introspection_error=Introspection has been disabled" in result.checks[1].details
+
+
+def test_run_smoke_profile_handles_entity_creation_executor_error() -> None:
+    executor = FakeExecutor(
+        {
+            "SmokeConnection": {"data": {"__typename": "Query"}},
+            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscriptionType": None}}},
+            "SmokeDevicesExtended": {
+                "data": {
+                    "devices": [
+                        {
+                            "address": 8,
+                            "manufacturer": "Vaillant",
+                            "deviceId": "BAI00",
+                            "serialNumber": "SER123",
+                            "macAddress": "AA:BB:CC:DD:EE:FF",
+                            "softwareVersion": "0102",
+                            "hardwareVersion": "7603",
+                        }
+                    ]
+                }
+            },
+            "SmokeStatus": RuntimeError("executor timeout"),
+        }
+    )
+
+    result = smoke_profile.run_smoke_profile("http://127.0.0.1:8080/graphql", executor=executor)
+
+    assert result.ok is False
+    assert result.checks[2].name == "entity_creation"
+    assert result.checks[2].ok is False
+    assert "status query execution failed: executor timeout" in result.checks[2].details
