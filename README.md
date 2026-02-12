@@ -107,9 +107,38 @@ Useful focused runs:
 ```bash
 python -m pytest tests/test_graphql.py
 python -m pytest tests/test_device_ids.py
+python -m pytest tests/test_smoke_profile.py
 ```
 
 Current tests are unit-focused (client/discovery/ID/energy behavior), not full HA runtime integration tests.
+
+## Smoke profile (local gateway GraphQL)
+
+Use this smoke profile when the local gateway is running and reachable from the same host:
+
+```bash
+python -m custom_components.helianthus.smoke_profile \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --path /graphql
+```
+
+Deterministic checklist output always includes:
+
+- `connection` (GraphQL endpoint reachability)
+- `subscriptions_fallback` (subscriptions available vs polling fallback mode)
+- `entity_creation` (device/status/semantic/energy payload viability for entity setup)
+
+Machine-readable output is available with:
+
+```bash
+python -m custom_components.helianthus.smoke_profile --url http://127.0.0.1:8080/graphql --json
+```
+
+Exit codes:
+
+- `0` => all checklist items passed
+- `1` => at least one checklist item failed
 
 ## Troubleshooting
 
