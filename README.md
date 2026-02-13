@@ -1,198 +1,112 @@
 # helianthus-ha-integration
 
-Home Assistant custom integration for Helianthus. It consumes Helianthus GraphQL (from `helianthus-ebusgateway`) and maps eBUS devices into Home Assistant devices/entities.
+`helianthus-ha-integration` is the Home Assistant custom integration for Helianthus GraphQL endpoints. It maps Helianthus runtime data to HA devices and entities (diagnostics, climate, DHW, energy).
 
-## Purpose and scope
+## Purpose and Scope
 
-This repo provides the HA-side integration layer only:
+### What belongs in this repository
 
-- Discovers or accepts a Helianthus GraphQL endpoint
-- Polls semantic/device/status/energy GraphQL data
-- Optionally applies live updates via GraphQL subscriptions
-- Creates HA devices/entities for diagnostics, climate zones, DHW, and energy totals
+- Home Assistant config flow and options flow (`custom_components/helianthus/config_flow.py`, `options_flow.py`).
+- GraphQL client/discovery handling for endpoint consumption (`graphql.py`, `discovery.py`).
+- Entity modeling for diagnostics, climate, water heater, and energy (`sensor.py`, `climate.py`, `water_heater.py`, `energy.py`).
+- Local operator smoke profile tooling (`custom_components/helianthus/smoke_profile.py`, `scripts/run-ha-dual-topology-smoke.sh`).
 
-It does **not** speak raw eBUS directly; transport/protocol handling is upstream in Helianthus backend services.
+### What does not belong in this repository
 
-## Integration model (GraphQL consumer)
+- eBUS transport/protocol implementations (handled in `helianthus-ebusgo`).
+- Device/plane registry semantics (handled in `helianthus-ebusreg`).
+- Gateway runtime/API serving (handled in `helianthus-ebusgateway`).
 
-The integration connects to one GraphQL endpoint (`http(s)://host:port/path`) and uses:
+## Status and Maturity
 
-- Device inventory query (`devices`)
-- Service status query (`daemonStatus`, `adapterStatus`)
-- Semantic query (`zones`, `dhw`)
-- Energy query (`energyTotals`)
-- Optional subscription stream (`zoneUpdate`, `dhwUpdate`, `energyUpdate`) over `graphql-transport-ws`
+- Active integration with CI and unit tests.
+- Suitable for onboarding contributors and validating operator workflows.
+- Supports polling by default and optional subscriptions with polling fallback.
 
-Data flow in HA:
+## Helianthus Dependency Chain
 
-- `DataUpdateCoordinator` polling (default `scan_interval=60s`)
-- Optional websocket subscriptions that patch coordinator state in near-real-time
-- Entity platforms: `sensor`, `climate`, `water_heater`
+```text
+helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-ha-integration -> Home Assistant automations
+  (transport)        (registry/schema)     (GraphQL/MCP runtime)      (HA integration layer)
+```
 
-If subscriptions fail, polling still runs (warning logged).
+## Quickstart (copy/paste)
 
-## Device model and tree semantics
+### 0) Prerequisites
 
-The integration creates a deterministic HA device hierarchy:
+- Python `3.11+`
+- Home Assistant instance for integration install
+- Reachable Helianthus gateway GraphQL endpoint (`host`, `port`, `path`, `transport`)
 
-- **Root device:** `Helianthus Daemon` (`(helianthus, daemon)`)
-- **Child device:** `eBUS Adapter` (`(helianthus, adapter-<entry_id>)`) via daemon
-- **Per bus device:** identifier from stable ID rules, via adapter
-- **Per bus virtual:** `<device-id>-virtual`, via bus device
-- **Virtual semantic devices:** zones (`zone-<id>`), DHW (`dhw`), energy (`energy`)
+### 1) Clone and run local checks
 
-Stable bus device IDs are generated in this order:
+```bash
+git clone https://github.com/d3vi1/helianthus-ha-integration.git
+cd helianthus-ha-integration
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip pytest
+python3 -m pytest
+```
 
-1. `<model>-<serial>` (preferred)
-2. `<model>-<mac>-<addr>-<hw>-<sw>`
-3. `<model>-<addr>-<hw>-<sw>`
+### 2) Focused test runs
 
-This keeps entity/device identity stable even when some metadata is unavailable.
+```bash
+python3 -m pytest tests/test_graphql.py
+python3 -m pytest tests/test_device_ids.py
+python3 -m pytest tests/test_smoke_profile.py
+```
 
-## Quick start (install + setup)
-
-### Prerequisites
-
-- Running Helianthus gateway with GraphQL endpoint reachable from Home Assistant
-- Home Assistant instance with custom components enabled
-
-### Install
-
-Copy this integration into your HA config directory:
+### 3) Install in Home Assistant
 
 ```bash
 cp -R custom_components/helianthus /path/to/home-assistant/config/custom_components/
 ```
 
-Then restart Home Assistant.
+Restart Home Assistant, then add integration **Helianthus** from **Settings → Devices & Services**.
 
-### Configure in Home Assistant
+### 4) Config flow and options examples
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Select **Helianthus**
-3. Enter:
-   - `host`
-   - `port`
-   - optional `path` (defaults to `/graphql`)
-   - optional `transport` (`http`/`https`, defaults to `http`)
-   - optional `version` metadata
+Config flow fields:
 
-The flow validates connectivity using GraphQL schema introspection before creating the config entry.
-
-## Discovery and configuration flow
-
-- Zeroconf discovery is enabled for `_helianthus-graphql._tcp.local.`
-- TXT records are parsed for:
-  - `path` (defaults to `/graphql`)
-  - `transport` (`http` fallback if invalid)
-  - `version` (optional)
-- Unique instance key is `host:port`; duplicates are rejected
-
-After setup, options flow exposes:
-
-- `scan_interval` (seconds, default `60`)
-- `use_subscriptions` (default `true`)
-
-## Backend capability matrix (backend data -> HA entities)
-
-| Backend capability | GraphQL dependency | HA capability | Current fallback/degraded behavior |
-| --- | --- | --- | --- |
-| Device inventory | `devices` query | Bus-device registry nodes + per-device inventory diagnostics (`manufacturer`, `deviceId`, `serialNumber`, `hardwareVersion`, `softwareVersion`, `macAddress`, `address`) | If `serialNumber`/`macAddress` are not queryable, integration retries with base fields and keeps deterministic IDs; if a device has no `address`, bus/virtual device registry creation is skipped for that record. |
-| Service status | `daemonStatus`, `adapterStatus` | Daemon + adapter diagnostics (`status`, `firmwareVersion`, `updatesAvailable`) | No schema fallback for these fields; if status query fails at startup, config entry setup retries/fails until backend is fixed. |
-| Zone semantics | `zones` | `climate` entity per zone with `id`, plus zone heating-demand diagnostics | Missing-field GraphQL errors for `zones`/`dhw` are treated as semantic fallback (`zones=[]`, `dhw=None`), so zone entities are not created. |
-| DHW semantics | `dhw` | One `water_heater` entity (`Domestic Hot Water`) | If `dhw` is `null` (or semantic fallback is active), water-heater entity is absent. The DHW heating-demand diagnostic sensor still exists but remains `unknown`. |
-| Energy totals | `energyTotals` | Six energy sensors (`gas|electric|solar` x `dhw|climate`) | Missing `energyTotals` field falls back to `energyTotals=None`; sensors still exist but expose `unknown` values. |
-| Realtime updates | `zoneUpdate`, `dhwUpdate`, `energyUpdate` subscriptions over `graphql-transport-ws` | Near-real-time state updates for semantic/energy coordinators | If websocket/subscriptions fail, integration logs a warning and continues polling (`scan_interval`) without entity loss. |
-
-## Setup + troubleshooting decision tree
-
-```text
-Start setup (manual or Zeroconf)
-|
-+-- Does HA reach <transport>://<host>:<port><path> ?
-|   |
-|   +-- No -> config-flow error `cannot_connect`
-|   |        Action: verify host/port/path/transport, network route, TLS endpoint.
-|   |
-|   +-- Yes
-|       |
-|       +-- Does schema introspection (`__schema`) return valid GraphQL data?
-|       |   |
-|       |   +-- No -> config-flow error `invalid_response`
-|       |   |        Action: verify this is the GraphQL endpoint (not `/snapshot` or other API),
-|       |   |                and introspection is enabled.
-|       |   |
-|       |   +-- Yes
-|       |       |
-|       |       +-- Is `host:port` already configured?
-|       |       |   |
-|       |       |   +-- Yes -> abort `already_configured`
-|       |       |   |        Action: reuse existing entry or remove/re-add it.
-|       |       |   |
-|       |       |   +-- No -> entry setup continues
-|       |       |
-|       |       +-- After setup, do entities/state look wrong?
-|       |           |
-|       |           +-- Missing climate entities -> backend `zones` data missing/empty.
-|       |           +-- Missing DHW water heater -> backend `dhw` is null/missing.
-|       |           +-- Energy sensors are `unknown` -> backend `energyTotals` missing/non-numeric.
-|       |           +-- No realtime changes -> disable `use_subscriptions`; rely on polling and inspect WS support.
-|       |           +-- Unstable device identity -> ensure backend serial/MAC are consistently populated.
+```yaml
+host: "127.0.0.1"
+port: 8080
+path: "/graphql"
+transport: "http"     # http | https
+version: "optional"
 ```
 
-## Development and test workflow
+Options flow fields:
 
-From repo root:
-
-```bash
-python -m pip install --upgrade pip pytest
-python -m pytest
+```yaml
+scan_interval: 60
+use_subscriptions: true
 ```
 
-Useful focused runs:
+## Local Smoke-Test Configuration Examples
+
+Standard smoke check against local gateway:
 
 ```bash
-python -m pytest tests/test_graphql.py
-python -m pytest tests/test_device_ids.py
-python -m pytest tests/test_smoke_profile.py
-```
-
-Current tests are unit-focused (client/discovery/ID/energy behavior), not full HA runtime integration tests.
-
-## Smoke profile (local gateway GraphQL)
-
-Use this smoke profile when the local gateway is running and reachable from the same host:
-
-```bash
-python -m custom_components.helianthus.smoke_profile \
+python3 -m custom_components.helianthus.smoke_profile \
   --host 127.0.0.1 \
   --port 8080 \
   --path /graphql
 ```
 
-Deterministic checklist output always includes:
-
-- `CHECK_CONNECTION` (GraphQL endpoint reachability)
-- `CHECK_SUBSCRIPTIONS_FALLBACK` (subscriptions available vs polling fallback mode)
-- `CHECK_ENTITY_CREATION` (device/status/semantic/energy payload viability for entity setup)
-
-Machine-readable output is available with:
+JSON output mode:
 
 ```bash
-python -m custom_components.helianthus.smoke_profile --url http://127.0.0.1:8080/graphql --json
+python3 -m custom_components.helianthus.smoke_profile \
+  --url http://127.0.0.1:8080/graphql \
+  --json
 ```
 
-Exit codes:
-
-- `0` => all checklist items passed
-- `1` => at least one checklist item failed
-
-## Dual-topology smoke path (ebusd + adapter-proxy)
-
-Use this mode when `ebusd` stays active on its own endpoint while Helianthus reaches the bus through adapter-proxy:
+Dual-topology path mode (`ebusd` + adapter-proxy):
 
 ```bash
-python -m custom_components.helianthus.smoke_profile \
+python3 -m custom_components.helianthus.smoke_profile \
   --host 127.0.0.1 \
   --port 8080 \
   --path /graphql \
@@ -210,48 +124,35 @@ Shortcut wrapper:
 ./scripts/run-ha-dual-topology-smoke.sh --proxy-profile enh --proxy-port 19001
 ```
 
-Dual-topology mode adds one extra deterministic marker:
+## Validation Commands
 
-- `CHECK_DUAL_TOPOLOGY_PATH`
-  - **PASS:** `ebusd_endpoint` and `proxy_endpoint` are both reachable and distinct.
-  - **FAIL:** one endpoint is unreachable, invalid, or overlaps the other.
+| Area | Command |
+|---|---|
+| terminology gate (CI parity) | `if git grep -nIwiE 'm[a]ster|s[l]ave'; then echo "Found legacy terminology."; exit 1; fi` |
+| all tests (CI parity) | `python3 -m pytest` |
+| GraphQL client tests | `python3 -m pytest tests/test_graphql.py` |
+| device identity tests | `python3 -m pytest tests/test_device_ids.py` |
+| smoke profile tests | `python3 -m pytest tests/test_smoke_profile.py` |
+| smoke CLI help | `python3 -m custom_components.helianthus.smoke_profile --help` |
+| dual-topology wrapper help | `./scripts/run-ha-dual-topology-smoke.sh --help` |
 
-## Smoke profile interpretation guide
+## Link Map
 
-Treat each checklist item as an operational signal:
+### Local docs in this repo
 
-- `CHECK_CONNECTION`
-  - **PASS:** endpoint is reachable and returns GraphQL `data.__typename`.
-  - **FAIL:** transport/path/connectivity/JSON contract issue.
-- `CHECK_SUBSCRIPTIONS_FALLBACK`
-  - **PASS + `mode=subscriptions_available`:** subscription type detected; realtime path should be available.
-  - **PASS + `mode=polling_fallback`:** still healthy; integration should run in polling-only mode.
-  - If `introspection_error=...` appears, backend blocked subscription introspection; polling fallback is expected.
-- `CHECK_ENTITY_CREATION`
-  - **PASS:** backend payload is sufficient for initial entity setup.
-  - **FAIL:** setup-critical data missing (for example no valid devices, status object shape mismatch, query execution failure).
-  - `details` fields map directly to integration behavior:
-    - `devices_query=extended|base` shows whether inventory fallback was needed.
-    - `semantic_mode=full|fallback_missing_fields|fallback_non_object` shows semantic capability level.
-    - `energy_mode=full|fallback_missing_field|fallback_non_object` shows energy capability level.
-    - `diagnostics_sensors` follows current formula: `devices*7 + 6 + zones + 1`.
-    - `energy_sensors` is always `6` (values can still be `unknown` when energy payload is unavailable).
+- Architecture baseline: `ARCHITECTURE.md`
+- Working conventions: `CONVENTIONS.md`
+- Agent workflow instructions: `AGENT.md`
 
-## Compatibility assumptions and limits
+### Related Helianthus repos/docs
 
-- The integration is a **GraphQL consumer only**; it does not consume raw eBUS.
-- Setup assumes GraphQL schema introspection (`__schema`) is available at the configured endpoint.
-- One config entry maps to one endpoint identity key `host:port` (path/transport do not participate in uniqueness).
-- No authentication options are currently exposed in config flow (backend must be reachable from HA as configured).
-- Climate and water-heater entities are read-only in this version (`supported_features = 0`).
-- Subscriptions are best-effort and optional; the current loop does not implement reconnect/backoff recovery.
-- Most entity discovery is startup-time (devices/zones/DHW). Backend topology changes typically require a reload/restart to create new entities.
-- Energy totals assume numeric `today` + numeric list `yearly`; invalid payloads surface as `unknown`.
+- Gateway runtime/API: https://github.com/d3vi1/helianthus-ebusgateway
+- Registry layer: https://github.com/d3vi1/helianthus-ebusreg
+- eBUS core transport/protocol: https://github.com/d3vi1/helianthus-ebusgo
+- Protocol and architecture docs: https://github.com/d3vi1/helianthus-docs-ebus
 
-## Related repos and docs
+### Issue workflow conventions
 
-- Gateway API backend: https://github.com/d3vi1/helianthus-ebusgateway
-- Registry/schema/router layer: https://github.com/d3vi1/helianthus-ebusreg
-- eBUS protocol/transport layer: https://github.com/d3vi1/helianthus-ebusgo
-- eBUS docs and architecture notes: https://github.com/d3vi1/helianthus-docs-ebus
-- Tracking issue: https://github.com/d3vi1/helianthus-ha-integration/issues/48
+- Use one issue-focused branch per change (example: `issue/60-readme-refresh`).
+- Keep PR scope aligned to issue acceptance criteria.
+- Include closing keyword in PR body (example: `Fixes #60`).
