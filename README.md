@@ -153,6 +153,6 @@ Shortcut wrapper:
 
 ### Issue workflow conventions
 
-- Use one issue-focused branch per change (example: `issue-60-readme-refresh`).
+- Use one issue-focused branch per change (example: `issue/60-readme-refresh`).
 - Keep PR scope aligned to issue acceptance criteria.
 - Include closing keyword in PR body (example: `Fixes #60`).
