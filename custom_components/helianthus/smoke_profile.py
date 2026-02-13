@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+import ipaddress
 import json
 import socket
 from typing import Any, Callable
@@ -383,7 +384,9 @@ def _check_dual_topology_path(
 
     ebusd_endpoint = f"tcp://{ebusd_host}:{dual_topology.ebusd_port}"
     proxy_endpoint = f"{profile}://{proxy_host}:{dual_topology.proxy_port}"
-    if ebusd_host == proxy_host and dual_topology.ebusd_port == dual_topology.proxy_port:
+    ebusd_aliases = _canonical_host_aliases(ebusd_host)
+    proxy_aliases = _canonical_host_aliases(proxy_host)
+    if dual_topology.ebusd_port == dual_topology.proxy_port and ebusd_aliases.intersection(proxy_aliases):
         return SmokeCheck(
             "dual_topology_path",
             False,
@@ -562,6 +565,48 @@ def _is_valid_port(port: int) -> bool:
     return isinstance(port, int) and 1 <= port <= 65535
 
 
+def _canonical_host_aliases(host: str) -> set[str]:
+    normalized = host.strip().lower()
+    aliases: set[str] = set()
+    if not normalized:
+        return aliases
+
+    aliases.add(normalized)
+
+    if normalized in {"localhost", "localhost."}:
+        aliases.update({"127.0.0.1", "::1"})
+        return aliases
+
+    raw_ip = normalized
+    if normalized.startswith("[") and normalized.endswith("]"):
+        raw_ip = normalized[1:-1]
+    try:
+        aliases.add(ipaddress.ip_address(raw_ip).compressed.lower())
+        return aliases
+    except ValueError:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return aliases
+
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        resolved_host = str(sockaddr[0]).strip().lower()
+        if not resolved_host:
+            continue
+        aliases.add(resolved_host)
+        try:
+            aliases.add(ipaddress.ip_address(resolved_host).compressed.lower())
+        except ValueError:
+            continue
+
+    return aliases
+
+
 def _probe_tcp_endpoint(host: str, port: int, timeout: float) -> str | None:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -666,7 +711,7 @@ def _build_dual_topology_config(args: argparse.Namespace) -> DualTopologyConfig 
 
     profile = args.proxy_profile.strip().lower()
     default_proxy_port = DEFAULT_PROXY_PORT_BY_PROFILE[profile]
-    proxy_port = args.proxy_port if args.proxy_port > 0 else default_proxy_port
+    proxy_port = default_proxy_port if args.proxy_port == 0 else args.proxy_port
     return DualTopologyConfig(
         ebusd_host=args.ebusd_host,
         ebusd_port=args.ebusd_port,

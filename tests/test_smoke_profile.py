@@ -309,6 +309,31 @@ def test_run_smoke_profile_dual_topology_fails_when_endpoints_overlap() -> None:
     assert endpoint_probe.calls == []
 
 
+def test_run_smoke_profile_dual_topology_fails_when_endpoint_hosts_are_aliases() -> None:
+    executor = FakeExecutor(_success_responses())
+    endpoint_probe = FakeEndpointProbe({})
+    dual_topology = smoke_profile.DualTopologyConfig(
+        ebusd_host="localhost",
+        ebusd_port=19001,
+        proxy_profile="enh",
+        proxy_host="127.0.0.1",
+        proxy_port=19001,
+    )
+
+    result = smoke_profile.run_smoke_profile(
+        "http://127.0.0.1:8080/graphql",
+        executor=executor,
+        dual_topology=dual_topology,
+        endpoint_probe=endpoint_probe,
+    )
+
+    assert result.ok is False
+    assert result.checks[3].name == "dual_topology_path"
+    assert result.checks[3].ok is False
+    assert "endpoints must differ" in result.checks[3].details
+    assert endpoint_probe.calls == []
+
+
 def test_run_smoke_profile_dual_topology_fails_when_ebusd_unreachable() -> None:
     executor = FakeExecutor(_success_responses())
     endpoint_probe = FakeEndpointProbe(
@@ -353,3 +378,18 @@ def test_build_dual_topology_config_defaults_proxy_port_by_profile() -> None:
     assert config is not None
     assert config.proxy_profile == "ens"
     assert config.proxy_port == 19002
+
+
+def test_build_dual_topology_config_preserves_negative_proxy_port_for_validation() -> None:
+    args = type("Args", (), {})()
+    args.dual_topology = True
+    args.ebusd_host = "127.0.0.1"
+    args.ebusd_port = 8888
+    args.proxy_profile = "enh"
+    args.proxy_host = "127.0.0.1"
+    args.proxy_port = -1
+    config = smoke_profile._build_dual_topology_config(args)
+
+    assert config is not None
+    assert config.proxy_profile == "enh"
+    assert config.proxy_port == -1
