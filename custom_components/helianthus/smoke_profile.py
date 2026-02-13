@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+import ipaddress
 import json
+import socket
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
@@ -104,6 +106,39 @@ INVENTORY_FIELD_COUNT = 7
 STATUS_FIELD_COUNT = 3
 
 GraphQLExecutor = Callable[[str], dict[str, Any]]
+EndpointProbe = Callable[[str, int, float], str | None]
+
+CHECK_MARKERS = {
+    "connection": "CHECK_CONNECTION",
+    "subscriptions_fallback": "CHECK_SUBSCRIPTIONS_FALLBACK",
+    "entity_creation": "CHECK_ENTITY_CREATION",
+    "dual_topology_path": "CHECK_DUAL_TOPOLOGY_PATH",
+}
+
+DEFAULT_EBUSD_HOST = "127.0.0.1"
+DEFAULT_EBUSD_PORT = 8888
+DEFAULT_PROXY_HOST = "127.0.0.1"
+DEFAULT_PROXY_PROFILE = "enh"
+DEFAULT_PROXY_PORT_BY_PROFILE = {
+    "enh": 19001,
+    "ens": 19002,
+}
+VALID_PROXY_PROFILES = set(DEFAULT_PROXY_PORT_BY_PROFILE)
+
+
+@dataclass(frozen=True)
+class DualTopologyConfig:
+    """Dual topology readiness probes for ebusd + adapter-proxy."""
+
+    ebusd_host: str
+    ebusd_port: int
+    proxy_profile: str
+    proxy_host: str
+    proxy_port: int
+
+    @property
+    def normalized_proxy_profile(self) -> str:
+        return self.proxy_profile.strip().lower()
 
 
 @dataclass(frozen=True)
@@ -132,14 +167,20 @@ class SmokeRunResult:
             "version": self.version,
             "endpoint": self.endpoint,
             "ok": self.ok,
-            "checks": [asdict(check) for check in self.checks],
+            "checks": [
+                {
+                    **asdict(check),
+                    "marker": _marker_for_check_name(check.name),
+                }
+                for check in self.checks
+            ],
         }
 
     def to_checklist_lines(self) -> list[str]:
         lines = [f"HELIANTHUS_HA_SMOKE_CHECKLIST {self.version}", f"endpoint={self.endpoint}"]
         for check in self.checks:
             state = "PASS" if check.ok else "FAIL"
-            lines.append(f"[{state}] {check.name} :: {check.details}")
+            lines.append(f"[{state}] {_marker_for_check_name(check.name)} :: {check.details}")
         lines.append(f"OVERALL {'PASS' if self.ok else 'FAIL'}")
         return lines
 
@@ -158,6 +199,8 @@ def run_smoke_profile(
     endpoint: str,
     timeout: float = 10.0,
     executor: GraphQLExecutor | None = None,
+    dual_topology: DualTopologyConfig | None = None,
+    endpoint_probe: EndpointProbe | None = None,
 ) -> SmokeRunResult:
     execute = executor if executor is not None else _http_executor(endpoint, timeout)
     checks = [
@@ -165,6 +208,8 @@ def run_smoke_profile(
         _check_subscriptions_fallback(execute),
         _check_entity_creation(execute),
     ]
+    if dual_topology is not None:
+        checks.append(_check_dual_topology_path(dual_topology, timeout, endpoint_probe))
     return SmokeRunResult(version="v1", endpoint=endpoint, checks=checks)
 
 
@@ -311,6 +356,68 @@ def _check_entity_creation(execute: GraphQLExecutor) -> SmokeCheck:
         return SmokeCheck("entity_creation", False, f"entity creation probe failed: {exc}")
 
 
+def _check_dual_topology_path(
+    dual_topology: DualTopologyConfig,
+    timeout: float,
+    endpoint_probe: EndpointProbe | None,
+) -> SmokeCheck:
+    profile = dual_topology.normalized_proxy_profile
+    if profile not in VALID_PROXY_PROFILES:
+        supported = ",".join(sorted(VALID_PROXY_PROFILES))
+        return SmokeCheck(
+            "dual_topology_path",
+            False,
+            f"proxy profile must be one of {supported}",
+        )
+
+    ebusd_host = dual_topology.ebusd_host.strip()
+    proxy_host = dual_topology.proxy_host.strip()
+    if not ebusd_host:
+        return SmokeCheck("dual_topology_path", False, "ebusd host is required")
+    if not proxy_host:
+        return SmokeCheck("dual_topology_path", False, "proxy host is required")
+
+    if not _is_valid_port(dual_topology.ebusd_port):
+        return SmokeCheck("dual_topology_path", False, "ebusd port must be in range 1..65535")
+    if not _is_valid_port(dual_topology.proxy_port):
+        return SmokeCheck("dual_topology_path", False, "proxy port must be in range 1..65535")
+
+    ebusd_endpoint = f"tcp://{ebusd_host}:{dual_topology.ebusd_port}"
+    proxy_endpoint = f"{profile}://{proxy_host}:{dual_topology.proxy_port}"
+    ebusd_aliases = _canonical_host_aliases(ebusd_host)
+    proxy_aliases = _canonical_host_aliases(proxy_host)
+    if dual_topology.ebusd_port == dual_topology.proxy_port and ebusd_aliases.intersection(proxy_aliases):
+        return SmokeCheck(
+            "dual_topology_path",
+            False,
+            f"endpoints must differ ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
+        )
+
+    probe = endpoint_probe if endpoint_probe is not None else _probe_tcp_endpoint
+
+    ebusd_error = probe(ebusd_host, dual_topology.ebusd_port, timeout)
+    if ebusd_error is not None:
+        return SmokeCheck(
+            "dual_topology_path",
+            False,
+            f"ebusd endpoint unreachable ebusd_endpoint={ebusd_endpoint} error={_normalize_text(ebusd_error)}",
+        )
+
+    proxy_error = probe(proxy_host, dual_topology.proxy_port, timeout)
+    if proxy_error is not None:
+        return SmokeCheck(
+            "dual_topology_path",
+            False,
+            f"proxy endpoint unreachable proxy_endpoint={proxy_endpoint} error={_normalize_text(proxy_error)}",
+        )
+
+    return SmokeCheck(
+        "dual_topology_path",
+        True,
+        f"mode=coexistence_ready ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
+    )
+
+
 def _fetch_devices(execute: GraphQLExecutor) -> tuple[list[dict[str, Any]], str, str | None]:
     response, execution_error = _execute_graphql(execute, QUERY_DEVICES_EXTENDED, "devices extended")
     if execution_error:
@@ -441,8 +548,82 @@ def _execute_graphql(
         return None, f"{label} query execution failed: {exc}"
 
 
+def _marker_for_check_name(name: str) -> str:
+    marker = CHECK_MARKERS.get(name)
+    if marker is not None:
+        return marker
+    normalized = []
+    for char in name:
+        if char.isalnum():
+            normalized.append(char.upper())
+        else:
+            normalized.append("_")
+    return f"CHECK_{''.join(normalized)}"
+
+
+def _is_valid_port(port: int) -> bool:
+    return isinstance(port, int) and 1 <= port <= 65535
+
+
+def _canonical_host_aliases(host: str) -> set[str]:
+    normalized = host.strip().lower()
+    aliases: set[str] = set()
+    if not normalized:
+        return aliases
+
+    aliases.add(normalized)
+
+    if normalized in {"localhost", "localhost."}:
+        aliases.update({"127.0.0.1", "::1"})
+        return aliases
+
+    raw_ip = normalized
+    if normalized.startswith("[") and normalized.endswith("]"):
+        raw_ip = normalized[1:-1]
+    try:
+        aliases.add(ipaddress.ip_address(raw_ip).compressed.lower())
+        return aliases
+    except ValueError:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return aliases
+
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        resolved_host = str(sockaddr[0]).strip().lower()
+        if not resolved_host:
+            continue
+        aliases.add(resolved_host)
+        try:
+            aliases.add(ipaddress.ip_address(resolved_host).compressed.lower())
+        except ValueError:
+            continue
+
+    return aliases
+
+
+def _probe_tcp_endpoint(host: str, port: int, timeout: float) -> str | None:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return None
+    except OSError as exc:
+        detail = _normalize_text(str(exc))
+        if detail:
+            return detail
+        return exc.__class__.__name__
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(str(value).strip().split())
+
+
 def _polling_fallback_with_introspection_error(details: str) -> SmokeCheck:
-    normalized = " ".join(str(details).strip().split())
+    normalized = _normalize_text(details)
     if not normalized:
         normalized = "unknown introspection failure"
     return SmokeCheck(
@@ -472,6 +653,39 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Output deterministic JSON instead of checklist text.",
     )
+    parser.add_argument(
+        "--dual-topology",
+        action="store_true",
+        help="Enable dual-topology endpoint probes (ebusd + adapter-proxy).",
+    )
+    parser.add_argument(
+        "--ebusd-host",
+        default=DEFAULT_EBUSD_HOST,
+        help="ebusd host to probe when --dual-topology is enabled.",
+    )
+    parser.add_argument(
+        "--ebusd-port",
+        type=int,
+        default=DEFAULT_EBUSD_PORT,
+        help="ebusd port to probe when --dual-topology is enabled.",
+    )
+    parser.add_argument(
+        "--proxy-profile",
+        choices=sorted(VALID_PROXY_PROFILES),
+        default=DEFAULT_PROXY_PROFILE,
+        help="Adapter-proxy profile to probe when --dual-topology is enabled.",
+    )
+    parser.add_argument(
+        "--proxy-host",
+        default=DEFAULT_PROXY_HOST,
+        help="Adapter-proxy host to probe when --dual-topology is enabled.",
+    )
+    parser.add_argument(
+        "--proxy-port",
+        type=int,
+        default=0,
+        help="Adapter-proxy port to probe when --dual-topology is enabled (defaults by profile).",
+    )
     return parser.parse_args()
 
 
@@ -479,7 +693,8 @@ def main() -> int:
     args = _parse_args()
     endpoint = args.url.strip() if args.url else build_graphql_url(args.host, args.port, args.path, args.transport)
     endpoint = _normalize_endpoint(endpoint)
-    result = run_smoke_profile(endpoint=endpoint, timeout=args.timeout)
+    dual_topology = _build_dual_topology_config(args)
+    result = run_smoke_profile(endpoint=endpoint, timeout=args.timeout, dual_topology=dual_topology)
 
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -488,6 +703,22 @@ def main() -> int:
             print(line)
 
     return 0 if result.ok else 1
+
+
+def _build_dual_topology_config(args: argparse.Namespace) -> DualTopologyConfig | None:
+    if not args.dual_topology:
+        return None
+
+    profile = args.proxy_profile.strip().lower()
+    default_proxy_port = DEFAULT_PROXY_PORT_BY_PROFILE[profile]
+    proxy_port = default_proxy_port if args.proxy_port == 0 else args.proxy_port
+    return DualTopologyConfig(
+        ebusd_host=args.ebusd_host,
+        ebusd_port=args.ebusd_port,
+        proxy_profile=profile,
+        proxy_host=args.proxy_host,
+        proxy_port=proxy_port,
+    )
 
 
 def _normalize_endpoint(url: str) -> str:

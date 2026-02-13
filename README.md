@@ -172,9 +172,9 @@ python -m custom_components.helianthus.smoke_profile \
 
 Deterministic checklist output always includes:
 
-- `connection` (GraphQL endpoint reachability)
-- `subscriptions_fallback` (subscriptions available vs polling fallback mode)
-- `entity_creation` (device/status/semantic/energy payload viability for entity setup)
+- `CHECK_CONNECTION` (GraphQL endpoint reachability)
+- `CHECK_SUBSCRIPTIONS_FALLBACK` (subscriptions available vs polling fallback mode)
+- `CHECK_ENTITY_CREATION` (device/status/semantic/energy payload viability for entity setup)
 
 Machine-readable output is available with:
 
@@ -187,18 +187,47 @@ Exit codes:
 - `0` => all checklist items passed
 - `1` => at least one checklist item failed
 
+## Dual-topology smoke path (ebusd + adapter-proxy)
+
+Use this mode when `ebusd` stays active on its own endpoint while Helianthus reaches the bus through adapter-proxy:
+
+```bash
+python -m custom_components.helianthus.smoke_profile \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --path /graphql \
+  --dual-topology \
+  --ebusd-host 127.0.0.1 \
+  --ebusd-port 8888 \
+  --proxy-profile enh \
+  --proxy-host 127.0.0.1 \
+  --proxy-port 19001
+```
+
+Shortcut wrapper:
+
+```bash
+./scripts/run-ha-dual-topology-smoke.sh --proxy-profile enh --proxy-port 19001
+```
+
+Dual-topology mode adds one extra deterministic marker:
+
+- `CHECK_DUAL_TOPOLOGY_PATH`
+  - **PASS:** `ebusd_endpoint` and `proxy_endpoint` are both reachable and distinct.
+  - **FAIL:** one endpoint is unreachable, invalid, or overlaps the other.
+
 ## Smoke profile interpretation guide
 
 Treat each checklist item as an operational signal:
 
-- `connection`
+- `CHECK_CONNECTION`
   - **PASS:** endpoint is reachable and returns GraphQL `data.__typename`.
   - **FAIL:** transport/path/connectivity/JSON contract issue.
-- `subscriptions_fallback`
+- `CHECK_SUBSCRIPTIONS_FALLBACK`
   - **PASS + `mode=subscriptions_available`:** subscription type detected; realtime path should be available.
   - **PASS + `mode=polling_fallback`:** still healthy; integration should run in polling-only mode.
   - If `introspection_error=...` appears, backend blocked subscription introspection; polling fallback is expected.
-- `entity_creation`
+- `CHECK_ENTITY_CREATION`
   - **PASS:** backend payload is sufficient for initial entity setup.
   - **FAIL:** setup-critical data missing (for example no valid devices, status object shape mismatch, query execution failure).
   - `details` fields map directly to integration behavior:
