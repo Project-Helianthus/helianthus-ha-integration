@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .const import (
@@ -23,6 +24,32 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+_HEX4_RE = re.compile(r"^[0-9a-fA-F]{4}$")
+
+
+def _format_hex4_version(value: str | None) -> str | None:
+    if not value:
+        return None
+    stripped = str(value).strip()
+    if "." in stripped:
+        return stripped
+    if _HEX4_RE.match(stripped):
+        return f"{stripped[0:2]}.{stripped[2:4]}"
+    return stripped
+
+
+def _extract_part_number(device: dict) -> str | None:
+    part_number = device.get("partNumber")
+    if part_number:
+        return str(part_number).strip() or None
+    serial_number = device.get("serialNumber")
+    if not serial_number:
+        return None
+    parts = str(serial_number).split("-")
+    if len(parts) >= 4 and len(parts[3]) == 10 and parts[3].isdigit():
+        return parts[3]
+    return None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -99,6 +126,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         manufacturer = device.get("manufacturer", "Unknown")
         sw_version = device.get("softwareVersion")
         hw_version = device.get("hardwareVersion")
+        display_name = device.get("displayName") or device.get("productFamily")
+        product_model = device.get("productModel")
+        part_number = _extract_part_number(device)
 
         if address is None:
             continue
@@ -112,14 +142,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             software_version=str(sw_version) if sw_version else None,
         )
 
+        device_name = str(display_name).strip() if display_name else f"{manufacturer} {device_id}"
+        model_name = str(product_model).strip() if product_model else str(device_id)
+        if part_number and f"({part_number})" not in model_name:
+            model_name = f"{model_name} ({part_number})"
+
         bus_device_id = bus_identifier(resolved_id)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={bus_device_id},
             manufacturer=manufacturer,
-            model=device_id,
-            name=f"{manufacturer} {device_id}",
-            sw_version=sw_version,
+            model=model_name,
+            name=device_name,
+            serial_number=str(serial_number) if serial_number else None,
+            sw_version=_format_hex4_version(str(sw_version)) if sw_version else None,
             hw_version=hw_version,
             via_device=adapter_device_id,
         )
@@ -130,7 +166,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             identifiers={virtual_device_id},
             manufacturer="Helianthus",
             model="Virtual Device",
-            name=f"Virtual {device_id}",
+            name=f"Virtual {device_name}",
             via_device=bus_device_id,
         )
 

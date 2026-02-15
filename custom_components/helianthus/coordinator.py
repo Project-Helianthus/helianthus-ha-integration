@@ -11,7 +11,26 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
-QUERY_EXTENDED = """
+QUERY_EXTENDED_V3 = """
+query Devices {
+  devices {
+    address
+    manufacturer
+    deviceId
+    displayName
+    productFamily
+    productModel
+    partNumber
+    role
+    serialNumber
+    macAddress
+    softwareVersion
+    hardwareVersion
+  }
+}
+"""
+
+QUERY_EXTENDED_V2 = """
 query Devices {
   devices {
     address
@@ -117,8 +136,15 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             return False
 
         try:
-            return await fetch(QUERY_EXTENDED)
+            return await fetch(QUERY_EXTENDED_V3)
         except GraphQLResponseError as exc:
+            if is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel", "partNumber", "role"]):
+                try:
+                    return await fetch(QUERY_EXTENDED_V2)
+                except GraphQLResponseError as nested:
+                    if is_missing_field_error(nested.errors, ["serialNumber", "macAddress"]):
+                        return await fetch(QUERY_BASE)
+                    raise UpdateFailed(str(nested)) from nested
             if is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
                 return await fetch(QUERY_BASE)
             raise UpdateFailed(str(exc)) from exc
