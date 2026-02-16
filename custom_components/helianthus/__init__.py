@@ -52,6 +52,13 @@ def _extract_part_number(device: dict) -> str | None:
     return None
 
 
+def _clean_label(value: object | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.helpers import device_registry as dr
@@ -123,11 +130,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_id = device.get("deviceId", "unknown")
         serial_number = device.get("serialNumber")
         mac_address = device.get("macAddress")
-        manufacturer = device.get("manufacturer", "Unknown")
+        manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
         sw_version = device.get("softwareVersion")
         hw_version = device.get("hardwareVersion")
-        display_name = device.get("displayName") or device.get("productFamily")
-        product_model = device.get("productModel")
+        display_name = _clean_label(device.get("displayName")) or _clean_label(
+            device.get("productFamily")
+        )
+        product_model = _clean_label(device.get("productModel"))
         part_number = _extract_part_number(device)
 
         if address is None:
@@ -142,8 +151,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             software_version=str(sw_version) if sw_version else None,
         )
 
-        device_name = str(display_name).strip() if display_name else f"{manufacturer} {device_id}"
-        model_name = str(product_model).strip() if product_model else str(device_id)
+        device_name = display_name or f"{manufacturer} {device_id}"
+        model_name = product_model or str(device_id)
         if part_number and f"({part_number})" not in model_name:
             model_name = f"{model_name} ({part_number})"
 
