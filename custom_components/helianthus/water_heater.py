@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.water_heater import WaterHeaterEntity
+from homeassistant.components.water_heater import WaterHeaterEntityFeature
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -27,7 +28,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     """DHW water heater entity."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = 0
+    _attr_supported_features = WaterHeaterEntityFeature(0)
 
     def __init__(self, entry_id: str, coordinator) -> None:
         super().__init__(coordinator)

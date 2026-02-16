@@ -51,7 +51,10 @@ SUBSCRIPTIONS = {
 def _to_ws_url(url: str) -> str:
     parsed = urlparse(url)
     scheme = "wss" if parsed.scheme == "https" else "ws"
-    return urlunparse(parsed._replace(scheme=scheme))
+    path = parsed.path or ""
+    if not path.endswith("/subscriptions"):
+        path = path.rstrip("/") + "/subscriptions"
+    return urlunparse(parsed._replace(scheme=scheme, path=path))
 
 
 async def start_subscriptions(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity, HVACMode
+from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -36,7 +37,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     """Zone climate entity."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = 0
+    _attr_supported_features = ClimateEntityFeature(0)
 
     def __init__(self, entry_id: str, coordinator, zone_id: str | None, name: str | None) -> None:
         super().__init__(coordinator)
