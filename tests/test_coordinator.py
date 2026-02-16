@@ -29,7 +29,7 @@ homeassistant_module = types.ModuleType("homeassistant")
 homeassistant_module.helpers = helpers_module
 sys.modules.setdefault("homeassistant", homeassistant_module)
 sys.modules.setdefault("homeassistant.helpers", helpers_module)
-sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator_module
+sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordinator_module)
 
 from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V2,
