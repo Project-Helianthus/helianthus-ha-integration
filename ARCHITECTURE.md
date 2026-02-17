@@ -24,9 +24,9 @@ HA device hierarchy is explicit:
 
 Device IDs must be stable and deterministic.
 
-- Base: `<model>-<serial>`
-- If serial missing: `<model>-<mac>-<addr>-<hw>-<sw>`
-- If mac missing: `<model>-<addr>-<hw>-<sw>`
+- **Physical eBUS devices:** stable key is `<model>-<addr>` (hex address), independent of volatile fields.
+  - Serial numbers, MAC addresses, and software versions are treated as **metadata enrichment**, not identity.
+- **Entry scoping:** all HA device identifiers are prefixed with the config entry id to avoid collisions across multiple Helianthus daemons.
 
 ## GraphQL Model
 

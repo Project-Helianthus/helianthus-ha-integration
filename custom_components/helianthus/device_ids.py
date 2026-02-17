@@ -11,41 +11,36 @@ def _token(value: object | None) -> str:
     return str(value).strip().replace(" ", "-")
 
 
-def build_device_id(
-    model: str | None,
-    serial_number: str | None,
-    mac_address: str | None,
-    address: int | None,
-    hardware_version: str | None,
-    software_version: str | None,
-) -> str:
+def build_bus_device_key(model: str | None, address: int | None) -> str:
+    """Return a stable identifier key for a physical eBUS device.
+
+    This is intentionally independent of volatile fields (serial number, MAC, software version).
+    """
+
     model_token = _token(model) if model else "unknown"
     address_token = f"{address:02x}" if isinstance(address, int) else _token(address)
-    hw_token = _token(hardware_version)
-    sw_token = _token(software_version)
-
-    if serial_number:
-        return f"{model_token}-{_token(serial_number)}"
-    if mac_address:
-        return f"{model_token}-{_token(mac_address)}-{address_token}-{hw_token}-{sw_token}"
-    return f"{model_token}-{address_token}-{hw_token}-{sw_token}"
+    return f"{model_token}-{address_token}"
 
 
-def virtual_device_id(base_device_id: str) -> str:
-    return f"{base_device_id}-virtual"
-
-
-def daemon_identifier() -> tuple[str, str]:
-    return (DOMAIN, "daemon")
+def daemon_identifier(config_entry_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"daemon-{_token(config_entry_id)}")
 
 
 def adapter_identifier(config_entry_id: str) -> tuple[str, str]:
     return (DOMAIN, f"adapter-{_token(config_entry_id)}")
 
 
-def bus_identifier(resolved_id: str) -> tuple[str, str]:
-    return (DOMAIN, _token(resolved_id))
+def bus_identifier(config_entry_id: str, bus_device_key: str) -> tuple[str, str]:
+    return (DOMAIN, f"{_token(config_entry_id)}-bus-{_token(bus_device_key)}")
 
 
-def virtual_identifier(base_device_id: str) -> tuple[str, str]:
-    return (DOMAIN, virtual_device_id(_token(base_device_id)))
+def zone_identifier(config_entry_id: str, zone_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"{_token(config_entry_id)}-zone-{_token(zone_id)}")
+
+
+def dhw_identifier(config_entry_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"{_token(config_entry_id)}-dhw")
+
+
+def energy_identifier(config_entry_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"{_token(config_entry_id)}-energy")

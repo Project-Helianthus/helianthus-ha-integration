@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .device_ids import zone_identifier
 
 OPERATING_MODE_MAP = {
     "heating": HVACMode.HEAT,
@@ -27,9 +28,19 @@ OPERATING_MODE_MAP = {
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
+    via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
-    entities = [HelianthusZoneClimate(entry.entry_id, coordinator, zone.get("id"), zone.get("name")) for zone in zones]
+    entities = [
+        HelianthusZoneClimate(
+            entry.entry_id,
+            coordinator,
+            via_device,
+            zone.get("id"),
+            zone.get("name"),
+        )
+        for zone in zones
+    ]
     async_add_entities([entity for entity in entities if entity.zone_id])
 
 
@@ -39,13 +50,21 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = ClimateEntityFeature(0)
 
-    def __init__(self, entry_id: str, coordinator, zone_id: str | None, name: str | None) -> None:
+    def __init__(
+        self,
+        entry_id: str,
+        coordinator,
+        via_device: tuple[str, str] | None,
+        zone_id: str | None,
+        name: str | None,
+    ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
+        self._via_device = via_device
         self._zone_id = zone_id
         self._attr_name = name or f"Zone {zone_id}"
         if zone_id:
-            self._attr_unique_id = f"zone-{zone_id}"
+            self._attr_unique_id = f"{entry_id}-zone-{zone_id}"
 
     @property
     def zone_id(self) -> str | None:
@@ -61,8 +80,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        identifier = (DOMAIN, f"zone-{self._zone_id}")
-        via = (DOMAIN, f"adapter-{self._entry_id}")
+        identifier = zone_identifier(self._entry_id, str(self._zone_id))
+        via = self._via_device
         return DeviceInfo(
             identifiers={identifier},
             manufacturer="Helianthus",

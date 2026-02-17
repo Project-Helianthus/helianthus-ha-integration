@@ -11,7 +11,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import build_device_id
+from .device_ids import (
+    build_bus_device_key,
+    bus_identifier,
+    dhw_identifier,
+    energy_identifier,
+    zone_identifier,
+)
 from .energy import compute_total
 
 
@@ -20,16 +26,6 @@ class InventoryField:
     key: str
     name: str
 
-
-INVENTORY_FIELDS = [
-    InventoryField("manufacturer", "Manufacturer"),
-    InventoryField("deviceId", "Model"),
-    InventoryField("serialNumber", "Serial Number"),
-    InventoryField("hardwareVersion", "Hardware Version"),
-    InventoryField("softwareVersion", "Software Version"),
-    InventoryField("macAddress", "MAC Address"),
-    InventoryField("address", "Address"),
-]
 
 STATUS_FIELDS = [
     InventoryField("status", "Status"),
@@ -44,27 +40,40 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     status_coordinator = data["status_coordinator"]
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
+    via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
 
-    sensors: list[HelianthusInventorySensor] = []
+    sensors: list[SensorEntity] = []
     for device in device_coordinator.data or []:
-        sensors.extend(
-            HelianthusInventorySensor(device_coordinator, device, field)
-            for field in INVENTORY_FIELDS
-        )
-
-    daemon_identifier = (DOMAIN, "daemon")
-    adapter_identifier = (DOMAIN, f"adapter-{entry.entry_id}")
+        device_id = device.get("deviceId", "unknown")
+        address = device.get("address")
+        if address is None:
+            continue
+        bus_key = build_bus_device_key(model=str(device_id), address=int(address))
+        bus_id = bus_identifier(entry.entry_id, bus_key)
+        sensors.append(HelianthusBusAddressSensor(device_coordinator, bus_id, int(address)))
 
     status_entries = status_coordinator.data or {}
     daemon_status = status_entries.get("daemon", {})
     adapter_status = status_entries.get("adapter", {})
 
     sensors.extend(
-        HelianthusStatusSensor(status_coordinator, "Daemon", daemon_status, daemon_identifier, field)
+        HelianthusStatusSensor(
+            status_coordinator,
+            "Daemon",
+            daemon_status,
+            data.get("daemon_device_id"),
+            field,
+        )
         for field in STATUS_FIELDS
     )
     sensors.extend(
-        HelianthusStatusSensor(status_coordinator, "Adapter", adapter_status, adapter_identifier, field)
+        HelianthusStatusSensor(
+            status_coordinator,
+            "Adapter",
+            adapter_status,
+            data.get("adapter_device_id"),
+            field,
+        )
         for field in STATUS_FIELDS
     )
 
@@ -76,13 +85,17 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 sensors.append(
                     HelianthusDemandSensor(
                         semantic_coordinator,
-                        f"Zone {zone_id}",
-                        ("zone", zone_id),
+                        entry.entry_id,
+                        via_device,
+                        zone.get("name") or f"Zone {zone_id}",
+                        ("zone", str(zone_id)),
                     )
                 )
         sensors.append(
             HelianthusDemandSensor(
                 semantic_coordinator,
+                entry.entry_id,
+                via_device,
                 "DHW",
                 ("dhw", None),
             )
@@ -91,56 +104,42 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if energy_coordinator and energy_coordinator.data:
         sensors.extend(
             [
-                HelianthusEnergySensor(energy_coordinator, "gas", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, "gas", "climate"),
-                HelianthusEnergySensor(energy_coordinator, "electric", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, "electric", "climate"),
-                HelianthusEnergySensor(energy_coordinator, "solar", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, "solar", "climate"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "gas", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "gas", "climate"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "electric", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "electric", "climate"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "solar", "dhw"),
+                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "solar", "climate"),
             ]
         )
 
     async_add_entities(sensors)
 
 
-class HelianthusInventorySensor(CoordinatorEntity, SensorEntity):
-    """Inventory field sensor."""
+class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
+    """eBUS address sensor for a physical bus device."""
 
     entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, device: dict[str, Any], field: InventoryField) -> None:
+    def __init__(
+        self,
+        coordinator,
+        device_id: tuple[str, str],
+        address: int,
+    ) -> None:
         super().__init__(coordinator)
-        self._device = device
-        self._field = field
-        self._attr_name = f"{device.get('deviceId', 'Device')} {field.name}"
-        self._attr_unique_id = self._build_unique_id()
-
-    def _build_unique_id(self) -> str:
-        device_id = build_device_id(
-            model=self._device.get("deviceId"),
-            serial_number=self._device.get("serialNumber"),
-            mac_address=self._device.get("macAddress"),
-            address=self._device.get("address"),
-            hardware_version=self._device.get("hardwareVersion"),
-            software_version=self._device.get("softwareVersion"),
-        )
-        return f"{device_id}-{self._field.key}"
+        self._device_id = device_id
+        self._address = address
+        self._attr_name = "eBUS Address"
+        self._attr_unique_id = f"{device_id[1]}-ebus-address"
 
     @property
     def device_info(self) -> DeviceInfo:
-        device_id = build_device_id(
-            model=self._device.get("deviceId"),
-            serial_number=self._device.get("serialNumber"),
-            mac_address=self._device.get("macAddress"),
-            address=self._device.get("address"),
-            hardware_version=self._device.get("hardwareVersion"),
-            software_version=self._device.get("softwareVersion"),
-        )
-        return DeviceInfo(identifiers={(DOMAIN, device_id)})
+        return DeviceInfo(identifiers={self._device_id})
 
     @property
     def native_value(self) -> Any:
-        return self._device.get(self._field.key)
+        return f"0x{self._address:02x}"
 
 
 class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
@@ -153,15 +152,15 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         coordinator,
         target_name: str,
         status: dict[str, Any],
-        identifier: tuple[str, str],
+        identifier: tuple[str, str] | None,
         field: InventoryField,
     ) -> None:
         super().__init__(coordinator)
         self._status = status
         self._field = field
-        self._identifier = identifier
+        self._identifier = identifier or (DOMAIN, f"unknown-{target_name.lower()}")
         self._attr_name = f"{target_name} {field.name}"
-        self._attr_unique_id = f"{identifier[1]}-{field.key}"
+        self._attr_unique_id = f"{self._identifier[1]}-{field.key}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -179,19 +178,37 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, coordinator, label: str, target: tuple[str, str | None]) -> None:
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        via_device: tuple[str, str] | None,
+        label: str,
+        target: tuple[str, str | None],
+    ) -> None:
         super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._via_device = via_device
         self._target = target
         self._attr_name = f"{label} Heating Demand"
-        self._attr_unique_id = f"{target[0]}-{target[1] or 'dhw'}-heating-demand"
+        self._attr_unique_id = (
+            f"{entry_id}-{target[0]}-{target[1] or 'dhw'}-heating-demand"
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
         if self._target[0] == "zone":
-            identifier = (DOMAIN, f"zone-{self._target[1]}")
+            identifier = zone_identifier(self._entry_id, str(self._target[1]))
+            model = "Virtual Zone"
         else:
-            identifier = (DOMAIN, "dhw")
-        return DeviceInfo(identifiers={identifier})
+            identifier = dhw_identifier(self._entry_id)
+            model = "Virtual DHW"
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer="Helianthus",
+            model=model,
+            via_device=self._via_device,
+        )
 
     @property
     def native_value(self) -> Any:
@@ -214,21 +231,31 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
     _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
-    def __init__(self, coordinator, source: str, usage: str) -> None:
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        via_device: tuple[str, str] | None,
+        source: str,
+        usage: str,
+    ) -> None:
         super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._via_device = via_device
         self._source = source
         self._usage = usage
         self._attr_name = f"{source.capitalize()} {usage.upper()} Energy"
-        self._attr_unique_id = f"energy-{source}-{usage}"
+        self._attr_unique_id = f"{entry_id}-energy-{source}-{usage}"
 
     @property
     def device_info(self) -> DeviceInfo:
-        identifier = (DOMAIN, "energy")
+        identifier = energy_identifier(self._entry_id)
         return DeviceInfo(
             identifiers={identifier},
             manufacturer="Helianthus",
             model="Virtual Energy",
             name="Energy",
+            via_device=self._via_device,
         )
 
     def _series(self) -> dict[str, Any]:
