@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from .const import (
@@ -124,7 +125,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await energy_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
+    reload_scheduled = False
 
+    def schedule_reload(reason: str) -> None:
+        nonlocal reload_scheduled
+        if reload_scheduled:
+            return
+        reload_scheduled = True
+        _LOGGER.info("Reloading Helianthus entry %s: %s", entry.entry_id, reason)
+        hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+
+    def resolved_bus_device_id(device: dict) -> str | None:
+        address = device.get("address")
+        device_id = device.get("deviceId", "unknown")
+        serial_number = device.get("serialNumber")
+        mac_address = device.get("macAddress")
+        sw_version = device.get("softwareVersion")
+        hw_version = device.get("hardwareVersion")
+        if address is None:
+            return None
+        return build_device_id(
+            model=str(device_id),
+            serial_number=str(serial_number) if serial_number else None,
+            mac_address=str(mac_address) if mac_address else None,
+            address=int(address),
+            hardware_version=str(hw_version) if hw_version else None,
+            software_version=str(sw_version) if sw_version else None,
+        )
+
+    known_bus_devices: set[str] = set()
     for device in devices:
         address = device.get("address")
         device_id = device.get("deviceId", "unknown")
@@ -142,14 +171,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if address is None:
             continue
 
-        resolved_id = build_device_id(
-            model=str(device_id),
-            serial_number=str(serial_number) if serial_number else None,
-            mac_address=str(mac_address) if mac_address else None,
-            address=int(address),
-            hardware_version=str(hw_version) if hw_version else None,
-            software_version=str(sw_version) if sw_version else None,
-        )
+        resolved_id = resolved_bus_device_id(device)
+        if not resolved_id:
+            continue
+        known_bus_devices.add(resolved_id)
 
         device_name = display_name or f"{manufacturer} {device_id}"
         model_name = product_model or str(device_id)
@@ -179,6 +204,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             via_device=bus_device_id,
         )
 
+    semantic = semantic_coordinator.data or {}
+    known_zones: set[str] = {
+        str(zone.get("id"))
+        for zone in (semantic.get("zones", []) or [])
+        if zone.get("id") is not None
+    }
+    known_has_dhw = semantic.get("dhw") is not None
+
+    def handle_device_update() -> None:
+        current = device_coordinator.data or []
+        if not current:
+            return
+        current_ids: set[str] = set()
+        for dev in current:
+            resolved = resolved_bus_device_id(dev)
+            if resolved:
+                current_ids.add(resolved)
+        if not current_ids:
+            return
+        if current_ids.issubset(known_bus_devices):
+            return
+        schedule_reload("new bus devices discovered")
+
+    def handle_semantic_update() -> None:
+        payload = semantic_coordinator.data or {}
+        zones = payload.get("zones", []) or []
+        dhw = payload.get("dhw")
+        current_zone_ids: set[str] = {
+            str(zone.get("id")) for zone in zones if zone.get("id") is not None
+        }
+        has_new_zones = bool(current_zone_ids - known_zones)
+        has_new_dhw = dhw is not None and not known_has_dhw
+        if has_new_zones or has_new_dhw:
+            schedule_reload("semantic inventory became available")
+
+    unsub_listeners: list[Callable[[], None]] = []
+    unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
+    unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
+
     use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
     subscription_task = None
     if use_subscriptions:
@@ -192,6 +256,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
         "subscription_task": subscription_task,
+        "unsub_listeners": unsub_listeners,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -207,4 +272,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         task = None if data is None else data.get("subscription_task")
         if task:
             task.cancel()
+        listeners = None if data is None else data.get("unsub_listeners")
+        if listeners:
+            for unsub in listeners:
+                try:
+                    unsub()
+                except Exception:  # pragma: no cover - best-effort cleanup
+                    pass
     return unload_ok
