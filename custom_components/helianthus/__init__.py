@@ -63,6 +63,7 @@ def _clean_label(value: object | None) -> str | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
@@ -74,16 +75,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     from .device_ids import (
         adapter_identifier,
-        build_device_id,
+        build_bus_device_key,
         bus_identifier,
         daemon_identifier,
-        virtual_identifier,
     )
     from .subscriptions import start_subscriptions
 
     device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
 
-    daemon_device_id = daemon_identifier()
+    removed_entities = 0
+    for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        entity_registry.async_remove(entity_entry.entity_id)
+        removed_entities += 1
+
+    removed_devices = 0
+    for device_entry in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        if any(identifier[0] == DOMAIN for identifier in device_entry.identifiers):
+            device_registry.async_remove_device(device_entry.id)
+            removed_devices += 1
+
+    if removed_entities or removed_devices:
+        _LOGGER.info(
+            "Helianthus cleanup removed %d entities and %d devices for entry %s",
+            removed_entities,
+            removed_devices,
+            entry.entry_id,
+        )
+
+    daemon_device_id = daemon_identifier(entry.entry_id)
     adapter_device_id = adapter_identifier(entry.entry_id)
 
     device_registry.async_get_or_create(
@@ -135,30 +155,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Reloading Helianthus entry %s: %s", entry.entry_id, reason)
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
 
-    def resolved_bus_device_id(device: dict) -> str | None:
+    def resolved_bus_device_key(device: dict) -> str | None:
         address = device.get("address")
         device_id = device.get("deviceId", "unknown")
-        serial_number = device.get("serialNumber")
-        mac_address = device.get("macAddress")
-        sw_version = device.get("softwareVersion")
-        hw_version = device.get("hardwareVersion")
         if address is None:
             return None
-        return build_device_id(
-            model=str(device_id),
-            serial_number=str(serial_number) if serial_number else None,
-            mac_address=str(mac_address) if mac_address else None,
-            address=int(address),
-            hardware_version=str(hw_version) if hw_version else None,
-            software_version=str(sw_version) if sw_version else None,
+        return build_bus_device_key(model=str(device_id), address=int(address))
+
+    def is_regulator_device(device: dict) -> bool:
+        device_id = str(device.get("deviceId") or "").upper()
+        display_name = str(device.get("displayName") or "").upper()
+        product_family = str(device.get("productFamily") or "").upper()
+        return bool(
+            device_id.startswith("BASV")
+            or device_id.startswith("VRC")
+            or "SENSOCOMFORT" in display_name
+            or "SENSOCOMFORT" in product_family
         )
 
     known_bus_devices: set[str] = set()
+    regulator_device: tuple[str, str] | None = None
     for device in devices:
         address = device.get("address")
         device_id = device.get("deviceId", "unknown")
         serial_number = device.get("serialNumber")
-        mac_address = device.get("macAddress")
         manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
         sw_version = device.get("softwareVersion")
         hw_version = device.get("hardwareVersion")
@@ -171,38 +191,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if address is None:
             continue
 
-        resolved_id = resolved_bus_device_id(device)
-        if not resolved_id:
+        bus_device_key = resolved_bus_device_key(device)
+        if not bus_device_key:
             continue
-        known_bus_devices.add(resolved_id)
+        known_bus_devices.add(bus_device_key)
 
         device_name = display_name or f"{manufacturer} {device_id}"
         model_name = product_model or str(device_id)
         if part_number and f"({part_number})" not in model_name:
             model_name = f"{model_name} ({part_number})"
 
-        bus_device_id = bus_identifier(resolved_id)
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={bus_device_id},
-            manufacturer=manufacturer,
-            model=model_name,
-            name=device_name,
-            serial_number=str(serial_number) if serial_number else None,
-            sw_version=_format_hex4_version(str(sw_version)) if sw_version else None,
-            hw_version=hw_version,
-            via_device=adapter_device_id,
-        )
+        bus_device_id = bus_identifier(entry.entry_id, bus_device_key)
+        device_kwargs = {
+            "config_entry_id": entry.entry_id,
+            "identifiers": {bus_device_id},
+            "manufacturer": manufacturer,
+            "model": model_name,
+            "name": device_name,
+            "via_device": adapter_device_id,
+        }
+        if serial_number:
+            device_kwargs["serial_number"] = str(serial_number)
+        if sw_version:
+            device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
+        if hw_version:
+            device_kwargs["hw_version"] = hw_version
+        device_registry.async_get_or_create(**device_kwargs)
 
-        virtual_device_id = virtual_identifier(resolved_id)
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={virtual_device_id},
-            manufacturer="Helianthus",
-            model="Virtual Device",
-            name=f"Virtual {device_name}",
-            via_device=bus_device_id,
-        )
+        device_id_upper = str(device_id).upper()
+        if device_id_upper.startswith("BASV"):
+            regulator_device = bus_device_id
+        elif regulator_device is None and is_regulator_device(device):
+            regulator_device = bus_device_id
 
     semantic = semantic_coordinator.data or {}
     known_zones: set[str] = {
@@ -218,9 +238,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         current_ids: set[str] = set()
         for dev in current:
-            resolved = resolved_bus_device_id(dev)
-            if resolved:
-                current_ids.add(resolved)
+            bus_key = resolved_bus_device_key(dev)
+            if bus_key:
+                current_ids.add(bus_key)
         if not current_ids:
             return
         if current_ids.issubset(known_bus_devices):
@@ -257,6 +277,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "energy_coordinator": energy_coordinator,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
+        "daemon_device_id": daemon_device_id,
+        "adapter_device_id": adapter_device_id,
+        "regulator_device_id": regulator_device,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
