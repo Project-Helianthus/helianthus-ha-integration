@@ -190,6 +190,7 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         self._entry_id = entry_id
         self._via_device = via_device
         self._target = target
+        self._device_name = label if target[0] == "zone" else "Domestic Hot Water"
         self._attr_name = f"{label} Heating Demand"
         self._attr_unique_id = (
             f"{entry_id}-{target[0]}-{target[1] or 'dhw'}-heating-demand"
@@ -207,6 +208,7 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
             identifiers={identifier},
             manufacturer="Helianthus",
             model=model,
+            name=self._device_name,
             via_device=self._via_device,
         )
 
