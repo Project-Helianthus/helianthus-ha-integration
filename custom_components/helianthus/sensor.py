@@ -91,15 +91,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         ("zone", str(zone_id)),
                     )
                 )
-        sensors.append(
-            HelianthusDemandSensor(
-                semantic_coordinator,
-                entry.entry_id,
-                via_device,
-                "DHW",
-                ("dhw", None),
+        if semantic_coordinator.data.get("dhw") is not None:
+            sensors.append(
+                HelianthusDemandSensor(
+                    semantic_coordinator,
+                    entry.entry_id,
+                    via_device,
+                    "DHW",
+                    ("dhw", None),
+                )
             )
-        )
 
     if energy_coordinator and energy_coordinator.data:
         sensors.extend(
