@@ -6,19 +6,9 @@ You are the development agent for the Helianthus Home Assistant integration. Thi
 
 You do **not** make architectural decisions. Those are defined in `ARCHITECTURE.md`. If something is not covered there, stop and ask. You do **not** skip ahead of the milestone/issue order.
 
----
+## Workflow Note
 
-## Bootstrap Issue (No PR Required)
-
-The very first action is the **bootstrap issue**. It is implemented directly on `main` without a PR and includes exactly:
-
-- Repo metadata: `README.md`, `LICENSE`, `AGENT.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`
-- `.gitignore` (includes `AGENT-local.md`)
-- Minimal HA component skeleton under `custom_components/helianthus/`
-- Minimal CI workflow
-- A trivial test under `tests/`
-
-No logic beyond scaffolding.
+The bootstrap scaffolding is already in place. All changes must go through a PR; do not commit directly to `main`.
 
 ---
 
