@@ -43,10 +43,7 @@ helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-
 ```bash
 git clone https://github.com/d3vi1/helianthus-ha-integration.git
 cd helianthus-ha-integration
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip pytest
-python3 -m pytest
+./scripts/ci_local.sh
 ```
 
 ### 2) Focused test runs
@@ -70,7 +67,7 @@ Restart Home Assistant, then add integration **Helianthus** from **Settings → 
 Config flow fields:
 
 ```yaml
-host: "127.0.0.1"
+host: "203.0.113.10"
 port: 8080
 path: "/graphql"
 transport: "http"     # http | https
@@ -90,7 +87,7 @@ Standard smoke check against local gateway:
 
 ```bash
 python3 -m custom_components.helianthus.smoke_profile \
-  --host 127.0.0.1 \
+  --host 203.0.113.10 \
   --port 8080 \
   --path /graphql
 ```
@@ -99,7 +96,7 @@ JSON output mode:
 
 ```bash
 python3 -m custom_components.helianthus.smoke_profile \
-  --url http://127.0.0.1:8080/graphql \
+  --url http://203.0.113.10:8080/graphql \
   --json
 ```
 
@@ -107,14 +104,14 @@ Dual-topology path mode (`ebusd` + adapter-proxy):
 
 ```bash
 python3 -m custom_components.helianthus.smoke_profile \
-  --host 127.0.0.1 \
+  --host 203.0.113.10 \
   --port 8080 \
   --path /graphql \
   --dual-topology \
-  --ebusd-host 127.0.0.1 \
+  --ebusd-host 203.0.113.10 \
   --ebusd-port 8888 \
   --proxy-profile enh \
-  --proxy-host 127.0.0.1 \
+  --proxy-host 203.0.113.10 \
   --proxy-port 19001
 ```
 
