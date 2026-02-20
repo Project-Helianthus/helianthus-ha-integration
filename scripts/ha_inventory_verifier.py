@@ -40,6 +40,9 @@ def websocket_url(base_url: str) -> str:
 
 
 def should_include_device(device: dict[str, Any], domain: str, config_entry_id: str | None) -> bool:
+    if config_entry_id and config_entry_id not in (device.get("config_entries") or []):
+        return False
+
     identifiers = device.get("identifiers") or []
     for identifier in identifiers:
         if (
@@ -48,15 +51,19 @@ def should_include_device(device: dict[str, Any], domain: str, config_entry_id: 
             and identifier[0] == domain
         ):
             return True
-    if config_entry_id and config_entry_id in (device.get("config_entries") or []):
+
+    if config_entry_id:
         return True
     return False
 
 
 def should_include_entity(entity: dict[str, Any], domain: str, config_entry_id: str | None) -> bool:
+    if config_entry_id and entity.get("config_entry_id") != config_entry_id:
+        return False
+
     if entity.get("platform") == domain:
         return True
-    if config_entry_id and entity.get("config_entry_id") == config_entry_id:
+    if config_entry_id:
         return True
     return False
 
@@ -101,21 +108,25 @@ def summarize_inventory(
 
         probe = ProbeResult(entity_id=None, ok=False, state=None, error="no active entities")
         if active_entities:
-            probe_entity = str(active_entities[0].get("entity_id") or "")
-            state_payload = states_by_entity.get(probe_entity)
-            if state_payload is None:
-                probe = ProbeResult(
-                    entity_id=probe_entity,
-                    ok=False,
-                    state=None,
-                    error="state read failed",
-                )
-            else:
+            for entry in active_entities:
+                probe_entity = str(entry.get("entity_id") or "")
+                state_payload = states_by_entity.get(probe_entity)
+                if state_payload is None:
+                    continue
                 probe = ProbeResult(
                     entity_id=probe_entity,
                     ok=True,
                     state=str(state_payload.get("state")),
                     error=None,
+                )
+                break
+            if not probe.ok:
+                probe_entity = str(active_entities[0].get("entity_id") or "")
+                probe = ProbeResult(
+                    entity_id=probe_entity,
+                    ok=False,
+                    state=None,
+                    error="state read failed for all active entities",
                 )
 
         if not probe.ok:
