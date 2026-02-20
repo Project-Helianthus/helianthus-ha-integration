@@ -121,6 +121,15 @@ Shortcut wrapper:
 ./scripts/run-ha-dual-topology-smoke.sh --proxy-profile enh --proxy-port 19001
 ```
 
+Home Assistant inventory verifier:
+
+```bash
+python3 scripts/ha_inventory_verifier.py \
+  --base-url http://127.0.0.1:8123 \
+  --token-env HA_TOKEN \
+  --output /tmp/helianthus-ha-inventory.json
+```
+
 ## Validation Commands
 
 | Area | Command |
@@ -130,7 +139,9 @@ Shortcut wrapper:
 | GraphQL client tests | `python3 -m pytest tests/test_graphql.py` |
 | device identity tests | `python3 -m pytest tests/test_device_ids.py` |
 | smoke profile tests | `python3 -m pytest tests/test_smoke_profile.py` |
+| HA inventory verifier tests | `python3 -m pytest tests/test_ha_inventory_verifier.py` |
 | smoke CLI help | `python3 -m custom_components.helianthus.smoke_profile --help` |
+| HA inventory verifier CLI help | `python3 scripts/ha_inventory_verifier.py --help` |
 | dual-topology wrapper help | `./scripts/run-ha-dual-topology-smoke.sh --help` |
 
 ## Link Map
