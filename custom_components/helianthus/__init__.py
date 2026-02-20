@@ -40,24 +40,54 @@ def _format_hex4_version(value: str | None) -> str | None:
     return stripped
 
 
-def _extract_part_number(device: dict) -> str | None:
-    part_number = device.get("partNumber")
-    if part_number:
-        return str(part_number).strip() or None
-    serial_number = device.get("serialNumber")
-    if not serial_number:
-        return None
-    parts = str(serial_number).split("-")
-    if len(parts) >= 4 and len(parts[3]) == 10 and parts[3].isdigit():
-        return parts[3]
-    return None
-
-
 def _clean_label(value: object | None) -> str | None:
     if value is None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def _normalized_ebus_code(device_id: object | None) -> str:
+    value = _clean_label(device_id) or "UNKNOWN"
+    normalized = value.upper()
+    if normalized.startswith("BASV"):
+        return "BASV"
+    return normalized
+
+
+def _canonical_bus_display_name(device: dict) -> str | None:
+    device_id = _normalized_ebus_code(device.get("deviceId"))
+    if device_id == "BASV":
+        return "sensoCOMFORT RF"
+    if device_id in {"VR_71", "VR71"}:
+        return "FM5 Control Centre"
+    return _clean_label(device.get("displayName")) or _clean_label(device.get("productFamily"))
+
+
+def _canonical_bus_model_name(device: dict) -> str:
+    product_model = _clean_label(device.get("productModel"))
+    device_id = _clean_label(device.get("deviceId")) or "unknown"
+    ebus_code = _normalized_ebus_code(device_id)
+    base_model = product_model or str(device_id)
+    if "(eBUS:" in base_model:
+        return base_model
+    return f"{base_model} (eBUS: {ebus_code})"
+
+
+def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
+    return token in {
+        f"daemon-{entry_id}",
+        f"adapter-{entry_id}",
+        f"{entry_id}-dhw",
+        f"{entry_id}-energy",
+    } or token.startswith(f"{entry_id}-bus-") or token.startswith(f"{entry_id}-zone-")
+
+
+def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> bool:
+    for entry_id in active_entry_ids:
+        if _identifier_belongs_to_entry(token, entry_id):
+            return True
+    return False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -83,6 +113,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
+    active_entry_ids = {
+        config_entry.entry_id for config_entry in hass.config_entries.async_entries(DOMAIN)
+    }
+
+    stale_entities_removed = 0
+    for entity_entry in tuple(entity_registry.entities.values()):
+        if entity_entry.platform != DOMAIN:
+            continue
+        if entity_entry.config_entry_id in active_entry_ids:
+            continue
+        entity_registry.async_remove(entity_entry.entity_id)
+        stale_entities_removed += 1
+
+    stale_devices_removed = 0
+    for device_entry in tuple(device_registry.devices.values()):
+        domain_tokens = [
+            token
+            for identifier_domain, token in device_entry.identifiers
+            if identifier_domain == DOMAIN
+        ]
+        if not domain_tokens:
+            continue
+        if any(_identifier_matches_any_entry(token, active_entry_ids) for token in domain_tokens):
+            continue
+        device_registry.async_remove_device(device_entry.id)
+        stale_devices_removed += 1
+
+    if stale_entities_removed or stale_devices_removed:
+        _LOGGER.info(
+            "Helianthus stale cleanup removed %d entities and %d devices",
+            stale_entities_removed,
+            stale_devices_removed,
+        )
 
     removed_entities = 0
     for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
@@ -182,11 +245,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
         sw_version = device.get("softwareVersion")
         hw_version = device.get("hardwareVersion")
-        display_name = _clean_label(device.get("displayName")) or _clean_label(
-            device.get("productFamily")
-        )
-        product_model = _clean_label(device.get("productModel"))
-        part_number = _extract_part_number(device)
+        display_name = _canonical_bus_display_name(device)
 
         if address is None:
             continue
@@ -197,9 +256,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         known_bus_devices.add(bus_device_key)
 
         device_name = display_name or f"{manufacturer} {device_id}"
-        model_name = product_model or str(device_id)
-        if part_number and f"({part_number})" not in model_name:
-            model_name = f"{model_name} ({part_number})"
+        model_name = _canonical_bus_model_name(device)
 
         bus_device_id = bus_identifier(entry.entry_id, bus_device_key)
         device_kwargs = {
