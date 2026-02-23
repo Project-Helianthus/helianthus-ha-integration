@@ -61,6 +61,22 @@ query SmokeStatus {
     status
     firmwareVersion
     updatesAvailable
+    initiatorAddress
+  }
+  adapterStatus {
+    status
+    firmwareVersion
+    updatesAvailable
+  }
+}
+"""
+
+QUERY_STATUS_LEGACY = """
+query SmokeStatus {
+  daemonStatus {
+    status
+    firmwareVersion
+    updatesAvailable
   }
   adapterStatus {
     status
@@ -103,7 +119,8 @@ query SmokeEnergy {
 
 MISSING_DEVICE_FIELDS = ["serialNumber", "macAddress"]
 INVENTORY_FIELD_COUNT = 7
-STATUS_FIELD_COUNT = 3
+DAEMON_STATUS_FIELD_COUNT = 4
+ADAPTER_STATUS_FIELD_COUNT = 3
 
 GraphQLExecutor = Callable[[str], dict[str, Any]]
 EndpointProbe = Callable[[str, int, float], str | None]
@@ -341,7 +358,8 @@ def _check_entity_creation(execute: GraphQLExecutor) -> SmokeCheck:
 
         diagnostics_count = (
             len(valid_devices) * INVENTORY_FIELD_COUNT
-            + STATUS_FIELD_COUNT * 2
+            + DAEMON_STATUS_FIELD_COUNT
+            + ADAPTER_STATUS_FIELD_COUNT
             + zone_count
             + 1
         )
@@ -452,7 +470,14 @@ def _fetch_status(execute: GraphQLExecutor) -> tuple[dict[str, Any], str | None]
         return {}, execution_error
     if response is None:
         return {}, "status query returned no response"
-    data, error = _extract_data(response)
+    data, error, errors = _extract_data_with_errors(response)
+    if error and _is_missing_field_error(errors, ["initiatorAddress"]):
+        fallback, fallback_error = _execute_graphql(execute, QUERY_STATUS_LEGACY, "status_legacy")
+        if fallback_error:
+            return {}, fallback_error
+        if fallback is None:
+            return {}, "status legacy query returned no response"
+        data, error, _ = _extract_data_with_errors(fallback)
     if error:
         return {}, f"status query failed: {error}"
     if not isinstance(data, dict):

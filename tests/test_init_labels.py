@@ -53,7 +53,7 @@ def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
         "legacy-string-id",
         ("malformed",),
     }
-    assert _iter_identifier_pairs(raw) == (
+    assert set(_iter_identifier_pairs(raw)) == {
         ("helianthus", "entry-1-bus-BASV2-15"),
         ("helianthus", "entry-1-zone-1"),
-    )
+    }

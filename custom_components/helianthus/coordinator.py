@@ -78,6 +78,22 @@ query Status {
     status
     firmwareVersion
     updatesAvailable
+    initiatorAddress
+  }
+  adapterStatus {
+    status
+    firmwareVersion
+    updatesAvailable
+  }
+}
+"""
+
+QUERY_STATUS_LEGACY = """
+query Status {
+  daemonStatus {
+    status
+    firmwareVersion
+    updatesAvailable
   }
   adapterStatus {
     status
@@ -223,6 +239,16 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
             payload = await self._client.execute(QUERY_STATUS)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["initiatorAddress"]):
+                try:
+                    payload = await self._client.execute(QUERY_STATUS_LEGACY)
+                except GraphQLClientError as nested:
+                    raise UpdateFailed(str(nested)) from nested
+                except GraphQLResponseError as nested:
+                    raise UpdateFailed(str(nested)) from nested
+            else:
+                raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 

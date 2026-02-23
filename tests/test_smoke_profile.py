@@ -64,7 +64,7 @@ def _success_responses() -> dict[str, dict]:
         },
         "SmokeStatus": {
             "data": {
-                "daemonStatus": {"status": "ok"},
+                "daemonStatus": {"status": "ok", "initiatorAddress": "0xF7"},
                 "adapterStatus": {"status": "ok"},
             }
         },
@@ -90,7 +90,7 @@ def test_run_smoke_profile_success_with_subscription_type() -> None:
         "entity_creation",
     ]
     assert "mode=subscriptions_available" in result.checks[1].details
-    assert "diagnostics_sensors=15" in result.checks[2].details
+    assert "diagnostics_sensors=16" in result.checks[2].details
     lines = result.to_checklist_lines()
     assert lines[2].startswith("[PASS] CHECK_CONNECTION ::")
     assert lines[3].startswith("[PASS] CHECK_SUBSCRIPTIONS_FALLBACK ::")
