@@ -6,6 +6,7 @@ from custom_components.helianthus import (
     _clean_label,
     _identifier_belongs_to_entry,
     _identifier_matches_any_entry,
+    _iter_identifier_pairs,
 )
 
 
@@ -43,3 +44,16 @@ def test_identifier_matches_any_entry() -> None:
     assert _identifier_matches_any_entry("entry-2-energy", active)
     assert _identifier_matches_any_entry("entry-1-bus-VR_71-26", active)
     assert not _identifier_matches_any_entry("legacy-device", active)
+
+
+def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
+    raw = {
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        ("helianthus", "entry-1-zone-1", "legacy-extra"),
+        "legacy-string-id",
+        ("malformed",),
+    }
+    assert _iter_identifier_pairs(raw) == (
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        ("helianthus", "entry-1-zone-1"),
+    )
