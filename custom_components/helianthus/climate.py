@@ -2,16 +2,36 @@
 
 from __future__ import annotations
 
+import struct
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity, HVACMode
 from homeassistant.components.climate.const import ClimateEntityFeature
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device_ids import zone_identifier
+from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+
+_INVOKE_SET_EXT_REGISTER = """
+mutation SetExtRegister($address:Int!, $params:JSON!){
+  invoke(address:$address, plane:"system", method:"set_ext_register", params:$params){
+    ok
+    error {
+      message
+      code
+      category
+    }
+  }
+}
+"""
+
+_ZONE_GROUP = 0x03
+_ZONE_TARGET_TEMP_ADDR = 0x0014
+_ZONE_MODE_ADDR = 0x0006
 
 OPERATING_MODE_MAP = {
     "heating": HVACMode.HEAT,
@@ -25,10 +45,35 @@ OPERATING_MODE_MAP = {
 }
 
 
+def _zone_instance(zone_id: object | None) -> int | None:
+    if zone_id is None:
+        return None
+    token = str(zone_id).strip().lower()
+    if token.startswith("zone-"):
+        token = token[5:]
+    try:
+        parsed = int(token, 10)
+    except ValueError:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed - 1
+
+
+def _zone_default_name(zone_id: object | None) -> str:
+    instance = _zone_instance(zone_id)
+    if instance is None:
+        return f"Zone {zone_id}"
+    return f"Zone {instance + 1}"
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    client = data.get("graphql_client")
+    regulator_bus_address = data.get("regulator_bus_address")
+    source_address = data.get("daemon_source_address")
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities = [
@@ -36,6 +81,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             entry.entry_id,
             coordinator,
             via_device,
+            client,
+            regulator_bus_address,
+            source_address,
             zone.get("id"),
             zone.get("name"),
         )
@@ -48,21 +96,28 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     """Zone climate entity."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = ClimateEntityFeature(0)
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
     def __init__(
         self,
         entry_id: str,
         coordinator,
         via_device: tuple[str, str] | None,
+        client: GraphQLClient | None,
+        regulator_bus_address: int | None,
+        source_address: int | None,
         zone_id: str | None,
         name: str | None,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._via_device = via_device
+        self._client = client
+        self._regulator_bus_address = regulator_bus_address
+        self._source_address = source_address
         self._zone_id = zone_id
-        self._attr_name = name or f"Zone {zone_id}"
+        self._zone_instance = _zone_instance(zone_id)
+        self._attr_name = name or _zone_default_name(zone_id)
         if zone_id:
             self._attr_unique_id = f"{entry_id}-zone-{zone_id}"
 
@@ -135,3 +190,67 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if demand is not None:
             attrs["heating_demand"] = demand
         return attrs
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None:
+            raise HomeAssistantError("temperature is required")
+        payload = list(struct.pack("<f", float(temperature)))
+        await self._write_ext_register(_ZONE_TARGET_TEMP_ADDR, payload)
+        await self.coordinator.async_request_refresh()
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        mode_map = {
+            HVACMode.OFF: 0,
+            HVACMode.AUTO: 1,
+            HVACMode.HEAT: 2,
+            HVACMode.COOL: 1,
+            HVACMode.HEAT_COOL: 1,
+        }
+        mode_value = mode_map.get(hvac_mode)
+        if mode_value is None:
+            raise HomeAssistantError(f"Unsupported HVAC mode: {hvac_mode}")
+        await self._write_ext_register(_ZONE_MODE_ADDR, [mode_value, 0x00])
+        await self.coordinator.async_request_refresh()
+
+    async def _write_ext_register(self, addr: int, data: list[int]) -> None:
+        if self._client is None:
+            raise HomeAssistantError("GraphQL client is unavailable")
+        if self._regulator_bus_address is None:
+            raise HomeAssistantError("Regulator address is unavailable")
+        if self._zone_instance is None:
+            raise HomeAssistantError(f"Invalid zone id: {self._zone_id}")
+
+        source = self._source_address if self._source_address is not None else 0x31
+        variables = {
+            "address": int(self._regulator_bus_address),
+            "params": {
+                "source": int(source),
+                "opcode": 0x02,
+                "group": _ZONE_GROUP,
+                "instance": int(self._zone_instance),
+                "addr": int(addr),
+                "data": [int(v) & 0xFF for v in data],
+            },
+        }
+
+        try:
+            payload = await self._client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
+        except (GraphQLClientError, GraphQLResponseError) as exc:
+            raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
+
+        invoke = payload.get("invoke") if isinstance(payload, dict) else None
+        if not isinstance(invoke, dict):
+            raise HomeAssistantError("Helianthus write failed: malformed response")
+        if invoke.get("ok"):
+            return
+        error = invoke.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message") or "unknown error")
+            code = str(error.get("code") or "")
+            category = str(error.get("category") or "")
+            details = ", ".join([part for part in [code, category] if part])
+            if details:
+                raise HomeAssistantError(f"Helianthus write failed: {message} ({details})")
+            raise HomeAssistantError(f"Helianthus write failed: {message}")
+        raise HomeAssistantError("Helianthus write failed")

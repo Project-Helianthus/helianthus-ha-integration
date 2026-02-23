@@ -27,6 +27,20 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _HEX4_RE = re.compile(r"^[0-9a-fA-F]{4}$")
+_KNOWN_BUS_DISPLAY_NAMES: dict[str, str] = {
+    "BASV": "sensoCOMFORT RF",
+    "VR_71": "FM5 Control Centre",
+    "VR71": "FM5 Control Centre",
+    "BAI00": "ecoTEC plus",
+    "NETX3": "myVaillant Connect",
+}
+_KNOWN_BUS_MODELS: dict[str, str] = {
+    "BASV": "VRC 720f/2",
+    "VR_71": "VR 71",
+    "VR71": "VR 71",
+    "BAI00": "VUW",
+    "NETX3": "VR940f",
+}
 
 
 def _format_hex4_version(value: str | None) -> str | None:
@@ -57,10 +71,9 @@ def _normalized_ebus_code(device_id: object | None) -> str:
 
 def _canonical_bus_display_name(device: dict) -> str | None:
     device_id = _normalized_ebus_code(device.get("deviceId"))
-    if device_id == "BASV":
-        return "sensoCOMFORT RF"
-    if device_id in {"VR_71", "VR71"}:
-        return "FM5 Control Centre"
+    known = _KNOWN_BUS_DISPLAY_NAMES.get(device_id)
+    if known:
+        return known
     return _clean_label(device.get("displayName")) or _clean_label(device.get("productFamily"))
 
 
@@ -68,10 +81,26 @@ def _canonical_bus_model_name(device: dict) -> str:
     product_model = _clean_label(device.get("productModel"))
     device_id = _clean_label(device.get("deviceId")) or "unknown"
     ebus_code = _normalized_ebus_code(device_id)
-    base_model = product_model or str(device_id)
+    base_model = product_model or _KNOWN_BUS_MODELS.get(ebus_code) or str(device_id)
     if "(eBUS:" in base_model:
         return base_model
     return f"{base_model} (eBUS: {ebus_code})"
+
+
+def _parse_bus_address(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        if 0 <= value <= 0xFF:
+            return value
+        return None
+    try:
+        parsed = int(str(value).strip(), 0)
+    except (TypeError, ValueError):
+        return None
+    if 0 <= parsed <= 0xFF:
+        return parsed
+    return None
 
 
 def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
@@ -259,6 +288,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     known_bus_devices: set[str] = set()
     regulator_device: tuple[str, str] | None = None
+    regulator_bus_address: int | None = None
     for device in devices:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         device_id = device.get("deviceId", "unknown")
@@ -299,8 +329,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_id_upper = str(device_id).upper()
         if device_id_upper.startswith("BASV"):
             regulator_device = bus_device_id
+            regulator_bus_address = address
         elif regulator_device is None and is_regulator_device(device):
             regulator_device = bus_device_id
+            regulator_bus_address = address
+
+    daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
+    daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
 
     semantic = semantic_coordinator.data or {}
     known_zones: set[str] = {
@@ -353,11 +388,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
+        "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
         "daemon_device_id": daemon_device_id,
         "adapter_device_id": adapter_device_id,
         "regulator_device_id": regulator_device,
+        "regulator_bus_address": regulator_bus_address,
+        "daemon_source_address": daemon_source_addr,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
