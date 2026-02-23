@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 import json
 import os
 from typing import Any
@@ -167,7 +167,7 @@ def summarize_inventory(
     summary = {
         "domain": domain,
         "ok": len(errors) == 0 and len(device_summaries) > 0,
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
         "device_count": len(device_summaries),
         "entity_count": len(entities),
         "errors": errors,
@@ -202,7 +202,8 @@ async def run_verifier(
             await websocket.send_json({"type": "auth", "access_token": token})
             auth_response = await websocket.receive_json()
             if auth_response.get("type") != "auth_ok":
-                raise RuntimeError("websocket authentication failed")
+                auth_message = str(auth_response.get("message") or "websocket authentication failed")
+                raise RuntimeError(auth_message)
 
             next_id = 1
 
@@ -283,6 +284,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="HA_TOKEN",
         help="Environment variable used when --token is empty",
     )
+    parser.add_argument(
+        "--token-file",
+        default="",
+        help="Optional path to a token file used when --token and --token-env are empty",
+    )
     parser.add_argument("--domain", default="helianthus", help="HA integration domain")
     parser.add_argument(
         "--config-entry-id",
@@ -298,10 +304,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_token(args: argparse.Namespace) -> str:
+    token = str(args.token or "").strip()
+    if token:
+        return token
+
+    env_name = str(args.token_env or "").strip()
+    if env_name:
+        env_token = str(os.getenv(env_name, "")).strip()
+        if env_token:
+            return env_token
+
+    token_file = str(args.token_file or "").strip()
+    if token_file:
+        try:
+            with open(token_file, "r", encoding="utf-8") as handle:
+                file_token = handle.read().strip()
+            if file_token:
+                return file_token
+        except OSError:
+            pass
+
+    return ""
+
+
 async def _run(args: argparse.Namespace) -> int:
-    token = args.token or os.getenv(args.token_env, "")
+    token = resolve_token(args)
     if not token:
-        raise RuntimeError(f"missing token: use --token or set {args.token_env}")
+        raise RuntimeError(
+            f"missing token: use --token, set {args.token_env}, or provide --token-file"
+        )
 
     base_url = normalize_base_url(args.base_url)
     config_entry_id = args.config_entry_id.strip() or None
@@ -332,7 +364,7 @@ def main() -> int:
         error_payload = {
             "ok": False,
             "error": str(exc),
-            "checked_at": datetime.now(UTC).isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
         print(json.dumps(error_payload, indent=2, sort_keys=True))
         return 2

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 from pathlib import Path
 import sys
@@ -143,3 +144,20 @@ def test_config_entry_filter_is_strict_for_devices_and_entities() -> None:
     assert not module.should_include_device(device_other_entry, "helianthus", "entry-1")
     assert module.should_include_entity(entity_match, "helianthus", "entry-1")
     assert not module.should_include_entity(entity_other_entry, "helianthus", "entry-1")
+
+
+def test_resolve_token_prefers_cli_value() -> None:
+    module = _load_module()
+
+    args = argparse.Namespace(token=" direct-token ", token_env="HA_TOKEN", token_file="")
+    assert module.resolve_token(args) == "direct-token"
+
+
+def test_resolve_token_uses_file_when_env_missing(tmp_path: Path) -> None:
+    module = _load_module()
+
+    token_file = tmp_path / "ha.token"
+    token_file.write_text("file-token\n", encoding="utf-8")
+
+    args = argparse.Namespace(token="", token_env="MISSING_ENV", token_file=str(token_file))
+    assert module.resolve_token(args) == "file-token"
