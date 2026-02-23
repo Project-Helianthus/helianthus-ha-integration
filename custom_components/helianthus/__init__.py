@@ -90,6 +90,15 @@ def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> boo
     return False
 
 
+def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
+    pairs: list[tuple[str, str]] = []
+    for identifier in identifiers:
+        if not isinstance(identifier, (tuple, list)) or len(identifier) < 2:
+            continue
+        pairs.append((str(identifier[0]), str(identifier[1])))
+    return tuple(pairs)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.helpers import device_registry as dr
@@ -128,9 +137,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     stale_devices_removed = 0
     for device_entry in tuple(device_registry.devices.values()):
+        identifier_pairs = _iter_identifier_pairs(device_entry.identifiers)
         domain_tokens = [
             token
-            for identifier_domain, token in device_entry.identifiers
+            for identifier_domain, token in identifier_pairs
             if identifier_domain == DOMAIN
         ]
         if not domain_tokens:
@@ -154,7 +164,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     removed_devices = 0
     for device_entry in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
-        if any(identifier[0] == DOMAIN for identifier in device_entry.identifiers):
+        if any(
+            identifier_domain == DOMAIN
+            for identifier_domain, _ in _iter_identifier_pairs(device_entry.identifiers)
+        ):
             device_registry.async_remove_device(device_entry.id)
             removed_devices += 1
 
