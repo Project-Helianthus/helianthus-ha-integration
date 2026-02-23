@@ -4,10 +4,12 @@ from custom_components.helianthus import (
     _canonical_bus_display_name,
     _canonical_bus_model_name,
     _clean_label,
-    _parse_bus_address,
     _identifier_belongs_to_entry,
     _identifier_matches_any_entry,
     _iter_identifier_pairs,
+    _parse_bus_address,
+    _parse_zone_schedule_helper_bindings,
+    _zone_instance_from_id,
 )
 
 
@@ -72,3 +74,20 @@ def test_parse_bus_address_handles_hex_and_int() -> None:
     assert _parse_bus_address(0x31) == 0x31
     assert _parse_bus_address("bogus") is None
     assert _parse_bus_address(999) is None
+
+
+def test_parse_zone_schedule_helper_bindings() -> None:
+    parsed = _parse_zone_schedule_helper_bindings(
+        "zone-1=schedule.parter, 2=schedule.etaj,zone-x=schedule.invalid,zone-3=sensor.bad"
+    )
+    assert parsed == {
+        "zone-1": "schedule.parter",
+        "zone-2": "schedule.etaj",
+    }
+
+
+def test_zone_instance_from_id() -> None:
+    assert _zone_instance_from_id("zone-1") == 0
+    assert _zone_instance_from_id("2") == 1
+    assert _zone_instance_from_id("zone-0") is None
+    assert _zone_instance_from_id("zone-x") is None

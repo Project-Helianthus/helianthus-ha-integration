@@ -93,9 +93,18 @@ query SmokeSemantic {
     name
     operatingMode
     preset
+    hvacAction
+    allowedModes
     currentTempC
     targetTempC
+    currentHumidityPct
     heatingDemand
+    specialFunction
+    circuitTypeRaw
+    zoneCircuitIndexRaw
+    zoneOperationModeRaw
+    zoneValveStatusRaw
+    zoneSpecialFunctionRaw
   }
   dhw {
     operatingMode
@@ -103,6 +112,9 @@ query SmokeSemantic {
     currentTempC
     targetTempC
     heatingDemand
+    specialFunction
+    dhwOperationModeRaw
+    dhwSpecialFunctionRaw
   }
 }
 """

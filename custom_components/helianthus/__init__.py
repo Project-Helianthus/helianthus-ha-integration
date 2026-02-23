@@ -8,17 +8,21 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from .const import (
+    CONF_DHW_SCHEDULE_HELPER,
     CONF_PATH,
     CONF_TRANSPORT,
     CONF_USE_SUBSCRIPTIONS,
+    CONF_ZONE_SCHEDULE_HELPERS,
+    DEFAULT_DHW_SCHEDULE_HELPER,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_GRAPHQL_PATH,
     DEFAULT_GRAPHQL_TRANSPORT,
     DEFAULT_USE_SUBSCRIPTIONS,
+    DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
 )
 
-PLATFORMS: list[str] = ["sensor", "climate", "water_heater"]
+PLATFORMS: list[str] = ["sensor", "binary_sensor", "climate", "water_heater"]
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -41,6 +45,19 @@ _KNOWN_BUS_MODELS: dict[str, str] = {
     "BAI00": "VUW",
     "NETX3": "VR940f",
 }
+
+_INVOKE_SET_EXT_REGISTER = """
+mutation SetExtRegister($address:Int!, $params:JSON!){
+  invoke(address:$address, plane:"system", method:"set_ext_register", params:$params){
+    ok
+    error {
+      message
+      code
+      category
+    }
+  }
+}
+"""
 
 
 def _format_hex4_version(value: str | None) -> str | None:
@@ -128,11 +145,48 @@ def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], .
     return tuple(pairs)
 
 
+def _parse_zone_schedule_helper_bindings(raw: str) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    text = str(raw or "").strip()
+    if not text:
+        return bindings
+    for chunk in text.split(","):
+        item = chunk.strip()
+        if not item or "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        zone_key = key.strip().lower()
+        helper_entity = value.strip()
+        if not helper_entity.startswith("schedule."):
+            continue
+        if zone_key.isdigit():
+            zone_key = f"zone-{zone_key}"
+        if zone_key.startswith("zone-"):
+            suffix = zone_key[5:]
+            if suffix.isdigit() and int(suffix) > 0:
+                bindings[zone_key] = helper_entity
+    return bindings
+
+
+def _zone_instance_from_id(zone_id: str) -> int | None:
+    token = str(zone_id or "").strip().lower()
+    if token.startswith("zone-"):
+        token = token[5:]
+    if not token.isdigit():
+        return None
+    value = int(token)
+    if value <= 0:
+        return None
+    return value - 1
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
+    from homeassistant.core import callback
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from homeassistant.helpers.event import async_track_state_change_event
     from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
@@ -344,6 +398,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if zone.get("id") is not None
     }
     known_has_dhw = semantic.get("dhw") is not None
+    zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
+        str(
+            entry.options.get(
+                CONF_ZONE_SCHEDULE_HELPERS,
+                DEFAULT_ZONE_SCHEDULE_HELPERS,
+            )
+        )
+    )
+    dhw_schedule_helper = str(
+        entry.options.get(CONF_DHW_SCHEDULE_HELPER, DEFAULT_DHW_SCHEDULE_HELPER) or ""
+    ).strip()
+
+    async def apply_zone_schedule(zone_id: str) -> None:
+        if regulator_bus_address is None:
+            _LOGGER.warning("Zone schedule helper ignored: regulator address missing")
+            return
+        instance = _zone_instance_from_id(zone_id)
+        if instance is None:
+            _LOGGER.warning("Zone schedule helper ignored: invalid zone id %s", zone_id)
+            return
+        source = daemon_source_addr if daemon_source_addr is not None else 0x31
+        variables = {
+            "address": int(regulator_bus_address),
+            "params": {
+                "source": int(source),
+                "opcode": 0x02,
+                "group": 0x03,
+                "instance": int(instance),
+                "addr": 0x0006,
+                "data": [1, 0x00],
+            },
+        }
+        try:
+            payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
+            invoke = payload.get("invoke") if isinstance(payload, dict) else None
+            if not isinstance(invoke, dict) or not invoke.get("ok"):
+                _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, invoke)
+                return
+            await semantic_coordinator.async_request_refresh()
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, exc)
+
+    async def apply_dhw_schedule() -> None:
+        if regulator_bus_address is None:
+            _LOGGER.warning("DHW schedule helper ignored: regulator address missing")
+            return
+        source = daemon_source_addr if daemon_source_addr is not None else 0x31
+        variables = {
+            "address": int(regulator_bus_address),
+            "params": {
+                "source": int(source),
+                "opcode": 0x02,
+                "group": 0x01,
+                "instance": 0x00,
+                "addr": 0x0003,
+                "data": [1, 0x00],
+            },
+        }
+        try:
+            payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
+            invoke = payload.get("invoke") if isinstance(payload, dict) else None
+            if not isinstance(invoke, dict) or not invoke.get("ok"):
+                _LOGGER.warning("DHW schedule helper write failed: %s", invoke)
+                return
+            await semantic_coordinator.async_request_refresh()
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            _LOGGER.warning("DHW schedule helper write failed: %s", exc)
 
     def handle_device_update() -> None:
         current = device_coordinator.data or []
@@ -375,6 +496,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
     unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
+
+    for zone_id, helper_entity in zone_schedule_helpers.items():
+        @callback
+        def _handle_zone_schedule_event(event, zone_id=zone_id, helper_entity=helper_entity):
+            if str(event.data.get("entity_id") or "") != helper_entity:
+                return
+            new_state = event.data.get("new_state")
+            if new_state is None:
+                return
+            if str(new_state.state).strip().lower() != "on":
+                return
+            hass.async_create_task(apply_zone_schedule(zone_id))
+
+        unsub_listeners.append(async_track_state_change_event(hass, [helper_entity], _handle_zone_schedule_event))
+
+    if dhw_schedule_helper.startswith("schedule."):
+        @callback
+        def _handle_dhw_schedule_event(event):
+            new_state = event.data.get("new_state")
+            if new_state is None:
+                return
+            if str(new_state.state).strip().lower() != "on":
+                return
+            hass.async_create_task(apply_dhw_schedule())
+
+        unsub_listeners.append(
+            async_track_state_change_event(hass, [dhw_schedule_helper], _handle_dhw_schedule_event)
+        )
 
     use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
     subscription_task = None

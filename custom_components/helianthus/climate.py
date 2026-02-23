@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .device_ids import zone_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:JSON!){
@@ -31,6 +32,7 @@ mutation SetExtRegister($address:Int!, $params:JSON!){
 
 _ZONE_GROUP = 0x03
 _ZONE_TARGET_TEMP_ADDR = 0x0014
+_ZONE_TARGET_TEMP_DESIRED_ADDR = 0x0022
 _ZONE_MODE_ADDR = 0x0006
 
 OPERATING_MODE_MAP = {
@@ -42,6 +44,14 @@ OPERATING_MODE_MAP = {
     "heat_cool": HVACMode.HEAT_COOL,
     "auto": HVACMode.AUTO,
     "off": HVACMode.OFF,
+}
+
+ALLOWED_ZONE_PRESETS = ["schedule", "manual", "quickveto", "away"]
+
+_ZONE_WRITABLE_REGISTERS: dict[int, str] = {
+    _ZONE_MODE_ADDR: "configuration.heating.operation_mode",
+    _ZONE_TARGET_TEMP_DESIRED_ADDR: "configuration.heating.desired_setpoint",
+    _ZONE_TARGET_TEMP_ADDR: "configuration.heating.manual_mode_setpoint",
 }
 
 
@@ -96,7 +106,9 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     """Zone climate entity."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    )
 
     def __init__(
         self,
@@ -147,31 +159,29 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        mode = self._zone().get("operatingMode")
+        mode = str(self._zone().get("operatingMode") or "").strip().lower()
         if not mode:
             return None
         return OPERATING_MODE_MAP.get(mode, HVACMode.AUTO)
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
-        mode = self._zone().get("operatingMode")
-        mapped = OPERATING_MODE_MAP.get(mode) if mode else None
-        modes = {HVACMode.AUTO, HVACMode.HEAT}
-        if mapped:
-            modes.add(mapped)
-        return list(modes)
+        supported: list[HVACMode] = []
+        for token in normalize_allowed_mode_tokens(self._zone().get("allowedModes")):
+            mapped = OPERATING_MODE_MAP.get(token)
+            if mapped is not None and mapped not in supported:
+                supported.append(mapped)
+        if not supported:
+            supported = [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT]
+        return supported
 
     @property
     def preset_mode(self) -> str | None:
-        return self._zone().get("preset")
+        return normalize_preset_token(self._zone().get("preset"))
 
     @property
     def preset_modes(self) -> list[str]:
-        presets = {"auto", "manual", "quickveto", "off"}
-        current = self._zone().get("preset")
-        if current:
-            presets.add(str(current))
-        return list(presets)
+        return ALLOWED_ZONE_PRESETS
 
     @property
     def current_temperature(self) -> float | None:
@@ -184,11 +194,29 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         return float(value) if value is not None else None
 
     @property
+    def current_humidity(self) -> float | None:
+        value = self._zone().get("currentHumidityPct")
+        return float(value) if value is not None else None
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {}
+        zone = self._zone()
         demand = self._zone().get("heatingDemand")
         if demand is not None:
             attrs["heating_demand"] = demand
+        for field, key in [
+            ("hvac_action", "hvacAction"),
+            ("special_function", "specialFunction"),
+            ("circuit_type_raw", "circuitTypeRaw"),
+            ("zone_circuit_index_raw", "zoneCircuitIndexRaw"),
+            ("zone_operation_mode_raw", "zoneOperationModeRaw"),
+            ("zone_valve_status_raw", "zoneValveStatusRaw"),
+            ("zone_special_function_raw", "zoneSpecialFunctionRaw"),
+        ]:
+            value = zone.get(key)
+            if value is not None and str(value).strip() != "":
+                attrs[field] = value
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -196,6 +224,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             raise HomeAssistantError("temperature is required")
         payload = list(struct.pack("<f", float(temperature)))
+        await self._write_ext_register(_ZONE_TARGET_TEMP_DESIRED_ADDR, payload)
         await self._write_ext_register(_ZONE_TARGET_TEMP_ADDR, payload)
         await self.coordinator.async_request_refresh()
 
@@ -204,8 +233,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             HVACMode.OFF: 0,
             HVACMode.AUTO: 1,
             HVACMode.HEAT: 2,
-            HVACMode.COOL: 1,
-            HVACMode.HEAT_COOL: 1,
+            HVACMode.COOL: 2,
+            HVACMode.HEAT_COOL: 2,
         }
         mode_value = mode_map.get(hvac_mode)
         if mode_value is None:
@@ -213,7 +242,25 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         await self._write_ext_register(_ZONE_MODE_ADDR, [mode_value, 0x00])
         await self.coordinator.async_request_refresh()
 
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        token = str(preset_mode or "").strip().lower()
+        if token not in ALLOWED_ZONE_PRESETS:
+            raise HomeAssistantError(f"Unsupported preset mode: {preset_mode}")
+        if token == "schedule":
+            await self._write_ext_register(_ZONE_MODE_ADDR, [1, 0x00])
+        elif token == "manual":
+            await self._write_ext_register(_ZONE_MODE_ADDR, [2, 0x00])
+        else:
+            raise HomeAssistantError(
+                "Preset write blocked: quickveto/away require non-configuration registers"
+            )
+        await self.coordinator.async_request_refresh()
+
     async def _write_ext_register(self, addr: int, data: list[int]) -> None:
+        if addr not in _ZONE_WRITABLE_REGISTERS:
+            raise HomeAssistantError(
+                f"Write blocked for state register 0x{addr:04x}; only configuration registers are writable"
+            )
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
         if self._regulator_bus_address is None:
