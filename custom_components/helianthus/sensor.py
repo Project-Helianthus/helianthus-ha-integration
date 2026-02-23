@@ -16,6 +16,7 @@ from .device_ids import (
     bus_identifier,
     dhw_identifier,
     energy_identifier,
+    resolve_bus_address,
     zone_identifier,
 )
 from .energy import compute_total
@@ -40,6 +41,13 @@ DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
 
 
+def _clean_text(value: object | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
@@ -49,14 +57,26 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
 
     sensors: list[SensorEntity] = []
+    seen_bus_keys: set[str] = set()
     for device in device_coordinator.data or []:
-        device_id = device.get("deviceId", "unknown")
-        address = device.get("address")
+        device_id = _clean_text(device.get("deviceId")) or "unknown"
+        address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             continue
-        bus_key = build_bus_device_key(model=str(device_id), address=int(address))
+        model = _clean_text(device.get("productModel")) or device_id
+        bus_key = build_bus_device_key(
+            model=model,
+            address=address,
+            serial_number=_clean_text(device.get("serialNumber")),
+            mac_address=_clean_text(device.get("macAddress")),
+            hardware_version=_clean_text(device.get("hardwareVersion")),
+            software_version=_clean_text(device.get("softwareVersion")),
+        )
+        if bus_key in seen_bus_keys:
+            continue
+        seen_bus_keys.add(bus_key)
         bus_id = bus_identifier(entry.entry_id, bus_key)
-        sensors.append(HelianthusBusAddressSensor(device_coordinator, bus_id, int(address)))
+        sensors.append(HelianthusBusAddressSensor(device_coordinator, bus_id, address))
 
     status_entries = status_coordinator.data or {}
     daemon_status = status_entries.get("daemon", {})

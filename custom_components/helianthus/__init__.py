@@ -117,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         build_bus_device_key,
         bus_identifier,
         daemon_identifier,
+        resolve_bus_address,
     )
     from .subscriptions import start_subscriptions
 
@@ -232,11 +233,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
 
     def resolved_bus_device_key(device: dict) -> str | None:
-        address = device.get("address")
-        device_id = device.get("deviceId", "unknown")
+        address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
-        return build_bus_device_key(model=str(device_id), address=int(address))
+        model = _clean_label(device.get("productModel")) or _clean_label(device.get("deviceId"))
+        return build_bus_device_key(
+            model=model,
+            address=address,
+            serial_number=_clean_label(device.get("serialNumber")),
+            mac_address=_clean_label(device.get("macAddress")),
+            hardware_version=_clean_label(device.get("hardwareVersion")),
+            software_version=_clean_label(device.get("softwareVersion")),
+        )
 
     def is_regulator_device(device: dict) -> bool:
         device_id = str(device.get("deviceId") or "").upper()
@@ -252,7 +260,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     known_bus_devices: set[str] = set()
     regulator_device: tuple[str, str] | None = None
     for device in devices:
-        address = device.get("address")
+        address = resolve_bus_address(device.get("address"), device.get("addresses"))
         device_id = device.get("deviceId", "unknown")
         serial_number = device.get("serialNumber")
         manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
