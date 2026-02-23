@@ -33,7 +33,9 @@ sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordi
 
 from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V2,
+    QUERY_EXTENDED_V2_NO_ADDRESSES,
     QUERY_EXTENDED_V3,
+    QUERY_EXTENDED_V3_NO_ADDRESSES,
     QUERY_EXTENDED_V3_NO_PART,
     QUERY_STATUS,
     QUERY_STATUS_LEGACY,
@@ -97,6 +99,32 @@ def test_v3_falls_back_to_v3_without_part_number() -> None:
     assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_PART]
 
 
+def test_v3_falls_back_when_addresses_field_missing() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "addresses" on type "Device".'}]
+            ),
+            {
+                "devices": [
+                    {
+                        "address": 8,
+                        "manufacturer": "Vaillant",
+                        "deviceId": "BASV2",
+                    }
+                ]
+            },
+        ]
+    )
+    coordinator = _build_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert len(data) == 1
+    assert data[0]["address"] == 8
+    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_ADDRESSES]
+
+
 def test_v2_fallback_wraps_transport_error_as_update_failed() -> None:
     client = _ScriptedClient(
         [
@@ -116,6 +144,35 @@ def test_v2_fallback_wraps_transport_error_as_update_failed() -> None:
         raise AssertionError("expected UpdateFailed")
 
     assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V2]
+
+
+def test_v2_fallback_drops_addresses_when_missing() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "displayName" on type "Device".'}]
+            ),
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "addresses" on type "Device".'}]
+            ),
+            {
+                "devices": [
+                    {
+                        "address": 21,
+                        "manufacturer": "Vaillant",
+                        "deviceId": "BASV2",
+                    }
+                ]
+            },
+        ]
+    )
+    coordinator = _build_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert len(data) == 1
+    assert data[0]["address"] == 21
+    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V2, QUERY_EXTENDED_V2_NO_ADDRESSES]
 
 
 def test_status_query_uses_initiator_field_when_available() -> None:

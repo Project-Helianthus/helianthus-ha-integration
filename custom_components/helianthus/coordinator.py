@@ -15,6 +15,7 @@ QUERY_EXTENDED_V3 = """
 query Devices {
   devices {
     address
+    addresses
     manufacturer
     deviceId
     displayName
@@ -30,6 +31,42 @@ query Devices {
 """
 
 QUERY_EXTENDED_V3_NO_PART = """
+query Devices {
+  devices {
+    address
+    addresses
+    manufacturer
+    deviceId
+    displayName
+    productFamily
+    productModel
+    serialNumber
+    macAddress
+    softwareVersion
+    hardwareVersion
+  }
+}
+"""
+
+QUERY_EXTENDED_V3_NO_ADDRESSES = """
+query Devices {
+  devices {
+    address
+    manufacturer
+    deviceId
+    displayName
+    productFamily
+    productModel
+    partNumber
+    serialNumber
+    macAddress
+    softwareVersion
+    hardwareVersion
+  }
+}
+"""
+
+QUERY_EXTENDED_V3_NO_PART_NO_ADDRESSES = """
 query Devices {
   devices {
     address
@@ -50,6 +87,21 @@ QUERY_EXTENDED_V2 = """
 query Devices {
   devices {
     address
+    addresses
+    manufacturer
+    deviceId
+    serialNumber
+    macAddress
+    softwareVersion
+    hardwareVersion
+  }
+}
+"""
+
+QUERY_EXTENDED_V2_NO_ADDRESSES = """
+query Devices {
+  devices {
+    address
     manufacturer
     deviceId
     serialNumber
@@ -61,6 +113,19 @@ query Devices {
 """
 
 QUERY_BASE = """
+query Devices {
+  devices {
+    address
+    addresses
+    manufacturer
+    deviceId
+    softwareVersion
+    hardwareVersion
+  }
+}
+"""
+
+QUERY_BASE_NO_ADDRESSES = """
 query Devices {
   devices {
     address
@@ -153,72 +218,58 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
                 return list(payload.get("devices", []))
             return []
 
-        def is_missing_field_error(errors: object, fields: list[str]) -> bool:
-            if not isinstance(errors, list):
-                return False
-            for error in errors:
-                message = ""
-                if isinstance(error, dict):
-                    message = str(error.get("message", ""))
-                else:
-                    message = str(error)
-                for field in fields:
-                    if f'Cannot query field "{field}"' in message:
-                        return True
-            return False
+        async def fetch_with_addresses(
+            query_with_addresses: str, query_without_addresses: str
+        ) -> list[dict[str, Any]]:
+            try:
+                return await fetch(query_with_addresses)
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["addresses"]):
+                    return await fetch(query_without_addresses)
+                raise
+
+        async def fetch_base_devices() -> list[dict[str, Any]]:
+            try:
+                return await fetch_with_addresses(QUERY_BASE, QUERY_BASE_NO_ADDRESSES)
+            except GraphQLClientError as exc:
+                raise UpdateFailed(str(exc)) from exc
+            except GraphQLResponseError as exc:
+                raise UpdateFailed(str(exc)) from exc
+
+        async def fetch_v2_devices() -> list[dict[str, Any]]:
+            try:
+                return await fetch_with_addresses(QUERY_EXTENDED_V2, QUERY_EXTENDED_V2_NO_ADDRESSES)
+            except GraphQLClientError as exc:
+                raise UpdateFailed(str(exc)) from exc
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+                    return await fetch_base_devices()
+                raise UpdateFailed(str(exc)) from exc
+
+        async def fetch_v3_no_part_devices() -> list[dict[str, Any]]:
+            try:
+                return await fetch_with_addresses(
+                    QUERY_EXTENDED_V3_NO_PART,
+                    QUERY_EXTENDED_V3_NO_PART_NO_ADDRESSES,
+                )
+            except GraphQLClientError as exc:
+                raise UpdateFailed(str(exc)) from exc
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel"]):
+                    return await fetch_v2_devices()
+                if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+                    return await fetch_base_devices()
+                raise UpdateFailed(str(exc)) from exc
 
         try:
-            return await fetch(QUERY_EXTENDED_V3)
+            return await fetch_with_addresses(QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_ADDRESSES)
         except GraphQLResponseError as exc:
-            if is_missing_field_error(exc.errors, ["partNumber"]):
-                try:
-                    return await fetch(QUERY_EXTENDED_V3_NO_PART)
-                except GraphQLClientError as nested:
-                    raise UpdateFailed(str(nested)) from nested
-                except GraphQLResponseError as nested:
-                    if is_missing_field_error(nested.errors, ["displayName", "productFamily", "productModel"]):
-                        try:
-                            return await fetch(QUERY_EXTENDED_V2)
-                        except GraphQLClientError as fallback_exc:
-                            raise UpdateFailed(str(fallback_exc)) from fallback_exc
-                        except GraphQLResponseError as fallback_exc:
-                            if is_missing_field_error(fallback_exc.errors, ["serialNumber", "macAddress"]):
-                                try:
-                                    return await fetch(QUERY_BASE)
-                                except GraphQLClientError as base_exc:
-                                    raise UpdateFailed(str(base_exc)) from base_exc
-                                except GraphQLResponseError as base_exc:
-                                    raise UpdateFailed(str(base_exc)) from base_exc
-                            raise UpdateFailed(str(fallback_exc)) from fallback_exc
-                    if is_missing_field_error(nested.errors, ["serialNumber", "macAddress"]):
-                        try:
-                            return await fetch(QUERY_BASE)
-                        except GraphQLClientError as base_exc:
-                            raise UpdateFailed(str(base_exc)) from base_exc
-                        except GraphQLResponseError as base_exc:
-                            raise UpdateFailed(str(base_exc)) from base_exc
-                    raise UpdateFailed(str(nested)) from nested
-            if is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel"]):
-                try:
-                    return await fetch(QUERY_EXTENDED_V2)
-                except GraphQLClientError as nested:
-                    raise UpdateFailed(str(nested)) from nested
-                except GraphQLResponseError as nested:
-                    if is_missing_field_error(nested.errors, ["serialNumber", "macAddress"]):
-                        try:
-                            return await fetch(QUERY_BASE)
-                        except GraphQLClientError as base_exc:
-                            raise UpdateFailed(str(base_exc)) from base_exc
-                        except GraphQLResponseError as base_exc:
-                            raise UpdateFailed(str(base_exc)) from base_exc
-                    raise UpdateFailed(str(nested)) from nested
-            if is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
-                try:
-                    return await fetch(QUERY_BASE)
-                except GraphQLClientError as nested:
-                    raise UpdateFailed(str(nested)) from nested
-                except GraphQLResponseError as nested:
-                    raise UpdateFailed(str(nested)) from nested
+            if _is_missing_field_error(exc.errors, ["partNumber"]):
+                return await fetch_v3_no_part_devices()
+            if _is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel"]):
+                return await fetch_v2_devices()
+            if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+                return await fetch_base_devices()
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
