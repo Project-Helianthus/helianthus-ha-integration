@@ -33,6 +33,12 @@ STATUS_FIELDS = [
     InventoryField("updatesAvailable", "Updates Available"),
 ]
 
+DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
+    InventoryField("initiatorAddress", "eBUS Initiator Address")
+]
+
+ADAPTER_STATUS_FIELDS = STATUS_FIELDS
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
@@ -64,7 +70,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             data.get("daemon_device_id"),
             field,
         )
-        for field in STATUS_FIELDS
+        for field in DAEMON_STATUS_FIELDS
     )
     sensors.extend(
         HelianthusStatusSensor(
@@ -74,7 +80,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             data.get("adapter_device_id"),
             field,
         )
-        for field in STATUS_FIELDS
+        for field in ADAPTER_STATUS_FIELDS
     )
 
     if semantic_coordinator and semantic_coordinator.data:

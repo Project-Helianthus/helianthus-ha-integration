@@ -35,8 +35,11 @@ from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V2,
     QUERY_EXTENDED_V3,
     QUERY_EXTENDED_V3_NO_PART,
+    QUERY_STATUS,
+    QUERY_STATUS_LEGACY,
     UpdateFailed,
     HelianthusCoordinator,
+    HelianthusStatusCoordinator,
 )
 from custom_components.helianthus.graphql import GraphQLClientError, GraphQLResponseError
 
@@ -56,6 +59,12 @@ class _ScriptedClient:
 
 def _build_coordinator(client: _ScriptedClient) -> HelianthusCoordinator:
     coordinator = object.__new__(HelianthusCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_status_coordinator(client: _ScriptedClient) -> HelianthusStatusCoordinator:
+    coordinator = object.__new__(HelianthusStatusCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
 
@@ -107,3 +116,58 @@ def test_v2_fallback_wraps_transport_error_as_update_failed() -> None:
         raise AssertionError("expected UpdateFailed")
 
     assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V2]
+
+
+def test_status_query_uses_initiator_field_when_available() -> None:
+    client = _ScriptedClient(
+        [
+            {
+                "daemonStatus": {
+                    "status": "running",
+                    "firmwareVersion": "0.3.10",
+                    "updatesAvailable": False,
+                    "initiatorAddress": "0xF7",
+                },
+                "adapterStatus": {
+                    "status": "ok",
+                    "firmwareVersion": "3.0",
+                    "updatesAvailable": False,
+                },
+            }
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["daemon"]["initiatorAddress"] == "0xF7"
+    assert client.calls == [QUERY_STATUS]
+
+
+def test_status_query_falls_back_when_initiator_field_missing() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "initiatorAddress" on type "ServiceStatus".'}]
+            ),
+            {
+                "daemonStatus": {
+                    "status": "running",
+                    "firmwareVersion": "0.3.10",
+                    "updatesAvailable": False,
+                },
+                "adapterStatus": {
+                    "status": "ok",
+                    "firmwareVersion": "3.0",
+                    "updatesAvailable": False,
+                },
+            },
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["daemon"]["status"] == "running"
+    assert "initiatorAddress" not in data["daemon"]
+    assert client.calls == [QUERY_STATUS, QUERY_STATUS_LEGACY]
