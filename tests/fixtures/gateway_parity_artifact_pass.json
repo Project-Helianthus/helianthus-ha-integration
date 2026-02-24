@@ -1,0 +1,15 @@
+{
+  "source_repo": "d3vi1/helianthus-ebusgateway",
+  "source_ref": "refs/heads/mcpfirst-cruise-control",
+  "generated_at": "2026-02-24T00:00:00Z",
+  "gates": {
+    "parity_contract": {
+      "status": "pass",
+      "details": "mcp parity_contract_test passed"
+    },
+    "tool_classification": {
+      "status": "pass",
+      "details": "mcp tool_classification_test passed"
+    }
+  }
+}
