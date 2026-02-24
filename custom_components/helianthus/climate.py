@@ -55,10 +55,28 @@ _ZONE_WRITABLE_REGISTERS: dict[int, str] = {
 }
 
 
-def _zone_instance(zone_id: object | None) -> int | None:
+def _normalize_zone_id(zone_id: object | None) -> str | None:
     if zone_id is None:
         return None
     token = str(zone_id).strip().lower()
+    if not token:
+        return None
+    if token.startswith("zone-"):
+        suffix = token[5:]
+    else:
+        suffix = token
+    if suffix.isdigit():
+        value = int(suffix, 10)
+        if value > 0:
+            return f"zone-{value}"
+    return token
+
+
+def _zone_instance(zone_id: object | None) -> int | None:
+    normalized = _normalize_zone_id(zone_id)
+    if normalized is None:
+        return None
+    token = normalized
     if token.startswith("zone-"):
         token = token[5:]
     try:
@@ -127,11 +145,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         self._client = client
         self._regulator_bus_address = regulator_bus_address
         self._source_address = source_address
-        self._zone_id = zone_id
-        self._zone_instance = _zone_instance(zone_id)
-        self._attr_name = name or _zone_default_name(zone_id)
-        if zone_id:
-            self._attr_unique_id = f"{entry_id}-zone-{zone_id}"
+        self._zone_id = _normalize_zone_id(zone_id)
+        self._zone_instance = _zone_instance(self._zone_id)
+        self._attr_name = name or _zone_default_name(self._zone_id)
+        if self._zone_id:
+            self._attr_unique_id = f"{entry_id}-zone-{self._zone_id}"
 
     @property
     def zone_id(self) -> str | None:
@@ -141,9 +159,16 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if not self.coordinator.data:
             return {}
         for zone in self.coordinator.data.get("zones", []) or []:
-            if zone.get("id") == self._zone_id:
+            if _normalize_zone_id(zone.get("id")) == self._zone_id:
                 return zone
         return {}
+
+    @property
+    def name(self) -> str | None:
+        zone_name = self._zone().get("name")
+        if zone_name is not None and str(zone_name).strip():
+            return str(zone_name).strip()
+        return self._attr_name
 
     @property
     def device_info(self) -> DeviceInfo:

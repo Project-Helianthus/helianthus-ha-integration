@@ -49,10 +49,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     regulator_bus_address = data.get("regulator_bus_address")
     source_address = data.get("daemon_source_address")
 
-    dhw = coordinator.data.get("dhw") if coordinator.data else None
-    if dhw is None:
-        return
-
     async_add_entities(
         [
             HelianthusDhwWaterHeater(
@@ -97,6 +93,10 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         if not self.coordinator.data:
             return {}
         return self.coordinator.data.get("dhw") or {}
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool(self._dhw())
 
     @property
     def device_info(self) -> DeviceInfo:
