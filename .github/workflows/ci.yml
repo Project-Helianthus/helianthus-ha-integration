@@ -24,3 +24,4 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install pytest
       - run: python -m pytest
+      - run: python scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json

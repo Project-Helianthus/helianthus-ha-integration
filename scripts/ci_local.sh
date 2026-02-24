@@ -13,6 +13,9 @@ fi
 echo "==> python tests"
 pytest
 
+echo "==> gateway parity gate readiness"
+python3 scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json
+
 echo "==> private IPv4 address gate (docs must use placeholders)"
 python3 - <<'PY'
 from __future__ import annotations
