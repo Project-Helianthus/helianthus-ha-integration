@@ -32,6 +32,11 @@ Device IDs must be stable and deterministic.
 
 The integration consumes a semantic GraphQL layer (zones, dhw, energy, errors). If only raw device/plane/method is available, the integration uses a minimal fallback and exposes diagnostics only.
 
+## MCP-first Consumer Guardrails
+
+Consumer rollout is blocked until gateway parity artifacts report green status for parity and classification gates.
+The blocker mapping and operator policy are defined in `MCP_FIRST_ROLLOUT_GUARDRAILS.md`.
+
 ## Energy Indexing
 
 Expose monotonic totals only:

@@ -139,6 +139,8 @@ python3 scripts/ha_inventory_verifier.py \
 | GraphQL client tests | `python3 -m pytest tests/test_graphql.py` |
 | device identity tests | `python3 -m pytest tests/test_device_ids.py` |
 | smoke profile tests | `python3 -m pytest tests/test_smoke_profile.py` |
+| parity gate tests | `python3 -m pytest tests/test_parity_gate.py` |
+| gateway parity guardrail check | `python3 scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json` |
 | HA inventory verifier tests | `python3 -m pytest tests/test_ha_inventory_verifier.py` |
 | smoke CLI help | `python3 -m custom_components.helianthus.smoke_profile --help` |
 | HA inventory verifier CLI help | `python3 scripts/ha_inventory_verifier.py --help` |
@@ -149,6 +151,7 @@ python3 scripts/ha_inventory_verifier.py \
 ### Local docs in this repo
 
 - Architecture baseline: `ARCHITECTURE.md`
+- MCP-first rollout guardrails: `MCP_FIRST_ROLLOUT_GUARDRAILS.md`
 - Working conventions: `CONVENTIONS.md`
 - Agent workflow instructions: `AGENT.md`
 
