@@ -140,7 +140,9 @@ python3 scripts/ha_inventory_verifier.py \
 | device identity tests | `python3 -m pytest tests/test_device_ids.py` |
 | smoke profile tests | `python3 -m pytest tests/test_smoke_profile.py` |
 | parity gate tests | `python3 -m pytest tests/test_parity_gate.py` |
+| post-parity adoption tests | `python3 -m pytest tests/test_post_parity_adoption_checks.py` |
 | gateway parity guardrail check | `python3 scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json` |
+| guarded post-parity adoption run | `python3 scripts/run_post_parity_adoption_checks.py --artifact tests/fixtures/gateway_parity_artifact_pass.json` |
 | HA inventory verifier tests | `python3 -m pytest tests/test_ha_inventory_verifier.py` |
 | smoke CLI help | `python3 -m custom_components.helianthus.smoke_profile --help` |
 | HA inventory verifier CLI help | `python3 scripts/ha_inventory_verifier.py --help` |

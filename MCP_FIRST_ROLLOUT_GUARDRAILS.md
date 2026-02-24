@@ -20,6 +20,7 @@ The guardrail is enforced via:
 
 - `custom_components/helianthus/parity_gate.py`
 - `scripts/check_gateway_parity_gate.py`
+- `scripts/run_post_parity_adoption_checks.py`
 - CI profile checks (`scripts/ci_local.sh` and `.github/workflows/ci.yml`)
 
 ## Operator Check
@@ -32,3 +33,10 @@ python3 scripts/check_gateway_parity_gate.py \
 ```
 
 A non-zero exit code means rollout remains blocked.
+
+For adopted HA capabilities, run guarded tests:
+
+```bash
+python3 scripts/run_post_parity_adoption_checks.py \
+  --artifact tests/fixtures/gateway_parity_artifact_pass.json
+```
