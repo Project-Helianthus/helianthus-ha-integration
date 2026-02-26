@@ -28,6 +28,7 @@ def _normalize_preset(value: Any) -> str:
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
+    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities: list[HelianthusScheduleBinarySensor] = []
@@ -45,6 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 HelianthusScheduleBinarySensor(
                     coordinator=coordinator,
                     entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
                     target_kind="zone",
                     target_id=str(zone_id),
                     target_name=zone_name,
@@ -64,6 +66,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 HelianthusScheduleBinarySensor(
                     coordinator=coordinator,
                     entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
                     target_kind="dhw",
                     target_id=None,
                     target_name="Domestic Hot Water",
@@ -83,6 +86,7 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         *,
         coordinator,
         entry_id: str,
+        manufacturer: str,
         target_kind: str,
         target_id: str | None,
         target_name: str,
@@ -91,8 +95,10 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
+        self._manufacturer = manufacturer
         self._target_kind = target_kind
         self._target_id = target_id
+        self._target_name = target_name
         self._schedule_key = schedule_key
         self._attr_name = f"{target_name} {schedule_label}"
         unique_target = target_id or "dhw"
@@ -113,19 +119,28 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         payload = self._target_payload()
         return _normalize_preset(payload.get("preset")) == self._schedule_key
 
+    def _dynamic_zone_name(self) -> str:
+        if self.coordinator.data:
+            for zone in self.coordinator.data.get("zones", []) or []:
+                if str(zone.get("id")) == str(self._target_id):
+                    zone_name = zone.get("name")
+                    if zone_name and str(zone_name).strip():
+                        return str(zone_name).strip()
+        return self._target_name
+
     @property
     def device_info(self) -> DeviceInfo:
         if self._target_kind == "zone":
             identifier = zone_identifier(self._entry_id, str(self._target_id))
-            name = f"Zone {self._target_id}"
-            model = "Virtual Zone Schedule"
+            name = self._dynamic_zone_name()
+            model = "Virtual Zone"
         else:
             identifier = dhw_identifier(self._entry_id)
             name = "Domestic Hot Water"
-            model = "Virtual DHW Schedule"
+            model = "Virtual DHW"
         return DeviceInfo(
             identifiers={identifier},
-            manufacturer="Helianthus",
+            manufacturer=self._manufacturer,
             model=model,
             name=name,
         )

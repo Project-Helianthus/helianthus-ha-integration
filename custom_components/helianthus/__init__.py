@@ -388,6 +388,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             regulator_device = bus_device_id
             regulator_bus_address = address
 
+    # Extract regulator manufacturer for virtual device entities.
+    regulator_manufacturer = "Helianthus"
+    for device in devices:
+        if is_regulator_device(device):
+            mfr = _clean_label(device.get("manufacturer"))
+            if mfr:
+                regulator_manufacturer = mfr
+                break
+
     daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
     daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
 
@@ -543,6 +552,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "daemon_device_id": daemon_device_id,
         "adapter_device_id": adapter_device_id,
         "regulator_device_id": regulator_device,
+        "regulator_manufacturer": regulator_manufacturer,
         "regulator_bus_address": regulator_bus_address,
         "daemon_source_address": daemon_source_addr,
     }
