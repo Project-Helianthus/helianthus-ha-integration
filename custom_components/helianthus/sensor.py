@@ -55,6 +55,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
     seen_bus_keys: set[str] = set()
@@ -113,6 +114,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         semantic_coordinator,
                         entry.entry_id,
                         via_device,
+                        manufacturer,
                         zone.get("name") or f"Zone {zone_id}",
                         ("zone", str(zone_id)),
                     )
@@ -123,6 +125,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     semantic_coordinator,
                     entry.entry_id,
                     via_device,
+                    manufacturer,
                     "DHW",
                     ("dhw", None),
                 )
@@ -131,12 +134,24 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if energy_coordinator and energy_coordinator.data:
         sensors.extend(
             [
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "gas", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "gas", "climate"),
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "electric", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "electric", "climate"),
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "solar", "dhw"),
-                HelianthusEnergySensor(energy_coordinator, entry.entry_id, via_device, "solar", "climate"),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "gas", "dhw"
+                ),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "gas", "climate"
+                ),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "electric", "dhw"
+                ),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "electric", "climate"
+                ),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "solar", "dhw"
+                ),
+                HelianthusEnergySensor(
+                    energy_coordinator, entry.entry_id, via_device, manufacturer, "solar", "climate"
+                ),
             ]
         )
 
@@ -210,12 +225,14 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         coordinator,
         entry_id: str,
         via_device: tuple[str, str] | None,
+        manufacturer: str,
         label: str,
         target: tuple[str, str | None],
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._via_device = via_device
+        self._manufacturer = manufacturer
         self._target = target
         self._device_name = label if target[0] == "zone" else "Domestic Hot Water"
         self._attr_name = f"{label} Heating Demand"
@@ -228,16 +245,27 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         if self._target[0] == "zone":
             identifier = zone_identifier(self._entry_id, str(self._target[1]))
             model = "Virtual Zone"
+            name = self._dynamic_zone_name()
         else:
             identifier = dhw_identifier(self._entry_id)
             model = "Virtual DHW"
+            name = self._device_name
         return DeviceInfo(
             identifiers={identifier},
-            manufacturer="Helianthus",
+            manufacturer=self._manufacturer,
             model=model,
-            name=self._device_name,
+            name=name,
             via_device=self._via_device,
         )
+
+    def _dynamic_zone_name(self) -> str:
+        if self.coordinator.data:
+            for zone in self.coordinator.data.get("zones", []) or []:
+                if zone.get("id") == self._target[1]:
+                    zone_name = zone.get("name")
+                    if zone_name and str(zone_name).strip():
+                        return str(zone_name).strip()
+        return self._device_name
 
     @property
     def native_value(self) -> Any:
@@ -265,12 +293,14 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         coordinator,
         entry_id: str,
         via_device: tuple[str, str] | None,
+        manufacturer: str,
         source: str,
         usage: str,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._via_device = via_device
+        self._manufacturer = manufacturer
         self._source = source
         self._usage = usage
         self._attr_name = f"{source.capitalize()} {usage.upper()} Energy"
@@ -281,7 +311,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         identifier = energy_identifier(self._entry_id)
         return DeviceInfo(
             identifiers={identifier},
-            manufacturer="Helianthus",
+            manufacturer=self._manufacturer,
             model="Virtual Energy",
             name="Energy",
             via_device=self._via_device,

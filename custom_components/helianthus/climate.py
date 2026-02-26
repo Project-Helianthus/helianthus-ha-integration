@@ -99,6 +99,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_bus_address = data.get("regulator_bus_address")
     source_address = data.get("daemon_source_address")
@@ -109,6 +110,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             entry.entry_id,
             coordinator,
             via_device,
+            manufacturer,
             client,
             regulator_bus_address,
             source_address,
@@ -133,6 +135,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         entry_id: str,
         coordinator,
         via_device: tuple[str, str] | None,
+        manufacturer: str,
         client: GraphQLClient | None,
         regulator_bus_address: int | None,
         source_address: int | None,
@@ -142,6 +145,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._via_device = via_device
+        self._manufacturer = manufacturer
         self._client = client
         self._regulator_bus_address = regulator_bus_address
         self._source_address = source_address
@@ -176,7 +180,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         via = self._via_device
         return DeviceInfo(
             identifiers={identifier},
-            manufacturer="Helianthus",
+            manufacturer=self._manufacturer,
             model="Virtual Zone",
             name=self.name,
             via_device=via,
