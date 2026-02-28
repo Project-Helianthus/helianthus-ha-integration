@@ -157,7 +157,7 @@ def test_run_smoke_profile_fails_when_no_devices() -> None:
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"energyTotals": {}}},
+            "SmokeEnergy": {"data": {"devices": []}},
         }
     )
 
@@ -198,7 +198,7 @@ def test_run_smoke_profile_subscription_introspection_error_uses_polling_fallbac
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"energyTotals": {}}},
+            "SmokeEnergy": {"data": {"devices": []}},
         }
     )
 
