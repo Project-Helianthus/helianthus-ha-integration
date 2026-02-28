@@ -91,40 +91,48 @@ query SmokeSemantic {
   zones {
     id
     name
-    operatingMode
-    preset
-    hvacAction
-    allowedModes
-    currentTempC
-    targetTempC
-    currentHumidityPct
-    heatingDemand
-    specialFunction
-    circuitTypeRaw
-    zoneCircuitIndexRaw
-    zoneOperationModeRaw
-    zoneValveStatusRaw
-    zoneSpecialFunctionRaw
+    state {
+      currentTempC
+      currentHumidityPct
+      hvacAction
+      specialFunction
+      heatingDemandPct
+      valvePositionPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      allowedModes
+      circuitType
+      associatedCircuit
+    }
   }
   dhw {
-    operatingMode
-    preset
-    currentTempC
-    targetTempC
-    heatingDemand
-    specialFunction
-    dhwOperationModeRaw
-    dhwSpecialFunctionRaw
+    state {
+      currentTempC
+      specialFunction
+      heatingDemandPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+    }
   }
 }
 """
 
 QUERY_ENERGY = """
 query SmokeEnergy {
-  energyTotals {
-    gas { dhw { today yearly } climate { today yearly } }
-    electric { dhw { today yearly } climate { today yearly } }
-    solar { dhw { today yearly } climate { today yearly } }
+  devices {
+    address
+    role
+    energyTotals {
+      gas { dhw { today yearly } climate { today yearly } }
+      electric { dhw { today yearly } climate { today yearly } }
+      solar { dhw { today yearly } climate { today yearly } }
+    }
   }
 }
 """
@@ -520,7 +528,7 @@ def _fetch_energy(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str | 
     if response is None:
         return {}, "", "energy query returned no response"
     data, error, errors = _extract_data_with_errors(response)
-    if error and _is_missing_field_error(errors, ["energyTotals"]):
+    if error and _is_missing_field_error(errors, ["energyTotals", "devices"]):
         return {"energyTotals": None}, "fallback_missing_field", None
     if error:
         return {}, "", f"energy query failed: {error}"

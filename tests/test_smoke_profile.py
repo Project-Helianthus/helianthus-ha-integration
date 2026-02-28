@@ -70,11 +70,11 @@ def _success_responses() -> dict[str, dict]:
         },
         "SmokeSemantic": {
             "data": {
-                "zones": [{"id": "z1", "name": "Living"}],
-                "dhw": {"operatingMode": "auto"},
+                "zones": [{"id": "z1", "name": "Living", "state": {}, "config": {}}],
+                "dhw": {"state": {}, "config": {"operatingMode": "auto"}},
             }
         },
-        "SmokeEnergy": {"data": {"energyTotals": {}}},
+        "SmokeEnergy": {"data": {"devices": []}},
     }
 
 

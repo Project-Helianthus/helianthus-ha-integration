@@ -17,34 +17,38 @@ SUBSCRIPTIONS = {
       zoneUpdate {
         id
         name
-        operatingMode
-        preset
-        hvacAction
-        allowedModes
-        currentTempC
-        targetTempC
-        currentHumidityPct
-        heatingDemand
-        specialFunction
-        circuitTypeRaw
-        zoneCircuitIndexRaw
-        zoneOperationModeRaw
-        zoneValveStatusRaw
-        zoneSpecialFunctionRaw
+        state {
+          currentTempC
+          currentHumidityPct
+          hvacAction
+          specialFunction
+          heatingDemandPct
+          valvePositionPct
+        }
+        config {
+          operatingMode
+          preset
+          targetTempC
+          allowedModes
+          circuitType
+          associatedCircuit
+        }
       }
     }
     """,
     "dhw": """
     subscription {
       dhwUpdate {
-        operatingMode
-        preset
-        currentTempC
-        targetTempC
-        heatingDemand
-        specialFunction
-        dhwOperationModeRaw
-        dhwSpecialFunctionRaw
+        state {
+          currentTempC
+          specialFunction
+          heatingDemandPct
+        }
+        config {
+          operatingMode
+          preset
+          targetTempC
+        }
       }
     }
     """,
