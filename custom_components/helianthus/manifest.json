@@ -2,7 +2,7 @@
   "domain": "helianthus",
   "name": "Helianthus",
   "version": "0.0.0",
-  "documentation": "https://github.com/d3vi1/helianthus-ha-integration",
+  "documentation": "https://github.com/Project-Helianthus/helianthus-ha-integration",
   "requirements": [],
   "codeowners": ["@d3vi1"],
   "config_flow": true,

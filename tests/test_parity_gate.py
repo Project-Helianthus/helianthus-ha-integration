@@ -29,14 +29,14 @@ def _load_script_module():
 def test_enforce_gateway_parity_gate_pass_fixture() -> None:
     payload = parity_gate.enforce_gateway_parity_gate(_fixture_path("gateway_parity_artifact_pass.json"))
 
-    assert payload["source_repo"] == "d3vi1/helianthus-ebusgateway"
+    assert payload["source_repo"] == "Project-Helianthus/helianthus-ebusgateway"
     assert payload["gates"]["parity_contract"]["status"] == "pass"
     assert payload["gates"]["tool_classification"]["status"] == "pass"
 
 
 def test_validate_gateway_parity_artifact_missing_gate() -> None:
     payload = {
-        "source_repo": "d3vi1/helianthus-ebusgateway",
+        "source_repo": "Project-Helianthus/helianthus-ebusgateway",
         "source_ref": "refs/heads/mcpfirst-cruise-control",
         "generated_at": "2026-02-24T00:00:00Z",
         "gates": {
@@ -54,7 +54,7 @@ def test_enforce_gateway_parity_gate_rejects_failed_status(tmp_path: Path) -> No
     artifact.write_text(
         json.dumps(
             {
-                "source_repo": "d3vi1/helianthus-ebusgateway",
+                "source_repo": "Project-Helianthus/helianthus-ebusgateway",
                 "source_ref": "refs/heads/mcpfirst-cruise-control",
                 "generated_at": "2026-02-24T00:00:00Z",
                 "gates": {
@@ -99,7 +99,7 @@ def test_check_gateway_parity_script_failure(tmp_path: Path, monkeypatch: pytest
     artifact.write_text(
         json.dumps(
             {
-                "source_repo": "d3vi1/helianthus-ebusgateway",
+                "source_repo": "Project-Helianthus/helianthus-ebusgateway",
                 "source_ref": "refs/heads/mcpfirst-cruise-control",
                 "generated_at": "2026-02-24T00:00:00Z",
                 "gates": {

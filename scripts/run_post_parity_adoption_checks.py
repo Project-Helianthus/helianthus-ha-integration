@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--source-repo",
-        default="d3vi1/helianthus-ebusgateway",
+        default="Project-Helianthus/helianthus-ebusgateway",
         help="Expected gateway source repository",
     )
     parser.add_argument(

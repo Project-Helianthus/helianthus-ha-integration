@@ -41,7 +41,7 @@ helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-
 ### 1) Clone and run local checks
 
 ```bash
-git clone https://github.com/d3vi1/helianthus-ha-integration.git
+git clone https://github.com/Project-Helianthus/helianthus-ha-integration.git
 cd helianthus-ha-integration
 ./scripts/ci_local.sh
 ```
@@ -159,10 +159,10 @@ python3 scripts/ha_inventory_verifier.py \
 
 ### Related Helianthus repos/docs
 
-- Gateway runtime/API: https://github.com/d3vi1/helianthus-ebusgateway
-- Registry layer: https://github.com/d3vi1/helianthus-ebusreg
-- eBUS core transport/protocol: https://github.com/d3vi1/helianthus-ebusgo
-- Protocol and architecture docs: https://github.com/d3vi1/helianthus-docs-ebus
+- Gateway runtime/API: https://github.com/Project-Helianthus/helianthus-ebusgateway
+- Registry layer: https://github.com/Project-Helianthus/helianthus-ebusreg
+- eBUS core transport/protocol: https://github.com/Project-Helianthus/helianthus-ebusgo
+- Protocol and architecture docs: https://github.com/Project-Helianthus/helianthus-docs-ebus
 
 ### Issue workflow conventions
 

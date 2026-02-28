@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-REQUIRED_SOURCE_REPO = "d3vi1/helianthus-ebusgateway"
+REQUIRED_SOURCE_REPO = "Project-Helianthus/helianthus-ebusgateway"
 REQUIRED_GATES = ("parity_contract", "tool_classification")
 
 

@@ -9,7 +9,7 @@ No new consumer-facing capability may be enabled while any blocker below is acti
 
 | Blocker ID | Gateway artifact field | Required value | Effect in HA integration |
 |---|---|---|---|
-| `BLOCKER_GATEWAY_SOURCE_MISMATCH` | `source_repo` | `d3vi1/helianthus-ebusgateway` | Rollout blocked; artifact rejected |
+| `BLOCKER_GATEWAY_SOURCE_MISMATCH` | `source_repo` | `Project-Helianthus/helianthus-ebusgateway` | Rollout blocked; artifact rejected |
 | `BLOCKER_GATEWAY_SOURCE_REF_MISSING` | `source_ref` | non-empty | Rollout blocked; artifact rejected |
 | `BLOCKER_GATEWAY_PARITY_CONTRACT` | `gates.parity_contract.status` | `pass` | Rollout blocked; parity gate not satisfied |
 | `BLOCKER_GATEWAY_TOOL_CLASSIFICATION` | `gates.tool_classification.status` | `pass` | Rollout blocked; cleanup/classification gate not satisfied |

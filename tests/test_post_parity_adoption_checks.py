@@ -43,7 +43,7 @@ def test_run_post_parity_checks_blocked_on_gate_failure(monkeypatch) -> None:
 
     exit_code = module.run_post_parity_checks(
         artifact="tests/fixtures/gateway_parity_artifact_pass.json",
-        source_repo="d3vi1/helianthus-ebusgateway",
+        source_repo="Project-Helianthus/helianthus-ebusgateway",
         tests=["tests/test_energy.py"],
     )
 
@@ -56,7 +56,7 @@ def test_run_post_parity_checks_runs_pytest_when_gate_passes(monkeypatch) -> Non
 
     def _ok_gate(*_args, **_kwargs):
         return {
-            "source_repo": "d3vi1/helianthus-ebusgateway",
+            "source_repo": "Project-Helianthus/helianthus-ebusgateway",
             "gates": {
                 "parity_contract": {"status": "pass"},
                 "tool_classification": {"status": "pass"},
@@ -78,7 +78,7 @@ def test_run_post_parity_checks_runs_pytest_when_gate_passes(monkeypatch) -> Non
     tests = ["tests/test_coordinator.py", "tests/test_energy.py"]
     exit_code = module.run_post_parity_checks(
         artifact="tests/fixtures/gateway_parity_artifact_pass.json",
-        source_repo="d3vi1/helianthus-ebusgateway",
+        source_repo="Project-Helianthus/helianthus-ebusgateway",
         tests=tests,
     )
 
@@ -100,7 +100,7 @@ def test_run_post_parity_checks_propagates_pytest_failure(monkeypatch) -> None:
 
     exit_code = module.run_post_parity_checks(
         artifact="tests/fixtures/gateway_parity_artifact_pass.json",
-        source_repo="d3vi1/helianthus-ebusgateway",
+        source_repo="Project-Helianthus/helianthus-ebusgateway",
         tests=["tests/test_smoke_profile.py"],
     )
 
@@ -127,7 +127,7 @@ def test_main_uses_cli_arguments(monkeypatch) -> None:
         "run_post_parity_checks",
         lambda artifact, source_repo, tests: 0
         if artifact == "tests/fixtures/gateway_parity_artifact_pass.json"
-        and source_repo == "d3vi1/helianthus-ebusgateway"
+        and source_repo == "Project-Helianthus/helianthus-ebusgateway"
         and tests == ["tests/test_energy.py"]
         else 1,
     )
