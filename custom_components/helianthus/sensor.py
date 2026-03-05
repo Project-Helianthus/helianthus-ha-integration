@@ -12,11 +12,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device_ids import (
+    build_radio_bus_key,
     build_bus_device_key,
     bus_identifier,
     circuit_identifier,
     dhw_identifier,
     energy_identifier,
+    radio_device_identifier,
     resolve_bus_address,
     zone_identifier,
 )
@@ -82,6 +84,8 @@ _SENSOR_DEVICE_CLASS_HUMIDITY = getattr(SensorDeviceClass, "HUMIDITY", None)
 _SENSOR_DEVICE_CLASS_DURATION = getattr(SensorDeviceClass, "DURATION", None)
 _SENSOR_DEVICE_CLASS_PRESSURE = getattr(SensorDeviceClass, "PRESSURE", None)
 _SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASING", None)
+_RADIO_ROOM_CLASSES = {0x15, 0x35}
+_RADIO_STALE_GRACE_CYCLES = 3
 
 _CIRCUIT_TYPE_LABELS = {
     "heating": "Heating",
@@ -226,6 +230,51 @@ def _parse_circuit_index(value: object | None) -> int | None:
     return parsed
 
 
+def _parse_optional_int(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _radio_slot(device: dict[str, Any]) -> tuple[int, int] | None:
+    group = _parse_optional_int(device.get("group"))
+    instance = _parse_optional_int(device.get("instance"))
+    if group is None or instance is None:
+        return None
+    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
+        return None
+    return (group, instance)
+
+
+def _radio_bus_key(device: dict[str, Any]) -> str | None:
+    slot = _radio_slot(device)
+    if slot is None:
+        return None
+    explicit = _clean_text(device.get("radioBusKey"))
+    if explicit:
+        return explicit
+    return build_radio_bus_key(slot[0], slot[1])
+
+
+def _radio_model_name(device: dict[str, Any]) -> str:
+    model = _clean_text(device.get("deviceModel"))
+    if model:
+        return model
+    class_address = _parse_optional_int(device.get("deviceClassAddress"))
+    if class_address == 0x15:
+        return "VRC720f/2"
+    if class_address == 0x35:
+        return "VR92f"
+    if class_address == 0x26:
+        return "VR71/FM5"
+    if class_address is not None and class_address >= 0:
+        return f"Unknown Radio (0x{class_address:02X})"
+    return "Unknown Radio"
+
+
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     token = str(circuit.get("circuitType") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
@@ -239,6 +288,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
     circuit_coordinator = data.get("circuit_coordinator")
+    radio_coordinator = data.get("radio_coordinator")
     system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
@@ -336,6 +386,94 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     field=field,
                 )
             )
+
+    if radio_coordinator and radio_coordinator.data:
+        radio_devices = radio_coordinator.data.get("radioDevices", []) or []
+        for radio in radio_devices:
+            if not isinstance(radio, dict):
+                continue
+            slot = _radio_slot(radio)
+            bus_key = _radio_bus_key(radio)
+            if slot is None or bus_key is None:
+                continue
+            group, instance = slot
+            class_address = _parse_optional_int(radio.get("deviceClassAddress"))
+            is_room = class_address in _RADIO_ROOM_CLASSES
+            radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
+            radio_name = _radio_model_name(radio)
+            if is_room or radio.get("receptionStrength") is not None:
+                sensors.append(
+                    HelianthusRadioSensor(
+                        coordinator=radio_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        radio_device_id=radio_device_id,
+                        radio_name=radio_name,
+                        group=group,
+                        instance=instance,
+                        key="receptionStrength",
+                        label="Signal Quality",
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                        cast_int=True,
+                    )
+                )
+            if is_room:
+                sensors.append(
+                    HelianthusRadioSensor(
+                        coordinator=radio_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        radio_device_id=radio_device_id,
+                        radio_name=radio_name,
+                        group=group,
+                        instance=instance,
+                        key="roomTemperatureC",
+                        label="Room Temperature",
+                        device_class=SensorDeviceClass.TEMPERATURE,
+                        native_unit=UnitOfTemperature.CELSIUS,
+                        state_class=SensorStateClass.MEASUREMENT,
+                    )
+                )
+                sensors.append(
+                    HelianthusRadioSensor(
+                        coordinator=radio_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        radio_device_id=radio_device_id,
+                        radio_name=radio_name,
+                        group=group,
+                        instance=instance,
+                        key="roomHumidityPct",
+                        label="Room Humidity",
+                        device_class=_SENSOR_DEVICE_CLASS_HUMIDITY,
+                        native_unit=PERCENTAGE,
+                        state_class=SensorStateClass.MEASUREMENT,
+                    )
+                )
+            elif group == 0x0C:
+                for key, label in [
+                    ("deviceClassAddress", "Device Class Address"),
+                    ("hardwareIdentifier", "Hardware Identifier"),
+                    ("remoteControlAddress", "Remote Control Address"),
+                    ("zoneAssignment", "Zone Assignment"),
+                ]:
+                    if radio.get(key) is None:
+                        continue
+                    sensors.append(
+                        HelianthusRadioSensor(
+                            coordinator=radio_coordinator,
+                            entry_id=entry.entry_id,
+                            manufacturer=manufacturer,
+                            radio_device_id=radio_device_id,
+                            radio_name=radio_name,
+                            group=group,
+                            instance=instance,
+                            key=key,
+                            label=label,
+                            entity_category=EntityCategory.DIAGNOSTIC,
+                            cast_int=True,
+                        )
+                    )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
@@ -620,6 +758,90 @@ class HelianthusSystemSensor(CoordinatorEntity, SensorEntity):
         if value is None:
             return None
         if self._field.cast_int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
+
+
+class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
+    """Per-slot remote radio sensor."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        radio_device_id: tuple[str, str],
+        radio_name: str,
+        group: int,
+        instance: int,
+        key: str,
+        label: str,
+        device_class: str | None = None,
+        native_unit: str | None = None,
+        state_class: str | None = None,
+        entity_category: str | None = None,
+        cast_int: bool = False,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._radio_device_id = radio_device_id
+        self._radio_name = radio_name
+        self._group = group
+        self._instance = instance
+        self._key = key
+        self._cast_int = cast_int
+        self._attr_name = f"{radio_name} {label}"
+        self._attr_unique_id = f"{entry_id}-radio-{group:02x}-{instance:02d}-sensor-{key}"
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if native_unit is not None:
+            self._attr_native_unit_of_measurement = native_unit
+        if state_class is not None:
+            self._attr_state_class = state_class
+        if entity_category is not None:
+            self._attr_entity_category = entity_category
+
+    def _device(self) -> dict[str, Any] | None:
+        payload = self.coordinator.data or {}
+        for device in payload.get("radioDevices", []) or []:
+            if not isinstance(device, dict):
+                continue
+            slot = _radio_slot(device)
+            if slot == (self._group, self._instance):
+                return device
+        return None
+
+    @property
+    def available(self) -> bool:
+        device = self._device()
+        if device is None:
+            return False
+        stale = _parse_optional_int(device.get("staleCycles")) or 0
+        return stale < _RADIO_STALE_GRACE_CYCLES
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._radio_device_id},
+            manufacturer=self._manufacturer,
+            name=self._radio_name,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        device = self._device()
+        if not isinstance(device, dict):
+            return None
+        value = device.get(self._key)
+        if value is None:
+            return None
+        if self._cast_int:
             try:
                 return int(value)
             except (TypeError, ValueError):

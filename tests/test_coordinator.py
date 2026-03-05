@@ -39,6 +39,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V3,
     QUERY_EXTENDED_V3_NO_ADDRESSES,
     QUERY_EXTENDED_V3_NO_PART,
+    QUERY_RADIO_DEVICES,
     QUERY_STATUS,
     QUERY_STATUS_LEGACY,
     QUERY_SYSTEM,
@@ -46,6 +47,7 @@ from custom_components.helianthus.coordinator import (
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
     HelianthusCoordinator,
+    HelianthusRadioDeviceCoordinator,
     HelianthusSystemCoordinator,
     HelianthusStatusCoordinator,
 )
@@ -93,6 +95,16 @@ def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoor
 def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordinator:
     coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_radio_coordinator(client: _ScriptedClient) -> HelianthusRadioDeviceCoordinator:
+    coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    coordinator._last_by_slot = {}  # type: ignore[attr-defined]
+    coordinator._stale_cycles = {}  # type: ignore[attr-defined]
+    coordinator.data = {}  # type: ignore[attr-defined]
+    coordinator.async_set_updated_data = lambda payload: setattr(coordinator, "data", payload)  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -390,3 +402,76 @@ def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
 
     assert data == {"state": {}, "config": {}, "properties": {}}
     assert client.calls == [QUERY_SYSTEM]
+
+
+def test_radio_query_builds_candidates_and_inventory_slot() -> None:
+    payload = {
+        "radioDevices": [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "deviceConnected": True,
+                "deviceClassAddress": 0x15,
+                "zoneAssignment": 2,
+                "remoteControlAddress": 0,
+            },
+            {
+                "group": 0x09,
+                "instance": 2,
+                "deviceConnected": False,
+                "deviceClassAddress": 0x15,
+                "zoneAssignment": 3,
+            },
+            {
+                "group": 0x0C,
+                "instance": 1,
+                "deviceConnected": False,
+                "deviceClassAddress": 0x26,
+                "firmwareVersion": "0805",
+                "hardwareIdentifier": 0x1234,
+            },
+        ]
+    }
+    client = _ScriptedClient([payload])
+    coordinator = _build_radio_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    slots = {(int(item["group"]), int(item["instance"])) for item in data["radioDevices"]}
+    assert slots == {(0x09, 1), (0x0C, 1)}
+    assert 1 in data["radioZoneCandidates"]
+    assert data["radioZoneCandidates"][1][0]["group"] == 0x09
+    assert data["radioZoneCandidates"][1][0]["instance"] == 1
+    assert client.calls == [QUERY_RADIO_DEVICES]
+
+
+def test_radio_query_uses_stale_grace_cycles_for_disconnected_slot() -> None:
+    client = _ScriptedClient(
+        [
+            {
+                "radioDevices": [
+                    {
+                        "group": 0x09,
+                        "instance": 1,
+                        "deviceConnected": True,
+                        "deviceClassAddress": 0x15,
+                    }
+                ]
+            }
+        ]
+    )
+    coordinator = _build_radio_coordinator(client)
+    first = asyncio.run(coordinator._async_update_data())
+    assert len(first["radioDevices"]) == 1
+    coordinator.apply_radio_update(
+        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+    )
+    assert coordinator.data["radioDevices"][0]["staleCycles"] == 1  # type: ignore[index]
+    coordinator.apply_radio_update(
+        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+    )
+    assert coordinator.data["radioDevices"][0]["staleCycles"] == 2  # type: ignore[index]
+    coordinator.apply_radio_update(
+        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+    )
+    assert coordinator.data["radioDevices"][0]["staleCycles"] == 3  # type: ignore[index]

@@ -4,6 +4,7 @@ from custom_components.helianthus.device_ids import (
     adapter_identifier,
     boiler_burner_identifier,
     boiler_hydraulics_identifier,
+    build_radio_bus_key,
     bus_identifier,
     build_bus_device_key,
     circuit_identifier,
@@ -11,6 +12,7 @@ from custom_components.helianthus.device_ids import (
     dhw_identifier,
     energy_identifier,
     managing_device_identifier,
+    radio_device_identifier,
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
     resolve_bus_address,
@@ -97,6 +99,8 @@ def test_identifier_helpers_are_deterministic() -> None:
     assert bus_identifier("entry-1", "BASV2-sn-ABC123") == ("helianthus", "entry-1-bus-BASV2-sn-ABC123")
     assert zone_identifier("entry-1", "1") == ("helianthus", "entry-1-zone-1")
     assert circuit_identifier("entry-1", 0) == ("helianthus", "entry-1-circuit-0")
+    assert build_radio_bus_key(0x09, 1) == "g09-i01"
+    assert radio_device_identifier("entry-1", "g09-i01") == ("helianthus", "entry-1-radio-g09-i01")
     assert dhw_identifier("entry-1") == ("helianthus", "entry-1-dhw")
     assert energy_identifier("entry-1") == ("helianthus", "entry-1-energy")
 

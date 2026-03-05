@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import timedelta
 import logging
 from typing import Any
@@ -236,6 +237,27 @@ query Circuits {
 }
 """
 
+QUERY_RADIO_DEVICES = """
+query RadioDevices {
+  radioDevices {
+    group
+    instance
+    slotMode
+    deviceConnected
+    deviceClassAddress
+    deviceModel
+    firmwareVersion
+    hardwareIdentifier
+    remoteControlAddress
+    devicePaired
+    receptionStrength
+    zoneAssignment
+    roomTemperatureC
+    roomHumidityPct
+  }
+}
+"""
+
 QUERY_SYSTEM = """
 query System {
   system {
@@ -321,6 +343,11 @@ query BoilerStatus {
   }
 }
 """
+
+_RADIO_GROUP_ZONE_VRC = 0x09
+_RADIO_GROUP_ZONE_VR92 = 0x0A
+_RADIO_GROUP_INVENTORY = 0x0C
+_RADIO_STALE_GRACE_CYCLES = 3
 
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
@@ -527,6 +554,125 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
 
+class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching remote-slot radio device snapshots."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_radio_devices",
+            update_interval=timedelta(seconds=scan_interval),
+        )
+        self._client = client
+        self._last_by_slot: dict[tuple[int, int], dict[str, Any]] = {}
+        self._stale_cycles: dict[tuple[int, int], int] = {}
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        empty = {"radioDevices": [], "radioZoneCandidates": {}}
+        missing_fields = [
+            "radioDevices",
+            "group",
+            "instance",
+            "slotMode",
+            "deviceConnected",
+            "deviceClassAddress",
+            "deviceModel",
+            "firmwareVersion",
+            "hardwareIdentifier",
+            "remoteControlAddress",
+            "devicePaired",
+            "receptionStrength",
+            "zoneAssignment",
+            "roomTemperatureC",
+            "roomHumidityPct",
+        ]
+        try:
+            payload = await self._client.execute(QUERY_RADIO_DEVICES)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, missing_fields):
+                self._last_by_slot = {}
+                self._stale_cycles = {}
+                return empty
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            self._last_by_slot = {}
+            self._stale_cycles = {}
+            return empty
+        devices = payload.get("radioDevices")
+        if not isinstance(devices, list):
+            self._last_by_slot = {}
+            self._stale_cycles = {}
+            return empty
+        return self._materialize_snapshot(devices)
+
+    def apply_radio_update(self, devices: Any) -> None:
+        if not isinstance(devices, list):
+            return
+        self.async_set_updated_data(self._materialize_snapshot(devices))
+
+    def _materialize_snapshot(self, devices: list[Any]) -> dict[str, Any]:
+        observed_by_slot: dict[tuple[int, int], dict[str, Any]] = {}
+        active_by_slot: dict[tuple[int, int], dict[str, Any]] = {}
+        for raw_device in devices:
+            if not isinstance(raw_device, dict):
+                continue
+            normalized = _normalize_radio_device(raw_device)
+            if normalized is None:
+                continue
+            slot = (normalized["group"], normalized["instance"])
+            observed_by_slot[slot] = normalized
+            if _is_active_radio_device(normalized):
+                active_by_slot[slot] = normalized
+
+        combined: dict[tuple[int, int], dict[str, Any]] = {}
+        next_stale_cycles: dict[tuple[int, int], int] = {}
+        for slot, device in active_by_slot.items():
+            current = dict(device)
+            current["staleCycles"] = 0
+            current["radioBusKey"] = _radio_bus_key(slot[0], slot[1])
+            combined[slot] = current
+            next_stale_cycles[slot] = 0
+
+        for slot, previous in self._last_by_slot.items():
+            if slot in combined:
+                continue
+            stale = self._stale_cycles.get(slot, 0) + 1
+            if stale > _RADIO_STALE_GRACE_CYCLES:
+                continue
+            carried = dict(previous)
+            observed = observed_by_slot.get(slot)
+            if isinstance(observed, dict):
+                carried.update(observed)
+            if observed is None or not _is_active_radio_device(observed):
+                carried["deviceConnected"] = False
+            carried["staleCycles"] = stale
+            carried["radioBusKey"] = _radio_bus_key(slot[0], slot[1])
+            combined[slot] = carried
+            next_stale_cycles[slot] = stale
+
+        sorted_slots = sorted(combined.keys(), key=lambda item: (item[0], item[1]))
+        radio_devices = [combined[slot] for slot in sorted_slots]
+        candidates = _build_radio_zone_candidates(active_by_slot)
+
+        self._last_by_slot = {
+            slot: {
+                key: value
+                for key, value in combined[slot].items()
+                if key not in {"staleCycles"}
+            }
+            for slot in sorted_slots
+        }
+        self._stale_cycles = dict(next_stale_cycles)
+        return {
+            "radioDevices": radio_devices,
+            "radioZoneCandidates": candidates,
+        }
+
+
 class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic system data."""
 
@@ -669,6 +815,149 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return {"boilerStatus": None}
         self.boiler_supported = True
         return {"boilerStatus": payload.get("boilerStatus")}
+
+
+def _parse_optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_optional_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_radio_device(raw: dict[str, Any]) -> dict[str, Any] | None:
+    group = _parse_optional_int(raw.get("group"))
+    instance = _parse_optional_int(raw.get("instance"))
+    if group is None or instance is None:
+        return None
+    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
+        return None
+
+    normalized: dict[str, Any] = {
+        "group": group,
+        "instance": instance,
+        "slotMode": str(raw.get("slotMode") or "").strip() or "active",
+    }
+
+    connected = raw.get("deviceConnected")
+    if isinstance(connected, bool):
+        normalized["deviceConnected"] = connected
+    class_address = _parse_optional_int(raw.get("deviceClassAddress"))
+    if class_address is not None and 0 <= class_address <= 0xFF:
+        normalized["deviceClassAddress"] = class_address
+
+    device_model = str(raw.get("deviceModel") or "").strip()
+    if device_model:
+        normalized["deviceModel"] = device_model
+    firmware = str(raw.get("firmwareVersion") or "").strip()
+    if firmware:
+        normalized["firmwareVersion"] = firmware
+
+    hardware_identifier = _parse_optional_int(raw.get("hardwareIdentifier"))
+    if hardware_identifier is not None and hardware_identifier >= 0:
+        normalized["hardwareIdentifier"] = hardware_identifier
+    remote_control_address = _parse_optional_int(raw.get("remoteControlAddress"))
+    if remote_control_address is not None and remote_control_address >= 0:
+        normalized["remoteControlAddress"] = remote_control_address
+    paired = raw.get("devicePaired")
+    if isinstance(paired, bool):
+        normalized["devicePaired"] = paired
+    reception_strength = _parse_optional_int(raw.get("receptionStrength"))
+    if reception_strength is not None:
+        normalized["receptionStrength"] = reception_strength
+    zone_assignment = _parse_optional_int(raw.get("zoneAssignment"))
+    if zone_assignment is not None and zone_assignment >= 0:
+        normalized["zoneAssignment"] = zone_assignment
+    room_temperature = _parse_optional_float(raw.get("roomTemperatureC"))
+    if room_temperature is not None:
+        normalized["roomTemperatureC"] = room_temperature
+    room_humidity = _parse_optional_float(raw.get("roomHumidityPct"))
+    if room_humidity is not None:
+        normalized["roomHumidityPct"] = room_humidity
+
+    return normalized
+
+
+def _has_radio_identity_evidence(device: dict[str, Any]) -> bool:
+    class_address = _parse_optional_int(device.get("deviceClassAddress"))
+    if class_address == 0x26:
+        return True
+    if str(device.get("deviceModel") or "").strip():
+        return True
+    if str(device.get("firmwareVersion") or "").strip():
+        return True
+    if _parse_optional_int(device.get("hardwareIdentifier")) is not None:
+        return True
+    return False
+
+
+def _is_active_radio_device(device: dict[str, Any]) -> bool:
+    group = _parse_optional_int(device.get("group"))
+    if group is None:
+        return False
+    connected = device.get("deviceConnected") is True
+    if group in (_RADIO_GROUP_ZONE_VRC, _RADIO_GROUP_ZONE_VR92):
+        return connected
+    if group == _RADIO_GROUP_INVENTORY:
+        return _has_radio_identity_evidence(device)
+    return connected or _has_radio_identity_evidence(device)
+
+
+def _radio_bus_key(group: int, instance: int) -> str:
+    return f"g{group:02x}-i{instance:02d}"
+
+
+def _build_radio_zone_candidates(
+    active_by_slot: dict[tuple[int, int], dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    by_zone: defaultdict[int, list[dict[str, Any]]] = defaultdict(list)
+    for (_, _), device in active_by_slot.items():
+        group = _parse_optional_int(device.get("group"))
+        instance = _parse_optional_int(device.get("instance"))
+        if group not in (_RADIO_GROUP_ZONE_VRC, _RADIO_GROUP_ZONE_VR92):
+            continue
+        if instance is None:
+            continue
+        if device.get("deviceConnected") is not True:
+            continue
+        zone_assignment = _parse_optional_int(device.get("zoneAssignment"))
+        if zone_assignment is None or zone_assignment <= 0:
+            continue
+        zone_instance = zone_assignment - 1
+        by_zone[zone_instance].append(
+            {
+                "group": group,
+                "instance": instance,
+                "remote_control_address": _parse_optional_int(device.get("remoteControlAddress")),
+                "radio_bus_key": _radio_bus_key(group, instance),
+            }
+        )
+
+    out: dict[int, list[dict[str, Any]]] = {}
+    for zone_instance, candidates in by_zone.items():
+        candidates.sort(
+            key=lambda item: (
+                int(item.get("group") or 0),
+                (
+                    int(item["remote_control_address"])
+                    if isinstance(item.get("remote_control_address"), int)
+                    else 255
+                ),
+                int(item.get("instance") or 0),
+            )
+        )
+        out[zone_instance] = candidates
+    return out
 
 
 def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
