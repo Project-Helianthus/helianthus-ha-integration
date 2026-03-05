@@ -98,6 +98,12 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             return {}
         return self.coordinator.data.get("dhw") or {}
 
+    def _dhw_state(self) -> dict[str, Any]:
+        return self._dhw().get("state") or {}
+
+    def _dhw_config(self) -> dict[str, Any]:
+        return self._dhw().get("config") or {}
+
     @property
     def available(self) -> bool:
         return super().available and bool(self._dhw())
@@ -116,17 +122,17 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        value = self._dhw().get("currentTempC")
+        value = self._dhw_state().get("currentTempC")
         return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
-        value = self._dhw().get("targetTempC")
+        value = self._dhw_config().get("targetTempC")
         return float(value) if value is not None else None
 
     @property
     def operation_mode(self) -> str | None:
-        mode = str(self._dhw().get("operatingMode") or "").strip().lower()
+        mode = str(self._dhw_config().get("operatingMode") or "").strip().lower()
         if mode in {"off", "auto", "manual"}:
             return mode
         if mode == "heat":
@@ -140,7 +146,9 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {}
-        preset = str(self._dhw().get("preset") or "").strip().lower()
+        config = self._dhw_config()
+        state = self._dhw_state()
+        preset = str(config.get("preset") or "").strip().lower()
         if preset in {"auto", "schedule"}:
             attrs["preset"] = "schedule"
         elif preset in {"manual"}:
@@ -151,17 +159,12 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             attrs["preset"] = "away"
         elif preset:
             attrs["preset"] = preset
-        demand = self._dhw().get("heatingDemand")
+        demand = state.get("heatingDemandPct")
         if demand is not None:
-            attrs["heating_demand"] = demand
-        for field, key in [
-            ("special_function", "specialFunction"),
-            ("dhw_operation_mode_raw", "dhwOperationModeRaw"),
-            ("dhw_special_function_raw", "dhwSpecialFunctionRaw"),
-        ]:
-            value = self._dhw().get(key)
-            if value is not None and str(value).strip() != "":
-                attrs[field] = value
+            attrs["heating_demand_pct"] = demand
+        special = state.get("specialFunction")
+        if special is not None and str(special).strip() != "":
+            attrs["special_function"] = special
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:

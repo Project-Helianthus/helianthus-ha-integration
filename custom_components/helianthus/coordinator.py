@@ -173,40 +173,48 @@ query Semantic {
   zones {
     id
     name
-    operatingMode
-    preset
-    hvacAction
-    allowedModes
-    currentTempC
-    targetTempC
-    currentHumidityPct
-    heatingDemand
-    specialFunction
-    circuitTypeRaw
-    zoneCircuitIndexRaw
-    zoneOperationModeRaw
-    zoneValveStatusRaw
-    zoneSpecialFunctionRaw
+    state {
+      currentTempC
+      currentHumidityPct
+      hvacAction
+      specialFunction
+      heatingDemandPct
+      valvePositionPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      allowedModes
+      circuitType
+      associatedCircuit
+    }
   }
   dhw {
-    operatingMode
-    preset
-    currentTempC
-    targetTempC
-    heatingDemand
-    specialFunction
-    dhwOperationModeRaw
-    dhwSpecialFunctionRaw
+    state {
+      currentTempC
+      specialFunction
+      heatingDemandPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+    }
   }
 }
 """
 
 QUERY_ENERGY = """
 query Energy {
-  energyTotals {
-    gas { dhw { today yearly } climate { today yearly } }
-    electric { dhw { today yearly } climate { today yearly } }
-    solar { dhw { today yearly } climate { today yearly } }
+  devices {
+    address
+    role
+    energyTotals {
+      gas { dhw { today yearly } climate { today yearly } }
+      electric { dhw { today yearly } climate { today yearly } }
+      solar { dhw { today yearly } climate { today yearly } }
+    }
   }
 }
 """
@@ -369,7 +377,7 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             payload = await self._client.execute(QUERY_ENERGY)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["energyTotals"]):
+            if _is_missing_field_error(exc.errors, ["energyTotals", "devices"]):
                 return {"energyTotals": None}
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
@@ -377,7 +385,12 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not isinstance(payload, dict):
             return {"energyTotals": None}
-        return {"energyTotals": payload.get("energyTotals")}
+        devices = payload.get("devices") or []
+        totals = next(
+            (d.get("energyTotals") for d in devices if d.get("role") == "Regulator"),
+            None,
+        )
+        return {"energyTotals": totals}
 
 
 def _is_missing_field_error(errors: object, fields: list[str]) -> bool:

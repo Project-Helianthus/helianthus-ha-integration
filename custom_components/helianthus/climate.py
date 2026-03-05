@@ -186,9 +186,15 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             via_device=via,
         )
 
+    def _zone_state(self) -> dict[str, Any]:
+        return self._zone().get("state") or {}
+
+    def _zone_config(self) -> dict[str, Any]:
+        return self._zone().get("config") or {}
+
     @property
     def hvac_mode(self) -> HVACMode | None:
-        mode = str(self._zone().get("operatingMode") or "").strip().lower()
+        mode = str(self._zone_config().get("operatingMode") or "").strip().lower()
         if not mode:
             return None
         return OPERATING_MODE_MAP.get(mode, HVACMode.AUTO)
@@ -196,7 +202,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     @property
     def hvac_modes(self) -> list[HVACMode]:
         supported: list[HVACMode] = []
-        for token in normalize_allowed_mode_tokens(self._zone().get("allowedModes")):
+        for token in normalize_allowed_mode_tokens(self._zone_config().get("allowedModes")):
             mapped = OPERATING_MODE_MAP.get(token)
             if mapped is not None and mapped not in supported:
                 supported.append(mapped)
@@ -206,7 +212,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def preset_mode(self) -> str | None:
-        return normalize_preset_token(self._zone().get("preset"))
+        return normalize_preset_token(self._zone_config().get("preset"))
 
     @property
     def preset_modes(self) -> list[str]:
@@ -214,36 +220,35 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        value = self._zone().get("currentTempC")
+        value = self._zone_state().get("currentTempC")
         return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
-        value = self._zone().get("targetTempC")
+        value = self._zone_config().get("targetTempC")
         return float(value) if value is not None else None
 
     @property
     def current_humidity(self) -> float | None:
-        value = self._zone().get("currentHumidityPct")
+        value = self._zone_state().get("currentHumidityPct")
         return float(value) if value is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {}
-        zone = self._zone()
-        demand = self._zone().get("heatingDemand")
+        state = self._zone_state()
+        config = self._zone_config()
+        demand = state.get("heatingDemandPct")
         if demand is not None:
-            attrs["heating_demand"] = demand
-        for field, key in [
-            ("hvac_action", "hvacAction"),
-            ("special_function", "specialFunction"),
-            ("circuit_type_raw", "circuitTypeRaw"),
-            ("zone_circuit_index_raw", "zoneCircuitIndexRaw"),
-            ("zone_operation_mode_raw", "zoneOperationModeRaw"),
-            ("zone_valve_status_raw", "zoneValveStatusRaw"),
-            ("zone_special_function_raw", "zoneSpecialFunctionRaw"),
+            attrs["heating_demand_pct"] = demand
+        for field, source, key in [
+            ("hvac_action", state, "hvacAction"),
+            ("special_function", state, "specialFunction"),
+            ("valve_position_pct", state, "valvePositionPct"),
+            ("circuit_type", config, "circuitType"),
+            ("associated_circuit", config, "associatedCircuit"),
         ]:
-            value = zone.get(key)
+            value = source.get(key)
             if value is not None and str(value).strip() != "":
                 attrs[field] = value
         return attrs

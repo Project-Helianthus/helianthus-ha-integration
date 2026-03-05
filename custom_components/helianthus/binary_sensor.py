@@ -117,7 +117,8 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         payload = self._target_payload()
-        return _normalize_preset(payload.get("preset")) == self._schedule_key
+        config = payload.get("config") or {}
+        return _normalize_preset(config.get("preset")) == self._schedule_key
 
     def _dynamic_zone_name(self) -> str:
         if self.coordinator.data:

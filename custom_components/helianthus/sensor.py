@@ -275,10 +275,12 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         if kind == "zone":
             for zone in self.coordinator.data.get("zones", []) or []:
                 if zone.get("id") == zone_id:
-                    return zone.get("heatingDemand")
+                    state = zone.get("state") or {}
+                    return state.get("heatingDemandPct")
             return None
         dhw = self.coordinator.data.get("dhw") or {}
-        return dhw.get("heatingDemand")
+        state = dhw.get("state") or {}
+        return state.get("heatingDemandPct")
 
 
 class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
