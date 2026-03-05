@@ -76,6 +76,7 @@ def _build_status_coordinator(client: _ScriptedClient) -> HelianthusStatusCoordi
 def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordinator:
     coordinator = object.__new__(HelianthusBoilerCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
+    coordinator.boiler_supported = True  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -274,3 +275,21 @@ def test_boiler_query_missing_field_falls_back_to_none() -> None:
 
     assert data == {"boilerStatus": None}
     assert client.calls == [QUERY_BOILER]
+    assert coordinator.boiler_supported is False
+
+
+def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "centralHeatingPumpActive" on type "BoilerState".'}]
+            )
+        ]
+    )
+    coordinator = _build_boiler_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data == {"boilerStatus": None}
+    assert client.calls == [QUERY_BOILER]
+    assert coordinator.boiler_supported is False

@@ -564,12 +564,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
     subscription_task = None
     if use_subscriptions:
+        boiler_subscription_coordinator = (
+            boiler_coordinator if getattr(boiler_coordinator, "boiler_supported", False) else None
+        )
         subscription_task = await start_subscriptions(
             session,
             graphql_url,
             semantic_coordinator,
             energy_coordinator,
-            boiler_coordinator,
+            boiler_subscription_coordinator,
         )
 
     boiler_physical_device_id = resolve_boiler_physical_device_id(

@@ -419,19 +419,32 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self.boiler_supported = True
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             payload = await self._client.execute(QUERY_BOILER)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["boilerStatus"]):
+            if _is_missing_field_error(
+                exc.errors,
+                [
+                    "boilerStatus",
+                    "flowTemperatureC",
+                    "returnTemperatureC",
+                    "centralHeatingPumpActive",
+                    "heatingStatusRaw",
+                ],
+            ):
+                self.boiler_supported = False
                 return {"boilerStatus": None}
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
         if not isinstance(payload, dict):
+            self.boiler_supported = False
             return {"boilerStatus": None}
+        self.boiler_supported = True
         return {"boilerStatus": payload.get("boilerStatus")}
 
 

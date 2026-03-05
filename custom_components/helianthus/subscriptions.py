@@ -118,7 +118,15 @@ async def _subscription_loop(
             await ws.send_json({"type": "connection_init"})
             await _wait_for_ack(ws)
 
-            for key, query in SUBSCRIPTIONS.items():
+            subscriptions = {
+                "zones": SUBSCRIPTIONS["zones"],
+                "dhw": SUBSCRIPTIONS["dhw"],
+                "energy": SUBSCRIPTIONS["energy"],
+            }
+            if boiler_coordinator is not None:
+                subscriptions["boiler"] = SUBSCRIPTIONS["boiler"]
+
+            for key, query in subscriptions.items():
                 await ws.send_json({"id": key, "type": "subscribe", "payload": {"query": query}})
 
             async for msg in ws:
@@ -151,6 +159,9 @@ async def _handle_message(
     energy_coordinator,
     boiler_coordinator,
 ) -> None:
+    if message.get("type") == "error":
+        _LOGGER.debug("GraphQL subscription error frame: %s", message)
+        return
     if message.get("type") != "next":
         return
     payload = message.get("payload", {})
