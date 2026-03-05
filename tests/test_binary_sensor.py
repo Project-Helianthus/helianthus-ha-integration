@@ -34,6 +34,14 @@ def _ensure_homeassistant_stubs() -> None:
 
         binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
+    const_module = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
+    if not hasattr(const_module, "EntityCategory"):
+        class _EntityCategory:
+            DIAGNOSTIC = "diagnostic"
+            CONFIG = "config"
+
+        const_module.EntityCategory = _EntityCategory
+
     device_registry_module = sys.modules.setdefault(
         "homeassistant.helpers.device_registry",
         types.ModuleType("homeassistant.helpers.device_registry"),

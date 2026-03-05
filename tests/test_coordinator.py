@@ -41,10 +41,12 @@ from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V3_NO_PART,
     QUERY_STATUS,
     QUERY_STATUS_LEGACY,
+    QUERY_SYSTEM,
     UpdateFailed,
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
     HelianthusCoordinator,
+    HelianthusSystemCoordinator,
     HelianthusStatusCoordinator,
 )
 from custom_components.helianthus.graphql import GraphQLClientError, GraphQLResponseError
@@ -84,6 +86,12 @@ def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordi
 
 def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoordinator:
     coordinator = object.__new__(HelianthusCircuitCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordinator:
+    coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
 
@@ -338,3 +346,47 @@ def test_circuit_query_missing_field_falls_back_to_empty_payload() -> None:
 
     assert data == {"circuits": []}
     assert client.calls == [QUERY_CIRCUITS]
+
+
+def test_system_query_returns_system_payload() -> None:
+    payload = {
+        "system": {
+            "state": {
+                "systemWaterPressure": 1.7,
+                "maintenanceDue": False,
+            },
+            "config": {
+                "adaptiveHeatingCurve": True,
+                "maxRoomHumidity": 60,
+            },
+            "properties": {
+                "systemScheme": 3,
+                "moduleConfigurationVR71": 1,
+            },
+        }
+    }
+    client = _ScriptedClient([payload])
+    coordinator = _build_system_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["state"]["systemWaterPressure"] == 1.7
+    assert data["config"]["adaptiveHeatingCurve"] is True
+    assert data["properties"]["systemScheme"] == 3
+    assert client.calls == [QUERY_SYSTEM]
+
+
+def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "system" on type "Query".'}]
+            )
+        ]
+    )
+    coordinator = _build_system_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data == {"state": {}, "config": {}, "properties": {}}
+    assert client.calls == [QUERY_SYSTEM]

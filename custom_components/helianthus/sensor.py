@@ -47,6 +47,18 @@ class CircuitSensorField:
     include_circuit_attributes: bool = False
 
 
+@dataclass(frozen=True)
+class SystemSensorField:
+    key: str
+    label: str
+    source: str
+    device_class: str | None = None
+    native_unit: str | None = None
+    state_class: str | None = None
+    entity_category: str | None = None
+    cast_int: bool = False
+
+
 STATUS_FIELDS = [
     InventoryField("status", "Status"),
     InventoryField("firmwareVersion", "Firmware Version"),
@@ -68,6 +80,7 @@ REDUCED_BOILER_TEMPERATURE_FIELDS = [
 
 _SENSOR_DEVICE_CLASS_HUMIDITY = getattr(SensorDeviceClass, "HUMIDITY", None)
 _SENSOR_DEVICE_CLASS_DURATION = getattr(SensorDeviceClass, "DURATION", None)
+_SENSOR_DEVICE_CLASS_PRESSURE = getattr(SensorDeviceClass, "PRESSURE", None)
 _SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASING", None)
 
 _CIRCUIT_TYPE_LABELS = {
@@ -135,6 +148,64 @@ CIRCUIT_SENSOR_FIELDS = [
     ),
 ]
 
+SYSTEM_SENSOR_FIELDS = [
+    SystemSensorField(
+        key="systemWaterPressure",
+        label="System Water Pressure",
+        source="state",
+        device_class=_SENSOR_DEVICE_CLASS_PRESSURE,
+        native_unit="bar",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="outdoorTemperature",
+        label="Outdoor Temperature",
+        source="state",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="outdoorTemperatureAvg24h",
+        label="Outdoor Temperature 24h Average",
+        source="state",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="systemFlowTemperature",
+        label="System Flow Temperature",
+        source="state",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="hwcCylinderTemperatureTop",
+        label="HWC Cylinder Temperature Top",
+        source="state",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="hwcCylinderTemperatureBottom",
+        label="HWC Cylinder Temperature Bottom",
+        source="state",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SystemSensorField(
+        key="systemScheme",
+        label="System Scheme",
+        source="properties",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        cast_int=True,
+    ),
+]
+
 
 def _clean_text(value: object | None) -> str | None:
     if value is None:
@@ -168,8 +239,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
     circuit_coordinator = data.get("circuit_coordinator")
+    system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
+    regulator_device_id = data.get("regulator_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
@@ -251,6 +324,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         field=field,
                     )
                 )
+
+    if system_coordinator and system_coordinator.data and regulator_device_id:
+        for field in SYSTEM_SENSOR_FIELDS:
+            sensors.append(
+                HelianthusSystemSensor(
+                    coordinator=system_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    regulator_device_id=regulator_device_id,
+                    field=field,
+                )
+            )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
@@ -486,6 +571,62 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
         if isinstance(has_mixer, bool):
             attrs["has_mixer"] = has_mixer
         return attrs
+
+
+class HelianthusSystemSensor(CoordinatorEntity, SensorEntity):
+    """System-level BASV2 sensor."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        regulator_device_id: tuple[str, str],
+        field: SystemSensorField,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._regulator_device_id = regulator_device_id
+        self._field = field
+        self._attr_name = field.label
+        self._attr_unique_id = f"{entry_id}-system-sensor-{field.key}"
+        if field.device_class is not None:
+            self._attr_device_class = field.device_class
+        if field.native_unit is not None:
+            self._attr_native_unit_of_measurement = field.native_unit
+        if field.state_class is not None:
+            self._attr_state_class = field.state_class
+        if field.entity_category is not None:
+            self._attr_entity_category = field.entity_category
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._regulator_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    def _bucket(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        source = payload.get(self._field.source)
+        if isinstance(source, dict):
+            return source
+        return {}
+
+    @property
+    def native_value(self) -> Any:
+        value = self._bucket().get(self._field.key)
+        if value is None:
+            return None
+        if self._field.cast_int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
 
 
 class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):

@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device_ids import dhw_identifier, zone_identifier
+
+_BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
 
 
 def _normalize_preset(value: Any) -> str:
@@ -28,8 +31,10 @@ def _normalize_preset(value: Any) -> str:
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
+    system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
+    regulator_device_id = data.get("regulator_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
@@ -84,6 +89,34 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 entry_id=entry.entry_id,
                 boiler_device_id=boiler_device_id,
             )
+        )
+
+    if system_coordinator and system_coordinator.data and regulator_device_id:
+        entities.extend(
+            [
+                HelianthusSystemBinarySensor(
+                    coordinator=system_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    regulator_device_id=regulator_device_id,
+                    source="state",
+                    key="maintenanceDue",
+                    label="Maintenance Due",
+                    device_class=_BINARY_SENSOR_DEVICE_CLASS_PROBLEM,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                ),
+                HelianthusSystemBinarySensor(
+                    coordinator=system_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    regulator_device_id=regulator_device_id,
+                    source="config",
+                    key="adaptiveHeatingCurve",
+                    label="Adaptive Heating Curve",
+                    device_class=None,
+                    entity_category=EntityCategory.CONFIG,
+                ),
+            ]
         )
 
     async_add_entities(entities)
@@ -185,6 +218,53 @@ class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
         boiler_status = payload.get("boilerStatus") or {}
         state = boiler_status.get("state") or {}
         value = state.get("centralHeatingPumpActive")
+        if isinstance(value, bool):
+            return value
+        return None
+
+
+class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """System-level BASV2 binary sensor."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        regulator_device_id: tuple[str, str],
+        source: str,
+        key: str,
+        label: str,
+        device_class: str | None,
+        entity_category: str | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._regulator_device_id = regulator_device_id
+        self._source = source
+        self._key = key
+        self._attr_name = label
+        self._attr_unique_id = f"{entry_id}-system-binary-{key}"
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if entity_category is not None:
+            self._attr_entity_category = entity_category
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._regulator_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        source = payload.get(self._source)
+        if not isinstance(source, dict):
+            return None
+        value = source.get(self._key)
         if isinstance(value, bool):
             return value
         return None
