@@ -142,6 +142,7 @@ def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
         token.startswith(f"{entry_id}-bus-")
         or token.startswith(f"{entry_id}-zone-")
         or token.startswith(f"{entry_id}-circuit-")
+        or token.startswith(f"{entry_id}-radio-")
     )
 
 
@@ -210,6 +211,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusCircuitCoordinator,
         HelianthusCoordinator,
         HelianthusEnergyCoordinator,
+        HelianthusRadioDeviceCoordinator,
         HelianthusSemanticCoordinator,
         HelianthusSystemCoordinator,
         HelianthusStatusCoordinator,
@@ -218,11 +220,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         adapter_identifier,
         boiler_burner_identifier,
         boiler_hydraulics_identifier,
+        build_radio_bus_key,
         build_bus_device_key,
         bus_identifier,
         circuit_identifier,
         daemon_identifier,
         managing_device_identifier,
+        radio_device_identifier,
         resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
@@ -325,6 +329,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
     energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
     circuit_coordinator = HelianthusCircuitCoordinator(hass, client, scan_interval)
+    radio_coordinator = HelianthusRadioDeviceCoordinator(hass, client, scan_interval)
     system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
@@ -332,6 +337,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await semantic_coordinator.async_config_entry_first_refresh()
     await energy_coordinator.async_config_entry_first_refresh()
     await circuit_coordinator.async_config_entry_first_refresh()
+    await radio_coordinator.async_config_entry_first_refresh()
     await system_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
 
@@ -390,6 +396,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    def radio_model_name(device: dict) -> str:
+        model = _clean_label(device.get("deviceModel"))
+        if model:
+            return model
+        class_address = parse_optional_int(device.get("deviceClassAddress"))
+        if class_address == 0x15:
+            return "VRC720f/2"
+        if class_address == 0x35:
+            return "VR92f"
+        if class_address == 0x26:
+            return "VR71/FM5"
+        if class_address is not None and class_address >= 0:
+            return f"Unknown Radio (0x{class_address:02X})"
+        return "Unknown Radio"
+
+    def radio_firmware_display(value: object | None) -> str | None:
+        token = _clean_label(value)
+        if not token:
+            return None
+        compact = token.replace(".", "")
+        if len(compact) == 6 and compact.isdigit():
+            major = compact[0:2]
+            minor = compact[2:4]
+            patch = compact[4:6]
+            if patch == "00":
+                return f"{major}.{minor}"
+            return f"{major}.{minor}.{patch}"
+        if len(compact) == 4 and compact.isdigit():
+            return f"{compact[0:2]}.{compact[2:4]}"
+        if "." in token:
+            parts = [part.strip() for part in token.split(".") if part.strip()]
+            if len(parts) >= 2:
+                major = parts[0]
+                minor = parts[1]
+                patch = parts[2] if len(parts) >= 3 else ""
+                if patch in {"", "0", "00"}:
+                    return f"{major}.{minor}"
+                return f"{major}.{minor}.{patch}"
+        return token
 
     def circuit_type_display_name(value: object | None) -> str:
         token = str(value or "").strip().lower()
@@ -464,6 +510,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if mfr:
                 regulator_manufacturer = mfr
                 break
+
+    radio_payload = radio_coordinator.data or {}
+    radio_devices_payload = radio_payload.get("radioDevices")
+    if not isinstance(radio_devices_payload, list):
+        radio_devices_payload = []
+    known_radio_bus_keys: set[str] = set()
+    radio_parent = regulator_device or adapter_device_id
+    for device in radio_devices_payload:
+        if not isinstance(device, dict):
+            continue
+        group = parse_optional_int(device.get("group"))
+        instance = parse_optional_int(device.get("instance"))
+        if group is None or instance is None:
+            continue
+        bus_key = str(device.get("radioBusKey") or "").strip()
+        if not bus_key:
+            bus_key = build_radio_bus_key(group, instance)
+        known_radio_bus_keys.add(bus_key)
+        radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
+        model_name = radio_model_name(device)
+        device_kwargs: dict[str, object] = {
+            "config_entry_id": entry.entry_id,
+            "identifiers": {radio_device_id},
+            "manufacturer": "Vaillant",
+            "model": model_name,
+            "name": model_name,
+        }
+        if radio_parent is not None:
+            device_kwargs["via_device"] = radio_parent
+        sw_version = radio_firmware_display(device.get("firmwareVersion"))
+        if sw_version:
+            device_kwargs["sw_version"] = sw_version
+        hardware_identifier = parse_optional_int(device.get("hardwareIdentifier"))
+        if hardware_identifier is not None and hardware_identifier >= 0:
+            device_kwargs["hw_version"] = f"0x{hardware_identifier:04X}"
+        device_registry.async_get_or_create(**device_kwargs)
 
     system_payload = system_coordinator.data or {}
     system_properties = system_payload.get("properties")
@@ -623,10 +705,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if current_indexes - known_circuit_indexes:
             schedule_reload("circuit inventory became available")
 
+    def handle_radio_update() -> None:
+        payload = radio_coordinator.data or {}
+        current_keys: set[str] = set()
+        for radio in payload.get("radioDevices", []) or []:
+            if not isinstance(radio, dict):
+                continue
+            key = str(radio.get("radioBusKey") or "").strip()
+            if key:
+                current_keys.add(key)
+                continue
+            group = parse_optional_int(radio.get("group"))
+            instance = parse_optional_int(radio.get("instance"))
+            if group is None or instance is None:
+                continue
+            current_keys.add(build_radio_bus_key(group, instance))
+        if current_keys - known_radio_bus_keys:
+            schedule_reload("radio inventory became available")
+
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
     unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
     unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
+    unsub_listeners.append(radio_coordinator.async_add_listener(handle_radio_update))
 
     for zone_id, helper_entity in zone_schedule_helpers.items():
         @callback
@@ -668,6 +769,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             semantic_coordinator,
             energy_coordinator,
             boiler_subscription_coordinator,
+            radio_coordinator,
         )
 
     boiler_physical_device_id = resolve_boiler_physical_device_id(
@@ -689,6 +791,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
         "circuit_coordinator": circuit_coordinator,
+        "radio_coordinator": radio_coordinator,
         "system_coordinator": system_coordinator,
         "boiler_coordinator": boiler_coordinator,
         "graphql_client": client,

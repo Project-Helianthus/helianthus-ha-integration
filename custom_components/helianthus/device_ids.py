@@ -137,6 +137,14 @@ def circuit_identifier(config_entry_id: str, circuit_index: object) -> DeviceIde
     return (DOMAIN, f"{_token(config_entry_id)}-circuit-{token}")
 
 
+def build_radio_bus_key(group: int, instance: int) -> str:
+    return f"g{group:02x}-i{instance:02d}"
+
+
+def radio_device_identifier(config_entry_id: str, radio_bus_key: str) -> DeviceIdentifier:
+    return (DOMAIN, f"{_token(config_entry_id)}-radio-{_token(radio_bus_key)}")
+
+
 def dhw_identifier(config_entry_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{_token(config_entry_id)}-dhw")
 

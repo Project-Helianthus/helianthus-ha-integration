@@ -10,9 +10,10 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import dhw_identifier, zone_identifier
+from .device_ids import build_radio_bus_key, dhw_identifier, radio_device_identifier, zone_identifier
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
+_RADIO_STALE_GRACE_CYCLES = 3
 
 
 def _normalize_preset(value: Any) -> str:
@@ -28,9 +29,39 @@ def _normalize_preset(value: Any) -> str:
     return token
 
 
+def _parse_optional_int(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _radio_slot(device: dict[str, Any]) -> tuple[int, int] | None:
+    group = _parse_optional_int(device.get("group"))
+    instance = _parse_optional_int(device.get("instance"))
+    if group is None or instance is None:
+        return None
+    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
+        return None
+    return (group, instance)
+
+
+def _radio_bus_key(device: dict[str, Any]) -> str | None:
+    slot = _radio_slot(device)
+    if slot is None:
+        return None
+    explicit = str(device.get("radioBusKey") or "").strip()
+    if explicit:
+        return explicit
+    return build_radio_bus_key(slot[0], slot[1])
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
+    radio_coordinator = data.get("radio_coordinator")
     system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
@@ -118,6 +149,26 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 ),
             ]
         )
+
+    if radio_coordinator and radio_coordinator.data:
+        for radio in radio_coordinator.data.get("radioDevices", []) or []:
+            if not isinstance(radio, dict):
+                continue
+            slot = _radio_slot(radio)
+            bus_key = _radio_bus_key(radio)
+            if slot is None or bus_key is None:
+                continue
+            group, instance = slot
+            entities.append(
+                HelianthusRadioConnectedBinarySensor(
+                    coordinator=radio_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    radio_device_id=radio_device_identifier(entry.entry_id, bus_key),
+                    group=group,
+                    instance=instance,
+                )
+            )
 
     async_add_entities(entities)
 
@@ -265,6 +316,64 @@ class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if not isinstance(source, dict):
             return None
         value = source.get(self._key)
+        if isinstance(value, bool):
+            return value
+        return None
+
+
+class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Remote-slot connected-state binary sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        radio_device_id: tuple[str, str],
+        group: int,
+        instance: int,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._radio_device_id = radio_device_id
+        self._group = group
+        self._instance = instance
+        self._attr_name = "Device Connected"
+        self._attr_unique_id = f"{entry_id}-radio-{group:02x}-{instance:02d}-connected"
+
+    def _device(self) -> dict[str, Any] | None:
+        payload = self.coordinator.data or {}
+        for device in payload.get("radioDevices", []) or []:
+            if not isinstance(device, dict):
+                continue
+            if _radio_slot(device) == (self._group, self._instance):
+                return device
+        return None
+
+    @property
+    def available(self) -> bool:
+        device = self._device()
+        if device is None:
+            return False
+        stale = _parse_optional_int(device.get("staleCycles")) or 0
+        return stale < _RADIO_STALE_GRACE_CYCLES
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._radio_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        device = self._device()
+        if not isinstance(device, dict):
+            return None
+        value = device.get("deviceConnected")
         if isinstance(value, bool):
             return value
         return None

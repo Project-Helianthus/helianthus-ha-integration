@@ -75,6 +75,26 @@ SUBSCRIPTIONS = {
       }
     }
     """,
+    "radio_devices": """
+    subscription {
+      radioDevicesUpdate {
+        group
+        instance
+        slotMode
+        deviceConnected
+        deviceClassAddress
+        deviceModel
+        firmwareVersion
+        hardwareIdentifier
+        remoteControlAddress
+        devicePaired
+        receptionStrength
+        zoneAssignment
+        roomTemperatureC
+        roomHumidityPct
+      }
+    }
+    """,
 }
 
 
@@ -93,6 +113,7 @@ async def start_subscriptions(
     semantic_coordinator,
     energy_coordinator,
     boiler_coordinator,
+    radio_coordinator,
 ) -> asyncio.Task:
     ws_url = _to_ws_url(url)
     return asyncio.create_task(
@@ -102,6 +123,7 @@ async def start_subscriptions(
             semantic_coordinator,
             energy_coordinator,
             boiler_coordinator,
+            radio_coordinator,
         )
     )
 
@@ -112,6 +134,7 @@ async def _subscription_loop(
     semantic_coordinator,
     energy_coordinator,
     boiler_coordinator,
+    radio_coordinator,
 ) -> None:
     try:
         async with session.ws_connect(ws_url, protocols=["graphql-transport-ws"]) as ws:
@@ -125,6 +148,8 @@ async def _subscription_loop(
             }
             if boiler_coordinator is not None:
                 subscriptions["boiler"] = SUBSCRIPTIONS["boiler"]
+            if radio_coordinator is not None:
+                subscriptions["radio_devices"] = SUBSCRIPTIONS["radio_devices"]
 
             for key, query in subscriptions.items():
                 await ws.send_json({"id": key, "type": "subscribe", "payload": {"query": query}})
@@ -136,6 +161,7 @@ async def _subscription_loop(
                         semantic_coordinator,
                         energy_coordinator,
                         boiler_coordinator,
+                        radio_coordinator,
                     )
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     break
@@ -158,6 +184,7 @@ async def _handle_message(
     semantic_coordinator,
     energy_coordinator,
     boiler_coordinator,
+    radio_coordinator,
 ) -> None:
     if message.get("type") == "error":
         _LOGGER.debug("GraphQL subscription error frame: %s", message)
@@ -193,3 +220,12 @@ async def _handle_message(
     if "boilerStatusUpdate" in data and boiler_coordinator:
         boiler = data.get("boilerStatusUpdate")
         boiler_coordinator.async_set_updated_data({"boilerStatus": boiler})
+
+    if "radioDevicesUpdate" in data and radio_coordinator:
+        radio_devices = data.get("radioDevicesUpdate")
+        if hasattr(radio_coordinator, "apply_radio_update"):
+            radio_coordinator.apply_radio_update(radio_devices)
+        elif isinstance(radio_devices, list):
+            radio_coordinator.async_set_updated_data(
+                {"radioDevices": radio_devices, "radioZoneCandidates": {}}
+            )
