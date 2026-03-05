@@ -2,11 +2,15 @@
 
 from custom_components.helianthus.device_ids import (
     adapter_identifier,
+    boiler_burner_identifier,
+    boiler_hydraulics_identifier,
     bus_identifier,
     build_bus_device_key,
     daemon_identifier,
     dhw_identifier,
     energy_identifier,
+    resolve_boiler_physical_device_id,
+    resolve_boiler_via_device_id,
     resolve_bus_address,
     zone_identifier,
 )
@@ -92,3 +96,26 @@ def test_identifier_helpers_are_deterministic() -> None:
     assert zone_identifier("entry-1", "1") == ("helianthus", "entry-1-zone-1")
     assert dhw_identifier("entry-1") == ("helianthus", "entry-1-dhw")
     assert energy_identifier("entry-1") == ("helianthus", "entry-1-energy")
+
+
+def test_boiler_subdevice_identifier_helpers_are_deterministic() -> None:
+    assert boiler_burner_identifier("entry-1") == ("helianthus", "entry-1-boiler-burner")
+    assert boiler_hydraulics_identifier("entry-1") == ("helianthus", "entry-1-boiler-hydraulics")
+
+
+def test_boiler_device_contract_helpers_prefer_physical_boiler() -> None:
+    boiler = ("helianthus", "entry-1-bus-BAI00-08")
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    adapter = ("helianthus", "adapter-entry-1")
+
+    assert resolve_boiler_physical_device_id(boiler, regulator) == boiler
+    assert resolve_boiler_via_device_id(boiler, regulator, adapter) == boiler
+
+
+def test_boiler_device_contract_helpers_fall_back_to_regulator_or_adapter() -> None:
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    adapter = ("helianthus", "adapter-entry-1")
+
+    assert resolve_boiler_physical_device_id(None, regulator) == regulator
+    assert resolve_boiler_via_device_id(None, regulator, adapter) == regulator
+    assert resolve_boiler_via_device_id(None, None, adapter) == adapter

@@ -22,7 +22,17 @@ from .const import (
     DOMAIN,
 )
 
-PLATFORMS: list[str] = ["sensor", "binary_sensor", "climate", "water_heater"]
+PLATFORMS: list[str] = [
+    "sensor",
+    "binary_sensor",
+    "climate",
+    "water_heater",
+    "fan",
+    "valve",
+    "number",
+    "select",
+    "switch",
+]
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -126,6 +136,8 @@ def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
         f"adapter-{entry_id}",
         f"{entry_id}-dhw",
         f"{entry_id}-energy",
+        f"{entry_id}-boiler-burner",
+        f"{entry_id}-boiler-hydraulics",
     } or token.startswith(f"{entry_id}-bus-") or token.startswith(f"{entry_id}-zone-")
 
 
@@ -190,6 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
+        HelianthusBoilerCoordinator,
         HelianthusCoordinator,
         HelianthusEnergyCoordinator,
         HelianthusSemanticCoordinator,
@@ -197,10 +210,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     from .device_ids import (
         adapter_identifier,
+        boiler_burner_identifier,
+        boiler_hydraulics_identifier,
         build_bus_device_key,
         bus_identifier,
         daemon_identifier,
         resolve_bus_address,
+        resolve_boiler_physical_device_id,
+        resolve_boiler_via_device_id,
     )
     from .subscriptions import start_subscriptions
 
@@ -299,10 +316,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     status_coordinator = HelianthusStatusCoordinator(hass, client, scan_interval)
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
     energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
+    boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
     await energy_coordinator.async_config_entry_first_refresh()
+    await boiler_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
     reload_scheduled = False
@@ -343,6 +362,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     known_bus_devices: set[str] = set()
     regulator_device: tuple[str, str] | None = None
     regulator_bus_address: int | None = None
+    boiler_device: tuple[str, str] | None = None
+    vr71_device: tuple[str, str] | None = None
     for device in devices:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         device_id = device.get("deviceId", "unknown")
@@ -381,6 +402,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_registry.async_get_or_create(**device_kwargs)
 
         device_id_upper = str(device_id).upper()
+        if boiler_device is None and device_id_upper.startswith("BAI"):
+            boiler_device = bus_device_id
+        if vr71_device is None and (
+            device_id_upper.startswith("VR_71") or device_id_upper.startswith("VR71")
+        ):
+            vr71_device = bus_device_id
         if device_id_upper.startswith("BASV"):
             regulator_device = bus_device_id
             regulator_bus_address = address
@@ -538,23 +565,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     subscription_task = None
     if use_subscriptions:
         subscription_task = await start_subscriptions(
-            session, graphql_url, semantic_coordinator, energy_coordinator
+            session,
+            graphql_url,
+            semantic_coordinator,
+            energy_coordinator,
+            boiler_coordinator,
         )
+
+    boiler_physical_device_id = resolve_boiler_physical_device_id(
+        boiler_device,
+        regulator_device,
+    )
+    boiler_via_device_id = resolve_boiler_via_device_id(
+        boiler_device,
+        regulator_device,
+        adapter_device_id,
+    )
+    # HA-1 reduced profile: boiler Burner/Hydraulics sub-devices are not registered yet.
+    boiler_burner_device_id = boiler_burner_identifier(entry.entry_id)
+    boiler_hydraulics_device_id = boiler_hydraulics_identifier(entry.entry_id)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
+        "boiler_coordinator": boiler_coordinator,
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
         "daemon_device_id": daemon_device_id,
         "adapter_device_id": adapter_device_id,
+        "boiler_device_id": boiler_device,
         "regulator_device_id": regulator_device,
+        "vr71_device_id": vr71_device,
         "regulator_manufacturer": regulator_manufacturer,
         "regulator_bus_address": regulator_bus_address,
         "daemon_source_address": daemon_source_addr,
+        "boiler_physical_device_id": boiler_physical_device_id,
+        "boiler_via_device_id": boiler_via_device_id,
+        "boiler_burner_device_id": boiler_burner_device_id,
+        "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
