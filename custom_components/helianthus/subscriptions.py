@@ -32,6 +32,7 @@ SUBSCRIPTIONS = {
           allowedModes
           circuitType
           associatedCircuit
+          roomTemperatureZoneMapping
         }
       }
     }

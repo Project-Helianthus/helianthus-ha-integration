@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import zone_identifier
+from .device_ids import build_radio_bus_key, radio_device_identifier, zone_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
 
@@ -53,6 +53,107 @@ _ZONE_WRITABLE_REGISTERS: dict[int, str] = {
     _ZONE_TARGET_TEMP_DESIRED_ADDR: "configuration.heating.desired_setpoint",
     _ZONE_TARGET_TEMP_ADDR: "configuration.heating.manual_mode_setpoint",
 }
+
+_ROOM_TEMPERATURE_ZONE_MAPPING_TEXT = {
+    0: "none",
+    1: "regulator",
+    2: "thermostat_1",
+    3: "thermostat_2",
+    4: "thermostat_3",
+}
+
+
+def _parse_optional_int(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_radio_slot_candidate(candidate: dict[str, Any]) -> dict[str, Any] | None:
+    group = _parse_optional_int(candidate.get("group"))
+    instance = _parse_optional_int(candidate.get("instance"))
+    if group is None or instance is None:
+        return None
+    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
+        return None
+    return {
+        "group": group,
+        "instance": instance,
+        "remote_control_address": _parse_optional_int(candidate.get("remote_control_address")),
+    }
+
+
+def _select_zone_radio_candidate(
+    zone_instance: int,
+    room_temperature_zone_mapping: int | None,
+    radio_zone_candidates: dict[int, list[dict[str, Any]]],
+) -> dict[str, Any] | None:
+    candidates = list(radio_zone_candidates.get(zone_instance, []) or [])
+
+    def pick(group: int, remote_addr: int | None = None) -> dict[str, Any] | None:
+        for candidate in candidates:
+            if candidate.get("group") != group:
+                continue
+            if remote_addr is not None and candidate.get("remote_control_address") != remote_addr:
+                continue
+            return candidate
+        return None
+
+    def pick_thermostat_fallback(target_remote_addr: int) -> dict[str, Any] | None:
+        ranked = sorted(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.get("group") == 0x0A
+            ),
+            key=lambda candidate: (
+                abs(
+                    (
+                        candidate.get("remote_control_address")
+                        if isinstance(candidate.get("remote_control_address"), int)
+                        else 255
+                    )
+                    - target_remote_addr
+                ),
+                int(candidate.get("instance") or 0),
+            ),
+        )
+        return ranked[0] if ranked else None
+
+    if room_temperature_zone_mapping == 1:
+        return pick(0x09, 0) or pick(0x09)
+    if room_temperature_zone_mapping in (2, 3, 4):
+        remote_addr = room_temperature_zone_mapping - 1
+        return pick(0x0A, remote_addr) or pick_thermostat_fallback(remote_addr) or pick(0x09)
+    if room_temperature_zone_mapping == 0:
+        return None
+    return pick(0x0A) or pick(0x09)
+
+
+def zone_via_device(
+    zone_instance: int,
+    room_temperature_zone_mapping: int | None,
+    radio_zone_candidates: dict[int, list[dict[str, Any]]],
+    radio_device_ids: dict[tuple[int, int], tuple[str, str]],
+    regulator_device_id: tuple[str, str] | None,
+) -> tuple[str, str] | None:
+    candidate = _select_zone_radio_candidate(
+        zone_instance,
+        room_temperature_zone_mapping,
+        radio_zone_candidates,
+    )
+    if candidate is not None:
+        slot = (
+            int(candidate.get("group") or 0),
+            int(candidate.get("instance") or 0),
+        )
+        radio_id = radio_device_ids.get(slot)
+        if radio_id is not None:
+            return radio_id
+    return regulator_device_id
 
 
 def _normalize_zone_id(zone_id: object | None) -> str | None:
@@ -98,7 +199,8 @@ def _zone_default_name(zone_id: object | None) -> str:
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
-    via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    radio_coordinator = data.get("radio_coordinator")
+    regulator_device_id = data.get("regulator_device_id") or data.get("adapter_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_bus_address = data.get("regulator_bus_address")
@@ -109,7 +211,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusZoneClimate(
             entry.entry_id,
             coordinator,
-            via_device,
+            radio_coordinator,
+            regulator_device_id,
             manufacturer,
             client,
             regulator_bus_address,
@@ -134,7 +237,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         self,
         entry_id: str,
         coordinator,
-        via_device: tuple[str, str] | None,
+        radio_coordinator,
+        regulator_device_id: tuple[str, str] | None,
         manufacturer: str,
         client: GraphQLClient | None,
         regulator_bus_address: int | None,
@@ -144,7 +248,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
-        self._via_device = via_device
+        self._radio_coordinator = radio_coordinator
+        self._regulator_device_id = regulator_device_id
         self._manufacturer = manufacturer
         self._client = client
         self._regulator_bus_address = regulator_bus_address
@@ -177,7 +282,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     @property
     def device_info(self) -> DeviceInfo:
         identifier = zone_identifier(self._entry_id, str(self._zone_id))
-        via = self._via_device
+        via = self._resolved_via_device()
         return DeviceInfo(
             identifiers={identifier},
             manufacturer=self._manufacturer,
@@ -191,6 +296,97 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     def _zone_config(self) -> dict[str, Any]:
         return self._zone().get("config") or {}
+
+    def _room_temperature_zone_mapping(self) -> int | None:
+        return _parse_optional_int(self._zone_config().get("roomTemperatureZoneMapping"))
+
+    def _radio_zone_candidates(self) -> dict[int, list[dict[str, Any]]]:
+        if self._radio_coordinator is None or not isinstance(self._radio_coordinator.data, dict):
+            return {}
+        raw_candidates = self._radio_coordinator.data.get("radioZoneCandidates")
+        if not isinstance(raw_candidates, dict):
+            return {}
+        out: dict[int, list[dict[str, Any]]] = {}
+        for raw_zone_instance, raw_items in raw_candidates.items():
+            zone_instance = _parse_optional_int(raw_zone_instance)
+            if zone_instance is None:
+                continue
+            if not isinstance(raw_items, list):
+                continue
+            normalized_items: list[dict[str, Any]] = []
+            for item in raw_items:
+                if not isinstance(item, dict):
+                    continue
+                normalized = _normalize_radio_slot_candidate(item)
+                if normalized is not None:
+                    normalized_items.append(normalized)
+            if normalized_items:
+                out[zone_instance] = normalized_items
+        return out
+
+    def _radio_devices(self) -> list[dict[str, Any]]:
+        if self._radio_coordinator is None or not isinstance(self._radio_coordinator.data, dict):
+            return []
+        items = self._radio_coordinator.data.get("radioDevices")
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    def _radio_device_ids(self) -> dict[tuple[int, int], tuple[str, str]]:
+        out: dict[tuple[int, int], tuple[str, str]] = {}
+        for device in self._radio_devices():
+            group = _parse_optional_int(device.get("group"))
+            instance = _parse_optional_int(device.get("instance"))
+            if group is None or instance is None:
+                continue
+            bus_key = str(device.get("radioBusKey") or "").strip()
+            if not bus_key:
+                bus_key = build_radio_bus_key(group, instance)
+            out[(group, instance)] = radio_device_identifier(self._entry_id, bus_key)
+        return out
+
+    def _radio_device_labels(self) -> dict[tuple[int, int], str]:
+        out: dict[tuple[int, int], str] = {}
+        for device in self._radio_devices():
+            group = _parse_optional_int(device.get("group"))
+            instance = _parse_optional_int(device.get("instance"))
+            if group is None or instance is None:
+                continue
+            model = str(device.get("deviceModel") or "").strip()
+            class_address = _parse_optional_int(device.get("deviceClassAddress"))
+            if not model:
+                if class_address == 0x15:
+                    model = "VRC720f/2"
+                elif class_address == 0x35:
+                    model = "VR92f"
+                elif class_address == 0x26:
+                    model = "VR71/FM5"
+                elif class_address is not None and class_address >= 0:
+                    model = f"Unknown Radio (0x{class_address:02X})"
+                else:
+                    model = "Unknown Radio"
+            out[(group, instance)] = model
+        return out
+
+    def _selected_radio_candidate(self) -> dict[str, Any] | None:
+        if self._zone_instance is None:
+            return None
+        return _select_zone_radio_candidate(
+            self._zone_instance,
+            self._room_temperature_zone_mapping(),
+            self._radio_zone_candidates(),
+        )
+
+    def _resolved_via_device(self) -> tuple[str, str] | None:
+        if self._zone_instance is None:
+            return self._regulator_device_id
+        return zone_via_device(
+            self._zone_instance,
+            self._room_temperature_zone_mapping(),
+            self._radio_zone_candidates(),
+            self._radio_device_ids(),
+            self._regulator_device_id,
+        )
 
     @property
     def hvac_mode(self) -> HVACMode | None:
@@ -238,6 +434,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         attrs: dict[str, Any] = {}
         state = self._zone_state()
         config = self._zone_config()
+        mapping = self._room_temperature_zone_mapping()
         demand = state.get("heatingDemandPct")
         if demand is not None:
             attrs["heating_demand_pct"] = demand
@@ -251,6 +448,28 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             value = source.get(key)
             if value is not None and str(value).strip() != "":
                 attrs[field] = value
+
+        attrs["room_temperature_zone_mapping"] = mapping
+        attrs["room_temperature_zone_mapping_text"] = (
+            _ROOM_TEMPERATURE_ZONE_MAPPING_TEXT.get(mapping, "unknown")
+            if mapping is not None
+            else None
+        )
+
+        selected = self._selected_radio_candidate()
+        if selected is not None:
+            slot = (
+                int(selected.get("group") or 0),
+                int(selected.get("instance") or 0),
+            )
+            labels = self._radio_device_labels()
+            attrs["radio_device"] = labels.get(slot)
+            attrs["radio_device_group"] = f"0x{slot[0]:02X}"
+            attrs["radio_device_instance"] = slot[1]
+        else:
+            attrs["radio_device"] = None
+            attrs["radio_device_group"] = None
+            attrs["radio_device_instance"] = None
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
