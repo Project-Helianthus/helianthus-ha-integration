@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import circuit_identifier
+from .device_ids import circuit_identifier, solar_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 _SET_CIRCUIT_CONFIG_MUTATION = """
@@ -29,6 +29,8 @@ _CIRCUIT_TYPE_LABELS = {
     "dhw": "DHW",
     "return_increase": "Return Increase",
 }
+
+_FM5_MODE_INTERPRETED = "INTERPRETED"
 
 
 def _parse_circuit_index(value: object | None) -> int | None:
@@ -49,32 +51,60 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     return f"Circuit {index + 1} ({label})"
 
 
+def _fm5_mode(payload: dict[str, Any] | None) -> str:
+    if not isinstance(payload, dict):
+        return "ABSENT"
+    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
+        return "ABSENT"
+    return mode
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data.get("circuit_coordinator")
+    fm5_coordinator = data.get("fm5_coordinator")
+    vr71_device_id = data.get("vr71_device_id") or data.get("regulator_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
-    if coordinator is None or not coordinator.data:
-        async_add_entities([])
-        return
 
-    entities: list[HelianthusCircuitCoolingEnabledSwitch] = []
-    for circuit in coordinator.data.get("circuits", []) or []:
-        if not isinstance(circuit, dict):
-            continue
-        index = _parse_circuit_index(circuit.get("index"))
-        if index is None:
-            continue
-        entities.append(
-            HelianthusCircuitCoolingEnabledSwitch(
-                coordinator=coordinator,
-                entry_id=entry.entry_id,
-                manufacturer=manufacturer,
-                client=client,
-                circuit_index=index,
-                initial_name=_circuit_name(circuit, index),
+    entities: list[SwitchEntity] = []
+    if coordinator and coordinator.data:
+        for circuit in coordinator.data.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            index = _parse_circuit_index(circuit.get("index"))
+            if index is None:
+                continue
+            entities.append(
+                HelianthusCircuitCoolingEnabledSwitch(
+                    coordinator=coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    client=client,
+                    circuit_index=index,
+                    initial_name=_circuit_name(circuit, index),
+                )
             )
-        )
+
+    if fm5_coordinator and fm5_coordinator.data and _fm5_mode(fm5_coordinator.data) == _FM5_MODE_INTERPRETED:
+        solar = fm5_coordinator.data.get("solar")
+        if isinstance(solar, dict):
+            for key, label in [
+                ("solarEnabled", "Solar Enabled"),
+                ("functionMode", "Function Mode"),
+            ]:
+                entities.append(
+                    HelianthusSolarSwitch(
+                        coordinator=fm5_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        solar_device_id=solar_identifier(entry.entry_id),
+                        parent_device_id=vr71_device_id,
+                        key=key,
+                        label=label,
+                    )
+                )
     async_add_entities(entities)
 
 
@@ -170,3 +200,62 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._write(False)
+
+
+class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
+    """Read-only interpreted solar config switch."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        solar_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+        key: str,
+        label: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._solar_device_id = solar_device_id
+        self._parent_device_id = parent_device_id
+        self._key = key
+        self._attr_name = f"Solar {label}"
+        self._attr_unique_id = f"{entry_id}-solar-switch-{key}"
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data if isinstance(self.coordinator.data, dict) else None
+        return _fm5_mode(payload) == _FM5_MODE_INTERPRETED
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._solar_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Solar Circuit",
+            "name": "Solar Circuit",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        solar = payload.get("solar") if isinstance(payload, dict) else None
+        if not isinstance(solar, dict):
+            return None
+        value = solar.get(self._key)
+        if isinstance(value, bool):
+            return value
+        return None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        raise HomeAssistantError("Helianthus solar switches are read-only in this profile")
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        raise HomeAssistantError("Helianthus solar switches are read-only in this profile")

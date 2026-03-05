@@ -7,6 +7,7 @@ from custom_components.helianthus.device_ids import (
     build_radio_bus_key,
     bus_identifier,
     build_bus_device_key,
+    cylinder_identifier,
     circuit_identifier,
     daemon_identifier,
     dhw_identifier,
@@ -16,6 +17,7 @@ from custom_components.helianthus.device_ids import (
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
     resolve_bus_address,
+    solar_identifier,
     zone_identifier,
 )
 
@@ -101,6 +103,8 @@ def test_identifier_helpers_are_deterministic() -> None:
     assert circuit_identifier("entry-1", 0) == ("helianthus", "entry-1-circuit-0")
     assert build_radio_bus_key(0x09, 1) == "g09-i01"
     assert radio_device_identifier("entry-1", "g09-i01") == ("helianthus", "entry-1-radio-g09-i01")
+    assert solar_identifier("entry-1") == ("helianthus", "entry-1-solar")
+    assert cylinder_identifier("entry-1", 0) == ("helianthus", "entry-1-cylinder-0")
     assert dhw_identifier("entry-1") == ("helianthus", "entry-1-dhw")
     assert energy_identifier("entry-1") == ("helianthus", "entry-1-energy")
 
