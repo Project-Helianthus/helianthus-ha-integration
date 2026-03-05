@@ -211,6 +211,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusCoordinator,
         HelianthusEnergyCoordinator,
         HelianthusSemanticCoordinator,
+        HelianthusSystemCoordinator,
         HelianthusStatusCoordinator,
     )
     from .device_ids import (
@@ -324,12 +325,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
     energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
     circuit_coordinator = HelianthusCircuitCoordinator(hass, client, scan_interval)
+    system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
     await energy_coordinator.async_config_entry_first_refresh()
     await circuit_coordinator.async_config_entry_first_refresh()
+    await system_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
@@ -379,6 +382,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if parsed < 0:
             return None
         return parsed
+
+    def parse_optional_int(value: object | None) -> int | None:
+        if isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def circuit_type_display_name(value: object | None) -> str:
         token = str(value or "").strip().lower()
@@ -454,11 +465,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 regulator_manufacturer = mfr
                 break
 
+    system_payload = system_coordinator.data or {}
+    system_properties = system_payload.get("properties")
+    if not isinstance(system_properties, dict):
+        system_properties = {}
+    fm5_raw = parse_optional_int(system_properties.get("moduleConfigurationVR71"))
+    fm5_config = fm5_raw if fm5_raw is not None and fm5_raw >= 0 else None
+    vr71_start_raw = parse_optional_int(system_properties.get("vr71CircuitStartIndex"))
+    vr71_circuit_start = vr71_start_raw if vr71_start_raw is not None and vr71_start_raw >= 0 else -1
+
     circuits_payload = circuit_coordinator.data or {}
     circuits = circuits_payload.get("circuits", []) or []
     known_circuit_indexes: set[int] = set()
-    fm5_config: int | None = None
-    vr71_circuit_start = -1
     for circuit in circuits:
         if not isinstance(circuit, dict):
             continue
@@ -671,6 +689,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
         "circuit_coordinator": circuit_coordinator,
+        "system_coordinator": system_coordinator,
         "boiler_coordinator": boiler_coordinator,
         "graphql_client": client,
         "subscription_task": subscription_task,

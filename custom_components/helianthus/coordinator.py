@@ -236,6 +236,63 @@ query Circuits {
 }
 """
 
+QUERY_SYSTEM = """
+query System {
+  system {
+    state {
+      systemWaterPressure
+      systemFlowTemperature
+      outdoorTemperature
+      outdoorTemperatureAvg24h
+      maintenanceDue
+      hwcCylinderTemperatureTop
+      hwcCylinderTemperatureBottom
+    }
+    config {
+      adaptiveHeatingCurve
+      heatingCircuitBivalencePoint
+      dhwBivalencePoint
+      hcEmergencyTemperature
+      hwcMaxFlowTempDesired
+      maxRoomHumidity
+    }
+    properties {
+      systemScheme
+      moduleConfigurationVR71
+      vr71CircuitStartIndex
+    }
+  }
+}
+"""
+
+QUERY_SYSTEM_LEGACY = """
+query System {
+  system {
+    state {
+      systemWaterPressure
+      systemFlowTemperature
+      outdoorTemperature
+      outdoorTemperatureAvg24h
+      maintenanceDue
+      hwcCylinderTemperatureTop
+      hwcCylinderTemperatureBottom
+    }
+    config {
+      adaptiveHeatingCurve
+      heatingCircuitBivalencePoint
+      dhwBivalencePoint
+      hcEmergencyTemperature
+      hwcMaxFlowTempDesired
+      maxRoomHumidity
+    }
+    properties {
+      systemScheme
+      moduleConfigurationVR71
+    }
+  }
+}
+"""
+
 QUERY_ENERGY = """
 query Energy {
   devices {
@@ -467,6 +524,78 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 for circuit in circuits
                 if isinstance(circuit, dict)
             ]
+        }
+
+
+class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching semantic system data."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_system",
+            update_interval=timedelta(seconds=scan_interval),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        empty = {"state": {}, "config": {}, "properties": {}}
+        missing_fields = [
+            "system",
+            "state",
+            "config",
+            "properties",
+            "systemWaterPressure",
+            "systemFlowTemperature",
+            "outdoorTemperature",
+            "outdoorTemperatureAvg24h",
+            "maintenanceDue",
+            "hwcCylinderTemperatureTop",
+            "hwcCylinderTemperatureBottom",
+            "adaptiveHeatingCurve",
+            "heatingCircuitBivalencePoint",
+            "dhwBivalencePoint",
+            "hcEmergencyTemperature",
+            "hwcMaxFlowTempDesired",
+            "maxRoomHumidity",
+            "systemScheme",
+            "moduleConfigurationVR71",
+        ]
+
+        try:
+            payload = await self._client.execute(QUERY_SYSTEM)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["vr71CircuitStartIndex"]):
+                try:
+                    payload = await self._client.execute(QUERY_SYSTEM_LEGACY)
+                except GraphQLResponseError as nested:
+                    if _is_missing_field_error(nested.errors, missing_fields):
+                        return empty
+                    raise UpdateFailed(str(nested)) from nested
+                except GraphQLClientError as nested:
+                    raise UpdateFailed(str(nested)) from nested
+            elif _is_missing_field_error(exc.errors, missing_fields):
+                return empty
+            else:
+                raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return empty
+
+        system = payload.get("system")
+        if not isinstance(system, dict):
+            return empty
+
+        state = system.get("state")
+        config = system.get("config")
+        properties = system.get("properties")
+        return {
+            "state": state if isinstance(state, dict) else {},
+            "config": config if isinstance(config, dict) else {},
+            "properties": properties if isinstance(properties, dict) else {},
         }
 
 
