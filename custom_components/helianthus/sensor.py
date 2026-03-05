@@ -501,6 +501,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     ("dhw", None),
                 )
             )
+            sensors.append(
+                HelianthusDHWStatusSensor(
+                    semantic_coordinator,
+                    entry.entry_id,
+                    via_device,
+                    manufacturer,
+                )
+            )
 
     if energy_coordinator and energy_coordinator.data:
         sensors.extend(
@@ -919,6 +927,48 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         dhw = self.coordinator.data.get("dhw") or {}
         state = dhw.get("state") or {}
         return state.get("heatingDemandPct")
+
+
+class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
+    """DHW charging/status sensor."""
+
+    entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        via_device: tuple[str, str] | None,
+        manufacturer: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._via_device = via_device
+        self._manufacturer = manufacturer
+        self._attr_name = "Domestic Hot Water HWC Status"
+        self._attr_unique_id = f"{entry_id}-dhw-hwc-status"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={dhw_identifier(self._entry_id)},
+            manufacturer=self._manufacturer,
+            model="Virtual DHW",
+            name="Domestic Hot Water",
+            via_device=self._via_device,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        payload = self.coordinator.data or {}
+        dhw = payload.get("dhw") or {}
+        state = dhw.get("state") if isinstance(dhw.get("state"), dict) else {}
+        value = state.get("specialFunction")
+        if value is None:
+            return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return str(value)
 
 
 class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
