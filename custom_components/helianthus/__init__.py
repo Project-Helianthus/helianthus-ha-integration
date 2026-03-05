@@ -143,6 +143,8 @@ def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
         or token.startswith(f"{entry_id}-zone-")
         or token.startswith(f"{entry_id}-circuit-")
         or token.startswith(f"{entry_id}-radio-")
+        or token.startswith(f"{entry_id}-cylinder-")
+        or token == f"{entry_id}-solar"
     )
 
 
@@ -211,6 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusCircuitCoordinator,
         HelianthusCoordinator,
         HelianthusEnergyCoordinator,
+        HelianthusFM5Coordinator,
         HelianthusRadioDeviceCoordinator,
         HelianthusSemanticCoordinator,
         HelianthusSystemCoordinator,
@@ -330,6 +333,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
     circuit_coordinator = HelianthusCircuitCoordinator(hass, client, scan_interval)
     radio_coordinator = HelianthusRadioDeviceCoordinator(hass, client, scan_interval)
+    fm5_coordinator = HelianthusFM5Coordinator(hass, client, scan_interval)
     system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
@@ -338,6 +342,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await energy_coordinator.async_config_entry_first_refresh()
     await circuit_coordinator.async_config_entry_first_refresh()
     await radio_coordinator.async_config_entry_first_refresh()
+    await fm5_coordinator.async_config_entry_first_refresh()
     await system_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
 
@@ -588,6 +593,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device_kwargs["via_device"] = managing_device
         device_registry.async_get_or_create(**device_kwargs)
 
+    fm5_payload = fm5_coordinator.data or {}
+    known_fm5_mode = str(fm5_payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    known_cylinder_indexes: set[int] = set()
+    for cylinder in fm5_payload.get("cylinders", []) or []:
+        if not isinstance(cylinder, dict):
+            continue
+        index = parse_optional_int(cylinder.get("index"))
+        if index is not None and index >= 0:
+            known_cylinder_indexes.add(index)
+
     daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
     daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
 
@@ -723,11 +738,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if current_keys - known_radio_bus_keys:
             schedule_reload("radio inventory became available")
 
+    def handle_fm5_update() -> None:
+        payload = fm5_coordinator.data or {}
+        mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+        current_indexes: set[int] = set()
+        for cylinder in payload.get("cylinders", []) or []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = parse_optional_int(cylinder.get("index"))
+            if index is not None and index >= 0:
+                current_indexes.add(index)
+        if mode != known_fm5_mode:
+            if "INTERPRETED" in {mode, known_fm5_mode}:
+                schedule_reload("fm5 semantic mode changed")
+                return
+        if mode == "INTERPRETED" and (current_indexes - known_cylinder_indexes):
+            schedule_reload("cylinder inventory became available")
+
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
     unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
     unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
     unsub_listeners.append(radio_coordinator.async_add_listener(handle_radio_update))
+    unsub_listeners.append(fm5_coordinator.async_add_listener(handle_fm5_update))
 
     for zone_id, helper_entity in zone_schedule_helpers.items():
         @callback
@@ -792,6 +825,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "energy_coordinator": energy_coordinator,
         "circuit_coordinator": circuit_coordinator,
         "radio_coordinator": radio_coordinator,
+        "fm5_coordinator": fm5_coordinator,
         "system_coordinator": system_coordinator,
         "boiler_coordinator": boiler_coordinator,
         "graphql_client": client,

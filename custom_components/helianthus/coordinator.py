@@ -296,6 +296,28 @@ query RadioDevices {
 }
 """
 
+QUERY_FM5 = """
+query FM5Semantic {
+  fm5SemanticMode
+  solar {
+    collectorTemperatureC
+    returnTemperatureC
+    pumpActive
+    currentYield
+    pumpHours
+    solarEnabled
+    functionMode
+  }
+  cylinders {
+    index
+    temperatureC
+    maxSetpointC
+    chargeHysteresisC
+    chargeOffsetC
+  }
+}
+"""
+
 QUERY_SYSTEM = """
 query System {
   system {
@@ -718,6 +740,88 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "radioDevices": radio_devices,
             "radioZoneCandidates": candidates,
+        }
+
+
+class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching FM5 mode plus interpreted solar/cylinder semantics."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_fm5",
+            update_interval=timedelta(seconds=scan_interval),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        empty = {
+            "fm5SemanticMode": "ABSENT",
+            "solar": None,
+            "cylinders": [],
+        }
+        missing_fields = [
+            "fm5SemanticMode",
+            "solar",
+            "cylinders",
+            "collectorTemperatureC",
+            "returnTemperatureC",
+            "pumpActive",
+            "currentYield",
+            "pumpHours",
+            "solarEnabled",
+            "functionMode",
+            "index",
+            "temperatureC",
+            "maxSetpointC",
+            "chargeHysteresisC",
+            "chargeOffsetC",
+        ]
+        try:
+            payload = await self._client.execute(QUERY_FM5)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, missing_fields):
+                return empty
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return empty
+
+        mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+        if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
+            mode = "ABSENT"
+
+        if mode != "INTERPRETED":
+            return {
+                "fm5SemanticMode": mode,
+                "solar": None,
+                "cylinders": [],
+            }
+
+        solar = payload.get("solar")
+        if not isinstance(solar, dict):
+            solar = None
+        cylinders = payload.get("cylinders")
+        normalized_cylinders: list[dict[str, Any]] = []
+        if isinstance(cylinders, list):
+            for cylinder in cylinders:
+                if not isinstance(cylinder, dict):
+                    continue
+                index = _parse_optional_int(cylinder.get("index"))
+                if index is None or index < 0:
+                    continue
+                normalized = dict(cylinder)
+                normalized["index"] = index
+                normalized_cylinders.append(normalized)
+        normalized_cylinders.sort(key=lambda item: int(item.get("index") or 0))
+
+        return {
+            "fm5SemanticMode": mode,
+            "solar": solar,
+            "cylinders": normalized_cylinders,
         }
 
 

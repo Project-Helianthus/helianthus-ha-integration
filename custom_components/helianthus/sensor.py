@@ -14,12 +14,14 @@ from .const import DOMAIN
 from .device_ids import (
     build_radio_bus_key,
     build_bus_device_key,
+    cylinder_identifier,
     bus_identifier,
     circuit_identifier,
     dhw_identifier,
     energy_identifier,
     radio_device_identifier,
     resolve_bus_address,
+    solar_identifier,
     zone_identifier,
 )
 from .energy import compute_total
@@ -86,6 +88,7 @@ _SENSOR_DEVICE_CLASS_PRESSURE = getattr(SensorDeviceClass, "PRESSURE", None)
 _SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASING", None)
 _RADIO_ROOM_CLASSES = {0x15, 0x35}
 _RADIO_STALE_GRACE_CYCLES = 3
+_FM5_MODE_INTERPRETED = "INTERPRETED"
 
 _CIRCUIT_TYPE_LABELS = {
     "heating": "Heating",
@@ -275,6 +278,15 @@ def _radio_model_name(device: dict[str, Any]) -> str:
     return "Unknown Radio"
 
 
+def _fm5_mode(payload: dict[str, Any] | None) -> str:
+    if not isinstance(payload, dict):
+        return "ABSENT"
+    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
+        return "ABSENT"
+    return mode
+
+
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     token = str(circuit.get("circuitType") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
@@ -289,10 +301,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     energy_coordinator = data.get("energy_coordinator")
     circuit_coordinator = data.get("circuit_coordinator")
     radio_coordinator = data.get("radio_coordinator")
+    fm5_coordinator = data.get("fm5_coordinator")
     system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
     regulator_device_id = data.get("regulator_device_id")
+    vr71_device_id = data.get("vr71_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
@@ -474,6 +488,72 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                             cast_int=True,
                         )
                     )
+
+    if fm5_coordinator and fm5_coordinator.data:
+        fm5_payload = fm5_coordinator.data
+        mode = _fm5_mode(fm5_payload)
+        marker_device_id = vr71_device_id or regulator_device_id
+        if marker_device_id:
+            sensors.append(
+                HelianthusFM5ModeSensor(
+                    coordinator=fm5_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    parent_device_id=marker_device_id,
+                )
+            )
+        if mode == _FM5_MODE_INTERPRETED:
+            solar = fm5_payload.get("solar")
+            if isinstance(solar, dict):
+                solar_device_id = solar_identifier(entry.entry_id)
+                for key, label, device_class, unit, state_class in [
+                    (
+                        "collectorTemperatureC",
+                        "Collector Temperature",
+                        SensorDeviceClass.TEMPERATURE,
+                        UnitOfTemperature.CELSIUS,
+                        SensorStateClass.MEASUREMENT,
+                    ),
+                    (
+                        "returnTemperatureC",
+                        "Return Temperature",
+                        SensorDeviceClass.TEMPERATURE,
+                        UnitOfTemperature.CELSIUS,
+                        SensorStateClass.MEASUREMENT,
+                    ),
+                    ("currentYield", "Current Yield", None, None, None),
+                    ("pumpHours", "Pump Hours", _SENSOR_DEVICE_CLASS_DURATION, "h", _SENSOR_STATE_CLASS_TOTAL_INCREASING),
+                ]:
+                    sensors.append(
+                        HelianthusSolarSensor(
+                            coordinator=fm5_coordinator,
+                            entry_id=entry.entry_id,
+                            manufacturer=manufacturer,
+                            solar_device_id=solar_device_id,
+                            parent_device_id=vr71_device_id or regulator_device_id,
+                            key=key,
+                            label=label,
+                            device_class=device_class,
+                            native_unit=unit,
+                            state_class=state_class,
+                        )
+                    )
+
+            for cylinder in fm5_payload.get("cylinders", []) or []:
+                if not isinstance(cylinder, dict):
+                    continue
+                index = _parse_optional_int(cylinder.get("index"))
+                if index is None or index < 0:
+                    continue
+                sensors.append(
+                    HelianthusCylinderSensor(
+                        coordinator=fm5_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        cylinder_index=index,
+                        parent_device_id=vr71_device_id or regulator_device_id,
+                    )
+                )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
@@ -857,6 +937,162 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         if isinstance(value, (bool, int, float, str)):
             return value
         return None
+
+
+class HelianthusFM5ModeSensor(CoordinatorEntity, SensorEntity):
+    """FM5 semantic mode marker."""
+
+    entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        parent_device_id: tuple[str, str],
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._parent_device_id = parent_device_id
+        self._attr_name = "FM5 Semantic Mode"
+        self._attr_unique_id = f"{entry_id}-fm5-mode"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._parent_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        return _fm5_mode(self.coordinator.data if isinstance(self.coordinator.data, dict) else None)
+
+
+class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
+    """Solar semantic sensor values (interpreted mode only)."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        solar_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+        key: str,
+        label: str,
+        device_class: str | None,
+        native_unit: str | None,
+        state_class: str | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._solar_device_id = solar_device_id
+        self._parent_device_id = parent_device_id
+        self._key = key
+        self._attr_name = f"Solar {label}"
+        self._attr_unique_id = f"{entry_id}-solar-sensor-{key}"
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if native_unit is not None:
+            self._attr_native_unit_of_measurement = native_unit
+        if state_class is not None:
+            self._attr_state_class = state_class
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data or {}
+        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._solar_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Solar Circuit",
+            "name": "Solar Circuit",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def native_value(self) -> Any:
+        payload = self.coordinator.data or {}
+        solar = payload.get("solar") if isinstance(payload, dict) else None
+        if not isinstance(solar, dict):
+            return None
+        value = solar.get(self._key)
+        if value is None:
+            return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
+
+
+class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
+    """Cylinder temperature sensor (interpreted mode only)."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        cylinder_index: int,
+        parent_device_id: tuple[str, str] | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._cylinder_index = cylinder_index
+        self._parent_device_id = parent_device_id
+        self._attr_name = f"Cylinder {cylinder_index + 1} Temperature"
+        self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-temperature"
+
+    def _cylinder(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for cylinder in payload.get("cylinders", []) if isinstance(payload, dict) else []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = _parse_optional_int(cylinder.get("index"))
+            if index == self._cylinder_index:
+                return cylinder
+        return {}
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data or {}
+        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = cylinder_identifier(self._entry_id, self._cylinder_index)
+        info = {
+            "identifiers": {identifier},
+            "manufacturer": self._manufacturer,
+            "model": "Cylinder",
+            "name": f"Cylinder {self._cylinder_index + 1}",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def native_value(self) -> Any:
+        value = self._cylinder().get("temperatureC")
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
 
 class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):

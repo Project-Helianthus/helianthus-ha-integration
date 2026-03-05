@@ -145,6 +145,16 @@ def radio_device_identifier(config_entry_id: str, radio_bus_key: str) -> DeviceI
     return (DOMAIN, f"{_token(config_entry_id)}-radio-{_token(radio_bus_key)}")
 
 
+def solar_identifier(config_entry_id: str) -> DeviceIdentifier:
+    return (DOMAIN, f"{_token(config_entry_id)}-solar")
+
+
+def cylinder_identifier(config_entry_id: str, cylinder_index: object) -> DeviceIdentifier:
+    index = _parse_circuit_index(cylinder_index)
+    token = str(index) if index is not None else _token(cylinder_index)
+    return (DOMAIN, f"{_token(config_entry_id)}-cylinder-{token}")
+
+
 def dhw_identifier(config_entry_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{_token(config_entry_id)}-dhw")
 

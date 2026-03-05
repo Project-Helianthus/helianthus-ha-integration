@@ -39,6 +39,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V3,
     QUERY_EXTENDED_V3_NO_ADDRESSES,
     QUERY_EXTENDED_V3_NO_PART,
+    QUERY_FM5,
     QUERY_RADIO_DEVICES,
     QUERY_STATUS,
     QUERY_STATUS_LEGACY,
@@ -47,6 +48,7 @@ from custom_components.helianthus.coordinator import (
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
     HelianthusCoordinator,
+    HelianthusFM5Coordinator,
     HelianthusRadioDeviceCoordinator,
     HelianthusSystemCoordinator,
     HelianthusStatusCoordinator,
@@ -105,6 +107,12 @@ def _build_radio_coordinator(client: _ScriptedClient) -> HelianthusRadioDeviceCo
     coordinator._stale_cycles = {}  # type: ignore[attr-defined]
     coordinator.data = {}  # type: ignore[attr-defined]
     coordinator.async_set_updated_data = lambda payload: setattr(coordinator, "data", payload)  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_fm5_coordinator(client: _ScriptedClient) -> HelianthusFM5Coordinator:
+    coordinator = object.__new__(HelianthusFM5Coordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -475,3 +483,42 @@ def test_radio_query_uses_stale_grace_cycles_for_disconnected_slot() -> None:
         [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
     )
     assert coordinator.data["radioDevices"][0]["staleCycles"] == 3  # type: ignore[index]
+
+
+def test_fm5_query_suppresses_interpreted_payload_when_gpio_only() -> None:
+    client = _ScriptedClient(
+        [
+            {
+                "fm5SemanticMode": "GPIO_ONLY",
+                "solar": {"collectorTemperatureC": 70.0},
+                "cylinders": [{"index": 0, "temperatureC": 48.0}],
+            }
+        ]
+    )
+    coordinator = _build_fm5_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["fm5SemanticMode"] == "GPIO_ONLY"
+    assert data["solar"] is None
+    assert data["cylinders"] == []
+    assert client.calls == [QUERY_FM5]
+
+
+def test_fm5_query_returns_interpreted_payload() -> None:
+    client = _ScriptedClient(
+        [
+            {
+                "fm5SemanticMode": "INTERPRETED",
+                "solar": {"collectorTemperatureC": 70.0},
+                "cylinders": [{"index": 0, "temperatureC": 48.0}],
+            }
+        ]
+    )
+    coordinator = _build_fm5_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["fm5SemanticMode"] == "INTERPRETED"
+    assert data["solar"]["collectorTemperatureC"] == 70.0
+    assert data["cylinders"][0]["index"] == 0

@@ -12,7 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import circuit_identifier
+from .device_ids import circuit_identifier, cylinder_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 _SET_CIRCUIT_CONFIG_MUTATION = """
@@ -40,6 +40,8 @@ _CIRCUIT_TYPE_LABELS = {
     "return_increase": "Return Increase",
 }
 
+_FM5_MODE_INTERPRETED = "INTERPRETED"
+
 
 @dataclass(frozen=True)
 class CircuitNumberField:
@@ -61,6 +63,16 @@ class SystemNumberField:
     step: float
     unit: str | None = None
     cast_int: bool = False
+
+
+@dataclass(frozen=True)
+class CylinderNumberField:
+    key: str
+    label: str
+    minimum: float
+    maximum: float
+    step: float
+    unit: str | None = None
 
 
 _CIRCUIT_NUMBER_FIELDS = [
@@ -148,6 +160,33 @@ _SYSTEM_NUMBER_FIELDS = [
     ),
 ]
 
+_CYLINDER_NUMBER_FIELDS = [
+    CylinderNumberField(
+        key="maxSetpointC",
+        label="Max Setpoint",
+        minimum=20.0,
+        maximum=80.0,
+        step=1.0,
+        unit=UnitOfTemperature.CELSIUS,
+    ),
+    CylinderNumberField(
+        key="chargeHysteresisC",
+        label="Charge Hysteresis",
+        minimum=0.0,
+        maximum=30.0,
+        step=1.0,
+        unit=UnitOfTemperature.CELSIUS,
+    ),
+    CylinderNumberField(
+        key="chargeOffsetC",
+        label="Charge Offset",
+        minimum=-20.0,
+        maximum=20.0,
+        step=1.0,
+        unit=UnitOfTemperature.CELSIUS,
+    ),
+]
+
 
 def _parse_circuit_index(value: object | None) -> int | None:
     if isinstance(value, bool):
@@ -167,13 +206,24 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     return f"Circuit {index + 1} ({label})"
 
 
+def _fm5_mode(payload: dict[str, Any] | None) -> str:
+    if not isinstance(payload, dict):
+        return "ABSENT"
+    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
+        return "ABSENT"
+    return mode
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data.get("circuit_coordinator")
     system_coordinator = data.get("system_coordinator")
+    fm5_coordinator = data.get("fm5_coordinator")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_device_id = data.get("regulator_device_id")
+    vr71_device_id = data.get("vr71_device_id") or regulator_device_id
 
     entities: list[NumberEntity] = []
     if coordinator and coordinator.data:
@@ -209,6 +259,26 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     field=field,
                 )
             )
+
+    if fm5_coordinator and fm5_coordinator.data and vr71_device_id:
+        if _fm5_mode(fm5_coordinator.data) == _FM5_MODE_INTERPRETED:
+            for cylinder in fm5_coordinator.data.get("cylinders", []) or []:
+                if not isinstance(cylinder, dict):
+                    continue
+                index = _parse_circuit_index(cylinder.get("index"))
+                if index is None:
+                    continue
+                for field in _CYLINDER_NUMBER_FIELDS:
+                    entities.append(
+                        HelianthusCylinderConfigNumber(
+                            coordinator=fm5_coordinator,
+                            entry_id=entry.entry_id,
+                            manufacturer=manufacturer,
+                            parent_device_id=vr71_device_id,
+                            cylinder_index=index,
+                            field=field,
+                        )
+                    )
 
     async_add_entities(entities)
 
@@ -394,3 +464,73 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
             error = str(result.get("error") or "")
         message = error or "unknown error"
         raise HomeAssistantError(f"Helianthus write failed: {message}")
+
+
+class HelianthusCylinderConfigNumber(CoordinatorEntity, NumberEntity):
+    """Read-only interpreted cylinder configuration number."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        parent_device_id: tuple[str, str] | None,
+        cylinder_index: int,
+        field: CylinderNumberField,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._parent_device_id = parent_device_id
+        self._cylinder_index = cylinder_index
+        self._field = field
+        self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-number-{field.key}"
+        self._attr_name = f"Cylinder {cylinder_index + 1} {field.label}"
+        self._attr_native_min_value = field.minimum
+        self._attr_native_max_value = field.maximum
+        self._attr_native_step = field.step
+        if field.unit is not None:
+            self._attr_native_unit_of_measurement = field.unit
+
+    def _cylinder(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for cylinder in payload.get("cylinders", []) if isinstance(payload, dict) else []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = _parse_circuit_index(cylinder.get("index"))
+            if index == self._cylinder_index:
+                return cylinder
+        return {}
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data if isinstance(self.coordinator.data, dict) else None
+        return _fm5_mode(payload) == _FM5_MODE_INTERPRETED
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {cylinder_identifier(self._entry_id, self._cylinder_index)},
+            "manufacturer": self._manufacturer,
+            "model": "Cylinder",
+            "name": f"Cylinder {self._cylinder_index + 1}",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def native_value(self) -> float | None:
+        value = self._cylinder().get(self._field.key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        raise HomeAssistantError("Helianthus cylinder config numbers are read-only in this profile")
