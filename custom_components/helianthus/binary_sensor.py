@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -28,6 +28,8 @@ def _normalize_preset(value: Any) -> str:
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
@@ -74,6 +76,15 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     schedule_label=schedule_label,
                 )
             )
+
+    if boiler_coordinator and boiler_device_id:
+        entities.append(
+            HelianthusBoilerPumpBinarySensor(
+                coordinator=boiler_coordinator,
+                entry_id=entry.entry_id,
+                boiler_device_id=boiler_device_id,
+            )
+        )
 
     async_add_entities(entities)
 
@@ -145,3 +156,35 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
             model=model,
             name=name,
         )
+
+
+class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Reduced-profile central heating pump state on physical BAI00."""
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        boiler_device_id: tuple[str, str],
+    ) -> None:
+        super().__init__(coordinator)
+        self._boiler_device_id = boiler_device_id
+        self._attr_name = "Boiler Central Heating Pump Active"
+        self._attr_unique_id = f"{entry_id}-boiler-central-heating-pump-active"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={self._boiler_device_id})
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") or {}
+        state = boiler_status.get("state") or {}
+        value = state.get("centralHeatingPumpActive")
+        if isinstance(value, bool):
+            return value
+        return None
