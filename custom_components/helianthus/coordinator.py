@@ -219,6 +219,21 @@ query Energy {
 }
 """
 
+QUERY_BOILER = """
+query BoilerStatus {
+  boilerStatus {
+    state {
+      flowTemperatureC
+      returnTemperatureC
+      centralHeatingPumpActive
+    }
+    diagnostics {
+      heatingStatusRaw
+    }
+  }
+}
+"""
+
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
 
@@ -391,6 +406,46 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             None,
         )
         return {"energyTotals": totals}
+
+
+class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching boiler semantic status."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_boiler",
+            update_interval=timedelta(seconds=scan_interval),
+        )
+        self._client = client
+        self.boiler_supported = True
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            payload = await self._client.execute(QUERY_BOILER)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(
+                exc.errors,
+                [
+                    "boilerStatus",
+                    "flowTemperatureC",
+                    "returnTemperatureC",
+                    "centralHeatingPumpActive",
+                    "heatingStatusRaw",
+                ],
+            ):
+                self.boiler_supported = False
+                return {"boilerStatus": None}
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            self.boiler_supported = False
+            return {"boilerStatus": None}
+        self.boiler_supported = True
+        return {"boilerStatus": payload.get("boilerStatus")}
 
 
 def _is_missing_field_error(errors: object, fields: list[str]) -> bool:

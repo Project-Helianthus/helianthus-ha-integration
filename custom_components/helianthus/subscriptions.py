@@ -61,6 +61,20 @@ SUBSCRIPTIONS = {
       }
     }
     """,
+    "boiler": """
+    subscription {
+      boilerStatusUpdate {
+        state {
+          flowTemperatureC
+          returnTemperatureC
+          centralHeatingPumpActive
+        }
+        diagnostics {
+          heatingStatusRaw
+        }
+      }
+    }
+    """,
 }
 
 
@@ -78,10 +92,17 @@ async def start_subscriptions(
     url: str,
     semantic_coordinator,
     energy_coordinator,
+    boiler_coordinator,
 ) -> asyncio.Task:
     ws_url = _to_ws_url(url)
     return asyncio.create_task(
-        _subscription_loop(session, ws_url, semantic_coordinator, energy_coordinator)
+        _subscription_loop(
+            session,
+            ws_url,
+            semantic_coordinator,
+            energy_coordinator,
+            boiler_coordinator,
+        )
     )
 
 
@@ -90,13 +111,22 @@ async def _subscription_loop(
     ws_url: str,
     semantic_coordinator,
     energy_coordinator,
+    boiler_coordinator,
 ) -> None:
     try:
         async with session.ws_connect(ws_url, protocols=["graphql-transport-ws"]) as ws:
             await ws.send_json({"type": "connection_init"})
             await _wait_for_ack(ws)
 
-            for key, query in SUBSCRIPTIONS.items():
+            subscriptions = {
+                "zones": SUBSCRIPTIONS["zones"],
+                "dhw": SUBSCRIPTIONS["dhw"],
+                "energy": SUBSCRIPTIONS["energy"],
+            }
+            if boiler_coordinator is not None:
+                subscriptions["boiler"] = SUBSCRIPTIONS["boiler"]
+
+            for key, query in subscriptions.items():
                 await ws.send_json({"id": key, "type": "subscribe", "payload": {"query": query}})
 
             async for msg in ws:
@@ -105,6 +135,7 @@ async def _subscription_loop(
                         msg.json(),
                         semantic_coordinator,
                         energy_coordinator,
+                        boiler_coordinator,
                     )
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     break
@@ -126,7 +157,11 @@ async def _handle_message(
     message: dict[str, Any],
     semantic_coordinator,
     energy_coordinator,
+    boiler_coordinator,
 ) -> None:
+    if message.get("type") == "error":
+        _LOGGER.debug("GraphQL subscription error frame: %s", message)
+        return
     if message.get("type") != "next":
         return
     payload = message.get("payload", {})
@@ -154,3 +189,7 @@ async def _handle_message(
     if "energyUpdate" in data and energy_coordinator:
         energy = data.get("energyUpdate")
         energy_coordinator.async_set_updated_data({"energyTotals": energy})
+
+    if "boilerStatusUpdate" in data and boiler_coordinator:
+        boiler = data.get("boilerStatusUpdate")
+        boiler_coordinator.async_set_updated_data({"boilerStatus": boiler})

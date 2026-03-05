@@ -8,6 +8,7 @@ import re
 from .const import DOMAIN
 
 _MAC_TOKEN_RE = re.compile(r"[^0-9A-Fa-f]")
+DeviceIdentifier = tuple[str, str]
 
 
 def _token(value: object | None) -> str:
@@ -119,3 +120,34 @@ def dhw_identifier(config_entry_id: str) -> tuple[str, str]:
 
 def energy_identifier(config_entry_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{_token(config_entry_id)}-energy")
+
+
+def boiler_burner_identifier(config_entry_id: str) -> DeviceIdentifier:
+    """Virtual boiler-burner identifier (reserved for richer profiles)."""
+
+    return (DOMAIN, f"{_token(config_entry_id)}-boiler-burner")
+
+
+def boiler_hydraulics_identifier(config_entry_id: str) -> DeviceIdentifier:
+    """Virtual boiler-hydraulics identifier (reserved for richer profiles)."""
+
+    return (DOMAIN, f"{_token(config_entry_id)}-boiler-hydraulics")
+
+
+def resolve_boiler_physical_device_id(
+    boiler_device_id: DeviceIdentifier | None,
+    regulator_device_id: DeviceIdentifier | None,
+) -> DeviceIdentifier | None:
+    """Return preferred physical parent for boiler entities."""
+
+    return boiler_device_id or regulator_device_id
+
+
+def resolve_boiler_via_device_id(
+    boiler_device_id: DeviceIdentifier | None,
+    regulator_device_id: DeviceIdentifier | None,
+    adapter_device_id: DeviceIdentifier | None,
+) -> DeviceIdentifier | None:
+    """Return preferred via_device chain for boiler virtual entities."""
+
+    return boiler_device_id or regulator_device_id or adapter_device_id
