@@ -283,7 +283,7 @@ def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
     assert maintenance.is_on is True
     assert adaptive.is_on is False
     assert maintenance._attr_entity_category == binary_sensor_platform.EntityCategory.DIAGNOSTIC
-    assert adaptive._attr_entity_category == binary_sensor_platform.EntityCategory.CONFIG
+    assert adaptive._attr_entity_category == binary_sensor_platform.EntityCategory.DIAGNOSTIC
     assert maintenance.device_info["identifiers"] == {payload["regulator_device_id"]}
 
 

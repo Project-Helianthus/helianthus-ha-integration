@@ -145,7 +145,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     key="adaptiveHeatingCurve",
                     label="Adaptive Heating Curve",
                     device_class=None,
-                    entity_category=EntityCategory.CONFIG,
+                    entity_category=EntityCategory.DIAGNOSTIC,
                 ),
             ]
         )
