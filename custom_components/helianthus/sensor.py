@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfEnergy
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfEnergy, UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -28,6 +28,12 @@ class InventoryField:
     name: str
 
 
+@dataclass(frozen=True)
+class BoilerTemperatureField:
+    key: str
+    label: str
+
+
 STATUS_FIELDS = [
     InventoryField("status", "Status"),
     InventoryField("firmwareVersion", "Firmware Version"),
@@ -39,6 +45,13 @@ DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
 ]
 
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
+
+REDUCED_BOILER_TEMPERATURE_FIELDS = [
+    BoilerTemperatureField("flowTemperatureC", "Flow Temperature"),
+    BoilerTemperatureField("returnTemperatureC", "Return Temperature"),
+    BoilerTemperatureField("dhwTemperatureC", "DHW Temperature"),
+    BoilerTemperatureField("dhwStorageTemperatureC", "DHW Storage Temperature"),
+]
 
 
 def _clean_text(value: object | None) -> str | None:
@@ -54,6 +67,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     status_coordinator = data["status_coordinator"]
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
@@ -103,6 +118,17 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         )
         for field in ADAPTER_STATUS_FIELDS
     )
+
+    if boiler_coordinator and boiler_device_id:
+        sensors.extend(
+            HelianthusBoilerTemperatureSensor(
+                boiler_coordinator,
+                entry.entry_id,
+                boiler_device_id,
+                field,
+            )
+            for field in REDUCED_BOILER_TEMPERATURE_FIELDS
+        )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
@@ -211,6 +237,41 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self._status.get(self._field.key)
+
+
+class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
+    """Reduced-profile boiler temperature sensor on physical BAI00."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        boiler_device_id: tuple[str, str],
+        field: BoilerTemperatureField,
+    ) -> None:
+        super().__init__(coordinator)
+        self._boiler_device_id = boiler_device_id
+        self._field = field
+        self._attr_name = f"Boiler {field.label}"
+        self._attr_unique_id = f"{entry_id}-boiler-{field.key}"
+
+    def _boiler_state(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") or {}
+        return boiler_status.get("state") or {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={self._boiler_device_id})
+
+    @property
+    def native_value(self) -> Any:
+        state = self._boiler_state()
+        return state.get(self._field.key)
 
 
 class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
