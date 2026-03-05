@@ -189,6 +189,44 @@ query Semantic {
       allowedModes
       circuitType
       associatedCircuit
+      roomTemperatureZoneMapping
+    }
+  }
+  dhw {
+    state {
+      currentTempC
+      specialFunction
+      heatingDemandPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+    }
+  }
+}
+"""
+
+QUERY_SEMANTIC_LEGACY = """
+query Semantic {
+  zones {
+    id
+    name
+    state {
+      currentTempC
+      currentHumidityPct
+      hvacAction
+      specialFunction
+      heatingDemandPct
+      valvePositionPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      allowedModes
+      circuitType
+      associatedCircuit
     }
   }
   dhw {
@@ -477,9 +515,19 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             payload = await self._client.execute(QUERY_SEMANTIC)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
+            if _is_missing_field_error(exc.errors, ["roomTemperatureZoneMapping"]):
+                try:
+                    payload = await self._client.execute(QUERY_SEMANTIC_LEGACY)
+                except GraphQLResponseError as nested:
+                    if _is_missing_field_error(nested.errors, ["zones", "dhw"]):
+                        return {"zones": [], "dhw": None}
+                    raise UpdateFailed(str(nested)) from nested
+                except GraphQLClientError as nested:
+                    raise UpdateFailed(str(nested)) from nested
+            elif _is_missing_field_error(exc.errors, ["zones", "dhw"]):
                 return {"zones": [], "dhw": None}
-            raise UpdateFailed(str(exc)) from exc
+            else:
+                raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
