@@ -205,6 +205,37 @@ query Semantic {
 }
 """
 
+QUERY_CIRCUITS = """
+query Circuits {
+  circuits {
+    index
+    circuitType
+    hasMixer
+    state {
+      pumpActive
+      mixerPositionPct
+      flowTemperatureC
+      flowSetpointC
+      calcFlowTempC
+      circuitState
+      humidity
+      dewPoint
+      pumpHours
+      pumpStarts
+    }
+    config {
+      heatingCurve
+      flowTempMaxC
+      flowTempMinC
+      summerLimitC
+      frostProtC
+      roomTempControl
+      coolingEnabled
+    }
+  }
+}
+"""
+
 QUERY_ENERGY = """
 query Energy {
   devices {
@@ -373,6 +404,69 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "zones": payload.get("zones", []) or [],
             "dhw": payload.get("dhw"),
+        }
+
+
+class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching semantic heating circuit data."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_circuits",
+            update_interval=timedelta(seconds=scan_interval),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            payload = await self._client.execute(QUERY_CIRCUITS)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(
+                exc.errors,
+                [
+                    "circuits",
+                    "index",
+                    "circuitType",
+                    "hasMixer",
+                    "state",
+                    "config",
+                    "pumpActive",
+                    "mixerPositionPct",
+                    "flowTemperatureC",
+                    "flowSetpointC",
+                    "calcFlowTempC",
+                    "circuitState",
+                    "humidity",
+                    "dewPoint",
+                    "pumpHours",
+                    "pumpStarts",
+                    "heatingCurve",
+                    "flowTempMaxC",
+                    "flowTempMinC",
+                    "summerLimitC",
+                    "frostProtC",
+                    "roomTempControl",
+                    "coolingEnabled",
+                ],
+            ):
+                return {"circuits": []}
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return {"circuits": []}
+        circuits = payload.get("circuits")
+        if not isinstance(circuits, list):
+            return {"circuits": []}
+        return {
+            "circuits": [
+                circuit
+                for circuit in circuits
+                if isinstance(circuit, dict)
+            ]
         }
 
 

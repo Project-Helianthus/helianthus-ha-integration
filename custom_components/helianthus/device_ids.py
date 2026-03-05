@@ -40,6 +40,23 @@ def _parse_bus_address(value: object | None) -> int | None:
         return None
 
 
+def _parse_circuit_index(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    cleaned = _clean(value)
+    if cleaned is None:
+        return None
+    try:
+        parsed = int(cleaned, 10)
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
 def _normalized_mac(value: object | None) -> str | None:
     cleaned = _clean(value)
     if cleaned is None:
@@ -114,6 +131,12 @@ def zone_identifier(config_entry_id: str, zone_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{_token(config_entry_id)}-zone-{_token(zone_id)}")
 
 
+def circuit_identifier(config_entry_id: str, circuit_index: object) -> DeviceIdentifier:
+    index = _parse_circuit_index(circuit_index)
+    token = str(index) if index is not None else _token(circuit_index)
+    return (DOMAIN, f"{_token(config_entry_id)}-circuit-{token}")
+
+
 def dhw_identifier(config_entry_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{_token(config_entry_id)}-dhw")
 
@@ -151,3 +174,30 @@ def resolve_boiler_via_device_id(
     """Return preferred via_device chain for boiler virtual entities."""
 
     return boiler_device_id or regulator_device_id or adapter_device_id
+
+
+def managing_device_identifier(
+    *,
+    group: int,
+    instance: int,
+    regulator_device_id: DeviceIdentifier | None,
+    vr71_device_id: DeviceIdentifier | None,
+    adapter_device_id: DeviceIdentifier | None = None,
+    fm5_config: int | None = None,
+    vr71_circuit_start: int = -1,
+) -> DeviceIdentifier | None:
+    """Resolve the physical manager device for a semantic sub-device.
+
+    R6 rules:
+    - solar/cylinder groups use VR_71 when FM5 is present;
+    - circuits can use VR_71 starting from `vr71_circuit_start`;
+    - otherwise use controller/regulator, then adapter fallback.
+    """
+
+    if group in (0x04, 0x05) and vr71_device_id and fm5_config is not None:
+        if 1 <= int(fm5_config) <= 2:
+            return vr71_device_id
+    if group == 0x02 and vr71_device_id and vr71_circuit_start >= 0:
+        if instance >= vr71_circuit_start:
+            return vr71_device_id
+    return regulator_device_id or adapter_device_id or vr71_device_id

@@ -138,7 +138,11 @@ def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
         f"{entry_id}-energy",
         f"{entry_id}-boiler-burner",
         f"{entry_id}-boiler-hydraulics",
-    } or token.startswith(f"{entry_id}-bus-") or token.startswith(f"{entry_id}-zone-")
+    } or (
+        token.startswith(f"{entry_id}-bus-")
+        or token.startswith(f"{entry_id}-zone-")
+        or token.startswith(f"{entry_id}-circuit-")
+    )
 
 
 def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> bool:
@@ -203,6 +207,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
         HelianthusBoilerCoordinator,
+        HelianthusCircuitCoordinator,
         HelianthusCoordinator,
         HelianthusEnergyCoordinator,
         HelianthusSemanticCoordinator,
@@ -214,7 +219,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         boiler_hydraulics_identifier,
         build_bus_device_key,
         bus_identifier,
+        circuit_identifier,
         daemon_identifier,
+        managing_device_identifier,
         resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
@@ -316,11 +323,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     status_coordinator = HelianthusStatusCoordinator(hass, client, scan_interval)
     semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
     energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
+    circuit_coordinator = HelianthusCircuitCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
     await energy_coordinator.async_config_entry_first_refresh()
+    await circuit_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
@@ -358,6 +367,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             or "SENSOCOMFORT" in display_name
             or "SENSOCOMFORT" in product_family
         )
+
+    def parse_circuit_index(circuit: dict) -> int | None:
+        index = circuit.get("index")
+        if isinstance(index, bool):
+            return None
+        try:
+            parsed = int(index)
+        except (TypeError, ValueError):
+            return None
+        if parsed < 0:
+            return None
+        return parsed
+
+    def circuit_type_display_name(value: object | None) -> str:
+        token = str(value or "").strip().lower()
+        return {
+            "heating": "Heating",
+            "fixed_value": "Fixed Value",
+            "dhw": "DHW",
+            "return_increase": "Return Increase",
+        }.get(token, token.replace("_", " ").title() or "Circuit")
 
     known_bus_devices: set[str] = set()
     regulator_device: tuple[str, str] | None = None
@@ -423,6 +453,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if mfr:
                 regulator_manufacturer = mfr
                 break
+
+    circuits_payload = circuit_coordinator.data or {}
+    circuits = circuits_payload.get("circuits", []) or []
+    known_circuit_indexes: set[int] = set()
+    fm5_config: int | None = None
+    vr71_circuit_start = -1
+    for circuit in circuits:
+        if not isinstance(circuit, dict):
+            continue
+        index = parse_circuit_index(circuit)
+        if index is None:
+            continue
+        known_circuit_indexes.add(index)
+        circuit_type_name = circuit_type_display_name(circuit.get("circuitType"))
+        managing_device = managing_device_identifier(
+            group=0x02,
+            instance=index,
+            regulator_device_id=regulator_device,
+            vr71_device_id=vr71_device,
+            adapter_device_id=adapter_device_id,
+            fm5_config=fm5_config,
+            vr71_circuit_start=vr71_circuit_start,
+        )
+        circuit_device_id = circuit_identifier(entry.entry_id, index)
+        device_kwargs: dict[str, object] = {
+            "config_entry_id": entry.entry_id,
+            "identifiers": {circuit_device_id},
+            "manufacturer": regulator_manufacturer,
+            "model": circuit_type_name,
+            "name": f"Circuit {index + 1} ({circuit_type_name})",
+        }
+        if managing_device is not None:
+            device_kwargs["via_device"] = managing_device
+        device_registry.async_get_or_create(**device_kwargs)
 
     daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
     daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
@@ -529,9 +593,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if has_new_zones or has_new_dhw:
             schedule_reload("semantic inventory became available")
 
+    def handle_circuit_update() -> None:
+        payload = circuit_coordinator.data or {}
+        current_indexes: set[int] = set()
+        for circuit in payload.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            index = parse_circuit_index(circuit)
+            if index is not None:
+                current_indexes.add(index)
+        if current_indexes - known_circuit_indexes:
+            schedule_reload("circuit inventory became available")
+
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
     unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
+    unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
 
     for zone_id, helper_entity in zone_schedule_helpers.items():
         @callback
@@ -593,6 +670,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
         "energy_coordinator": energy_coordinator,
+        "circuit_coordinator": circuit_coordinator,
         "boiler_coordinator": boiler_coordinator,
         "graphql_client": client,
         "subscription_task": subscription_task,
@@ -605,6 +683,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "regulator_manufacturer": regulator_manufacturer,
         "regulator_bus_address": regulator_bus_address,
         "daemon_source_address": daemon_source_addr,
+        "fm5_config": fm5_config,
+        "vr71_circuit_start": vr71_circuit_start,
         "boiler_physical_device_id": boiler_physical_device_id,
         "boiler_via_device_id": boiler_via_device_id,
         "boiler_burner_device_id": boiler_burner_device_id,

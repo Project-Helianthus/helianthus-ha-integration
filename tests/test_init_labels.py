@@ -45,6 +45,7 @@ def test_identifier_belongs_to_entry() -> None:
     assert _identifier_belongs_to_entry("adapter-entry-1", "entry-1")
     assert _identifier_belongs_to_entry("entry-1-bus-BASV2-15", "entry-1")
     assert _identifier_belongs_to_entry("entry-1-zone-2", "entry-1")
+    assert _identifier_belongs_to_entry("entry-1-circuit-0", "entry-1")
     assert not _identifier_belongs_to_entry("legacy-device", "entry-1")
 
 
