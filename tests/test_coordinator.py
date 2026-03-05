@@ -33,6 +33,7 @@ sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordi
 
 from custom_components.helianthus.coordinator import (
     QUERY_BOILER,
+    QUERY_CIRCUITS,
     QUERY_EXTENDED_V2,
     QUERY_EXTENDED_V2_NO_ADDRESSES,
     QUERY_EXTENDED_V3,
@@ -42,6 +43,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_STATUS_LEGACY,
     UpdateFailed,
     HelianthusBoilerCoordinator,
+    HelianthusCircuitCoordinator,
     HelianthusCoordinator,
     HelianthusStatusCoordinator,
 )
@@ -77,6 +79,12 @@ def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordi
     coordinator = object.__new__(HelianthusBoilerCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator.boiler_supported = True  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoordinator:
+    coordinator = object.__new__(HelianthusCircuitCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -293,3 +301,40 @@ def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
     assert data == {"boilerStatus": None}
     assert client.calls == [QUERY_BOILER]
     assert coordinator.boiler_supported is False
+
+
+def test_circuit_query_returns_circuit_payload() -> None:
+    payload = {
+        "circuits": [
+            {
+                "index": 0,
+                "circuitType": "heating",
+                "hasMixer": True,
+                "state": {"pumpActive": True},
+                "config": {"coolingEnabled": False},
+            }
+        ]
+    }
+    client = _ScriptedClient([payload])
+    coordinator = _build_circuit_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data == payload
+    assert client.calls == [QUERY_CIRCUITS]
+
+
+def test_circuit_query_missing_field_falls_back_to_empty_payload() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "circuits" on type "Query".'}]
+            )
+        ]
+    )
+    coordinator = _build_circuit_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data == {"circuits": []}
+    assert client.calls == [QUERY_CIRCUITS]

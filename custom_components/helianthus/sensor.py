@@ -14,6 +14,7 @@ from .const import DOMAIN
 from .device_ids import (
     build_bus_device_key,
     bus_identifier,
+    circuit_identifier,
     dhw_identifier,
     energy_identifier,
     resolve_bus_address,
@@ -32,6 +33,18 @@ class InventoryField:
 class BoilerTemperatureField:
     key: str
     label: str
+
+
+@dataclass(frozen=True)
+class CircuitSensorField:
+    key: str
+    label: str
+    device_class: str | None = None
+    native_unit: str | None = None
+    state_class: str | None = None
+    entity_category: str | None = None
+    cast_int: bool = False
+    include_circuit_attributes: bool = False
 
 
 STATUS_FIELDS = [
@@ -53,6 +66,75 @@ REDUCED_BOILER_TEMPERATURE_FIELDS = [
     BoilerTemperatureField("dhwStorageTemperatureC", "DHW Storage Temperature"),
 ]
 
+_SENSOR_DEVICE_CLASS_HUMIDITY = getattr(SensorDeviceClass, "HUMIDITY", None)
+_SENSOR_DEVICE_CLASS_DURATION = getattr(SensorDeviceClass, "DURATION", None)
+_SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASING", None)
+
+_CIRCUIT_TYPE_LABELS = {
+    "heating": "Heating",
+    "fixed_value": "Fixed Value",
+    "dhw": "DHW",
+    "return_increase": "Return Increase",
+}
+
+CIRCUIT_SENSOR_FIELDS = [
+    CircuitSensorField(
+        key="flowTemperatureC",
+        label="Flow Temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CircuitSensorField(
+        key="flowSetpointC",
+        label="Flow Setpoint",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CircuitSensorField(
+        key="calcFlowTempC",
+        label="Calculated Flow Temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CircuitSensorField(
+        key="circuitState",
+        label="State",
+        include_circuit_attributes=True,
+    ),
+    CircuitSensorField(
+        key="humidity",
+        label="Humidity",
+        device_class=_SENSOR_DEVICE_CLASS_HUMIDITY,
+        native_unit=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CircuitSensorField(
+        key="dewPoint",
+        label="Dew Point",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CircuitSensorField(
+        key="pumpHours",
+        label="Pump Hours",
+        device_class=_SENSOR_DEVICE_CLASS_DURATION,
+        native_unit="h",
+        state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    CircuitSensorField(
+        key="pumpStarts",
+        label="Pump Starts",
+        state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        cast_int=True,
+    ),
+]
+
 
 def _clean_text(value: object | None) -> str | None:
     if value is None:
@@ -61,12 +143,31 @@ def _clean_text(value: object | None) -> str | None:
     return cleaned or None
 
 
+def _parse_circuit_index(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _circuit_name(circuit: dict[str, Any], index: int) -> str:
+    token = str(circuit.get("circuitType") or "").strip().lower()
+    label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
+    return f"Circuit {index + 1} ({label})"
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
     status_coordinator = data["status_coordinator"]
     semantic_coordinator = data.get("semantic_coordinator")
     energy_coordinator = data.get("energy_coordinator")
+    circuit_coordinator = data.get("circuit_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
@@ -129,6 +230,27 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             )
             for field in REDUCED_BOILER_TEMPERATURE_FIELDS
         )
+
+    if circuit_coordinator and circuit_coordinator.data:
+        circuits = circuit_coordinator.data.get("circuits", []) or []
+        for circuit in circuits:
+            if not isinstance(circuit, dict):
+                continue
+            circuit_index = _parse_circuit_index(circuit.get("index"))
+            if circuit_index is None:
+                continue
+            initial_name = _circuit_name(circuit, circuit_index)
+            for field in CIRCUIT_SENSOR_FIELDS:
+                sensors.append(
+                    HelianthusCircuitSensor(
+                        coordinator=circuit_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        circuit_index=circuit_index,
+                        initial_name=initial_name,
+                        field=field,
+                    )
+                )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
@@ -272,6 +394,98 @@ class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> Any:
         state = self._boiler_state()
         return state.get(self._field.key)
+
+
+class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
+    """Per-circuit sensor values sourced from the circuit coordinator."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        circuit_index: int,
+        initial_name: str,
+        field: CircuitSensorField,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._circuit_index = circuit_index
+        self._initial_name = initial_name
+        self._field = field
+        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-sensor-{field.key}"
+        self._attr_name = f"{initial_name} {field.label}"
+        if field.device_class is not None:
+            self._attr_device_class = field.device_class
+        if field.native_unit is not None:
+            self._attr_native_unit_of_measurement = field.native_unit
+        if field.state_class is not None:
+            self._attr_state_class = field.state_class
+        if field.entity_category is not None:
+            self._attr_entity_category = field.entity_category
+
+    def _circuit(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for circuit in payload.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            if _parse_circuit_index(circuit.get("index")) == self._circuit_index:
+                return circuit
+        return {}
+
+    @property
+    def name(self) -> str | None:
+        return f"{self._device_name()} {self._field.label}"
+
+    def _device_name(self) -> str:
+        circuit = self._circuit()
+        if circuit:
+            return _circuit_name(circuit, self._circuit_index)
+        return self._initial_name
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = circuit_identifier(self._entry_id, self._circuit_index)
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer=self._manufacturer,
+            model="Circuit",
+            name=self._device_name(),
+        )
+
+    @property
+    def native_value(self) -> Any:
+        circuit = self._circuit()
+        state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
+        value = state.get(self._field.key)
+        if value is None:
+            return None
+        if self._field.cast_int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        if not self._field.include_circuit_attributes:
+            return {}
+        circuit = self._circuit()
+        attrs: dict[str, Any] = {
+            "circuit_index": self._circuit_index,
+        }
+        circuit_type = circuit.get("circuitType")
+        if circuit_type is not None and str(circuit_type).strip() != "":
+            attrs["circuit_type"] = str(circuit_type)
+        has_mixer = circuit.get("hasMixer")
+        if isinstance(has_mixer, bool):
+            attrs["has_mixer"] = has_mixer
+        return attrs
 
 
 class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):

@@ -6,9 +6,11 @@ from custom_components.helianthus.device_ids import (
     boiler_hydraulics_identifier,
     bus_identifier,
     build_bus_device_key,
+    circuit_identifier,
     daemon_identifier,
     dhw_identifier,
     energy_identifier,
+    managing_device_identifier,
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
     resolve_bus_address,
@@ -94,6 +96,7 @@ def test_identifier_helpers_are_deterministic() -> None:
     assert adapter_identifier("entry-1") == ("helianthus", "adapter-entry-1")
     assert bus_identifier("entry-1", "BASV2-sn-ABC123") == ("helianthus", "entry-1-bus-BASV2-sn-ABC123")
     assert zone_identifier("entry-1", "1") == ("helianthus", "entry-1-zone-1")
+    assert circuit_identifier("entry-1", 0) == ("helianthus", "entry-1-circuit-0")
     assert dhw_identifier("entry-1") == ("helianthus", "entry-1-dhw")
     assert energy_identifier("entry-1") == ("helianthus", "entry-1-energy")
 
@@ -119,3 +122,41 @@ def test_boiler_device_contract_helpers_fall_back_to_regulator_or_adapter() -> N
     assert resolve_boiler_physical_device_id(None, regulator) == regulator
     assert resolve_boiler_via_device_id(None, regulator, adapter) == regulator
     assert resolve_boiler_via_device_id(None, None, adapter) == adapter
+
+
+def test_managing_device_identifier_prefers_regulator_for_circuits_by_default() -> None:
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    vr71 = ("helianthus", "entry-1-bus-VR_71-26")
+    adapter = ("helianthus", "adapter-entry-1")
+
+    assert (
+        managing_device_identifier(
+            group=0x02,
+            instance=0,
+            regulator_device_id=regulator,
+            vr71_device_id=vr71,
+            adapter_device_id=adapter,
+            fm5_config=None,
+            vr71_circuit_start=-1,
+        )
+        == regulator
+    )
+
+
+def test_managing_device_identifier_routes_to_vr71_when_circuit_is_fm5_managed() -> None:
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    vr71 = ("helianthus", "entry-1-bus-VR_71-26")
+    adapter = ("helianthus", "adapter-entry-1")
+
+    assert (
+        managing_device_identifier(
+            group=0x02,
+            instance=2,
+            regulator_device_id=regulator,
+            vr71_device_id=vr71,
+            adapter_device_id=adapter,
+            fm5_config=1,
+            vr71_circuit_start=2,
+        )
+        == vr71
+    )
