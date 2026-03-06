@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.fan import FanEntity
+from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -92,7 +92,7 @@ class HelianthusCircuitPumpFan(CoordinatorEntity, FanEntity):
     """Read-only circuit pump state as a fan entity."""
 
     _attr_icon = "mdi:pump"
-    _attr_supported_features = 0
+    _attr_supported_features = FanEntityFeature(0)
 
     def __init__(
         self,
@@ -164,7 +164,7 @@ class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
     """Read-only solar pump state."""
 
     _attr_icon = "mdi:pump"
-    _attr_supported_features = 0
+    _attr_supported_features = FanEntityFeature(0)
 
     def __init__(
         self,

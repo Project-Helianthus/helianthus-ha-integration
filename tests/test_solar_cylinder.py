@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
+from enum import IntFlag
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -26,6 +27,11 @@ def _ensure_homeassistant_stubs() -> None:
             pass
 
         fan_module.FanEntity = _FanEntity
+    if not hasattr(fan_module, "FanEntityFeature"):
+        class _FanEntityFeature(IntFlag):
+            SET_SPEED = 1
+
+        fan_module.FanEntityFeature = _FanEntityFeature
 
     switch_module = sys.modules.setdefault(
         "homeassistant.components.switch",
@@ -228,7 +234,11 @@ def test_interpreted_mode_creates_solar_and_cylinder_entities() -> None:
     asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
 
-    assert any(isinstance(entity, fan_platform.HelianthusSolarPumpFan) for entity in fan_entities)
+    solar_pumps = [
+        entity for entity in fan_entities if isinstance(entity, fan_platform.HelianthusSolarPumpFan)
+    ]
+    assert len(solar_pumps) == 1
+    assert solar_pumps[0]._attr_supported_features == fan_platform.FanEntityFeature(0)
     assert len(
         [entity for entity in switch_entities if isinstance(entity, switch_platform.HelianthusSolarSwitch)]
     ) == 2

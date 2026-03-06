@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
+from enum import IntFlag
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -26,6 +27,11 @@ def _ensure_homeassistant_stubs() -> None:
             pass
 
         fan_module.FanEntity = _FanEntity
+    if not hasattr(fan_module, "FanEntityFeature"):
+        class _FanEntityFeature(IntFlag):
+            SET_SPEED = 1
+
+        fan_module.FanEntityFeature = _FanEntityFeature
 
     valve_module = sys.modules.setdefault(
         "homeassistant.components.valve",
@@ -297,8 +303,10 @@ def test_circuit_fan_platform_adds_one_pump_per_circuit() -> None:
     second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("-1-pump"))
     assert first.is_on is True
     assert first.percentage == 100
+    assert first._attr_supported_features == fan_platform.FanEntityFeature(0)
     assert second.is_on is False
     assert second.percentage == 0
+    assert second._attr_supported_features == fan_platform.FanEntityFeature(0)
 
 
 def test_circuit_valve_platform_respects_has_mixer_gate() -> None:
