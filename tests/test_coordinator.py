@@ -34,6 +34,7 @@ sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordi
 from custom_components.helianthus.coordinator import (
     QUERY_BOILER,
     QUERY_CIRCUITS,
+    QUERY_ENERGY,
     QUERY_EXTENDED_V2,
     QUERY_EXTENDED_V2_NO_ADDRESSES,
     QUERY_EXTENDED_V3,
@@ -48,6 +49,7 @@ from custom_components.helianthus.coordinator import (
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
     HelianthusCoordinator,
+    HelianthusEnergyCoordinator,
     HelianthusFM5Coordinator,
     HelianthusRadioDeviceCoordinator,
     HelianthusSystemCoordinator,
@@ -100,6 +102,13 @@ def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordi
     return coordinator
 
 
+def _build_energy_coordinator(client: _ScriptedClient) -> HelianthusEnergyCoordinator:
+    coordinator = object.__new__(HelianthusEnergyCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    coordinator._last_valid_energy_totals = None  # type: ignore[attr-defined]
+    return coordinator
+
+
 def _build_radio_coordinator(client: _ScriptedClient) -> HelianthusRadioDeviceCoordinator:
     coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
@@ -114,6 +123,25 @@ def _build_fm5_coordinator(client: _ScriptedClient) -> HelianthusFM5Coordinator:
     coordinator = object.__new__(HelianthusFM5Coordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
+
+
+def _energy_totals_payload(today: float = 3.5) -> dict[str, dict]:
+    return {
+        "energyTotals": {
+            "gas": {
+                "dhw": {"today": today, "yearly": [120.0, 240.0]},
+                "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+            },
+            "electric": {
+                "dhw": {"today": 1.0, "yearly": [5.0, 10.0]},
+                "climate": {"today": 2.0, "yearly": [8.0, 16.0]},
+            },
+            "solar": {
+                "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
+                "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+            },
+        }
+    }
 
 
 def test_v3_falls_back_to_v3_without_part_number() -> None:
@@ -522,3 +550,36 @@ def test_fm5_query_returns_interpreted_payload() -> None:
     assert data["fm5SemanticMode"] == "INTERPRETED"
     assert data["solar"]["collectorTemperatureC"] == 70.0
     assert data["cylinders"][0]["index"] == 0
+
+
+def test_energy_query_uses_root_energy_totals_and_caches_last_good() -> None:
+    client = _ScriptedClient(
+        [
+            _energy_totals_payload(today=3.5),
+            {"energyTotals": None},
+        ]
+    )
+    coordinator = _build_energy_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["energyTotals"]["gas"]["dhw"]["today"] == 3.5
+    assert second["energyTotals"]["gas"]["dhw"]["today"] == 3.5
+    assert client.calls == [QUERY_ENERGY, QUERY_ENERGY]
+
+
+def test_energy_query_returns_unavailable_before_first_valid_sample() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLClientError("temporary upstream timeout"),
+            {"energyTotals": None},
+        ]
+    )
+    coordinator = _build_energy_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first == {"energyTotals": None}
+    assert second == {"energyTotals": None}

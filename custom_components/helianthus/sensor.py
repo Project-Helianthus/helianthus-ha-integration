@@ -1243,15 +1243,24 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
             via_device=self._via_device,
         )
 
-    def _series(self) -> dict[str, Any]:
+    def _series(self) -> dict[str, Any] | None:
         payload = self.coordinator.data or {}
-        totals = payload.get("energyTotals") or {}
-        channel = totals.get(self._source, {}) if isinstance(totals, dict) else {}
-        return channel.get(self._usage, {}) if isinstance(channel, dict) else {}
+        totals = payload.get("energyTotals")
+        if not isinstance(totals, dict):
+            return None
+        channel = totals.get(self._source)
+        if not isinstance(channel, dict):
+            return None
+        series = channel.get(self._usage)
+        if not isinstance(series, dict):
+            return None
+        return series
 
     @property
     def native_value(self) -> Any:
         series = self._series()
-        yearly = series.get("yearly", []) if isinstance(series, dict) else []
-        today = series.get("today", 0.0) if isinstance(series, dict) else 0.0
+        if not isinstance(series, dict):
+            return None
+        yearly = series.get("yearly") if isinstance(series.get("yearly"), list) else None
+        today = series.get("today")
         return compute_total(yearly, today)

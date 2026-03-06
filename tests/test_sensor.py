@@ -212,3 +212,46 @@ def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00()
     ]
 
     assert boiler_entities == []
+
+
+def test_energy_sensor_is_unavailable_without_valid_payload() -> None:
+    entity = sensor_platform.HelianthusEnergySensor(
+        coordinator=_FakeCoordinator({"energyTotals": None}),
+        entry_id="entry-1",
+        via_device=("helianthus", "entry-1-bus-BASV2-15"),
+        manufacturer="Vaillant",
+        source="gas",
+        usage="dhw",
+    )
+
+    assert entity.native_value is None
+
+
+def test_energy_sensor_uses_last_valid_series_without_zero_fallback() -> None:
+    entity = sensor_platform.HelianthusEnergySensor(
+        coordinator=_FakeCoordinator(
+            {
+                "energyTotals": {
+                    "gas": {
+                        "dhw": {"today": 3.5, "yearly": [120.0, 240.0]},
+                        "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+                    },
+                    "electric": {
+                        "dhw": {"today": 1.0, "yearly": [5.0, 10.0]},
+                        "climate": {"today": 2.0, "yearly": [8.0, 16.0]},
+                    },
+                    "solar": {
+                        "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
+                        "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+                    },
+                }
+            }
+        ),
+        entry_id="entry-1",
+        via_device=("helianthus", "entry-1-bus-BASV2-15"),
+        manufacturer="Vaillant",
+        source="gas",
+        usage="dhw",
+    )
+
+    assert entity.native_value == 363.5
