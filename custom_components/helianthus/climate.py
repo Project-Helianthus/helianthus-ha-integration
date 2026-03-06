@@ -337,14 +337,12 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        identifier = zone_identifier(self._entry_id, str(self._zone_id))
-        via = self._resolved_via_device()
+        identifier = self._resolved_via_device() or self._regulator_device_id
+        if identifier is None:
+            identifier = zone_identifier(self._entry_id, str(self._zone_id))
         return DeviceInfo(
             identifiers={identifier},
             manufacturer=self._manufacturer,
-            model="Virtual Zone",
-            name=self.name,
-            via_device=via,
         )
 
     def _zone_state(self) -> dict[str, Any]:

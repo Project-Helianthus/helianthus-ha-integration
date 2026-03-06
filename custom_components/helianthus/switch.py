@@ -61,51 +61,7 @@ def _fm5_mode(payload: dict[str, Any] | None) -> str:
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data.get("circuit_coordinator")
-    fm5_coordinator = data.get("fm5_coordinator")
-    vr71_device_id = data.get("vr71_device_id") or data.get("regulator_device_id")
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    client = data.get("graphql_client")
-
-    entities: list[SwitchEntity] = []
-    if coordinator and coordinator.data:
-        for circuit in coordinator.data.get("circuits", []) or []:
-            if not isinstance(circuit, dict):
-                continue
-            index = _parse_circuit_index(circuit.get("index"))
-            if index is None:
-                continue
-            entities.append(
-                HelianthusCircuitCoolingEnabledSwitch(
-                    coordinator=coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    client=client,
-                    circuit_index=index,
-                    initial_name=_circuit_name(circuit, index),
-                )
-            )
-
-    if fm5_coordinator and fm5_coordinator.data and _fm5_mode(fm5_coordinator.data) == _FM5_MODE_INTERPRETED:
-        solar = fm5_coordinator.data.get("solar")
-        if isinstance(solar, dict):
-            for key, label in [
-                ("solarEnabled", "Solar Enabled"),
-                ("functionMode", "Function Mode"),
-            ]:
-                entities.append(
-                    HelianthusSolarSwitch(
-                        coordinator=fm5_coordinator,
-                        entry_id=entry.entry_id,
-                        manufacturer=manufacturer,
-                        solar_device_id=solar_identifier(entry.entry_id),
-                        parent_device_id=vr71_device_id,
-                        key=key,
-                        label=label,
-                    )
-                )
-    async_add_entities(entities)
+    async_add_entities([])
 
 
 class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):

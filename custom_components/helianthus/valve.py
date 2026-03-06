@@ -73,62 +73,7 @@ def _zone_default_name(zone_id: object | None) -> str:
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data.get("circuit_coordinator")
-    semantic_coordinator = data.get("semantic_coordinator")
-    boiler_coordinator = data.get("boiler_coordinator")
-    boiler_device_id = data.get("boiler_device_id")
-    boiler_via_device_id = data.get("boiler_via_device_id") or boiler_device_id
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    entities: list[ValveEntity] = []
-
-    if boiler_coordinator and boiler_device_id:
-        entities.append(
-            HelianthusBoilerDiverterValve(
-                coordinator=boiler_coordinator,
-                entry_id=entry.entry_id,
-                manufacturer=manufacturer,
-                hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
-                parent_device_id=boiler_via_device_id,
-            )
-        )
-
-    if coordinator and coordinator.data:
-        for circuit in coordinator.data.get("circuits", []) or []:
-            if not isinstance(circuit, dict):
-                continue
-            if not bool(circuit.get("hasMixer")):
-                continue
-            index = _parse_circuit_index(circuit.get("index"))
-            if index is None:
-                continue
-            entities.append(
-                HelianthusCircuitMixingValve(
-                    coordinator=coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    circuit_index=index,
-                    initial_name=_circuit_name(circuit, index),
-                )
-            )
-
-    if semantic_coordinator and semantic_coordinator.data:
-        for zone in semantic_coordinator.data.get("zones", []) or []:
-            if not isinstance(zone, dict):
-                continue
-            zone_id = _normalize_zone_id(zone.get("id"))
-            if not zone_id:
-                continue
-            entities.append(
-                HelianthusZoneValve(
-                    coordinator=semantic_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    zone_id=zone_id,
-                    initial_name=str(zone.get("name") or _zone_default_name(zone_id)),
-                )
-            )
-    async_add_entities(entities)
+    async_add_entities([])
 
 
 class HelianthusReadOnlyValve(CoordinatorEntity, ValveEntity):
