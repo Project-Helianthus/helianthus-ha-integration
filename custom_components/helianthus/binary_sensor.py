@@ -16,9 +16,7 @@ from .device_ids import (
     dhw_identifier,
     radio_device_identifier,
     solar_identifier,
-    zone_identifier,
 )
-from .zone_parent import zone_via_device
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
 _RADIO_STALE_GRACE_CYCLES = 3
@@ -96,68 +94,6 @@ def _zone_instance(zone_id: object | None) -> int | None:
     return value - 1
 
 
-def _zone_parent_device_id(
-    entry_id: str,
-    zone: dict[str, Any],
-    radio_payload: dict[str, Any] | None,
-    regulator_device_id: tuple[str, str] | None,
-) -> tuple[str, str] | None:
-    zone_instance = _zone_instance(zone.get("id"))
-    if zone_instance is None:
-        return regulator_device_id
-
-    raw_candidates = radio_payload.get("radioZoneCandidates") if isinstance(radio_payload, dict) else None
-    radio_zone_candidates: dict[int, list[dict[str, Any]]] = {}
-    if isinstance(raw_candidates, dict):
-        for raw_zone_instance, raw_items in raw_candidates.items():
-            parsed_zone_instance = _parse_optional_int(raw_zone_instance)
-            if parsed_zone_instance is None or not isinstance(raw_items, list):
-                continue
-            normalized_items: list[dict[str, Any]] = []
-            for item in raw_items:
-                if not isinstance(item, dict):
-                    continue
-                group = _parse_optional_int(item.get("group"))
-                instance = _parse_optional_int(item.get("instance"))
-                if group is None or instance is None:
-                    continue
-                normalized_items.append(
-                    {
-                        "group": group,
-                        "instance": instance,
-                        "remote_control_address": _parse_optional_int(item.get("remote_control_address")),
-                    }
-                )
-            if normalized_items:
-                radio_zone_candidates[parsed_zone_instance] = normalized_items
-
-    radio_devices = [
-        item
-        for item in (radio_payload.get("radioDevices", []) or [] if isinstance(radio_payload, dict) else [])
-        if isinstance(item, dict)
-    ]
-    radio_device_ids: dict[tuple[int, int], tuple[str, str]] = {}
-    for device in radio_devices:
-        slot = _radio_slot(device)
-        bus_key = _radio_bus_key(device)
-        if slot is None or bus_key is None:
-            continue
-        radio_device_ids[slot] = radio_device_identifier(entry_id, bus_key)
-
-    mapping = None
-    config = zone.get("config")
-    if isinstance(config, dict):
-        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping"))
-    return zone_via_device(
-        zone_instance,
-        mapping,
-        radio_zone_candidates,
-        radio_devices,
-        radio_device_ids,
-        regulator_device_id,
-    )
-
-
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
@@ -169,22 +105,28 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     fm5_coordinator = data.get("fm5_coordinator")
     regulator_device_id = data.get("regulator_device_id")
     vr71_device_id = data.get("vr71_device_id") or regulator_device_id
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities: list[HelianthusScheduleBinarySensor] = []
-    radio_payload = radio_coordinator.data if radio_coordinator else None
     for zone in zones:
         zone_id = zone.get("id")
         if zone_id is None:
             continue
+        normalized_zone_id = _normalize_zone_id(zone_id)
+        if normalized_zone_id is None:
+            continue
+        config = zone.get("config")
+        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
         zone_name = str(zone.get("name") or f"Zone {zone_id}")
-        parent_device_id = _zone_parent_device_id(
-            entry.entry_id,
-            zone,
-            radio_payload if isinstance(radio_payload, dict) else None,
-            regulator_device_id,
-        )
+        parent_device_id = zone_parent_device_ids.get(normalized_zone_id)
+        if parent_device_id is None:
+            if mapping in (1, 2, 3, 4):
+                continue
+            parent_device_id = regulator_device_id
+        if parent_device_id is None:
+            continue
         for schedule_key, schedule_label in [
             ("schedule", "Daily Schedule Active"),
             ("quickveto", "Quick Veto Active"),
@@ -394,7 +336,9 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         if self._target_kind == "zone":
-            identifier = self._target_device_id or zone_identifier(self._entry_id, str(self._target_id))
+            identifier = self._target_device_id
+            if identifier is None:
+                raise RuntimeError("Zone schedule sensor created without a physical parent device")
             return DeviceInfo(
                 identifiers={identifier},
                 manufacturer=self._manufacturer,

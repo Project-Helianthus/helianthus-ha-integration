@@ -214,6 +214,7 @@ def _parse_identifier_index(token: str, prefix: str) -> int | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
+    from homeassistant.exceptions import ConfigEntryNotReady
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -231,7 +232,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusSystemCoordinator,
         HelianthusStatusCoordinator,
     )
-    from .climate import zone_via_device as resolve_zone_via_device
     from .device_ids import (
         adapter_identifier,
         boiler_burner_identifier,
@@ -249,6 +249,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zone_identifier,
     )
     from .subscriptions import start_subscriptions
+    from .zone_parent import build_zone_parent_device_ids
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
@@ -599,9 +600,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
 
     semantic = semantic_coordinator.data or {}
+    semantic_zones = [
+        zone for zone in (semantic.get("zones", []) or []) if isinstance(zone, dict)
+    ]
     known_zones: set[str] = {
         str(zone.get("id"))
-        for zone in (semantic.get("zones", []) or [])
+        for zone in semantic_zones
         if zone.get("id") is not None
     }
     known_has_dhw = semantic.get("dhw") is not None
@@ -789,100 +793,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     cleanup_obsolete_entity_registry_entries()
 
-    def reparent_zone_devices(reason: str) -> None:
-        if regulator_device is None:
-            return
+    def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
+        payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
+        zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
+        radio_payload = radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
+        return build_zone_parent_device_ids(
+            entry.entry_id,
+            zones,
+            radio_payload,
+            regulator_device,
+        )
 
-        payload = semantic_coordinator.data or {}
-        zones = payload.get("zones", []) or []
-        radio_payload = radio_coordinator.data or {}
-        radio_devices = [
-            item
-            for item in (radio_payload.get("radioDevices", []) or [])
-            if isinstance(item, dict)
-        ]
-
-        raw_candidates = radio_payload.get("radioZoneCandidates")
-        radio_zone_candidates: dict[int, list[dict[str, int | None]]] = {}
-        if isinstance(raw_candidates, dict):
-            for raw_zone_instance, raw_items in raw_candidates.items():
-                zone_instance = parse_optional_int(raw_zone_instance)
-                if zone_instance is None or not isinstance(raw_items, list):
-                    continue
-                candidates: list[dict[str, int | None]] = []
-                for item in raw_items:
-                    if not isinstance(item, dict):
-                        continue
-                    group = parse_optional_int(item.get("group"))
-                    instance = parse_optional_int(item.get("instance"))
-                    if group is None or instance is None:
-                        continue
-                    candidates.append(
-                        {
-                            "group": group,
-                            "instance": instance,
-                            "remote_control_address": parse_optional_int(
-                                item.get("remote_control_address")
-                            ),
-                        }
-                    )
-                if candidates:
-                    radio_zone_candidates[zone_instance] = candidates
-
-        radio_device_ids: dict[tuple[int, int], tuple[str, str]] = {}
-        for device in radio_devices:
-            group = parse_optional_int(device.get("group"))
-            instance = parse_optional_int(device.get("instance"))
-            if group is None or instance is None:
-                continue
-            bus_key = str(device.get("radioBusKey") or "").strip()
-            if not bus_key:
-                bus_key = build_radio_bus_key(group, instance)
-            radio_device_ids[(group, instance)] = radio_device_identifier(entry.entry_id, bus_key)
-
-        updated = 0
-        for zone in zones:
-            if not isinstance(zone, dict):
-                continue
-            zone_id = str(zone.get("id") or "").strip()
-            zone_instance = _zone_instance_from_id(zone_id)
-            if zone_instance is None:
-                continue
-            zone_device = device_registry.async_get_device(
-                identifiers={zone_identifier(entry.entry_id, zone_id)}
-            )
-            if zone_device is None:
-                continue
-            desired_parent_identifier = resolve_zone_via_device(
-                zone_instance,
-                parse_optional_int((zone.get("config") or {}).get("roomTemperatureZoneMapping")),
-                radio_zone_candidates,
-                radio_devices,
-                radio_device_ids,
-                regulator_device,
-            )
-            desired_parent_device_id: str | None = None
-            if desired_parent_identifier is not None:
-                desired_parent = device_registry.async_get_device(
-                    identifiers={desired_parent_identifier}
-                )
-                if desired_parent is None:
-                    continue
-                desired_parent_device_id = desired_parent.id
-            if zone_device.via_device_id == desired_parent_device_id:
-                continue
-            device_registry.async_update_device(
-                zone_device.id,
-                via_device_id=desired_parent_device_id,
-            )
-            updated += 1
-
-        if updated:
-            _LOGGER.info(
-                "Helianthus zone reparent updated %d device(s): %s",
-                updated,
-                reason,
-            )
+    zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()
+    if unresolved_zone_ids:
+        joined = ", ".join(unresolved_zone_ids)
+        raise ConfigEntryNotReady(
+            f"Zone parent resolution incomplete for {joined}; retrying when radio inventory is ready"
+        )
 
     zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
         str(
@@ -976,7 +903,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         has_new_zones = bool(current_zone_ids - known_zones)
         has_new_dhw = dhw is not None and not known_has_dhw
-        reparent_zone_devices("semantic update")
+        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
+        if unresolved:
+            schedule_reload("zone parent resolution became incomplete")
+            return
+        if current_zone_parent_ids != zone_parent_device_ids:
+            schedule_reload("zone parent mapping changed")
+            return
         if has_new_zones or has_new_dhw:
             schedule_reload("semantic inventory became available")
 
@@ -1007,7 +940,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if group is None or instance is None:
                 continue
             current_keys.add(build_radio_bus_key(group, instance))
-        reparent_zone_devices("radio update")
+        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
+        if unresolved:
+            schedule_reload("zone parent resolution became incomplete")
+            return
+        if current_zone_parent_ids != zone_parent_device_ids:
+            schedule_reload("zone parent mapping changed")
+            return
         auto_enable_sparse_entities("radio update")
         if current_keys - known_radio_bus_keys:
             schedule_reload("radio inventory became available")
@@ -1121,10 +1060,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "boiler_via_device_id": boiler_via_device_id,
         "boiler_burner_device_id": boiler_burner_device_id,
         "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
+        "zone_parent_device_ids": zone_parent_device_ids,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    reparent_zone_devices("post-platform setup")
     auto_enable_sparse_entities("post-platform setup")
     cleanup_obsolete_devices("post-platform setup")
 

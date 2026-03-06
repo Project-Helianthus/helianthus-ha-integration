@@ -22,10 +22,8 @@ from .device_ids import (
     radio_device_identifier,
     resolve_bus_address,
     solar_identifier,
-    zone_identifier,
 )
 from .energy import compute_total
-from .zone_parent import zone_via_device
 
 
 @dataclass(frozen=True)
@@ -395,68 +393,6 @@ def _zone_instance(zone_id: object | None) -> int | None:
     return value - 1
 
 
-def _zone_parent_device_id(
-    entry_id: str,
-    zone: dict[str, Any],
-    radio_payload: dict[str, Any] | None,
-    regulator_device_id: tuple[str, str] | None,
-) -> tuple[str, str] | None:
-    zone_instance = _zone_instance(zone.get("id"))
-    if zone_instance is None:
-        return regulator_device_id
-
-    raw_candidates = radio_payload.get("radioZoneCandidates") if isinstance(radio_payload, dict) else None
-    radio_zone_candidates: dict[int, list[dict[str, Any]]] = {}
-    if isinstance(raw_candidates, dict):
-        for raw_zone_instance, raw_items in raw_candidates.items():
-            parsed_zone_instance = _parse_optional_int(raw_zone_instance)
-            if parsed_zone_instance is None or not isinstance(raw_items, list):
-                continue
-            normalized_items: list[dict[str, Any]] = []
-            for item in raw_items:
-                if not isinstance(item, dict):
-                    continue
-                group = _parse_optional_int(item.get("group"))
-                instance = _parse_optional_int(item.get("instance"))
-                if group is None or instance is None:
-                    continue
-                normalized_items.append(
-                    {
-                        "group": group,
-                        "instance": instance,
-                        "remote_control_address": _parse_optional_int(item.get("remote_control_address")),
-                    }
-                )
-            if normalized_items:
-                radio_zone_candidates[parsed_zone_instance] = normalized_items
-
-    radio_devices = [
-        item
-        for item in (radio_payload.get("radioDevices", []) or [] if isinstance(radio_payload, dict) else [])
-        if isinstance(item, dict)
-    ]
-    radio_device_ids: dict[tuple[int, int], tuple[str, str]] = {}
-    for device in radio_devices:
-        slot = _radio_slot(device)
-        bus_key = _radio_bus_key(device)
-        if slot is None or bus_key is None:
-            continue
-        radio_device_ids[slot] = radio_device_identifier(entry_id, bus_key)
-
-    mapping = None
-    config = zone.get("config")
-    if isinstance(config, dict):
-        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping"))
-    return zone_via_device(
-        zone_instance,
-        mapping,
-        radio_zone_candidates,
-        radio_devices,
-        radio_device_ids,
-        regulator_device_id,
-    )
-
-
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
@@ -472,6 +408,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     regulator_device_id = data.get("regulator_device_id")
     vr71_device_id = data.get("vr71_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
@@ -745,12 +682,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         for zone in zones:
             zone_id = zone.get("id")
             if zone_id:
-                target_device_id = _zone_parent_device_id(
-                    entry.entry_id,
-                    zone,
-                    radio_coordinator.data if radio_coordinator else None,
-                    regulator_device_id,
-                )
+                normalized_zone_id = _normalize_zone_id(zone_id)
+                if normalized_zone_id is None:
+                    continue
+                config = zone.get("config")
+                mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+                target_device_id = zone_parent_device_ids.get(normalized_zone_id)
+                if target_device_id is None:
+                    if mapping in (1, 2, 3, 4):
+                        continue
+                    target_device_id = regulator_device_id
+                if target_device_id is None:
+                    continue
                 sensors.append(
                     HelianthusDemandSensor(
                         semantic_coordinator,
@@ -1465,7 +1408,9 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        identifier = self._target_device_id or zone_identifier(self._entry_id, self._zone_id)
+        identifier = self._target_device_id
+        if identifier is None:
+            raise RuntimeError("Zone valve sensor created without a physical parent device")
         return DeviceInfo(
             identifiers={identifier},
             manufacturer=self._manufacturer,
@@ -1516,7 +1461,9 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         if self._target[0] == "zone":
-            identifier = self._target_device_id or zone_identifier(self._entry_id, str(self._target[1]))
+            identifier = self._target_device_id
+            if identifier is None:
+                raise RuntimeError("Zone demand sensor created without a physical parent device")
             return DeviceInfo(
                 identifiers={identifier},
                 manufacturer=self._manufacturer,

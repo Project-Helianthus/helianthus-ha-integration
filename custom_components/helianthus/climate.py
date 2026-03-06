@@ -13,9 +13,15 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import build_radio_bus_key, radio_device_identifier, zone_identifier
+from .device_ids import build_radio_bus_key, radio_device_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
+from .zone_parent import (
+    normalize_radio_slot_candidate as _normalize_radio_slot_candidate,
+    parse_optional_int as _parse_optional_int,
+    select_zone_radio_candidate as _select_zone_radio_candidate,
+    zone_via_device,
+)
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:JSON!){
@@ -63,155 +69,6 @@ _ROOM_TEMPERATURE_ZONE_MAPPING_TEXT = {
 }
 
 
-def _parse_optional_int(value: object | None) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _normalize_radio_slot_candidate(candidate: dict[str, Any]) -> dict[str, Any] | None:
-    group = _parse_optional_int(candidate.get("group"))
-    instance = _parse_optional_int(candidate.get("instance"))
-    if group is None or instance is None:
-        return None
-    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
-        return None
-    return {
-        "group": group,
-        "instance": instance,
-        "remote_control_address": _parse_optional_int(candidate.get("remote_control_address")),
-    }
-
-
-def _build_global_radio_candidates(radio_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    for device in radio_devices:
-        if not isinstance(device, dict):
-            continue
-        if device.get("deviceConnected") is not True:
-            continue
-        normalized = _normalize_radio_slot_candidate(
-            {
-                "group": device.get("group"),
-                "instance": device.get("instance"),
-                "remote_control_address": device.get("remoteControlAddress"),
-            }
-        )
-        if normalized is None:
-            continue
-        if normalized["group"] not in (0x09, 0x0A):
-            continue
-        candidates.append(normalized)
-    candidates.sort(
-        key=lambda candidate: (
-            int(candidate.get("group") or 0),
-            (
-                int(candidate["remote_control_address"])
-                if isinstance(candidate.get("remote_control_address"), int)
-                else 255
-            ),
-            int(candidate.get("instance") or 0),
-        )
-    )
-    return candidates
-
-
-def _select_zone_radio_candidate(
-    zone_instance: int,
-    room_temperature_zone_mapping: int | None,
-    radio_zone_candidates: dict[int, list[dict[str, Any]]],
-    radio_devices: list[dict[str, Any]] | None = None,
-) -> dict[str, Any] | None:
-    candidates = list(radio_zone_candidates.get(zone_instance, []) or [])
-    global_candidates = _build_global_radio_candidates(radio_devices or [])
-
-    def pick(
-        items: list[dict[str, Any]],
-        group: int,
-        remote_addr: int | None = None,
-    ) -> dict[str, Any] | None:
-        for candidate in items:
-            if candidate.get("group") != group:
-                continue
-            if remote_addr is not None and candidate.get("remote_control_address") != remote_addr:
-                continue
-            return candidate
-        return None
-
-    def pick_thermostat_fallback(
-        items: list[dict[str, Any]],
-        target_remote_addr: int,
-    ) -> dict[str, Any] | None:
-        ranked = sorted(
-            (
-                candidate
-                for candidate in items
-                if candidate.get("group") == 0x0A
-            ),
-            key=lambda candidate: (
-                abs(
-                    (
-                        candidate.get("remote_control_address")
-                        if isinstance(candidate.get("remote_control_address"), int)
-                        else 255
-                    )
-                    - target_remote_addr
-                ),
-                int(candidate.get("instance") or 0),
-            ),
-        )
-        return ranked[0] if ranked else None
-
-    if room_temperature_zone_mapping == 1:
-        return (
-            pick(candidates, 0x09, 0)
-            or pick(candidates, 0x09)
-            or pick(global_candidates, 0x09, 0)
-            or pick(global_candidates, 0x09)
-        )
-    if room_temperature_zone_mapping in (2, 3, 4):
-        remote_addr = room_temperature_zone_mapping - 1
-        return (
-            pick(candidates, 0x0A, remote_addr)
-            or pick_thermostat_fallback(candidates, remote_addr)
-            or pick(candidates, 0x09)
-            or pick(global_candidates, 0x0A, remote_addr)
-            or pick_thermostat_fallback(global_candidates, remote_addr)
-            or pick(global_candidates, 0x09)
-        )
-    if room_temperature_zone_mapping == 0:
-        return None
-    return pick(candidates, 0x0A) or pick(candidates, 0x09) or pick(global_candidates, 0x0A) or pick(global_candidates, 0x09)
-
-
-def zone_via_device(
-    zone_instance: int,
-    room_temperature_zone_mapping: int | None,
-    radio_zone_candidates: dict[int, list[dict[str, Any]]],
-    radio_devices: list[dict[str, Any]],
-    radio_device_ids: dict[tuple[int, int], tuple[str, str]],
-    regulator_device_id: tuple[str, str] | None,
-) -> tuple[str, str] | None:
-    candidate = _select_zone_radio_candidate(
-        zone_instance,
-        room_temperature_zone_mapping,
-        radio_zone_candidates,
-        radio_devices,
-    )
-    if candidate is not None:
-        slot = (
-            int(candidate.get("group") or 0),
-            int(candidate.get("instance") or 0),
-        )
-        radio_id = radio_device_ids.get(slot)
-        if radio_id is not None:
-            return radio_id
-    return regulator_device_id
-
-
 def _normalize_zone_id(zone_id: object | None) -> str | None:
     if zone_id is None:
         return None
@@ -257,27 +114,41 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = data["semantic_coordinator"]
     radio_coordinator = data.get("radio_coordinator")
     regulator_device_id = data.get("regulator_device_id") or data.get("adapter_device_id")
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_bus_address = data.get("regulator_bus_address")
     source_address = data.get("daemon_source_address")
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
-    entities = [
-        HelianthusZoneClimate(
-            entry.entry_id,
-            coordinator,
-            radio_coordinator,
-            regulator_device_id,
-            manufacturer,
-            client,
-            regulator_bus_address,
-            source_address,
-            zone.get("id"),
-            zone.get("name"),
+    entities = []
+    for zone in zones:
+        zone_id = _normalize_zone_id(zone.get("id"))
+        if zone_id is None:
+            continue
+        config = zone.get("config")
+        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+        target_device_id = zone_parent_device_ids.get(zone_id)
+        if target_device_id is None:
+            if mapping in (1, 2, 3, 4):
+                continue
+            target_device_id = regulator_device_id
+        if target_device_id is None:
+            continue
+        entities.append(
+            HelianthusZoneClimate(
+                entry.entry_id,
+                coordinator,
+                radio_coordinator,
+                target_device_id,
+                manufacturer,
+                client,
+                regulator_bus_address,
+                source_address,
+                zone_id,
+                zone.get("name"),
+            )
         )
-        for zone in zones
-    ]
     async_add_entities([entity for entity in entities if entity.zone_id])
 
 
@@ -294,7 +165,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         entry_id: str,
         coordinator,
         radio_coordinator,
-        regulator_device_id: tuple[str, str] | None,
+        target_device_id: tuple[str, str],
         manufacturer: str,
         client: GraphQLClient | None,
         regulator_bus_address: int | None,
@@ -305,7 +176,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._radio_coordinator = radio_coordinator
-        self._regulator_device_id = regulator_device_id
+        self._target_device_id = target_device_id
         self._manufacturer = manufacturer
         self._client = client
         self._regulator_bus_address = regulator_bus_address
@@ -337,11 +208,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        identifier = self._resolved_via_device() or self._regulator_device_id
-        if identifier is None:
-            identifier = zone_identifier(self._entry_id, str(self._zone_id))
         return DeviceInfo(
-            identifiers={identifier},
+            identifiers={self._target_device_id},
             manufacturer=self._manufacturer,
         )
 
@@ -430,18 +298,6 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             self._room_temperature_zone_mapping(),
             self._radio_zone_candidates(),
             self._radio_devices(),
-        )
-
-    def _resolved_via_device(self) -> tuple[str, str] | None:
-        if self._zone_instance is None:
-            return self._regulator_device_id
-        return zone_via_device(
-            self._zone_instance,
-            self._room_temperature_zone_mapping(),
-            self._radio_zone_candidates(),
-            self._radio_devices(),
-            self._radio_device_ids(),
-            self._regulator_device_id,
         )
 
     @property
