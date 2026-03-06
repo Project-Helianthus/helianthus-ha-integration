@@ -5,11 +5,22 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.valve import ValveEntity
+from homeassistant.const import EntityCategory
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import circuit_identifier, zone_identifier
+from .device_ids import boiler_hydraulics_identifier, circuit_identifier, zone_identifier
+
+try:
+    from homeassistant.components.valve import ValveEntityFeature
+except ImportError:  # pragma: no cover - test stub fallback
+    class ValveEntityFeature(int):
+        """Fallback feature wrapper for test environments without HA valve flags."""
+
+        def __new__(cls, value: int = 0):
+            return int.__new__(cls, value)
 
 _CIRCUIT_TYPE_LABELS = {
     "heating": "Heating",
@@ -65,8 +76,22 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data.get("circuit_coordinator")
     semantic_coordinator = data.get("semantic_coordinator")
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
+    boiler_via_device_id = data.get("boiler_via_device_id") or boiler_device_id
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     entities: list[ValveEntity] = []
+
+    if boiler_coordinator and boiler_device_id:
+        entities.append(
+            HelianthusBoilerDiverterValve(
+                coordinator=boiler_coordinator,
+                entry_id=entry.entry_id,
+                manufacturer=manufacturer,
+                hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+                parent_device_id=boiler_via_device_id,
+            )
+        )
 
     if coordinator and coordinator.data:
         for circuit in coordinator.data.get("circuits", []) or []:
@@ -106,11 +131,102 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     async_add_entities(entities)
 
 
-class HelianthusCircuitMixingValve(CoordinatorEntity, ValveEntity):
+class HelianthusReadOnlyValve(CoordinatorEntity, ValveEntity):
+    """Base read-only valve entity."""
+
+    _attr_supported_features = ValveEntityFeature(0)
+    _attr_reports_position = True
+
+    async def async_open_valve(self, **kwargs: Any) -> None:
+        raise HomeAssistantError("Helianthus valve entities are read-only")
+
+    async def async_close_valve(self, **kwargs: Any) -> None:
+        raise HomeAssistantError("Helianthus valve entities are read-only")
+
+    async def async_set_valve_position(self, position: int) -> None:
+        raise HomeAssistantError("Helianthus valve entities are read-only")
+
+
+def _coerce_position(value: object | None) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return 0
+    if parsed >= 100:
+        return 100
+    return int(round(parsed))
+
+
+def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    boiler_status = payload.get("boilerStatus")
+    if not isinstance(boiler_status, dict):
+        return {}
+    state = boiler_status.get("state")
+    if not isinstance(state, dict):
+        return {}
+    return state
+
+
+class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
+    """Read-only diverter valve position under the Hydraulics sub-device."""
+
+    _attr_icon = "mdi:valve"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        hydraulics_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._hydraulics_device_id = hydraulics_device_id
+        self._parent_device_id = parent_device_id
+        self._attr_name = "Diverter Valve"
+        self._attr_unique_id = f"{entry_id}-boiler-diverter-valve"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._hydraulics_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Hydraulics",
+            "name": "Hydraulics",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def current_valve_position(self) -> int | None:
+        return _coerce_position(_boiler_state(self.coordinator.data).get("diverterValvePositionPct"))
+
+    @property
+    def is_closed(self) -> bool | None:
+        position = self.current_valve_position
+        if position is None:
+            return None
+        return position == 0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        return {"position_meaning": "0%=CH, 100%=DHW"}
+
+
+class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     """Read-only circuit mixing valve position."""
 
     _attr_icon = "mdi:valve"
-    _attr_reports_position = True
 
     def __init__(
         self,
@@ -161,25 +277,13 @@ class HelianthusCircuitMixingValve(CoordinatorEntity, ValveEntity):
     def current_valve_position(self) -> int | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        value = state.get("mixerPositionPct")
-        if value is None:
-            return None
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None
-        if parsed < 0:
-            parsed = 0
-        if parsed > 100:
-            parsed = 100
-        return int(round(parsed))
+        return _coerce_position(state.get("mixerPositionPct"))
 
 
-class HelianthusZoneValve(CoordinatorEntity, ValveEntity):
+class HelianthusZoneValve(HelianthusReadOnlyValve):
     """Read-only zone valve status (0/100)."""
 
     _attr_icon = "mdi:valve"
-    _attr_reports_position = True
 
     def __init__(
         self,
@@ -226,15 +330,4 @@ class HelianthusZoneValve(CoordinatorEntity, ValveEntity):
     def current_valve_position(self) -> int | None:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        value = state.get("valvePositionPct")
-        if value is None:
-            return None
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None
-        if parsed <= 0:
-            return 0
-        if parsed >= 100:
-            return 100
-        return int(round(parsed))
+        return _coerce_position(state.get("valvePositionPct"))
