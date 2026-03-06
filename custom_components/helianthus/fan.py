@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
+from homeassistant.const import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -193,6 +194,7 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
     """Read-only burner state exposed as a fan."""
 
     _attr_icon = "mdi:fire"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,
@@ -255,6 +257,7 @@ class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
     """Read-only boiler pump state under the Hydraulics sub-device."""
 
     _attr_icon = "mdi:pump"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,

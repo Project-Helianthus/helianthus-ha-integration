@@ -404,6 +404,7 @@ query BoilerStatus {
       externalPumpActive
       circulationPumpActive
       storageLoadPumpPct
+      diverterValvePositionPct
     }
     diagnostics {
       heatingStatusRaw
@@ -969,6 +970,7 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "externalPumpActive",
                     "circulationPumpActive",
                     "storageLoadPumpPct",
+                    "diverterValvePositionPct",
                     "heatingStatusRaw",
                 ],
             ):

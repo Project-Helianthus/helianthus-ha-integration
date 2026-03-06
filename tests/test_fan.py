@@ -17,6 +17,13 @@ def _ensure_homeassistant_stubs() -> None:
     setattr(homeassistant_module, "components", components_module)
     helpers_module = sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
     setattr(homeassistant_module, "helpers", helpers_module)
+    const_module = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
+    if not hasattr(const_module, "EntityCategory"):
+        class _EntityCategory:
+            DIAGNOSTIC = "diagnostic"
+            CONFIG = "config"
+
+        const_module.EntityCategory = _EntityCategory
 
     fan_module = sys.modules.setdefault(
         "homeassistant.components.fan",
