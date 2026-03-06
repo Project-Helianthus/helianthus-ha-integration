@@ -329,26 +329,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 )
             )
 
-    if fm5_coordinator and fm5_coordinator.data and vr71_device_id:
-        if _fm5_mode(fm5_coordinator.data) == _FM5_MODE_INTERPRETED:
-            for cylinder in fm5_coordinator.data.get("cylinders", []) or []:
-                if not isinstance(cylinder, dict):
-                    continue
-                index = _parse_circuit_index(cylinder.get("index"))
-                if index is None:
-                    continue
-                for field in _CYLINDER_NUMBER_FIELDS:
-                    entities.append(
-                        HelianthusCylinderConfigNumber(
-                            coordinator=fm5_coordinator,
-                            entry_id=entry.entry_id,
-                            manufacturer=manufacturer,
-                            parent_device_id=vr71_device_id,
-                            cylinder_index=index,
-                            field=field,
-                        )
-                    )
-
     async_add_entities(entities)
 
 

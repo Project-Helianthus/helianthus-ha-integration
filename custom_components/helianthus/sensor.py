@@ -22,7 +22,6 @@ from .device_ids import (
     radio_device_identifier,
     resolve_bus_address,
     solar_identifier,
-    zone_identifier,
 )
 from .energy import compute_total
 
@@ -120,6 +119,13 @@ CIRCUIT_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
+        key="mixerPositionPct",
+        label="Mixing Valve Position",
+        native_unit=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    CircuitSensorField(
         key="circuitState",
         label="State",
         include_circuit_attributes=True,
@@ -213,6 +219,70 @@ SYSTEM_SENSOR_FIELDS = [
     ),
 ]
 
+BOILER_STATE_SENSOR_FIELDS = [
+    {
+        "key": "modulationPct",
+        "label": "Burner Modulation",
+        "native_unit": PERCENTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "fanSpeedRpm",
+        "label": "Burner Fan Speed",
+        "native_unit": "rpm",
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+    {
+        "key": "ionisationVoltageUa",
+        "label": "Burner Ionisation",
+        "native_unit": "uA",
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+    {
+        "key": "storageLoadPumpPct",
+        "label": "Hydraulics Storage Load Pump",
+        "native_unit": PERCENTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "diverterValvePositionPct",
+        "label": "Hydraulics Diverter Valve Position",
+        "native_unit": PERCENTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+]
+
+CYLINDER_CONFIG_SENSOR_FIELDS = [
+    {
+        "key": "maxSetpointC",
+        "label": "Max Setpoint",
+        "native_unit": UnitOfTemperature.CELSIUS,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "chargeHysteresisC",
+        "label": "Charge Hysteresis",
+        "native_unit": UnitOfTemperature.CELSIUS,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "chargeOffsetC",
+        "label": "Charge Offset",
+        "native_unit": UnitOfTemperature.CELSIUS,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+]
+
 
 def _clean_text(value: object | None) -> str | None:
     if value is None:
@@ -293,6 +363,36 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     return f"Circuit {index + 1} ({label})"
 
 
+def _normalize_zone_id(zone_id: object | None) -> str | None:
+    if zone_id is None:
+        return None
+    token = str(zone_id).strip().lower()
+    if not token:
+        return None
+    if token.startswith("zone-"):
+        suffix = token[5:]
+    else:
+        suffix = token
+    if suffix.isdigit():
+        value = int(suffix, 10)
+        if value > 0:
+            return f"zone-{value}"
+    return token
+
+
+def _zone_instance(zone_id: object | None) -> int | None:
+    normalized = _normalize_zone_id(zone_id)
+    if normalized is None:
+        return None
+    token = normalized[5:] if normalized.startswith("zone-") else normalized
+    if not token.isdigit():
+        return None
+    value = int(token, 10)
+    if value <= 0:
+        return None
+    return value - 1
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
@@ -308,6 +408,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     regulator_device_id = data.get("regulator_device_id")
     vr71_device_id = data.get("vr71_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
@@ -366,6 +467,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 field,
             )
             for field in REDUCED_BOILER_TEMPERATURE_FIELDS
+        )
+        sensors.extend(
+            HelianthusBoilerStateSensor(
+                coordinator=boiler_coordinator,
+                entry_id=entry.entry_id,
+                manufacturer=manufacturer,
+                boiler_device_id=boiler_device_id,
+                field=field,
+            )
+            for field in BOILER_STATE_SENSOR_FIELDS
         )
 
     if circuit_coordinator and circuit_coordinator.data:
@@ -554,12 +665,35 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         parent_device_id=vr71_device_id or regulator_device_id,
                     )
                 )
+                for field in CYLINDER_CONFIG_SENSOR_FIELDS:
+                    sensors.append(
+                        HelianthusCylinderConfigSensor(
+                            coordinator=fm5_coordinator,
+                            entry_id=entry.entry_id,
+                            manufacturer=manufacturer,
+                            cylinder_index=index,
+                            parent_device_id=vr71_device_id or regulator_device_id,
+                            field=field,
+                        )
+                    )
 
     if semantic_coordinator and semantic_coordinator.data:
         zones = semantic_coordinator.data.get("zones", []) or []
         for zone in zones:
             zone_id = zone.get("id")
             if zone_id:
+                normalized_zone_id = _normalize_zone_id(zone_id)
+                if normalized_zone_id is None:
+                    continue
+                config = zone.get("config")
+                mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+                target_device_id = zone_parent_device_ids.get(normalized_zone_id)
+                if target_device_id is None:
+                    if mapping in (1, 2, 3, 4):
+                        continue
+                    target_device_id = regulator_device_id
+                if target_device_id is None:
+                    continue
                 sensors.append(
                     HelianthusDemandSensor(
                         semantic_coordinator,
@@ -568,6 +702,17 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         manufacturer,
                         zone.get("name") or f"Zone {zone_id}",
                         ("zone", str(zone_id)),
+                        target_device_id=target_device_id,
+                    )
+                )
+                sensors.append(
+                    HelianthusZoneValvePositionSensor(
+                        coordinator=semantic_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        zone_id=str(zone_id),
+                        zone_name=str(zone.get("name") or f"Zone {zone_id}"),
+                        target_device_id=target_device_id,
                     )
                 )
         if semantic_coordinator.data.get("dhw") is not None:
@@ -579,6 +724,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     manufacturer,
                     "DHW",
                     ("dhw", None),
+                    target_device_id=None,
                 )
             )
             sensors.append(
@@ -705,6 +851,56 @@ class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> Any:
         state = self._boiler_state()
         return state.get(self._field.key)
+
+
+class HelianthusBoilerStateSensor(CoordinatorEntity, SensorEntity):
+    """Read-only boiler state sensor attached directly to the physical boiler."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        boiler_device_id: tuple[str, str],
+        field: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._boiler_device_id = boiler_device_id
+        self._field = field
+        self._attr_name = str(field["label"])
+        self._attr_unique_id = f"{entry_id}-boiler-sensor-{field['key']}"
+        if field.get("native_unit") is not None:
+            self._attr_native_unit_of_measurement = field["native_unit"]
+        if field.get("state_class") is not None:
+            self._attr_state_class = field["state_class"]
+        if field.get("entity_category") is not None:
+            self._attr_entity_category = field["entity_category"]
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._boiler_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") or {}
+        state = boiler_status.get("state") if isinstance(boiler_status, dict) else {}
+        value = state.get(self._field["key"]) if isinstance(state, dict) else None
+        if value is None:
+            return None
+        if self._field.get("cast_int"):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
 
 
 class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
@@ -894,6 +1090,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = state_class
         if entity_category is not None:
             self._attr_entity_category = entity_category
+        self._attr_entity_registry_enabled_default = self._device_value_present()
 
     def _device(self) -> dict[str, Any] | None:
         payload = self.coordinator.data or {}
@@ -904,6 +1101,10 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
             if slot == (self._group, self._instance):
                 return device
         return None
+
+    def _device_value_present(self) -> bool:
+        device = self._device()
+        return isinstance(device, dict) and device.get(self._key) is not None
 
     @property
     def available(self) -> bool:
@@ -1000,11 +1201,17 @@ class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_unit_of_measurement = native_unit
         if state_class is not None:
             self._attr_state_class = state_class
+        self._attr_entity_registry_enabled_default = self._solar_value_present()
 
     @property
     def available(self) -> bool:
         payload = self.coordinator.data or {}
         return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+
+    def _solar_value_present(self) -> bool:
+        payload = self.coordinator.data or {}
+        solar = payload.get("solar") if isinstance(payload, dict) else None
+        return isinstance(solar, dict) and solar.get(self._key) is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1055,6 +1262,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
         self._parent_device_id = parent_device_id
         self._attr_name = f"Cylinder {cylinder_index + 1} Temperature"
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-temperature"
+        self._attr_entity_registry_enabled_default = self._cylinder().get("temperatureC") is not None
 
     def _cylinder(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1095,6 +1303,132 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
             return None
 
 
+class HelianthusCylinderConfigSensor(CoordinatorEntity, SensorEntity):
+    """Read-only cylinder configuration sensor."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        cylinder_index: int,
+        parent_device_id: tuple[str, str] | None,
+        field: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._cylinder_index = cylinder_index
+        self._parent_device_id = parent_device_id
+        self._field = field
+        self._attr_name = f"Cylinder {cylinder_index + 1} {field['label']}"
+        self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-config-{field['key']}"
+        if field.get("native_unit") is not None:
+            self._attr_native_unit_of_measurement = field["native_unit"]
+        if field.get("state_class") is not None:
+            self._attr_state_class = field["state_class"]
+        if field.get("entity_category") is not None:
+            self._attr_entity_category = field["entity_category"]
+        self._attr_entity_registry_enabled_default = self._cylinder().get(field["key"]) is not None
+
+    def _cylinder(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for cylinder in payload.get("cylinders", []) if isinstance(payload, dict) else []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = _parse_optional_int(cylinder.get("index"))
+            if index == self._cylinder_index:
+                return cylinder
+        return {}
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data or {}
+        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = cylinder_identifier(self._entry_id, self._cylinder_index)
+        info = {
+            "identifiers": {identifier},
+            "manufacturer": self._manufacturer,
+            "model": "Cylinder",
+            "name": f"Cylinder {self._cylinder_index + 1}",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def native_value(self) -> Any:
+        value = self._cylinder().get(self._field["key"])
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
+class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
+    """Zone valve position attached directly to the physical parent device."""
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        zone_id: str,
+        zone_name: str,
+        target_device_id: tuple[str, str] | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._zone_id = zone_id
+        self._zone_name = zone_name
+        self._target_device_id = target_device_id
+        self._attr_name = f"{zone_name} Valve Position"
+        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-valvePositionPct"
+
+    def _zone(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for zone in payload.get("zones", []) or []:
+            if not isinstance(zone, dict):
+                continue
+            if str(zone.get("id")) == self._zone_id:
+                return zone
+        return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = self._target_device_id
+        if identifier is None:
+            raise RuntimeError("Zone valve sensor created without a physical parent device")
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        zone = self._zone()
+        state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
+        value = state.get("valvePositionPct") if isinstance(state, dict) else None
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
 class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
     """Heating demand sensor (percentage)."""
 
@@ -1110,12 +1444,14 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         manufacturer: str,
         label: str,
         target: tuple[str, str | None],
+        target_device_id: tuple[str, str] | None,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._via_device = via_device
         self._manufacturer = manufacturer
         self._target = target
+        self._target_device_id = target_device_id
         self._device_name = label if target[0] == "zone" else "Domestic Hot Water"
         self._attr_name = f"{label} Heating Demand"
         self._attr_unique_id = (
@@ -1125,18 +1461,19 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         if self._target[0] == "zone":
-            identifier = zone_identifier(self._entry_id, str(self._target[1]))
-            model = "Virtual Zone"
-            name = self._dynamic_zone_name()
-        else:
-            identifier = dhw_identifier(self._entry_id)
-            model = "Virtual DHW"
-            name = self._device_name
+            identifier = self._target_device_id
+            if identifier is None:
+                raise RuntimeError("Zone demand sensor created without a physical parent device")
+            return DeviceInfo(
+                identifiers={identifier},
+                manufacturer=self._manufacturer,
+            )
+        identifier = dhw_identifier(self._entry_id)
         return DeviceInfo(
             identifiers={identifier},
             manufacturer=self._manufacturer,
-            model=model,
-            name=name,
+            model="Virtual DHW",
+            name=self._device_name,
             via_device=self._via_device,
         )
 
@@ -1243,15 +1580,24 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
             via_device=self._via_device,
         )
 
-    def _series(self) -> dict[str, Any]:
+    def _series(self) -> dict[str, Any] | None:
         payload = self.coordinator.data or {}
-        totals = payload.get("energyTotals") or {}
-        channel = totals.get(self._source, {}) if isinstance(totals, dict) else {}
-        return channel.get(self._usage, {}) if isinstance(channel, dict) else {}
+        totals = payload.get("energyTotals")
+        if not isinstance(totals, dict):
+            return None
+        channel = totals.get(self._source)
+        if not isinstance(channel, dict):
+            return None
+        series = channel.get(self._usage)
+        if not isinstance(series, dict):
+            return None
+        return series
 
     @property
     def native_value(self) -> Any:
         series = self._series()
-        yearly = series.get("yearly", []) if isinstance(series, dict) else []
-        today = series.get("today", 0.0) if isinstance(series, dict) else 0.0
+        if not isinstance(series, dict):
+            return None
+        yearly = series.get("yearly") if isinstance(series.get("yearly"), list) else None
+        today = series.get("today")
         return compute_total(yearly, today)

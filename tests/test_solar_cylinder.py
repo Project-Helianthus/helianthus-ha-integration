@@ -1,4 +1,4 @@
-"""Tests for HA-10 solar/cylinder interpreted entities."""
+"""Tests for HA solar/cylinder entities after read-only cleanup."""
 
 from __future__ import annotations
 
@@ -32,6 +32,21 @@ def _ensure_homeassistant_stubs() -> None:
             SET_SPEED = 1
 
         fan_module.FanEntityFeature = _FanEntityFeature
+
+    binary_sensor_module = sys.modules.setdefault(
+        "homeassistant.components.binary_sensor",
+        types.ModuleType("homeassistant.components.binary_sensor"),
+    )
+    if not hasattr(binary_sensor_module, "BinarySensorEntity"):
+        class _BinarySensorEntity:
+            pass
+
+        binary_sensor_module.BinarySensorEntity = _BinarySensorEntity
+    if not hasattr(binary_sensor_module, "BinarySensorDeviceClass"):
+        class _BinarySensorDeviceClass:
+            RUNNING = "running"
+
+        binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
     switch_module = sys.modules.setdefault(
         "homeassistant.components.switch",
@@ -150,6 +165,7 @@ def _ensure_homeassistant_stubs() -> None:
 
 _ensure_homeassistant_stubs()
 
+from custom_components.helianthus import binary_sensor as binary_sensor_platform
 from custom_components.helianthus import fan as fan_platform
 from custom_components.helianthus import number as number_platform
 from custom_components.helianthus import sensor as sensor_platform
@@ -219,40 +235,47 @@ def _payload(mode: str) -> dict:
     }
 
 
-def test_interpreted_mode_creates_solar_and_cylinder_entities() -> None:
+def test_interpreted_mode_creates_solar_and_cylinder_sensors_only() -> None:
     payload = _payload("INTERPRETED")
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
 
     fan_entities: list = []
+    binary_sensor_entities: list = []
     switch_entities: list = []
     number_entities: list = []
     sensor_entities: list = []
 
     asyncio.run(fan_platform.async_setup_entry(hass, entry, fan_entities.extend))
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, binary_sensor_entities.extend))
     asyncio.run(switch_platform.async_setup_entry(hass, entry, switch_entities.extend))
     asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
 
-    solar_pumps = [
-        entity for entity in fan_entities if isinstance(entity, fan_platform.HelianthusSolarPumpFan)
-    ]
-    assert len(solar_pumps) == 1
-    assert solar_pumps[0]._attr_supported_features == fan_platform.FanEntityFeature(0)
-    assert len(
-        [entity for entity in switch_entities if isinstance(entity, switch_platform.HelianthusSolarSwitch)]
-    ) == 2
+    assert fan_entities == []
+    assert switch_entities == []
+    assert not any(
+        isinstance(entity, number_platform.HelianthusCylinderConfigNumber)
+        for entity in number_entities
+    )
     assert len(
         [
             entity
-            for entity in number_entities
-            if isinstance(entity, number_platform.HelianthusCylinderConfigNumber)
+            for entity in binary_sensor_entities
+            if isinstance(entity, binary_sensor_platform.HelianthusSolarBinarySensor)
         ]
     ) == 3
     assert any(
         isinstance(entity, sensor_platform.HelianthusCylinderSensor)
         for entity in sensor_entities
     )
+    assert len(
+        [
+            entity
+            for entity in sensor_entities
+            if isinstance(entity, sensor_platform.HelianthusCylinderConfigSensor)
+        ]
+    ) == 3
     assert any(
         isinstance(entity, sensor_platform.HelianthusSolarSensor)
         for entity in sensor_entities
@@ -260,6 +283,11 @@ def test_interpreted_mode_creates_solar_and_cylinder_entities() -> None:
     assert any(
         isinstance(entity, sensor_platform.HelianthusFM5ModeSensor)
         for entity in sensor_entities
+    )
+    assert all(
+        entity._attr_entity_registry_enabled_default is True
+        for entity in binary_sensor_entities
+        if isinstance(entity, binary_sensor_platform.HelianthusSolarBinarySensor)
     )
 
 
@@ -269,23 +297,33 @@ def test_gpio_only_mode_suppresses_interpreted_entities_and_keeps_fm5_marker() -
     entry = _FakeEntry("entry-1")
 
     fan_entities: list = []
+    binary_sensor_entities: list = []
     switch_entities: list = []
     number_entities: list = []
     sensor_entities: list = []
 
     asyncio.run(fan_platform.async_setup_entry(hass, entry, fan_entities.extend))
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, binary_sensor_entities.extend))
     asyncio.run(switch_platform.async_setup_entry(hass, entry, switch_entities.extend))
     asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
 
-    assert not any(isinstance(entity, fan_platform.HelianthusSolarPumpFan) for entity in fan_entities)
-    assert not any(isinstance(entity, switch_platform.HelianthusSolarSwitch) for entity in switch_entities)
+    assert fan_entities == []
+    assert switch_entities == []
     assert not any(
         isinstance(entity, number_platform.HelianthusCylinderConfigNumber)
         for entity in number_entities
     )
+    assert not any(
+        isinstance(entity, binary_sensor_platform.HelianthusSolarBinarySensor)
+        for entity in binary_sensor_entities
+    )
     assert not any(isinstance(entity, sensor_platform.HelianthusSolarSensor) for entity in sensor_entities)
     assert not any(isinstance(entity, sensor_platform.HelianthusCylinderSensor) for entity in sensor_entities)
+    assert not any(
+        isinstance(entity, sensor_platform.HelianthusCylinderConfigSensor)
+        for entity in sensor_entities
+    )
 
     markers = [
         entity for entity in sensor_entities if isinstance(entity, sensor_platform.HelianthusFM5ModeSensor)

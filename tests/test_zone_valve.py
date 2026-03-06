@@ -1,4 +1,4 @@
-"""Tests for HA-8 zone valve and climate radio parentage."""
+"""Tests for zone parent resolution and valve-position sensor placement."""
 
 from __future__ import annotations
 
@@ -47,19 +47,47 @@ def _ensure_homeassistant_stubs() -> None:
 
         climate_const_module.ClimateEntityFeature = _ClimateEntityFeature
 
-    valve_module = sys.modules.setdefault(
-        "homeassistant.components.valve",
-        types.ModuleType("homeassistant.components.valve"),
+    sensor_module = sys.modules.setdefault(
+        "homeassistant.components.sensor",
+        types.ModuleType("homeassistant.components.sensor"),
     )
-    if not hasattr(valve_module, "ValveEntity"):
-        class _ValveEntity:
+    if not hasattr(sensor_module, "SensorEntity"):
+        class _SensorEntity:
             pass
 
-        valve_module.ValveEntity = _ValveEntity
+        sensor_module.SensorEntity = _SensorEntity
+    if not hasattr(sensor_module, "SensorDeviceClass"):
+        class _SensorDeviceClass:
+            ENERGY = "energy"
+            TEMPERATURE = "temperature"
+            HUMIDITY = "humidity"
+            DURATION = "duration"
+
+        sensor_module.SensorDeviceClass = _SensorDeviceClass
+    if not hasattr(sensor_module, "SensorStateClass"):
+        class _SensorStateClass:
+            TOTAL = "total"
+            MEASUREMENT = "measurement"
+            TOTAL_INCREASING = "total_increasing"
+
+        sensor_module.SensorStateClass = _SensorStateClass
 
     const_module = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
     if not hasattr(const_module, "ATTR_TEMPERATURE"):
         const_module.ATTR_TEMPERATURE = "temperature"
+    if not hasattr(const_module, "EntityCategory"):
+        class _EntityCategory:
+            DIAGNOSTIC = "diagnostic"
+            CONFIG = "config"
+
+        const_module.EntityCategory = _EntityCategory
+    if not hasattr(const_module, "PERCENTAGE"):
+        const_module.PERCENTAGE = "%"
+    if not hasattr(const_module, "UnitOfEnergy"):
+        class _UnitOfEnergy:
+            KILO_WATT_HOUR = "kWh"
+
+        const_module.UnitOfEnergy = _UnitOfEnergy
     if not hasattr(const_module, "UnitOfTemperature"):
         class _UnitOfTemperature:
             CELSIUS = "C"
@@ -118,9 +146,10 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import climate as climate_platform
-from custom_components.helianthus import valve as valve_platform
+from custom_components.helianthus import sensor as sensor_platform
 from custom_components.helianthus.const import DOMAIN
 from custom_components.helianthus.device_ids import radio_device_identifier
+from custom_components.helianthus.zone_parent import build_zone_parent_device_ids
 
 
 class _FakeCoordinator:
@@ -182,35 +211,6 @@ def test_zone_via_device_prefers_expected_radio_candidates() -> None:
     assert climate_platform.zone_via_device(0, 0, candidates, radio_devices, radio_ids, regulator) == regulator
 
 
-def test_zone_via_device_uses_global_regulator_fallback_when_zone_assignment_misses() -> None:
-    radio_devices = [
-        {
-            "group": 0x09,
-            "instance": 1,
-            "remoteControlAddress": 0,
-            "zoneAssignment": 2,
-            "deviceConnected": True,
-        },
-        {
-            "group": 0x0A,
-            "instance": 1,
-            "remoteControlAddress": 1,
-            "zoneAssignment": 2,
-            "deviceConnected": True,
-        },
-    ]
-    radio_ids = {
-        (0x09, 1): ("helianthus", "entry-1-radio-g09-i01"),
-        (0x0A, 1): ("helianthus", "entry-1-radio-g0a-i01"),
-    }
-    regulator = ("helianthus", "entry-1-bus-BASV-15")
-
-    assert (
-        climate_platform.zone_via_device(0, 1, {}, radio_devices, radio_ids, regulator)
-        == radio_ids[(0x09, 1)]
-    )
-
-
 def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
     semantic_coordinator = _FakeCoordinator(
         {
@@ -252,6 +252,9 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
         "semantic_coordinator": semantic_coordinator,
         "radio_coordinator": radio_coordinator,
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "zone_parent_device_ids": {
+            "zone-1": radio_device_identifier("entry-1", "g0a-i01"),
+        },
         "adapter_device_id": ("helianthus", "adapter-entry-1"),
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
@@ -273,7 +276,7 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
     assert attrs["radio_device_group"] == "0x0A"
     assert attrs["radio_device_instance"] == 1
     assert climate._attr_unique_id == "entry-1-zone-zone-1"
-    assert climate.device_info["via_device"] == radio_device_identifier("entry-1", "g0a-i01")
+    assert climate.device_info["identifiers"] == {radio_device_identifier("entry-1", "g0a-i01")}
 
 
 def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtime() -> None:
@@ -318,6 +321,9 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
         "semantic_coordinator": semantic_coordinator,
         "radio_coordinator": radio_coordinator,
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "zone_parent_device_ids": {
+            "zone-1": radio_device_identifier("entry-1", "g09-i01"),
+        },
         "adapter_device_id": ("helianthus", "adapter-entry-1"),
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
@@ -335,12 +341,13 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
     assert attrs["room_temperature_zone_mapping"] == 1
     assert attrs["room_temperature_zone_mapping_text"] == "regulator"
     assert attrs["radio_device"] == "VRC720"
-    assert climate.device_info["via_device"] == radio_device_identifier("entry-1", "g09-i01")
+    assert climate.device_info["identifiers"] == {radio_device_identifier("entry-1", "g09-i01")}
 
 
-def test_zone_valve_entities_are_created_per_zone() -> None:
+def test_zone_valve_position_sensors_are_created_per_zone() -> None:
     payload = {
-        "circuit_coordinator": _FakeCoordinator({"circuits": []}),
+        "device_coordinator": _FakeCoordinator([]),
+        "status_coordinator": _FakeCoordinator({"daemon": {}, "adapter": {}}),
         "semantic_coordinator": _FakeCoordinator(
             {
                 "zones": [
@@ -350,19 +357,99 @@ def test_zone_valve_entities_are_created_per_zone() -> None:
                 "dhw": None,
             }
         ),
+        "energy_coordinator": None,
+        "circuit_coordinator": _FakeCoordinator({"circuits": []}),
+        "radio_coordinator": None,
+        "fm5_coordinator": None,
+        "boiler_coordinator": None,
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "zone_parent_device_ids": {
+            "zone-1": ("helianthus", "entry-1-bus-BASV-15"),
+            "zone-2": ("helianthus", "entry-1-bus-BASV-15"),
+        },
+        "adapter_device_id": ("helianthus", "adapter-entry-1"),
         "regulator_manufacturer": "Vaillant",
     }
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
     entities: list = []
 
-    asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
-    zone_valves = [
-        entity for entity in entities if isinstance(entity, valve_platform.HelianthusZoneValve)
+    valve_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusZoneValvePositionSensor)
     ]
-    assert len(zone_valves) == 2
-    assert {entity._attr_unique_id for entity in zone_valves} == {
-        "entry-1-zone-zone-1-valve",
-        "entry-1-zone-zone-2-valve",
+    assert len(valve_entities) == 2
+    assert {entity._attr_unique_id for entity in valve_entities} == {
+        "entry-1-zone-zone-1-sensor-valvePositionPct",
+        "entry-1-zone-zone-2-sensor-valvePositionPct",
     }
+    assert {entity.native_value for entity in valve_entities} == {0.0, 100.0}
+    assert all(
+        entity.device_info["identifiers"] == {("helianthus", "entry-1-bus-BASV-15")}
+        for entity in valve_entities
+    )
+
+
+def test_build_zone_parent_device_ids_flags_mapped_zone_without_physical_parent() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-2",
+                "name": "Etaj",
+                "config": {"roomTemperatureZoneMapping": 2},
+            }
+        ],
+        {
+            "radioDevices": [
+                {
+                    "group": 0x09,
+                    "instance": 1,
+                    "radioBusKey": "g09-i01",
+                    "deviceConnected": True,
+                    "remoteControlAddress": 0,
+                }
+            ],
+            "radioZoneCandidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+    )
+
+    assert zone_parent_device_ids == {}
+    assert unresolved == ("zone-2",)
+
+
+def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
+    payload = {
+        "semantic_coordinator": _FakeCoordinator(
+            {
+                "zones": [
+                    {
+                        "id": "zone-1",
+                        "name": "Parter",
+                        "state": {},
+                        "config": {"roomTemperatureZoneMapping": 1},
+                    }
+                ],
+                "dhw": None,
+            }
+        ),
+        "radio_coordinator": _FakeCoordinator({"radioDevices": [], "radioZoneCandidates": {}}),
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "zone_parent_device_ids": {},
+        "adapter_device_id": ("helianthus", "adapter-entry-1"),
+        "regulator_manufacturer": "Vaillant",
+        "graphql_client": None,
+        "regulator_bus_address": 0x15,
+        "daemon_source_address": 0x31,
+    }
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))
+
+    assert entities == []

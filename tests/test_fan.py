@@ -1,4 +1,4 @@
-"""Tests for HA-2 boiler fan entities."""
+"""Tests for removal of read-only fan entities."""
 
 from __future__ import annotations
 
@@ -90,8 +90,6 @@ def _ensure_homeassistant_stubs() -> None:
 
 _ensure_homeassistant_stubs()
 
-from homeassistant.exceptions import HomeAssistantError
-
 from custom_components.helianthus import fan as fan_platform
 from custom_components.helianthus.const import DOMAIN
 
@@ -138,7 +136,7 @@ def _payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
     }
 
 
-def test_async_setup_entry_adds_boiler_burner_and_hydraulics_fans() -> None:
+def test_async_setup_entry_no_longer_creates_read_only_boiler_fans() -> None:
     payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -146,52 +144,7 @@ def test_async_setup_entry_adds_boiler_burner_and_hydraulics_fans() -> None:
     entities: list = []
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
 
-    boiler_entities = [
-        entity
-        for entity in entities
-        if isinstance(entity, (fan_platform.HelianthusBoilerBurnerFan, fan_platform.HelianthusBoilerPumpFan))
-    ]
-    assert len(boiler_entities) == 5
-
-    burner = next(entity for entity in boiler_entities if isinstance(entity, fan_platform.HelianthusBoilerBurnerFan))
-    assert burner._attr_supported_features == fan_platform.FanEntityFeature(0)
-    assert burner.is_on is True
-    assert burner.percentage == 38
-    assert burner.speed_count == 0
-    assert burner.device_info["identifiers"] == {("helianthus", "entry-1-boiler-burner")}
-    assert burner.device_info["via_device"] == ("helianthus", "entry-1-bus-BAI00-08")
-    assert burner.extra_state_attributes == {
-        "helianthus_role": "modulating_burner",
-        "gas_valve_active": True,
-        "fan_speed_rpm": 1860,
-        "ionisation_ua": 91,
-    }
-
-    pumps = {
-        entity._attr_name: entity
-        for entity in boiler_entities
-        if isinstance(entity, fan_platform.HelianthusBoilerPumpFan)
-    }
-    assert set(pumps) == {"CH Pump", "External Pump", "Circulation Pump", "Storage Load Pump"}
-    assert pumps["CH Pump"].is_on is True
-    assert pumps["CH Pump"].percentage == 100
-    assert pumps["CH Pump"].speed_count == 1
-    assert pumps["CH Pump"].device_info["identifiers"] == {("helianthus", "entry-1-boiler-hydraulics")}
-    assert pumps["CH Pump"].device_info["via_device"] == ("helianthus", "entry-1-bus-BAI00-08")
-    assert pumps["CH Pump"].extra_state_attributes == {
-        "helianthus_role": "pump",
-        "pump_type": "on_off",
-    }
-    assert pumps["External Pump"].is_on is False
-    assert pumps["External Pump"].percentage == 0
-    assert pumps["Circulation Pump"].is_on is True
-    assert pumps["Storage Load Pump"].is_on is True
-    assert pumps["Storage Load Pump"].percentage == 42
-    assert pumps["Storage Load Pump"].speed_count == 0
-    assert pumps["Storage Load Pump"].extra_state_attributes == {
-        "helianthus_role": "pump",
-        "pump_type": "percentage",
-    }
+    assert entities == []
 
 
 def test_async_setup_entry_skips_boiler_fans_without_physical_bai00() -> None:
@@ -208,7 +161,7 @@ def test_async_setup_entry_skips_boiler_fans_without_physical_bai00() -> None:
     )
 
 
-def test_boiler_fans_are_read_only() -> None:
+def test_async_setup_entry_keeps_fan_platform_empty_even_with_boiler_payload() -> None:
     payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -216,18 +169,4 @@ def test_boiler_fans_are_read_only() -> None:
     entities: list = []
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
 
-    burner = next(entity for entity in entities if isinstance(entity, fan_platform.HelianthusBoilerBurnerFan))
-    pump = next(entity for entity in entities if isinstance(entity, fan_platform.HelianthusBoilerPumpFan))
-
-    for operation in (
-        burner.async_turn_on(),
-        burner.async_turn_off(),
-        burner.async_set_percentage(10),
-        pump.async_turn_on(),
-    ):
-        try:
-            asyncio.run(operation)
-        except HomeAssistantError:
-            pass
-        else:
-            raise AssertionError("expected HomeAssistantError")
+    assert entities == []

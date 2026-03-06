@@ -74,7 +74,24 @@ def _success_responses() -> dict[str, dict]:
                 "dhw": {"state": {}, "config": {"operatingMode": "auto"}},
             }
         },
-        "SmokeEnergy": {"data": {"devices": []}},
+        "SmokeEnergy": {
+            "data": {
+                "energyTotals": {
+                    "gas": {
+                        "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
+                        "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+                    },
+                    "electric": {
+                        "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
+                        "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+                    },
+                    "solar": {
+                        "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
+                        "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
+                    },
+                }
+            }
+        },
     }
 
 
@@ -157,7 +174,7 @@ def test_run_smoke_profile_fails_when_no_devices() -> None:
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"devices": []}},
+            "SmokeEnergy": {"data": {"energyTotals": None}},
         }
     )
 
@@ -198,7 +215,7 @@ def test_run_smoke_profile_subscription_introspection_error_uses_polling_fallbac
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"devices": []}},
+            "SmokeEnergy": {"data": {"energyTotals": None}},
         }
     )
 

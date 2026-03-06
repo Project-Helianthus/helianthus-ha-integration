@@ -199,6 +199,18 @@ def _zone_instance_from_id(zone_id: str) -> int | None:
     return value - 1
 
 
+def _parse_identifier_index(token: str, prefix: str) -> int | None:
+    if not token.startswith(prefix):
+        return None
+    suffix = token[len(prefix) :]
+    if not suffix.isdigit():
+        return None
+    value = int(suffix)
+    if value < 0:
+        return None
+    return value
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -219,7 +231,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusSystemCoordinator,
         HelianthusStatusCoordinator,
     )
-    from .climate import zone_via_device as resolve_zone_via_device
     from .device_ids import (
         adapter_identifier,
         boiler_burner_identifier,
@@ -237,6 +248,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zone_identifier,
     )
     from .subscriptions import start_subscriptions
+    from .zone_parent import build_zone_parent_device_ids
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
@@ -273,28 +285,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Helianthus stale cleanup removed %d entities and %d devices",
             stale_entities_removed,
             stale_devices_removed,
-        )
-
-    removed_entities = 0
-    for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-        entity_registry.async_remove(entity_entry.entity_id)
-        removed_entities += 1
-
-    removed_devices = 0
-    for device_entry in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
-        if any(
-            identifier_domain == DOMAIN
-            for identifier_domain, _ in _iter_identifier_pairs(device_entry.identifiers)
-        ):
-            device_registry.async_remove_device(device_entry.id)
-            removed_devices += 1
-
-    if removed_entities or removed_devices:
-        _LOGGER.info(
-            "Helianthus cleanup removed %d entities and %d devices for entry %s",
-            removed_entities,
-            removed_devices,
-            entry.entry_id,
         )
 
     daemon_device_id = daemon_identifier(entry.entry_id)
@@ -609,107 +599,217 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
 
     semantic = semantic_coordinator.data or {}
+    semantic_zones = [
+        zone for zone in (semantic.get("zones", []) or []) if isinstance(zone, dict)
+    ]
     known_zones: set[str] = {
         str(zone.get("id"))
-        for zone in (semantic.get("zones", []) or [])
+        for zone in semantic_zones
         if zone.get("id") is not None
     }
     known_has_dhw = semantic.get("dhw") is not None
 
-    def reparent_zone_devices(reason: str) -> None:
-        if regulator_device is None:
-            return
+    radio_sensor_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
+    )
+    solar_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-solar-(?P<kind>sensor|binary)-(?P<key>.+)$"
+    )
+    cylinder_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-cylinder-(?P<index>\d+)-(?:(?:config-(?P<config_key>.+))|(?P<kind>temperature))$"
+    )
 
-        payload = semantic_coordinator.data or {}
-        zones = payload.get("zones", []) or []
-        radio_payload = radio_coordinator.data or {}
-        radio_devices = [
-            item
-            for item in (radio_payload.get("radioDevices", []) or [])
-            if isinstance(item, dict)
-        ]
+    def _entry_entities() -> tuple:
+        return tuple(er.async_entries_for_config_entry(entity_registry, entry.entry_id))
 
-        raw_candidates = radio_payload.get("radioZoneCandidates")
-        radio_zone_candidates: dict[int, list[dict[str, int | None]]] = {}
-        if isinstance(raw_candidates, dict):
-            for raw_zone_instance, raw_items in raw_candidates.items():
-                zone_instance = parse_optional_int(raw_zone_instance)
-                if zone_instance is None or not isinstance(raw_items, list):
-                    continue
-                candidates: list[dict[str, int | None]] = []
-                for item in raw_items:
-                    if not isinstance(item, dict):
-                        continue
-                    group = parse_optional_int(item.get("group"))
-                    instance = parse_optional_int(item.get("instance"))
-                    if group is None or instance is None:
-                        continue
-                    candidates.append(
-                        {
-                            "group": group,
-                            "instance": instance,
-                            "remote_control_address": parse_optional_int(
-                                item.get("remote_control_address")
-                            ),
-                        }
-                    )
-                if candidates:
-                    radio_zone_candidates[zone_instance] = candidates
+    def _device_has_entities(device_id: str) -> bool:
+        return any(entity_entry.device_id == device_id for entity_entry in entity_registry.entities.values())
 
-        radio_device_ids: dict[tuple[int, int], tuple[str, str]] = {}
-        for device in radio_devices:
-            group = parse_optional_int(device.get("group"))
-            instance = parse_optional_int(device.get("instance"))
+    def _current_fm5_payload() -> dict:
+        payload = fm5_coordinator.data if fm5_coordinator else None
+        return payload if isinstance(payload, dict) else {}
+
+    def _current_fm5_mode() -> str:
+        return str(_current_fm5_payload().get("fm5SemanticMode") or "ABSENT").strip().upper()
+
+    def _current_radio_slots_with_live_values() -> dict[tuple[int, int], set[str]]:
+        payload = radio_coordinator.data if radio_coordinator else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[tuple[int, int], set[str]] = {}
+        for radio in payload.get("radioDevices", []) or []:
+            if not isinstance(radio, dict):
+                continue
+            group = parse_optional_int(radio.get("group"))
+            instance = parse_optional_int(radio.get("instance"))
             if group is None or instance is None:
                 continue
-            bus_key = str(device.get("radioBusKey") or "").strip()
-            if not bus_key:
-                bus_key = build_radio_bus_key(group, instance)
-            radio_device_ids[(group, instance)] = radio_device_identifier(entry.entry_id, bus_key)
+            out[(group, instance)] = {key for key, value in radio.items() if value is not None}
+        return out
 
-        updated = 0
-        for zone in zones:
-            if not isinstance(zone, dict):
-                continue
-            zone_id = str(zone.get("id") or "").strip()
-            zone_instance = _zone_instance_from_id(zone_id)
-            if zone_instance is None:
-                continue
-            zone_device = device_registry.async_get_device(
-                identifiers={zone_identifier(entry.entry_id, zone_id)}
-            )
-            if zone_device is None:
-                continue
-            desired_parent_identifier = resolve_zone_via_device(
-                zone_instance,
-                parse_optional_int((zone.get("config") or {}).get("roomTemperatureZoneMapping")),
-                radio_zone_candidates,
-                radio_devices,
-                radio_device_ids,
-                regulator_device,
-            )
-            desired_parent_device_id: str | None = None
-            if desired_parent_identifier is not None:
-                desired_parent = device_registry.async_get_device(
-                    identifiers={desired_parent_identifier}
-                )
-                if desired_parent is None:
-                    continue
-                desired_parent_device_id = desired_parent.id
-            if zone_device.via_device_id == desired_parent_device_id:
-                continue
-            device_registry.async_update_device(
-                zone_device.id,
-                via_device_id=desired_parent_device_id,
-            )
-            updated += 1
+    def _current_solar_live_keys() -> set[str]:
+        solar_payload = _current_fm5_payload().get("solar")
+        if not isinstance(solar_payload, dict):
+            return set()
+        return {key for key, value in solar_payload.items() if value is not None}
 
-        if updated:
+    def _current_cylinder_live_keys() -> dict[int, set[str]]:
+        out: dict[int, set[str]] = {}
+        for cylinder in _current_fm5_payload().get("cylinders", []) or []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = parse_optional_int(cylinder.get("index"))
+            if index is None or index < 0:
+                continue
+            out[index] = {key for key, value in cylinder.items() if value is not None}
+        return out
+
+    def _is_sparse_entity_live(unique_id: str | None) -> bool:
+        if not unique_id:
+            return False
+        radio_match = radio_sensor_unique_id_re.match(unique_id)
+        if radio_match:
+            radio_slots_with_live_values = _current_radio_slots_with_live_values()
+            slot = (
+                int(radio_match.group("group"), 16),
+                int(radio_match.group("instance")),
+            )
+            return radio_match.group("key") in radio_slots_with_live_values.get(slot, set())
+
+        solar_match = solar_unique_id_re.match(unique_id)
+        if solar_match:
+            if _current_fm5_mode() != "INTERPRETED":
+                return False
+            solar_live_keys = _current_solar_live_keys()
+            return solar_match.group("key") in solar_live_keys
+
+        cylinder_match = cylinder_unique_id_re.match(unique_id)
+        if cylinder_match:
+            if _current_fm5_mode() != "INTERPRETED":
+                return False
+            cylinder_live_keys = _current_cylinder_live_keys()
+            index = int(cylinder_match.group("index"))
+            live_keys = cylinder_live_keys.get(index, set())
+            config_key = cylinder_match.group("config_key")
+            if config_key:
+                return config_key in live_keys
+            return "temperatureC" in live_keys
+        return False
+
+    def cleanup_obsolete_entity_registry_entries() -> None:
+        removed = 0
+        for entity_entry in _entry_entities():
+            if entity_entry.platform != DOMAIN:
+                continue
+            unique_id = str(entity_entry.unique_id or "")
+            remove_entry = False
+            if entity_entry.domain in {"fan", "valve", "switch"}:
+                remove_entry = True
+            elif entity_entry.domain == "number" and re.match(
+                rf"^{re.escape(entry.entry_id)}-cylinder-\d+-number-",
+                unique_id,
+            ):
+                remove_entry = True
+            else:
+                cylinder_match = cylinder_unique_id_re.match(unique_id)
+                if cylinder_match and int(cylinder_match.group("index")) not in known_cylinder_indexes:
+                    remove_entry = True
+            if remove_entry:
+                entity_registry.async_remove(entity_entry.entity_id)
+                removed += 1
+        if removed:
             _LOGGER.info(
-                "Helianthus zone reparent updated %d device(s): %s",
-                updated,
+                "Helianthus cleanup removed %d obsolete entities for entry %s",
+                removed,
+                entry.entry_id,
+            )
+
+    def cleanup_obsolete_devices(reason: str) -> None:
+        removed = 0
+        for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
+            identifier_pairs = _iter_identifier_pairs(device_entry.identifiers)
+            domain_tokens = [
+                token for identifier_domain, token in identifier_pairs if identifier_domain == DOMAIN
+            ]
+            if not domain_tokens:
+                continue
+            remove_device = False
+            for token in domain_tokens:
+                if token in {
+                    f"{entry.entry_id}-boiler-burner",
+                    f"{entry.entry_id}-boiler-hydraulics",
+                }:
+                    remove_device = True
+                    break
+                if token.startswith(f"{entry.entry_id}-zone-"):
+                    remove_device = True
+                    break
+                cylinder_index = _parse_identifier_index(token, f"{entry.entry_id}-cylinder-")
+                if cylinder_index is not None and cylinder_index not in known_cylinder_indexes:
+                    remove_device = True
+                    break
+            if not remove_device:
+                continue
+            if _device_has_entities(device_entry.id):
+                continue
+            device_registry.async_remove_device(device_entry.id)
+            removed += 1
+        if removed:
+            _LOGGER.info(
+                "Helianthus cleanup removed %d obsolete devices for entry %s (%s)",
+                removed,
+                entry.entry_id,
                 reason,
             )
+
+    def auto_enable_sparse_entities(reason: str) -> None:
+        registry_disabler = getattr(er, "RegistryEntryDisabler", None)
+        integration_disabler = "integration"
+        if registry_disabler is not None:
+            integration_disabler = getattr(
+                registry_disabler,
+                "INTEGRATION",
+                integration_disabler,
+            )
+        enabled = 0
+        for entity_entry in _entry_entities():
+            if entity_entry.platform != DOMAIN:
+                continue
+            if entity_entry.disabled_by != integration_disabler:
+                continue
+            if not _is_sparse_entity_live(str(entity_entry.unique_id or "")):
+                continue
+            entity_registry.async_update_entity(entity_entry.entity_id, disabled_by=None)
+            enabled += 1
+        if enabled:
+            _LOGGER.info(
+                "Helianthus auto-enabled %d sparse entities for entry %s (%s)",
+                enabled,
+                entry.entry_id,
+                reason,
+            )
+            schedule_reload("sparse entities became live")
+
+    cleanup_obsolete_entity_registry_entries()
+
+    def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
+        payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
+        zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
+        radio_payload = radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
+        return build_zone_parent_device_ids(
+            entry.entry_id,
+            zones,
+            radio_payload,
+            regulator_device,
+        )
+
+    zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()
+    if unresolved_zone_ids:
+        _LOGGER.warning(
+            "Helianthus zone parent resolution incomplete for entry %s; skipping unresolved zones until reload: %s",
+            entry.entry_id,
+            ", ".join(unresolved_zone_ids),
+        )
 
     zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
         str(
@@ -803,7 +903,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         has_new_zones = bool(current_zone_ids - known_zones)
         has_new_dhw = dhw is not None and not known_has_dhw
-        reparent_zone_devices("semantic update")
+        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
+        if unresolved:
+            schedule_reload("zone parent resolution became incomplete")
+            return
+        if current_zone_parent_ids != zone_parent_device_ids:
+            schedule_reload("zone parent mapping changed")
+            return
         if has_new_zones or has_new_dhw:
             schedule_reload("semantic inventory became available")
 
@@ -834,7 +940,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if group is None or instance is None:
                 continue
             current_keys.add(build_radio_bus_key(group, instance))
-        reparent_zone_devices("radio update")
+        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
+        if unresolved:
+            schedule_reload("zone parent resolution became incomplete")
+            return
+        if current_zone_parent_ids != zone_parent_device_ids:
+            schedule_reload("zone parent mapping changed")
+            return
+        auto_enable_sparse_entities("radio update")
         if current_keys - known_radio_bus_keys:
             schedule_reload("radio inventory became available")
 
@@ -854,6 +967,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return
         if mode == "INTERPRETED" and (current_indexes - known_cylinder_indexes):
             schedule_reload("cylinder inventory became available")
+            return
+        auto_enable_sparse_entities("fm5 update")
 
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
@@ -945,10 +1060,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "boiler_via_device_id": boiler_via_device_id,
         "boiler_burner_device_id": boiler_burner_device_id,
         "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
+        "zone_parent_device_ids": zone_parent_device_ids,
+        "unresolved_zone_ids": unresolved_zone_ids,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    reparent_zone_devices("post-platform setup")
+    auto_enable_sparse_entities("post-platform setup")
+    cleanup_obsolete_devices("post-platform setup")
 
     return True
 

@@ -1,4 +1,4 @@
-"""Tests for HA-6 circuit entities."""
+"""Tests for HA circuit entities after read-only actuator cleanup."""
 
 from __future__ import annotations
 
@@ -42,6 +42,21 @@ def _ensure_homeassistant_stubs() -> None:
             pass
 
         valve_module.ValveEntity = _ValveEntity
+
+    binary_sensor_module = sys.modules.setdefault(
+        "homeassistant.components.binary_sensor",
+        types.ModuleType("homeassistant.components.binary_sensor"),
+    )
+    if not hasattr(binary_sensor_module, "BinarySensorEntity"):
+        class _BinarySensorEntity:
+            pass
+
+        binary_sensor_module.BinarySensorEntity = _BinarySensorEntity
+    if not hasattr(binary_sensor_module, "BinarySensorDeviceClass"):
+        class _BinarySensorDeviceClass:
+            RUNNING = "running"
+
+        binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
     sensor_module = sys.modules.setdefault(
         "homeassistant.components.sensor",
@@ -169,6 +184,7 @@ def _ensure_homeassistant_stubs() -> None:
 
 _ensure_homeassistant_stubs()
 
+from custom_components.helianthus import binary_sensor as binary_sensor_platform
 from custom_components.helianthus import fan as fan_platform
 from custom_components.helianthus import number as number_platform
 from custom_components.helianthus import select as select_platform
@@ -231,7 +247,6 @@ def _circuits() -> list[dict]:
                 "summerLimitC": 22.0,
                 "frostProtC": -5.0,
                 "roomTempControl": "modulating",
-                "coolingEnabled": False,
             },
         },
         {
@@ -257,7 +272,6 @@ def _circuits() -> list[dict]:
                 "summerLimitC": 24.0,
                 "frostProtC": -3.0,
                 "roomTempControl": "off",
-                "coolingEnabled": True,
             },
         },
     ]
@@ -273,7 +287,6 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
         "energy_coordinator": None,
         "circuit_coordinator": circuit_coordinator,
         "boiler_coordinator": None,
-        "boiler_device_id": None,
         "graphql_client": client,
         "daemon_device_id": ("helianthus", "daemon-entry-1"),
         "adapter_device_id": ("helianthus", "adapter-entry-1"),
@@ -283,7 +296,7 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
     return payload, circuit_coordinator, client
 
 
-def test_circuit_fan_platform_adds_one_pump_per_circuit() -> None:
+def test_circuit_fan_platform_is_empty_after_read_only_cleanup() -> None:
     payload, _, _ = _build_payload()
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -291,25 +304,10 @@ def test_circuit_fan_platform_adds_one_pump_per_circuit() -> None:
 
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
 
-    pump_entities = [
-        entity for entity in entities if isinstance(entity, fan_platform.HelianthusCircuitPumpFan)
-    ]
-    assert len(pump_entities) == 2
-    assert {entity._attr_unique_id for entity in pump_entities} == {
-        "entry-1-circuit-0-pump",
-        "entry-1-circuit-1-pump",
-    }
-    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("-0-pump"))
-    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("-1-pump"))
-    assert first.is_on is True
-    assert first.percentage == 100
-    assert first._attr_supported_features == fan_platform.FanEntityFeature(0)
-    assert second.is_on is False
-    assert second.percentage == 0
-    assert second._attr_supported_features == fan_platform.FanEntityFeature(0)
+    assert entities == []
 
 
-def test_circuit_valve_platform_respects_has_mixer_gate() -> None:
+def test_circuit_valve_platform_is_empty_after_read_only_cleanup() -> None:
     payload, _, _ = _build_payload()
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -317,15 +315,31 @@ def test_circuit_valve_platform_respects_has_mixer_gate() -> None:
 
     asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
 
-    mixer_entities = [
+    assert entities == []
+
+
+def test_circuit_binary_sensor_platform_adds_one_pump_per_circuit() -> None:
+    payload, _, _ = _build_payload()
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    pump_entities = [
         entity
         for entity in entities
-        if isinstance(entity, valve_platform.HelianthusCircuitMixingValve)
+        if isinstance(entity, binary_sensor_platform.HelianthusCircuitPumpBinarySensor)
     ]
-    assert len(mixer_entities) == 1
-    mixer = mixer_entities[0]
-    assert mixer._attr_unique_id == "entry-1-circuit-0-mixing-valve"
-    assert mixer.current_valve_position == 38
+    assert len(pump_entities) == 2
+    assert {entity._attr_unique_id for entity in pump_entities} == {
+        "entry-1-circuit-0-binary-pumpActive",
+        "entry-1-circuit-1-binary-pumpActive",
+    }
+    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("0-binary-pumpActive"))
+    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("1-binary-pumpActive"))
+    assert first.is_on is True
+    assert second.is_on is False
 
 
 def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs() -> None:
@@ -344,7 +358,9 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     assert len(circuit_entities) == len(_circuits()) * len(sensor_platform.CIRCUIT_SENSOR_FIELDS)
 
     state_sensor = next(
-        entity for entity in circuit_entities if entity._attr_unique_id == "entry-1-circuit-0-sensor-circuitState"
+        entity
+        for entity in circuit_entities
+        if entity._attr_unique_id == "entry-1-circuit-0-sensor-circuitState"
     )
     attrs = state_sensor.extra_state_attributes
     assert attrs["circuit_index"] == 0
@@ -353,7 +369,7 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     assert "connected_zone_names" not in attrs
 
 
-def test_circuit_number_select_switch_entities_call_circuit_config_mutation() -> None:
+def test_circuit_number_select_entities_call_circuit_config_mutation_without_cooling_enabled() -> None:
     payload, circuit_coordinator, client = _build_payload()
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -376,17 +392,11 @@ def test_circuit_number_select_switch_entities_call_circuit_config_mutation() ->
         if isinstance(entity, select_platform.HelianthusCircuitRoomTempControlSelect)
         and entity._attr_unique_id == "entry-1-circuit-0-room-temp-control"
     )
-    cooling_enabled = next(
-        entity
-        for entity in switch_entities
-        if isinstance(entity, switch_platform.HelianthusCircuitCoolingEnabledSwitch)
-        and entity._attr_unique_id == "entry-1-circuit-0-cooling-enabled"
-    )
 
     asyncio.run(heating_curve.async_set_native_value(1.7))
     asyncio.run(room_temp_control.async_select_option("thermostat"))
-    asyncio.run(cooling_enabled.async_turn_on())
 
     fields_written = [call["variables"]["field"] for call in client.calls]
-    assert fields_written == ["heatingCurve", "roomTempControl", "coolingEnabled"]
-    assert circuit_coordinator.refresh_requests == 3
+    assert fields_written == ["heatingCurve", "roomTempControl"]
+    assert switch_entities == []
+    assert circuit_coordinator.refresh_requests == 2

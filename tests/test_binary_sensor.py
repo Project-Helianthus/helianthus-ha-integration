@@ -1,4 +1,4 @@
-"""Tests for reduced boiler binary sensors."""
+"""Tests for boiler read-only binary sensors."""
 
 from __future__ import annotations
 
@@ -106,7 +106,17 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
     return {
         "semantic_coordinator": _FakeCoordinator({"zones": [], "dhw": None}),
         "boiler_coordinator": _FakeCoordinator(
-            {"boilerStatus": {"state": {"centralHeatingPumpActive": True}}}
+            {
+                "boilerStatus": {
+                    "state": {
+                        "flameActive": True,
+                        "gasValveActive": False,
+                        "centralHeatingPumpActive": True,
+                        "externalPumpActive": False,
+                        "circulationPumpActive": True,
+                    }
+                }
+            }
         ),
         "boiler_device_id": boiler_device_id,
         "boiler_physical_device_id": ("helianthus", "entry-1-bus-BASV2-15"),
@@ -116,7 +126,7 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
     }
 
 
-def test_async_setup_entry_adds_reduced_boiler_pump_binary_sensor_on_bai00_only() -> None:
+def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
     hass = _FakeHass(payload)
@@ -125,24 +135,37 @@ def test_async_setup_entry_adds_reduced_boiler_pump_binary_sensor_on_bai00_only(
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
-    pump_entities = [
+    boiler_entities = [
         entity
         for entity in entities
-        if isinstance(entity, binary_sensor_platform.HelianthusBoilerPumpBinarySensor)
+        if isinstance(entity, binary_sensor_platform.HelianthusBoilerStateBinarySensor)
     ]
 
-    assert len(pump_entities) == 1
-    pump = pump_entities[0]
-    assert pump._attr_name == "Boiler Central Heating Pump Active"
-    assert pump._attr_unique_id == "entry-1-boiler-central-heating-pump-active"
-    assert pump._attr_device_class == binary_sensor_platform.BinarySensorDeviceClass.RUNNING
-    assert pump.is_on is True
-    assert pump.device_info["identifiers"] == {boiler_device_id}
-    assert payload["boiler_burner_device_id"] not in pump.device_info["identifiers"]
-    assert payload["boiler_hydraulics_device_id"] not in pump.device_info["identifiers"]
+    assert {entity._attr_unique_id for entity in boiler_entities} == {
+        "entry-1-boiler-binary-flameActive",
+        "entry-1-boiler-binary-gasValveActive",
+        "entry-1-boiler-binary-centralHeatingPumpActive",
+        "entry-1-boiler-binary-externalPumpActive",
+        "entry-1-boiler-binary-circulationPumpActive",
+    }
+    assert {entity._attr_name for entity in boiler_entities} == {
+        "Burner Flame Active",
+        "Burner Gas Valve Active",
+        "Hydraulics CH Pump",
+        "Hydraulics External Pump",
+        "Hydraulics Circulation Pump",
+    }
+    for entity in boiler_entities:
+        assert entity._attr_device_class == binary_sensor_platform.BinarySensorDeviceClass.RUNNING
+        assert entity.device_info["identifiers"] == {boiler_device_id}
+
+    flame = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("flameActive"))
+    gas_valve = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("gasValveActive"))
+    assert flame.is_on is True
+    assert gas_valve.is_on is False
 
 
-def test_async_setup_entry_skips_reduced_boiler_pump_without_physical_bai00() -> None:
+def test_async_setup_entry_skips_boiler_state_binary_sensors_without_physical_bai00() -> None:
     payload = _build_payload(boiler_device_id=None)
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -150,10 +173,10 @@ def test_async_setup_entry_skips_reduced_boiler_pump_without_physical_bai00() ->
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
-    pump_entities = [
+    boiler_entities = [
         entity
         for entity in entities
-        if isinstance(entity, binary_sensor_platform.HelianthusBoilerPumpBinarySensor)
+        if isinstance(entity, binary_sensor_platform.HelianthusBoilerStateBinarySensor)
     ]
 
-    assert pump_entities == []
+    assert boiler_entities == []

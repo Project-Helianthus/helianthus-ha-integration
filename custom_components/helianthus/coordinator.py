@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from datetime import timedelta
 import logging
 from typing import Any
@@ -377,14 +378,10 @@ query System {
 
 QUERY_ENERGY = """
 query Energy {
-  devices {
-    address
-    role
-    energyTotals {
-      gas { dhw { today yearly } climate { today yearly } }
-      electric { dhw { today yearly } climate { today yearly } }
-      solar { dhw { today yearly } climate { today yearly } }
-    }
+  energyTotals {
+    gas { dhw { today yearly } climate { today yearly } }
+    electric { dhw { today yearly } climate { today yearly } }
+    solar { dhw { today yearly } climate { today yearly } }
   }
 }
 """
@@ -923,25 +920,30 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._last_valid_energy_totals: dict[str, Any] | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             payload = await self._client.execute(QUERY_ENERGY)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["energyTotals", "devices"]):
-                return {"energyTotals": None}
-            raise UpdateFailed(str(exc)) from exc
-        except GraphQLClientError as exc:
-            raise UpdateFailed(str(exc)) from exc
+            if _is_missing_field_error(exc.errors, ["energyTotals"]):
+                return self._hold_last_valid_energy_totals()
+            return self._hold_last_valid_energy_totals()
+        except GraphQLClientError:
+            return self._hold_last_valid_energy_totals()
 
-        if not isinstance(payload, dict):
-            return {"energyTotals": None}
-        devices = payload.get("devices") or []
-        totals = next(
-            (d.get("energyTotals") for d in devices if d.get("role") == "Regulator"),
-            None,
-        )
-        return {"energyTotals": totals}
+        totals = _normalize_energy_totals_payload(payload)
+        if totals is None:
+            return self._hold_last_valid_energy_totals()
+
+        self._last_valid_energy_totals = deepcopy(totals)
+        return {"energyTotals": deepcopy(totals)}
+
+    def _hold_last_valid_energy_totals(self) -> dict[str, Any]:
+        totals = getattr(self, "_last_valid_energy_totals", None)
+        if isinstance(totals, dict):
+            return {"energyTotals": deepcopy(totals)}
+        return {"energyTotals": None}
 
 
 class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -1157,3 +1159,23 @@ def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
             if f'Cannot query field "{field}"' in message:
                 return True
     return False
+
+
+def _normalize_energy_totals_payload(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    totals = payload.get("energyTotals")
+    if not isinstance(totals, dict):
+        return None
+
+    for channel_name in ("gas", "electric", "solar"):
+        channel = totals.get(channel_name)
+        if not isinstance(channel, dict):
+            return None
+        for usage in ("dhw", "climate"):
+            series = channel.get(usage)
+            if not isinstance(series, dict):
+                return None
+            if "today" not in series or "yearly" not in series:
+                return None
+    return totals

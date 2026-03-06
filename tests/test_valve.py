@@ -1,4 +1,4 @@
-"""Tests for HA-3 boiler diverter valve entity."""
+"""Tests for removal of read-only valve entities."""
 
 from __future__ import annotations
 
@@ -79,8 +79,6 @@ def _ensure_homeassistant_stubs() -> None:
 
 _ensure_homeassistant_stubs()
 
-from homeassistant.exceptions import HomeAssistantError
-
 from custom_components.helianthus import valve as valve_platform
 from custom_components.helianthus.const import DOMAIN
 
@@ -102,8 +100,21 @@ class _FakeHass:
 
 def _payload(*, boiler_device_id: tuple[str, str] | None, position: float | None) -> dict:
     return {
-        "circuit_coordinator": None,
-        "semantic_coordinator": None,
+        "circuit_coordinator": _FakeCoordinator(
+            {
+                "circuits": [
+                    {
+                        "index": 0,
+                        "hasMixer": True,
+                        "state": {"mixerPositionPct": 42.0},
+                        "config": {},
+                    }
+                ]
+            }
+        ),
+        "semantic_coordinator": _FakeCoordinator(
+            {"zones": [{"id": "zone-1", "name": "Living", "state": {"valvePositionPct": 73.4}}], "dhw": None}
+        ),
         "boiler_coordinator": _FakeCoordinator(
             {"boilerStatus": {"state": {"diverterValvePositionPct": position}}}
         ),
@@ -113,7 +124,7 @@ def _payload(*, boiler_device_id: tuple[str, str] | None, position: float | None
     }
 
 
-def test_async_setup_entry_adds_boiler_diverter_valve() -> None:
+def test_async_setup_entry_no_longer_creates_read_only_valves() -> None:
     payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"), position=73.4)
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -121,16 +132,10 @@ def test_async_setup_entry_adds_boiler_diverter_valve() -> None:
     entities: list = []
     asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
 
-    diverter = next(entity for entity in entities if isinstance(entity, valve_platform.HelianthusBoilerDiverterValve))
-    assert diverter._attr_supported_features == valve_platform.ValveEntityFeature(0)
-    assert diverter.current_valve_position == 73
-    assert diverter.is_closed is False
-    assert diverter.device_info["identifiers"] == {("helianthus", "entry-1-boiler-hydraulics")}
-    assert diverter.device_info["via_device"] == ("helianthus", "entry-1-bus-BAI00-08")
-    assert diverter.extra_state_attributes == {"position_meaning": "0%=CH, 100%=DHW"}
+    assert entities == []
 
 
-def test_async_setup_entry_skips_boiler_diverter_without_physical_bai00() -> None:
+def test_async_setup_entry_keeps_valve_platform_empty_without_physical_bai00() -> None:
     payload = _payload(boiler_device_id=None, position=50.0)
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -138,29 +143,4 @@ def test_async_setup_entry_skips_boiler_diverter_without_physical_bai00() -> Non
     entities: list = []
     asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
 
-    assert not any(isinstance(entity, valve_platform.HelianthusBoilerDiverterValve) for entity in entities)
-
-
-def test_boiler_diverter_valve_is_read_only_and_reports_closed_state() -> None:
-    payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"), position=0.0)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
-
-    entities: list = []
-    asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
-
-    diverter = next(entity for entity in entities if isinstance(entity, valve_platform.HelianthusBoilerDiverterValve))
-    assert diverter.current_valve_position == 0
-    assert diverter.is_closed is True
-
-    for operation in (
-        diverter.async_open_valve(),
-        diverter.async_close_valve(),
-        diverter.async_set_valve_position(20),
-    ):
-        try:
-            asyncio.run(operation)
-        except HomeAssistantError:
-            pass
-        else:
-            raise AssertionError("expected HomeAssistantError")
+    assert entities == []

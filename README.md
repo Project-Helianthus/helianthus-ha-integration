@@ -62,6 +62,31 @@ cp -R custom_components/helianthus /path/to/home-assistant/config/custom_compone
 
 Restart Home Assistant, then add integration **Helianthus** from **Settings → Devices & Services**.
 
+## Zone Device Model
+
+Helianthus now attaches zone entities directly to physical room-control devices instead of creating virtual
+zone devices in the Home Assistant device registry.
+
+- `roomTemperatureZoneMapping=1` attaches the zone directly to the regulator room device (`VRC720`-class).
+- `roomTemperatureZoneMapping=2/3/4` attaches the zone directly to the matching remote thermostat device
+  (`VR92`-class and siblings).
+- `roomTemperatureZoneMapping=0` or an absent mapping falls back to the physical regulator device.
+
+If a mapped zone does not yet have a resolvable physical parent after the initial coordinator refresh, the
+integration will not create a provisional zone device. Setup is retried instead.
+
+## Clean Reset Required For Zone Model Changes
+
+The direct-attach zone model is intentionally rolled out without a registry migration layer. When adopting this
+change on an existing Home Assistant instance, reset only the Helianthus integration:
+
+1. Deploy the updated `helianthus` custom component.
+2. Remove the **Helianthus** config entry from Home Assistant.
+3. Verify that no `platform=helianthus` devices or entities remain in the HA registry.
+4. Re-add the **Helianthus** integration from scratch.
+
+This reset procedure is strictly internal to Helianthus. Other integrations are out of scope for this rollout.
+
 ### 4) Config flow and options examples
 
 Config flow fields:

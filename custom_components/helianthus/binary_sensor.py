@@ -10,7 +10,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import build_radio_bus_key, dhw_identifier, radio_device_identifier, zone_identifier
+from .device_ids import (
+    build_radio_bus_key,
+    circuit_identifier,
+    dhw_identifier,
+    radio_device_identifier,
+    solar_identifier,
+)
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
 _RADIO_STALE_GRACE_CYCLES = 3
@@ -58,6 +64,36 @@ def _radio_bus_key(device: dict[str, Any]) -> str | None:
     return build_radio_bus_key(slot[0], slot[1])
 
 
+def _normalize_zone_id(zone_id: object | None) -> str | None:
+    if zone_id is None:
+        return None
+    token = str(zone_id).strip().lower()
+    if not token:
+        return None
+    if token.startswith("zone-"):
+        suffix = token[5:]
+    else:
+        suffix = token
+    if suffix.isdigit():
+        value = int(suffix, 10)
+        if value > 0:
+            return f"zone-{value}"
+    return token
+
+
+def _zone_instance(zone_id: object | None) -> int | None:
+    normalized = _normalize_zone_id(zone_id)
+    if normalized is None:
+        return None
+    token = normalized[5:] if normalized.startswith("zone-") else normalized
+    if not token.isdigit():
+        return None
+    value = int(token, 10)
+    if value <= 0:
+        return None
+    return value - 1
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["semantic_coordinator"]
@@ -65,7 +101,11 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     system_coordinator = data.get("system_coordinator")
     boiler_coordinator = data.get("boiler_coordinator")
     boiler_device_id = data.get("boiler_device_id")
+    circuit_coordinator = data.get("circuit_coordinator")
+    fm5_coordinator = data.get("fm5_coordinator")
     regulator_device_id = data.get("regulator_device_id")
+    vr71_device_id = data.get("vr71_device_id") or regulator_device_id
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
@@ -74,7 +114,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         zone_id = zone.get("id")
         if zone_id is None:
             continue
+        normalized_zone_id = _normalize_zone_id(zone_id)
+        if normalized_zone_id is None:
+            continue
+        config = zone.get("config")
+        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
         zone_name = str(zone.get("name") or f"Zone {zone_id}")
+        parent_device_id = zone_parent_device_ids.get(normalized_zone_id)
+        if parent_device_id is None:
+            if mapping in (1, 2, 3, 4):
+                continue
+            parent_device_id = regulator_device_id
+        if parent_device_id is None:
+            continue
         for schedule_key, schedule_label in [
             ("schedule", "Daily Schedule Active"),
             ("quickveto", "Quick Veto Active"),
@@ -88,6 +140,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     target_kind="zone",
                     target_id=str(zone_id),
                     target_name=zone_name,
+                    target_device_id=parent_device_id,
                     schedule_key=schedule_key,
                     schedule_label=schedule_label,
                 )
@@ -108,19 +161,73 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     target_kind="dhw",
                     target_id=None,
                     target_name="Domestic Hot Water",
+                    target_device_id=None,
                     schedule_key=schedule_key,
                     schedule_label=schedule_label,
                 )
             )
 
     if boiler_coordinator and boiler_device_id:
-        entities.append(
-            HelianthusBoilerPumpBinarySensor(
-                coordinator=boiler_coordinator,
-                entry_id=entry.entry_id,
-                boiler_device_id=boiler_device_id,
+        for key, label in [
+            ("flameActive", "Burner Flame Active"),
+            ("gasValveActive", "Burner Gas Valve Active"),
+            ("centralHeatingPumpActive", "Hydraulics CH Pump"),
+            ("externalPumpActive", "Hydraulics External Pump"),
+            ("circulationPumpActive", "Hydraulics Circulation Pump"),
+        ]:
+            entities.append(
+                HelianthusBoilerStateBinarySensor(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    boiler_device_id=boiler_device_id,
+                    key=key,
+                    label=label,
+                )
             )
-        )
+
+    if circuit_coordinator and circuit_coordinator.data:
+        for circuit in circuit_coordinator.data.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            circuit_index = _parse_optional_int(circuit.get("index"))
+            if circuit_index is None or circuit_index < 0:
+                continue
+            circuit_type = str(circuit.get("circuitType") or "").strip().lower()
+            label = circuit_type.replace("_", " ").title() if circuit_type else f"Circuit {circuit_index + 1}"
+            entities.append(
+                HelianthusCircuitPumpBinarySensor(
+                    coordinator=circuit_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    circuit_index=circuit_index,
+                    initial_name=f"Circuit {circuit_index + 1} ({label})",
+                )
+            )
+
+    if fm5_coordinator and isinstance(fm5_coordinator.data, dict):
+        payload = fm5_coordinator.data
+        mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+        solar = payload.get("solar") if isinstance(payload.get("solar"), dict) else None
+        if mode == "INTERPRETED":
+            solar_device_id = data.get("solar_device_id") or solar_identifier(entry.entry_id)
+            for key, label in [
+                ("pumpActive", "Solar Pump Active"),
+                ("solarEnabled", "Solar Enabled"),
+                ("functionMode", "Solar Function Mode"),
+            ]:
+                entities.append(
+                    HelianthusSolarBinarySensor(
+                        coordinator=fm5_coordinator,
+                        entry_id=entry.entry_id,
+                        manufacturer=manufacturer,
+                        solar_device_id=solar_device_id,
+                        parent_device_id=vr71_device_id,
+                        key=key,
+                        label=label,
+                        enabled_by_default=bool(isinstance(solar, dict) and solar.get(key) is not None),
+                    )
+                )
 
     if system_coordinator and system_coordinator.data and regulator_device_id:
         entities.extend(
@@ -185,6 +292,7 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         target_kind: str,
         target_id: str | None,
         target_name: str,
+        target_device_id: tuple[str, str] | None,
         schedule_key: str,
         schedule_label: str,
     ) -> None:
@@ -194,6 +302,7 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._target_kind = target_kind
         self._target_id = target_id
         self._target_name = target_name
+        self._target_device_id = target_device_id
         self._schedule_key = schedule_key
         self._attr_name = f"{target_name} {schedule_label}"
         unique_target = target_id or "dhw"
@@ -227,19 +336,166 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         if self._target_kind == "zone":
-            identifier = zone_identifier(self._entry_id, str(self._target_id))
-            name = self._dynamic_zone_name()
-            model = "Virtual Zone"
+            identifier = self._target_device_id
+            if identifier is None:
+                raise RuntimeError("Zone schedule sensor created without a physical parent device")
+            return DeviceInfo(
+                identifiers={identifier},
+                manufacturer=self._manufacturer,
+            )
         else:
             identifier = dhw_identifier(self._entry_id)
-            name = "Domestic Hot Water"
-            model = "Virtual DHW"
+            return DeviceInfo(
+                identifiers={identifier},
+                manufacturer=self._manufacturer,
+                model="Virtual DHW",
+                name="Domestic Hot Water",
+            )
+
+
+class HelianthusBoilerStateBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Boiler read-only boolean state exposed on the physical boiler device."""
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        boiler_device_id: tuple[str, str],
+        key: str,
+        label: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._boiler_device_id = boiler_device_id
+        self._key = key
+        self._attr_name = label
+        self._attr_unique_id = f"{entry_id}-boiler-binary-{key}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={identifier},
+            identifiers={self._boiler_device_id},
             manufacturer=self._manufacturer,
-            model=model,
-            name=name,
         )
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") or {}
+        state = boiler_status.get("state") if isinstance(boiler_status, dict) else {}
+        value = state.get(self._key) if isinstance(state, dict) else None
+        if isinstance(value, bool):
+            return value
+        return None
+
+
+class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Per-circuit pump active state."""
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        circuit_index: int,
+        initial_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._circuit_index = circuit_index
+        self._initial_name = initial_name
+        self._attr_name = f"{initial_name} Pump Active"
+        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-binary-pumpActive"
+
+    def _circuit(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for circuit in payload.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            if _parse_optional_int(circuit.get("index")) == self._circuit_index:
+                return circuit
+        return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={circuit_identifier(self._entry_id, self._circuit_index)},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        circuit = self._circuit()
+        state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
+        value = state.get("pumpActive") if isinstance(state, dict) else None
+        if isinstance(value, bool):
+            return value
+        return None
+
+
+class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Sparse solar binary sensor that auto-enables when live data appears."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        solar_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+        key: str,
+        label: str,
+        enabled_by_default: bool,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._solar_device_id = solar_device_id
+        self._parent_device_id = parent_device_id
+        self._key = key
+        self._attr_name = label
+        self._attr_unique_id = f"{entry_id}-solar-binary-{key}"
+        self._attr_entity_registry_enabled_default = enabled_by_default
+
+    @property
+    def available(self) -> bool:
+        payload = self.coordinator.data if isinstance(self.coordinator.data, dict) else None
+        return str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper() == "INTERPRETED" if isinstance(payload, dict) else False
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._solar_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Solar Circuit",
+            "name": "Solar Circuit",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        solar = payload.get("solar") if isinstance(payload, dict) else None
+        if not isinstance(solar, dict):
+            return None
+        value = solar.get(self._key)
+        if isinstance(value, bool):
+            return value
+        return None
 
 
 class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
