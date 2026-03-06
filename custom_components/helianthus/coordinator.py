@@ -396,6 +396,14 @@ query BoilerStatus {
       flowTemperatureC
       returnTemperatureC
       centralHeatingPumpActive
+      flameActive
+      modulationPct
+      gasValveActive
+      fanSpeedRpm
+      ionisationVoltageUa
+      externalPumpActive
+      circulationPumpActive
+      storageLoadPumpPct
     }
     diagnostics {
       heatingStatusRaw
@@ -953,6 +961,14 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "flowTemperatureC",
                     "returnTemperatureC",
                     "centralHeatingPumpActive",
+                    "flameActive",
+                    "modulationPct",
+                    "gasValveActive",
+                    "fanSpeedRpm",
+                    "ionisationVoltageUa",
+                    "externalPumpActive",
+                    "circulationPumpActive",
+                    "storageLoadPumpPct",
                     "heatingStatusRaw",
                 ],
             ):

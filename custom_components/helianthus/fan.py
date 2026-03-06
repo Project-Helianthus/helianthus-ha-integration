@@ -5,11 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import circuit_identifier, solar_identifier
+from .device_ids import (
+    boiler_burner_identifier,
+    boiler_hydraulics_identifier,
+    circuit_identifier,
+    solar_identifier,
+)
 
 _CIRCUIT_TYPE_LABELS = {
     "heating": "Heating",
@@ -52,10 +58,62 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data.get("circuit_coordinator")
     fm5_coordinator = data.get("fm5_coordinator")
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
+    boiler_via_device_id = data.get("boiler_via_device_id") or boiler_device_id
     vr71_device_id = data.get("vr71_device_id") or data.get("regulator_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     entities: list[FanEntity] = []
+    if boiler_coordinator and boiler_device_id:
+        entities.extend(
+            [
+                HelianthusBoilerBurnerFan(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    burner_device_id=boiler_burner_identifier(entry.entry_id),
+                    parent_device_id=boiler_via_device_id,
+                ),
+                HelianthusBoilerPumpFan(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+                    parent_device_id=boiler_via_device_id,
+                    pump_name="CH Pump",
+                    data_key="centralHeatingPumpActive",
+                ),
+                HelianthusBoilerPumpFan(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+                    parent_device_id=boiler_via_device_id,
+                    pump_name="External Pump",
+                    data_key="externalPumpActive",
+                ),
+                HelianthusBoilerPumpFan(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+                    parent_device_id=boiler_via_device_id,
+                    pump_name="Circulation Pump",
+                    data_key="circulationPumpActive",
+                ),
+                HelianthusBoilerPumpFan(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+                    parent_device_id=boiler_via_device_id,
+                    pump_name="Storage Load Pump",
+                    data_key="storageLoadPumpPct",
+                    pump_has_speed=True,
+                ),
+            ]
+        )
     if coordinator and coordinator.data:
         for circuit in coordinator.data.get("circuits", []) or []:
             if not isinstance(circuit, dict):
@@ -88,11 +146,188 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     async_add_entities(entities)
 
 
-class HelianthusCircuitPumpFan(CoordinatorEntity, FanEntity):
+class HelianthusReadOnlyFan(CoordinatorEntity, FanEntity):
+    """Base read-only fan entity."""
+
+    _attr_supported_features = FanEntityFeature(0)
+
+    async def async_turn_on(
+        self, percentage: int | None = None, preset_mode: str | None = None, **kwargs: Any
+    ) -> None:
+        raise HomeAssistantError("Helianthus fan entities are read-only")
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        raise HomeAssistantError("Helianthus fan entities are read-only")
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        raise HomeAssistantError("Helianthus fan entities are read-only")
+
+
+def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    boiler_status = payload.get("boilerStatus")
+    if not isinstance(boiler_status, dict):
+        return {}
+    state = boiler_status.get("state")
+    if not isinstance(state, dict):
+        return {}
+    return state
+
+
+def _coerce_percentage(value: object | None) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return 0
+    if parsed >= 100:
+        return 100
+    return int(round(parsed))
+
+
+class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
+    """Read-only burner state exposed as a fan."""
+
+    _attr_icon = "mdi:fire"
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        burner_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._burner_device_id = burner_device_id
+        self._parent_device_id = parent_device_id
+        self._attr_name = "Burner"
+        self._attr_unique_id = f"{entry_id}-boiler-burner"
+
+    def _state(self) -> dict[str, Any]:
+        return _boiler_state(self.coordinator.data)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._burner_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Burner",
+            "name": "Burner",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._state().get("flameActive")
+        if isinstance(value, bool):
+            return value
+        return None
+
+    @property
+    def percentage(self) -> int | None:
+        return _coerce_percentage(self._state().get("modulationPct"))
+
+    @property
+    def speed_count(self) -> int:
+        return 0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        state = self._state()
+        return {
+            "helianthus_role": "modulating_burner",
+            "gas_valve_active": state.get("gasValveActive"),
+            "fan_speed_rpm": state.get("fanSpeedRpm"),
+            "ionisation_ua": state.get("ionisationVoltageUa"),
+        }
+
+
+class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
+    """Read-only boiler pump state under the Hydraulics sub-device."""
+
+    _attr_icon = "mdi:pump"
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        hydraulics_device_id: tuple[str, str],
+        parent_device_id: tuple[str, str] | None,
+        pump_name: str,
+        data_key: str,
+        pump_has_speed: bool = False,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._hydraulics_device_id = hydraulics_device_id
+        self._parent_device_id = parent_device_id
+        self._pump_name = pump_name
+        self._data_key = data_key
+        self._pump_has_speed = pump_has_speed
+        self._attr_name = pump_name
+        self._attr_unique_id = f"{entry_id}-boiler-{data_key}"
+
+    def _state(self) -> dict[str, Any]:
+        return _boiler_state(self.coordinator.data)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = {
+            "identifiers": {self._hydraulics_device_id},
+            "manufacturer": self._manufacturer,
+            "model": "Hydraulics",
+            "name": "Hydraulics",
+        }
+        if self._parent_device_id is not None:
+            info["via_device"] = self._parent_device_id
+        return DeviceInfo(**info)
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._state().get(self._data_key)
+        if self._pump_has_speed:
+            percentage = _coerce_percentage(value)
+            if percentage is None:
+                return None
+            return percentage > 0
+        if isinstance(value, bool):
+            return value
+        return None
+
+    @property
+    def percentage(self) -> int | None:
+        if self._pump_has_speed:
+            return _coerce_percentage(self._state().get(self._data_key))
+        is_on = self.is_on
+        if is_on is None:
+            return None
+        return 100 if is_on else 0
+
+    @property
+    def speed_count(self) -> int:
+        return 0 if self._pump_has_speed else 1
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        pump_type = "percentage" if self._pump_has_speed else "on_off"
+        return {"helianthus_role": "pump", "pump_type": pump_type}
+
+
+class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
     """Read-only circuit pump state as a fan entity."""
 
     _attr_icon = "mdi:pump"
-    _attr_supported_features = FanEntityFeature(0)
 
     def __init__(
         self,
