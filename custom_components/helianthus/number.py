@@ -33,6 +33,15 @@ mutation SetSystemConfig($field: String!, $value: String!) {
 }
 """
 
+_SET_BOILER_CONFIG_MUTATION = """
+mutation SetBoilerConfig($field: String!, $value: String!) {
+  setBoilerConfig(field: $field, value: $value) {
+    success
+    error
+  }
+}
+"""
+
 _CIRCUIT_TYPE_LABELS = {
     "heating": "Heating",
     "fixed_value": "Fixed Value",
@@ -67,6 +76,16 @@ class SystemNumberField:
 
 @dataclass(frozen=True)
 class CylinderNumberField:
+    key: str
+    label: str
+    minimum: float
+    maximum: float
+    step: float
+    unit: str | None = None
+
+
+@dataclass(frozen=True)
+class BoilerNumberField:
     key: str
     label: str
     minimum: float
@@ -187,6 +206,41 @@ _CYLINDER_NUMBER_FIELDS = [
     ),
 ]
 
+_BOILER_NUMBER_FIELDS = [
+    BoilerNumberField(
+        key="flowsetHcMaxC",
+        label="CH Max Flow Setpoint",
+        minimum=20.0,
+        maximum=80.0,
+        step=1.0,
+        unit=UnitOfTemperature.CELSIUS,
+    ),
+    BoilerNumberField(
+        key="flowsetHwcMaxC",
+        label="DHW Max Flow Setpoint",
+        minimum=30.0,
+        maximum=65.0,
+        step=1.0,
+        unit=UnitOfTemperature.CELSIUS,
+    ),
+    BoilerNumberField(
+        key="partloadHcKW",
+        label="CH Partload",
+        minimum=0.0,
+        maximum=40.0,
+        step=0.1,
+        unit="kW",
+    ),
+    BoilerNumberField(
+        key="partloadHwcKW",
+        label="DHW Partload",
+        minimum=0.0,
+        maximum=40.0,
+        step=0.1,
+        unit="kW",
+    ),
+]
+
 
 def _parse_circuit_index(value: object | None) -> int | None:
     if isinstance(value, bool):
@@ -220,12 +274,27 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = data.get("circuit_coordinator")
     system_coordinator = data.get("system_coordinator")
     fm5_coordinator = data.get("fm5_coordinator")
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_device_id = data.get("regulator_device_id")
     vr71_device_id = data.get("vr71_device_id") or regulator_device_id
 
     entities: list[NumberEntity] = []
+    if boiler_coordinator and boiler_device_id:
+        for field in _BOILER_NUMBER_FIELDS:
+            entities.append(
+                HelianthusBoilerNumber(
+                    coordinator=boiler_coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                    client=client,
+                    boiler_device_id=boiler_device_id,
+                    field=field,
+                )
+            )
+
     if coordinator and coordinator.data:
         for circuit in coordinator.data.get("circuits", []) or []:
             if not isinstance(circuit, dict):
@@ -281,6 +350,80 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
 
     async_add_entities(entities)
+
+
+class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
+    """Writable boiler configuration number on the physical BAI00 device."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        client: GraphQLClient | None,
+        boiler_device_id: tuple[str, str],
+        field: BoilerNumberField,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._client = client
+        self._boiler_device_id = boiler_device_id
+        self._field = field
+        self._attr_unique_id = f"{entry_id}-boiler-number-{field.key}"
+        self._attr_name = field.label
+        self._attr_native_min_value = field.minimum
+        self._attr_native_max_value = field.maximum
+        self._attr_native_step = field.step
+        if field.unit is not None:
+            self._attr_native_unit_of_measurement = field.unit
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._boiler_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+        config = boiler_status.get("config") if isinstance(boiler_status, dict) else {}
+        value = config.get(self._field.key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        if value < self._field.minimum or value > self._field.maximum:
+            raise HomeAssistantError(
+                f"Value {value} outside allowed range [{self._field.minimum}, {self._field.maximum}]"
+            )
+        if self._client is None:
+            raise HomeAssistantError("GraphQL client is unavailable")
+
+        variables = {"field": self._field.key, "value": str(float(value))}
+        try:
+            payload = await self._client.mutation(_SET_BOILER_CONFIG_MUTATION, variables)
+        except (GraphQLClientError, GraphQLResponseError) as exc:
+            raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
+
+        result = payload.get("setBoilerConfig") if isinstance(payload, dict) else None
+        if isinstance(result, dict) and result.get("success"):
+            await self.coordinator.async_request_refresh()
+            return
+
+        error = ""
+        if isinstance(result, dict):
+            error = str(result.get("error") or "")
+        message = error or "unknown error"
+        raise HomeAssistantError(f"Helianthus write failed: {message}")
 
 
 class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
