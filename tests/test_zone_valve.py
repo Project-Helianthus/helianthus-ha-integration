@@ -154,12 +154,61 @@ def test_zone_via_device_prefers_expected_radio_candidates() -> None:
         (0x0A, 1): ("helianthus", "entry-1-radio-g0a-i01"),
         (0x0A, 2): ("helianthus", "entry-1-radio-g0a-i02"),
     }
+    radio_devices = [
+        {
+            "group": 0x09,
+            "instance": 1,
+            "remoteControlAddress": 0,
+            "deviceConnected": True,
+        },
+        {
+            "group": 0x0A,
+            "instance": 1,
+            "remoteControlAddress": 1,
+            "deviceConnected": True,
+        },
+        {
+            "group": 0x0A,
+            "instance": 2,
+            "remoteControlAddress": 2,
+            "deviceConnected": True,
+        },
+    ]
     regulator = ("helianthus", "entry-1-bus-BASV-15")
 
-    assert climate_platform.zone_via_device(0, 1, candidates, radio_ids, regulator) == radio_ids[(0x09, 1)]
-    assert climate_platform.zone_via_device(0, 2, candidates, radio_ids, regulator) == radio_ids[(0x0A, 1)]
-    assert climate_platform.zone_via_device(0, 3, candidates, radio_ids, regulator) == radio_ids[(0x0A, 2)]
-    assert climate_platform.zone_via_device(0, 0, candidates, radio_ids, regulator) == regulator
+    assert climate_platform.zone_via_device(0, 1, candidates, radio_devices, radio_ids, regulator) == radio_ids[(0x09, 1)]
+    assert climate_platform.zone_via_device(0, 2, candidates, radio_devices, radio_ids, regulator) == radio_ids[(0x0A, 1)]
+    assert climate_platform.zone_via_device(0, 3, candidates, radio_devices, radio_ids, regulator) == radio_ids[(0x0A, 2)]
+    assert climate_platform.zone_via_device(0, 0, candidates, radio_devices, radio_ids, regulator) == regulator
+
+
+def test_zone_via_device_uses_global_regulator_fallback_when_zone_assignment_misses() -> None:
+    radio_devices = [
+        {
+            "group": 0x09,
+            "instance": 1,
+            "remoteControlAddress": 0,
+            "zoneAssignment": 2,
+            "deviceConnected": True,
+        },
+        {
+            "group": 0x0A,
+            "instance": 1,
+            "remoteControlAddress": 1,
+            "zoneAssignment": 2,
+            "deviceConnected": True,
+        },
+    ]
+    radio_ids = {
+        (0x09, 1): ("helianthus", "entry-1-radio-g09-i01"),
+        (0x0A, 1): ("helianthus", "entry-1-radio-g0a-i01"),
+    }
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+
+    assert (
+        climate_platform.zone_via_device(0, 1, {}, radio_devices, radio_ids, regulator)
+        == radio_ids[(0x09, 1)]
+    )
 
 
 def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
@@ -225,6 +274,68 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
     assert attrs["radio_device_instance"] == 1
     assert climate._attr_unique_id == "entry-1-zone-zone-1"
     assert climate.device_info["via_device"] == radio_device_identifier("entry-1", "g0a-i01")
+
+
+def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtime() -> None:
+    semantic_coordinator = _FakeCoordinator(
+        {
+            "zones": [
+                {
+                    "id": "zone-1",
+                    "name": "Parter",
+                    "state": {},
+                    "config": {
+                        "operatingMode": "heat",
+                        "preset": "manual",
+                        "targetTempC": 12.0,
+                        "allowedModes": ["off", "auto", "heat"],
+                        "circuitType": "underfloor",
+                        "associatedCircuit": 0,
+                        "roomTemperatureZoneMapping": 1,
+                    },
+                }
+            ],
+            "dhw": None,
+        }
+    )
+    radio_coordinator = _FakeCoordinator(
+        {
+            "radioDevices": [
+                {
+                    "group": 0x09,
+                    "instance": 1,
+                    "radioBusKey": "g09-i01",
+                    "deviceModel": "VRC720",
+                    "deviceConnected": True,
+                    "remoteControlAddress": 0,
+                    "zoneAssignment": 2,
+                }
+            ],
+            "radioZoneCandidates": {},
+        }
+    )
+    payload = {
+        "semantic_coordinator": semantic_coordinator,
+        "radio_coordinator": radio_coordinator,
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "adapter_device_id": ("helianthus", "adapter-entry-1"),
+        "regulator_manufacturer": "Vaillant",
+        "graphql_client": None,
+        "regulator_bus_address": 0x15,
+        "daemon_source_address": 0x31,
+    }
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))
+
+    climate = entities[0]
+    attrs = climate.extra_state_attributes
+    assert attrs["room_temperature_zone_mapping"] == 1
+    assert attrs["room_temperature_zone_mapping_text"] == "regulator"
+    assert attrs["radio_device"] == "VRC720"
+    assert climate.device_info["via_device"] == radio_device_identifier("entry-1", "g09-i01")
 
 
 def test_zone_valve_entities_are_created_per_zone() -> None:
