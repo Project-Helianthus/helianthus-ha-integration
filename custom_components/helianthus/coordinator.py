@@ -406,6 +406,12 @@ query BoilerStatus {
       storageLoadPumpPct
       diverterValvePositionPct
     }
+    config {
+      flowsetHcMaxC
+      flowsetHwcMaxC
+      partloadHcKW
+      partloadHwcKW
+    }
     diagnostics {
       heatingStatusRaw
     }
@@ -951,6 +957,10 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
         self.boiler_supported = True
 
+    @property
+    def client(self) -> GraphQLClient:
+        return self._client
+
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             payload = await self._client.execute(QUERY_BOILER)
@@ -971,6 +981,10 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "circulationPumpActive",
                     "storageLoadPumpPct",
                     "diverterValvePositionPct",
+                    "flowsetHcMaxC",
+                    "flowsetHwcMaxC",
+                    "partloadHcKW",
+                    "partloadHwcKW",
                     "heatingStatusRaw",
                 ],
             ):
