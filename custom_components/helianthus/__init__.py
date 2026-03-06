@@ -606,31 +606,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     known_has_dhw = semantic.get("dhw") is not None
 
-    radio_slots_with_live_values: dict[tuple[int, int], set[str]] = {}
-    for radio in radio_payload.get("radioDevices", []) or []:
-        if not isinstance(radio, dict):
-            continue
-        group = parse_optional_int(radio.get("group"))
-        instance = parse_optional_int(radio.get("instance"))
-        if group is None or instance is None:
-            continue
-        live_keys = {key for key, value in radio.items() if value is not None}
-        radio_slots_with_live_values[(group, instance)] = live_keys
-
-    solar_live_keys: set[str] = set()
-    solar_payload = fm5_payload.get("solar")
-    if isinstance(solar_payload, dict):
-        solar_live_keys = {key for key, value in solar_payload.items() if value is not None}
-
-    cylinder_live_keys: dict[int, set[str]] = {}
-    for cylinder in fm5_payload.get("cylinders", []) or []:
-        if not isinstance(cylinder, dict):
-            continue
-        index = parse_optional_int(cylinder.get("index"))
-        if index is None or index < 0:
-            continue
-        cylinder_live_keys[index] = {key for key, value in cylinder.items() if value is not None}
-
     radio_sensor_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
     )
@@ -647,11 +622,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _device_has_entities(device_id: str) -> bool:
         return any(entity_entry.device_id == device_id for entity_entry in entity_registry.entities.values())
 
+    def _current_fm5_payload() -> dict:
+        payload = fm5_coordinator.data if fm5_coordinator else None
+        return payload if isinstance(payload, dict) else {}
+
+    def _current_fm5_mode() -> str:
+        return str(_current_fm5_payload().get("fm5SemanticMode") or "ABSENT").strip().upper()
+
+    def _current_radio_slots_with_live_values() -> dict[tuple[int, int], set[str]]:
+        payload = radio_coordinator.data if radio_coordinator else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[tuple[int, int], set[str]] = {}
+        for radio in payload.get("radioDevices", []) or []:
+            if not isinstance(radio, dict):
+                continue
+            group = parse_optional_int(radio.get("group"))
+            instance = parse_optional_int(radio.get("instance"))
+            if group is None or instance is None:
+                continue
+            out[(group, instance)] = {key for key, value in radio.items() if value is not None}
+        return out
+
+    def _current_solar_live_keys() -> set[str]:
+        solar_payload = _current_fm5_payload().get("solar")
+        if not isinstance(solar_payload, dict):
+            return set()
+        return {key for key, value in solar_payload.items() if value is not None}
+
+    def _current_cylinder_live_keys() -> dict[int, set[str]]:
+        out: dict[int, set[str]] = {}
+        for cylinder in _current_fm5_payload().get("cylinders", []) or []:
+            if not isinstance(cylinder, dict):
+                continue
+            index = parse_optional_int(cylinder.get("index"))
+            if index is None or index < 0:
+                continue
+            out[index] = {key for key, value in cylinder.items() if value is not None}
+        return out
+
     def _is_sparse_entity_live(unique_id: str | None) -> bool:
         if not unique_id:
             return False
         radio_match = radio_sensor_unique_id_re.match(unique_id)
         if radio_match:
+            radio_slots_with_live_values = _current_radio_slots_with_live_values()
             slot = (
                 int(radio_match.group("group"), 16),
                 int(radio_match.group("instance")),
@@ -660,14 +675,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         solar_match = solar_unique_id_re.match(unique_id)
         if solar_match:
-            if known_fm5_mode != "INTERPRETED":
+            if _current_fm5_mode() != "INTERPRETED":
                 return False
+            solar_live_keys = _current_solar_live_keys()
             return solar_match.group("key") in solar_live_keys
 
         cylinder_match = cylinder_unique_id_re.match(unique_id)
         if cylinder_match:
-            if known_fm5_mode != "INTERPRETED":
+            if _current_fm5_mode() != "INTERPRETED":
                 return False
+            cylinder_live_keys = _current_cylinder_live_keys()
             index = int(cylinder_match.group("index"))
             live_keys = cylinder_live_keys.get(index, set())
             config_key = cylinder_match.group("config_key")

@@ -219,6 +219,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     target_kind="dhw",
                     target_id=None,
                     target_name="Domestic Hot Water",
+                    target_device_id=None,
                     schedule_key=schedule_key,
                     schedule_label=schedule_label,
                 )
