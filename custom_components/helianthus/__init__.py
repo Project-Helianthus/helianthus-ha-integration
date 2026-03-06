@@ -214,7 +214,6 @@ def _parse_identifier_index(token: str, prefix: str) -> int | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
-    from homeassistant.exceptions import ConfigEntryNotReady
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -806,9 +805,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()
     if unresolved_zone_ids:
-        joined = ", ".join(unresolved_zone_ids)
-        raise ConfigEntryNotReady(
-            f"Zone parent resolution incomplete for {joined}; retrying when radio inventory is ready"
+        _LOGGER.warning(
+            "Helianthus zone parent resolution incomplete for entry %s; skipping unresolved zones until reload: %s",
+            entry.entry_id,
+            ", ".join(unresolved_zone_ids),
         )
 
     zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
@@ -1061,6 +1061,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "boiler_burner_device_id": boiler_burner_device_id,
         "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
         "zone_parent_device_ids": zone_parent_device_ids,
+        "unresolved_zone_ids": unresolved_zone_ids,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
