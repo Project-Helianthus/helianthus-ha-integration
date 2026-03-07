@@ -366,6 +366,11 @@ def test_circuit_query_returns_circuit_payload() -> None:
                 "index": 0,
                 "circuitType": "heating",
                 "hasMixer": True,
+                "managingDevice": {
+                    "role": "FUNCTION_MODULE",
+                    "deviceId": "VR_71",
+                    "address": 0x26,
+                },
                 "state": {"pumpActive": True},
                 "config": {"coolingEnabled": False},
             }

@@ -201,21 +201,32 @@ def managing_device_identifier(
     regulator_device_id: DeviceIdentifier | None,
     vr71_device_id: DeviceIdentifier | None,
     adapter_device_id: DeviceIdentifier | None = None,
-    fm5_config: int | None = None,
-    vr71_circuit_start: int = -1,
+    managing_device: dict[str, object] | None = None,
 ) -> DeviceIdentifier | None:
     """Resolve the physical manager device for a semantic sub-device.
 
     R6 rules:
-    - solar/cylinder groups use VR_71 when FM5 is present;
-    - circuits can use VR_71 starting from `vr71_circuit_start`;
-    - otherwise use controller/regulator, then adapter fallback.
+    - circuits use the explicit semantic `managingDevice` contract;
+    - `UNKNOWN` ownership does not fall back to a guessed physical parent;
+    - non-circuit groups keep the controller/adapter fallback.
     """
 
-    if group in (0x04, 0x05) and vr71_device_id and fm5_config is not None:
-        if 1 <= int(fm5_config) <= 2:
-            return vr71_device_id
-    if group == 0x02 and vr71_device_id and vr71_circuit_start >= 0:
-        if instance >= vr71_circuit_start:
-            return vr71_device_id
+    del instance
+
+    if group == 0x02:
+        role = str((managing_device or {}).get("role") or "").strip().upper()
+        if role == "REGULATOR":
+            return regulator_device_id
+        if role == "FUNCTION_MODULE":
+            device_id = _clean((managing_device or {}).get("deviceId"))
+            if device_id is None:
+                device_id = _clean((managing_device or {}).get("device_id"))
+            address = _parse_bus_address((managing_device or {}).get("address"))
+            if vr71_device_id and (device_id == "VR_71" or address == 0x26):
+                return vr71_device_id
+            return None
+        if role == "UNKNOWN":
+            return None
+        return None
+
     return regulator_device_id or adapter_device_id or vr71_device_id

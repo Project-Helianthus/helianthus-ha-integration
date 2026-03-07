@@ -132,7 +132,7 @@ def test_boiler_device_contract_helpers_fall_back_to_regulator_or_adapter() -> N
     assert resolve_boiler_via_device_id(None, None, adapter) == adapter
 
 
-def test_managing_device_identifier_prefers_regulator_for_circuits_by_default() -> None:
+def test_managing_device_identifier_routes_to_regulator_from_explicit_role() -> None:
     regulator = ("helianthus", "entry-1-bus-BASV-15")
     vr71 = ("helianthus", "entry-1-bus-VR_71-26")
     adapter = ("helianthus", "adapter-entry-1")
@@ -144,14 +144,13 @@ def test_managing_device_identifier_prefers_regulator_for_circuits_by_default() 
             regulator_device_id=regulator,
             vr71_device_id=vr71,
             adapter_device_id=adapter,
-            fm5_config=None,
-            vr71_circuit_start=-1,
+            managing_device={"role": "REGULATOR", "deviceId": "BASV2", "address": 0x15},
         )
         == regulator
     )
 
 
-def test_managing_device_identifier_routes_to_vr71_when_circuit_is_fm5_managed() -> None:
+def test_managing_device_identifier_routes_to_vr71_from_explicit_function_module() -> None:
     regulator = ("helianthus", "entry-1-bus-BASV-15")
     vr71 = ("helianthus", "entry-1-bus-VR_71-26")
     adapter = ("helianthus", "adapter-entry-1")
@@ -163,8 +162,25 @@ def test_managing_device_identifier_routes_to_vr71_when_circuit_is_fm5_managed()
             regulator_device_id=regulator,
             vr71_device_id=vr71,
             adapter_device_id=adapter,
-            fm5_config=1,
-            vr71_circuit_start=2,
+            managing_device={"role": "FUNCTION_MODULE", "deviceId": "VR_71", "address": 0x26},
         )
         == vr71
+    )
+
+
+def test_managing_device_identifier_returns_none_for_unknown_circuit_ownership() -> None:
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    vr71 = ("helianthus", "entry-1-bus-VR_71-26")
+    adapter = ("helianthus", "adapter-entry-1")
+
+    assert (
+        managing_device_identifier(
+            group=0x02,
+            instance=0,
+            regulator_device_id=regulator,
+            vr71_device_id=vr71,
+            adapter_device_id=adapter,
+            managing_device={"role": "UNKNOWN"},
+        )
+        is None
     )
