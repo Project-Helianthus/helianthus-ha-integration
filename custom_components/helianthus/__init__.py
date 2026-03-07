@@ -544,15 +544,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device_kwargs["hw_version"] = f"0x{hardware_identifier:04X}"
         device_registry.async_get_or_create(**device_kwargs)
 
-    system_payload = system_coordinator.data or {}
-    system_properties = system_payload.get("properties")
-    if not isinstance(system_properties, dict):
-        system_properties = {}
-    fm5_raw = parse_optional_int(system_properties.get("moduleConfigurationVR71"))
-    fm5_config = fm5_raw if fm5_raw is not None and fm5_raw >= 0 else None
-    vr71_start_raw = parse_optional_int(system_properties.get("vr71CircuitStartIndex"))
-    vr71_circuit_start = vr71_start_raw if vr71_start_raw is not None and vr71_start_raw >= 0 else -1
-
     circuits_payload = circuit_coordinator.data or {}
     circuits = circuits_payload.get("circuits", []) or []
     known_circuit_indexes: set[int] = set()
@@ -570,8 +561,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             regulator_device_id=regulator_device,
             vr71_device_id=vr71_device,
             adapter_device_id=adapter_device_id,
-            fm5_config=fm5_config,
-            vr71_circuit_start=vr71_circuit_start,
+            managing_device=circuit.get("managingDevice"),
         )
         circuit_device_id = circuit_identifier(entry.entry_id, index)
         device_kwargs: dict[str, object] = {
@@ -1054,8 +1044,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "regulator_manufacturer": regulator_manufacturer,
         "regulator_bus_address": regulator_bus_address,
         "daemon_source_address": daemon_source_addr,
-        "fm5_config": fm5_config,
-        "vr71_circuit_start": vr71_circuit_start,
         "boiler_physical_device_id": boiler_physical_device_id,
         "boiler_via_device_id": boiler_via_device_id,
         "boiler_burner_device_id": boiler_burner_device_id,

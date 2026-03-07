@@ -251,6 +251,11 @@ query Circuits {
     index
     circuitType
     hasMixer
+    managingDevice {
+      role
+      deviceId
+      address
+    }
     state {
       pumpActive
       mixerPositionPct
@@ -320,35 +325,6 @@ query FM5Semantic {
 """
 
 QUERY_SYSTEM = """
-query System {
-  system {
-    state {
-      systemWaterPressure
-      systemFlowTemperature
-      outdoorTemperature
-      outdoorTemperatureAvg24h
-      maintenanceDue
-      hwcCylinderTemperatureTop
-      hwcCylinderTemperatureBottom
-    }
-    config {
-      adaptiveHeatingCurve
-      heatingCircuitBivalencePoint
-      dhwBivalencePoint
-      hcEmergencyTemperature
-      hwcMaxFlowTempDesired
-      maxRoomHumidity
-    }
-    properties {
-      systemScheme
-      moduleConfigurationVR71
-      vr71CircuitStartIndex
-    }
-  }
-}
-"""
-
-QUERY_SYSTEM_LEGACY = """
 query System {
   system {
     state {
@@ -876,19 +852,9 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             payload = await self._client.execute(QUERY_SYSTEM)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["vr71CircuitStartIndex"]):
-                try:
-                    payload = await self._client.execute(QUERY_SYSTEM_LEGACY)
-                except GraphQLResponseError as nested:
-                    if _is_missing_field_error(nested.errors, missing_fields):
-                        return empty
-                    raise UpdateFailed(str(nested)) from nested
-                except GraphQLClientError as nested:
-                    raise UpdateFailed(str(nested)) from nested
-            elif _is_missing_field_error(exc.errors, missing_fields):
+            if _is_missing_field_error(exc.errors, missing_fields):
                 return empty
-            else:
-                raise UpdateFailed(str(exc)) from exc
+            raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
