@@ -126,6 +126,16 @@ query SmokeSemantic {
 QUERY_ENERGY = """
 query SmokeEnergy {
   energyTotals {
+    gas { dhw { today yearly monthly } climate { today yearly monthly } }
+    electric { dhw { today yearly monthly } climate { today yearly monthly } }
+    solar { dhw { today yearly monthly } climate { today yearly monthly } }
+  }
+}
+"""
+
+QUERY_ENERGY_LEGACY = """
+query SmokeEnergy {
+  energyTotals {
     gas { dhw { today yearly } climate { today yearly } }
     electric { dhw { today yearly } climate { today yearly } }
     solar { dhw { today yearly } climate { today yearly } }
@@ -524,6 +534,20 @@ def _fetch_energy(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str | 
     if response is None:
         return {}, "", "energy query returned no response"
     data, error, errors = _extract_data_with_errors(response)
+    if error and _is_missing_field_error(errors, ["monthly"]):
+        fallback, fallback_error = _execute_graphql(
+            execute, QUERY_ENERGY_LEGACY, "energy_legacy"
+        )
+        if fallback_error:
+            return {}, "", fallback_error
+        if fallback is None:
+            return {}, "", "energy legacy query returned no response"
+        data, error, errors = _extract_data_with_errors(fallback)
+        if error:
+            return {}, "", f"energy legacy query failed: {error}"
+        if not isinstance(data, dict):
+            return {"energyTotals": None}, "fallback_non_object", None
+        return data, "legacy", None
     if error and _is_missing_field_error(errors, ["energyTotals"]):
         return {"energyTotals": None}, "fallback_missing_field", None
     if error:

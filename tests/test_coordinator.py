@@ -35,6 +35,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_BOILER,
     QUERY_CIRCUITS,
     QUERY_ENERGY,
+    QUERY_ENERGY_LEGACY,
     QUERY_EXTENDED_V2,
     QUERY_EXTENDED_V2_NO_ADDRESSES,
     QUERY_EXTENDED_V3,
@@ -106,6 +107,7 @@ def _build_energy_coordinator(client: _ScriptedClient) -> HelianthusEnergyCoordi
     coordinator = object.__new__(HelianthusEnergyCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator._last_valid_energy_totals = None  # type: ignore[attr-defined]
+    coordinator._monthly_supported = True  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -588,3 +590,24 @@ def test_energy_query_returns_unavailable_before_first_valid_sample() -> None:
 
     assert first == {"energyTotals": None}
     assert second == {"energyTotals": None}
+
+
+def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "monthly" on type "EnergySeries".'}]
+            ),
+            _energy_totals_payload(today=5.0),
+            _energy_totals_payload(today=6.0),
+        ]
+    )
+    coordinator = _build_energy_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["energyTotals"]["gas"]["dhw"]["today"] == 5.0
+    assert second["energyTotals"]["gas"]["dhw"]["today"] == 6.0
+    assert client.calls == [QUERY_ENERGY, QUERY_ENERGY_LEGACY, QUERY_ENERGY_LEGACY]
+    assert coordinator._monthly_supported is False

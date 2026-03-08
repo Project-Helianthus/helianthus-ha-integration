@@ -362,6 +362,16 @@ query Energy {
 }
 """
 
+QUERY_ENERGY_LEGACY = """
+query Energy {
+  energyTotals {
+    gas { dhw { today yearly } climate { today yearly } }
+    electric { dhw { today yearly } climate { today yearly } }
+    solar { dhw { today yearly } climate { today yearly } }
+  }
+}
+"""
+
 QUERY_BOILER = """
 query BoilerStatus {
   boilerStatus {
@@ -895,12 +905,19 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self._client = client
         self._last_valid_energy_totals: dict[str, Any] | None = None
+        self._monthly_supported: bool = True
 
     async def _async_update_data(self) -> dict[str, Any]:
+        query = QUERY_ENERGY if self._monthly_supported else QUERY_ENERGY_LEGACY
         try:
-            payload = await self._client.execute(QUERY_ENERGY)
+            payload = await self._client.execute(query)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["energyTotals", "monthly"]):
+            if self._monthly_supported and _is_missing_field_error(
+                exc.errors, ["monthly"]
+            ):
+                self._monthly_supported = False
+                return await self._async_update_data()
+            if _is_missing_field_error(exc.errors, ["energyTotals"]):
                 return self._hold_last_valid_energy_totals()
             return self._hold_last_valid_energy_totals()
         except GraphQLClientError:
