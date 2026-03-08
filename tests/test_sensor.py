@@ -32,6 +32,9 @@ def _ensure_homeassistant_stubs() -> None:
         class _SensorDeviceClass:
             ENERGY = "energy"
             TEMPERATURE = "temperature"
+            HUMIDITY = "humidity"
+            DURATION = "duration"
+            PRESSURE = "pressure"
 
         sensor_module.SensorDeviceClass = _SensorDeviceClass
 
@@ -39,6 +42,7 @@ def _ensure_homeassistant_stubs() -> None:
         class _SensorStateClass:
             TOTAL = "total"
             MEASUREMENT = "measurement"
+            TOTAL_INCREASING = "total_increasing"
 
         sensor_module.SensorStateClass = _SensorStateClass
 
@@ -262,6 +266,26 @@ def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
 
     for entity in diag_entities:
         assert entity.device_info["identifiers"] == {boiler_device_id}
+
+    # Verify metadata on duration counter
+    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingHours")
+    assert hours_entity._attr_device_class == "duration"
+    assert hours_entity._attr_native_unit_of_measurement == "h"
+    assert hours_entity._attr_state_class == "total_increasing"
+    assert hours_entity._attr_entity_category == "diagnostic"
+
+    # Verify metadata on starts counter
+    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingStarts")
+    assert not hasattr(starts_entity, "_attr_device_class") or starts_entity._attr_device_class is None
+    assert not hasattr(starts_entity, "_attr_native_unit_of_measurement")
+    assert starts_entity._attr_state_class == "total_increasing"
+    assert starts_entity._attr_entity_category == "diagnostic"
+
+    # Verify metadata on deactivation counter
+    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-deactivationsIFC")
+    assert not hasattr(deact_entity, "_attr_device_class") or deact_entity._attr_device_class is None
+    assert not hasattr(deact_entity, "_attr_state_class") or deact_entity._attr_state_class is None
+    assert deact_entity._attr_entity_category == "diagnostic"
 
 
 def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:

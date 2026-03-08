@@ -962,6 +962,14 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "partloadHcKW",
                     "partloadHwcKW",
                     "heatingStatusRaw",
+                    "centralHeatingHours",
+                    "dhwHours",
+                    "centralHeatingStarts",
+                    "dhwStarts",
+                    "pumpHours",
+                    "fanHours",
+                    "deactivationsIFC",
+                    "deactivationsTemplimiter",
                 ],
             ):
                 self.boiler_supported = False
