@@ -1002,6 +1002,80 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {"boilerStatus": payload.get("boilerStatus")}
 
 
+QUERY_SCHEDULES = """
+query Schedules {
+  schedules {
+    programs {
+      zone
+      hc
+      config {
+        maxSlots
+        timeResolution
+        minDuration
+        hasTemperature
+        tempSlots
+        minTempC
+        maxTempC
+      }
+      slotsUsed
+      days {
+        weekday
+        slots {
+          startHour
+          startMinute
+          endHour
+          endMinute
+          temperatureC
+        }
+      }
+    }
+  }
+}
+"""
+
+
+class HelianthusScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator fetching B555 timer schedule data."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_schedule",
+            update_interval=timedelta(seconds=max(scan_interval, 300)),
+        )
+        self._client = client
+        self.schedule_supported = True
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        empty: dict[str, Any] = {"programs": []}
+        if not self.schedule_supported:
+            return empty
+
+        try:
+            payload = await self._client.execute(QUERY_SCHEDULES)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["schedules", "programs"]):
+                self.schedule_supported = False
+                return empty
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return empty
+
+        schedules = payload.get("schedules")
+        if not isinstance(schedules, dict):
+            return empty
+
+        programs = schedules.get("programs")
+        if not isinstance(programs, list):
+            return empty
+
+        return {"programs": programs}
+
+
 def _parse_optional_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None

@@ -53,8 +53,10 @@ from custom_components.helianthus.coordinator import (
     HelianthusEnergyCoordinator,
     HelianthusFM5Coordinator,
     HelianthusRadioDeviceCoordinator,
+    HelianthusScheduleCoordinator,
     HelianthusSystemCoordinator,
     HelianthusStatusCoordinator,
+    QUERY_SCHEDULES,
 )
 from custom_components.helianthus.graphql import GraphQLClientError, GraphQLResponseError
 
@@ -611,3 +613,59 @@ def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
     assert second["energyTotals"]["gas"]["dhw"]["today"] == 6.0
     assert client.calls == [QUERY_ENERGY, QUERY_ENERGY_LEGACY, QUERY_ENERGY_LEGACY]
     assert coordinator._monthly_supported is False
+
+
+def _build_schedule_coordinator(client: _ScriptedClient) -> HelianthusScheduleCoordinator:
+    coordinator = object.__new__(HelianthusScheduleCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    coordinator.schedule_supported = True  # type: ignore[attr-defined]
+    return coordinator
+
+
+def test_schedule_coordinator_returns_programs() -> None:
+    payload = {
+        "schedules": {
+            "programs": [
+                {
+                    "zone": 0,
+                    "hc": "heating",
+                    "config": {"maxSlots": 12, "hasTemperature": True},
+                    "days": [
+                        {"weekday": "monday", "slots": [{"startHour": 6, "endHour": 22}]}
+                    ],
+                }
+            ]
+        }
+    }
+    client = _ScriptedClient([payload])
+    coordinator = _build_schedule_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert len(result["programs"]) == 1
+    assert result["programs"][0]["zone"] == 0
+    assert result["programs"][0]["hc"] == "heating"
+    assert client.calls == [QUERY_SCHEDULES]
+
+
+def test_schedule_coordinator_returns_empty_on_missing_field() -> None:
+    client = _ScriptedClient([
+        GraphQLResponseError(
+            [{"message": 'Cannot query field "schedules" on type "Query".'}]
+        ),
+    ])
+    coordinator = _build_schedule_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == {"programs": []}
+    assert coordinator.schedule_supported is False
+
+
+def test_schedule_coordinator_returns_empty_on_null_schedules() -> None:
+    client = _ScriptedClient([{"schedules": None}])
+    coordinator = _build_schedule_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == {"programs": []}

@@ -32,6 +32,7 @@ PLATFORMS: list[str] = [
     "number",
     "select",
     "switch",
+    "calendar",
 ]
 
 if TYPE_CHECKING:
@@ -227,6 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         HelianthusEnergyCoordinator,
         HelianthusFM5Coordinator,
         HelianthusRadioDeviceCoordinator,
+        HelianthusScheduleCoordinator,
         HelianthusSemanticCoordinator,
         HelianthusSystemCoordinator,
         HelianthusStatusCoordinator,
@@ -328,6 +330,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     fm5_coordinator = HelianthusFM5Coordinator(hass, client, scan_interval)
     system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
+    schedule_coordinator = HelianthusScheduleCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
@@ -337,6 +340,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await fm5_coordinator.async_config_entry_first_refresh()
     await system_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
+    await schedule_coordinator.async_config_entry_first_refresh()
 
     devices = device_coordinator.data or []
     reload_scheduled = False
@@ -1033,6 +1037,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "fm5_coordinator": fm5_coordinator,
         "system_coordinator": system_coordinator,
         "boiler_coordinator": boiler_coordinator,
+        "schedule_coordinator": schedule_coordinator,
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
