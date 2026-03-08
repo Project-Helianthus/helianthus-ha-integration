@@ -387,6 +387,14 @@ query BoilerStatus {
     }
     diagnostics {
       heatingStatusRaw
+      centralHeatingHours
+      dhwHours
+      centralHeatingStarts
+      dhwStarts
+      pumpHours
+      fanHours
+      deactivationsIFC
+      deactivationsTemplimiter
     }
   }
 }

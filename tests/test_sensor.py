@@ -135,6 +135,16 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
                         "returnTemperatureC": 51.0,
                         "dhwTemperatureC": 49.5,
                         "dhwStorageTemperatureC": 46.2,
+                    },
+                    "diagnostics": {
+                        "centralHeatingHours": 13150.0,
+                        "dhwHours": 116.0,
+                        "centralHeatingStarts": 64,
+                        "dhwStarts": 50,
+                        "pumpHours": 134.0,
+                        "fanHours": 108.0,
+                        "deactivationsIFC": 52,
+                        "deactivationsTemplimiter": 0,
                     }
                 }
             }
@@ -212,6 +222,62 @@ def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00()
     ]
 
     assert boiler_entities == []
+
+
+def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
+    boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
+    payload = _build_payload(boiler_device_id=boiler_device_id)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    diag_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBoilerDiagnosticsSensor)
+    ]
+
+    assert len(diag_entities) == 8
+    assert {entity._attr_unique_id for entity in diag_entities} == {
+        "entry-1-boiler-diag-centralHeatingHours",
+        "entry-1-boiler-diag-dhwHours",
+        "entry-1-boiler-diag-pumpHours",
+        "entry-1-boiler-diag-fanHours",
+        "entry-1-boiler-diag-centralHeatingStarts",
+        "entry-1-boiler-diag-dhwStarts",
+        "entry-1-boiler-diag-deactivationsIFC",
+        "entry-1-boiler-diag-deactivationsTemplimiter",
+    }
+    values = {entity._attr_unique_id: entity.native_value for entity in diag_entities}
+    assert values["entry-1-boiler-diag-centralHeatingHours"] == 13150.0
+    assert values["entry-1-boiler-diag-dhwHours"] == 116.0
+    assert values["entry-1-boiler-diag-centralHeatingStarts"] == 64
+    assert values["entry-1-boiler-diag-dhwStarts"] == 50
+    assert values["entry-1-boiler-diag-pumpHours"] == 134.0
+    assert values["entry-1-boiler-diag-fanHours"] == 108.0
+    assert values["entry-1-boiler-diag-deactivationsIFC"] == 52
+    assert values["entry-1-boiler-diag-deactivationsTemplimiter"] == 0
+
+    for entity in diag_entities:
+        assert entity.device_info["identifiers"] == {boiler_device_id}
+
+
+def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    diag_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBoilerDiagnosticsSensor)
+    ]
+    assert diag_entities == []
 
 
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:
