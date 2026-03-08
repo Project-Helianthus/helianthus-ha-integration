@@ -355,9 +355,9 @@ query System {
 QUERY_ENERGY = """
 query Energy {
   energyTotals {
-    gas { dhw { today yearly } climate { today yearly } }
-    electric { dhw { today yearly } climate { today yearly } }
-    solar { dhw { today yearly } climate { today yearly } }
+    gas { dhw { today yearly monthly } climate { today yearly monthly } }
+    electric { dhw { today yearly monthly } climate { today yearly monthly } }
+    solar { dhw { today yearly monthly } climate { today yearly monthly } }
   }
 }
 """
@@ -900,7 +900,7 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             payload = await self._client.execute(QUERY_ENERGY)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["energyTotals"]):
+            if _is_missing_field_error(exc.errors, ["energyTotals", "monthly"]):
                 return self._hold_last_valid_energy_totals()
             return self._hold_last_valid_energy_totals()
         except GraphQLClientError:

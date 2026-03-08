@@ -345,3 +345,18 @@ def test_energy_sensor_uses_last_valid_series_without_zero_fallback() -> None:
     )
 
     assert entity.native_value == 363.5
+
+
+def test_energy_sensor_has_total_increasing_state_class() -> None:
+    entity = sensor_platform.HelianthusEnergySensor(
+        coordinator=_FakeCoordinator({"energyTotals": None}),
+        entry_id="entry-1",
+        via_device=("helianthus", "entry-1-bus-BASV2-15"),
+        manufacturer="Vaillant",
+        source="gas",
+        usage="dhw",
+    )
+
+    assert entity._attr_state_class == "total_increasing"
+    assert entity._attr_device_class == "energy"
+    assert entity._attr_native_unit_of_measurement == "kWh"
