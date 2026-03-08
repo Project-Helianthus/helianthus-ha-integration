@@ -32,6 +32,9 @@ def _ensure_homeassistant_stubs() -> None:
         class _SensorDeviceClass:
             ENERGY = "energy"
             TEMPERATURE = "temperature"
+            HUMIDITY = "humidity"
+            DURATION = "duration"
+            PRESSURE = "pressure"
 
         sensor_module.SensorDeviceClass = _SensorDeviceClass
 
@@ -39,6 +42,7 @@ def _ensure_homeassistant_stubs() -> None:
         class _SensorStateClass:
             TOTAL = "total"
             MEASUREMENT = "measurement"
+            TOTAL_INCREASING = "total_increasing"
 
         sensor_module.SensorStateClass = _SensorStateClass
 
@@ -135,6 +139,16 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
                         "returnTemperatureC": 51.0,
                         "dhwTemperatureC": 49.5,
                         "dhwStorageTemperatureC": 46.2,
+                    },
+                    "diagnostics": {
+                        "centralHeatingHours": 13150.0,
+                        "dhwHours": 116.0,
+                        "centralHeatingStarts": 64,
+                        "dhwStarts": 50,
+                        "pumpHours": 134.0,
+                        "fanHours": 108.0,
+                        "deactivationsIFC": 52,
+                        "deactivationsTemplimiter": 0,
                     }
                 }
             }
@@ -212,6 +226,82 @@ def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00()
     ]
 
     assert boiler_entities == []
+
+
+def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
+    boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
+    payload = _build_payload(boiler_device_id=boiler_device_id)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    diag_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBoilerDiagnosticsSensor)
+    ]
+
+    assert len(diag_entities) == 8
+    assert {entity._attr_unique_id for entity in diag_entities} == {
+        "entry-1-boiler-diag-centralHeatingHours",
+        "entry-1-boiler-diag-dhwHours",
+        "entry-1-boiler-diag-pumpHours",
+        "entry-1-boiler-diag-fanHours",
+        "entry-1-boiler-diag-centralHeatingStarts",
+        "entry-1-boiler-diag-dhwStarts",
+        "entry-1-boiler-diag-deactivationsIFC",
+        "entry-1-boiler-diag-deactivationsTemplimiter",
+    }
+    values = {entity._attr_unique_id: entity.native_value for entity in diag_entities}
+    assert values["entry-1-boiler-diag-centralHeatingHours"] == 13150.0
+    assert values["entry-1-boiler-diag-dhwHours"] == 116.0
+    assert values["entry-1-boiler-diag-centralHeatingStarts"] == 64
+    assert values["entry-1-boiler-diag-dhwStarts"] == 50
+    assert values["entry-1-boiler-diag-pumpHours"] == 134.0
+    assert values["entry-1-boiler-diag-fanHours"] == 108.0
+    assert values["entry-1-boiler-diag-deactivationsIFC"] == 52
+    assert values["entry-1-boiler-diag-deactivationsTemplimiter"] == 0
+
+    for entity in diag_entities:
+        assert entity.device_info["identifiers"] == {boiler_device_id}
+
+    # Verify metadata on duration counter
+    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingHours")
+    assert hours_entity._attr_device_class == "duration"
+    assert hours_entity._attr_native_unit_of_measurement == "h"
+    assert hours_entity._attr_state_class == "total_increasing"
+    assert hours_entity._attr_entity_category == "diagnostic"
+
+    # Verify metadata on starts counter
+    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingStarts")
+    assert not hasattr(starts_entity, "_attr_device_class") or starts_entity._attr_device_class is None
+    assert not hasattr(starts_entity, "_attr_native_unit_of_measurement")
+    assert starts_entity._attr_state_class == "total_increasing"
+    assert starts_entity._attr_entity_category == "diagnostic"
+
+    # Verify metadata on deactivation counter
+    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-deactivationsIFC")
+    assert not hasattr(deact_entity, "_attr_device_class") or deact_entity._attr_device_class is None
+    assert not hasattr(deact_entity, "_attr_state_class") or deact_entity._attr_state_class is None
+    assert deact_entity._attr_entity_category == "diagnostic"
+
+
+def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    diag_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBoilerDiagnosticsSensor)
+    ]
+    assert diag_entities == []
 
 
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:

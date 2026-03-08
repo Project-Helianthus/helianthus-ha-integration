@@ -259,6 +259,67 @@ BOILER_STATE_SENSOR_FIELDS = [
     },
 ]
 
+BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
+    {
+        "key": "centralHeatingHours",
+        "label": "Central Heating Hours",
+        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "native_unit": "h",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "dhwHours",
+        "label": "DHW Hours",
+        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "native_unit": "h",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "pumpHours",
+        "label": "Pump Hours",
+        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "native_unit": "h",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "fanHours",
+        "label": "Fan Hours",
+        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "native_unit": "h",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+    },
+    {
+        "key": "centralHeatingStarts",
+        "label": "Central Heating Starts",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+    {
+        "key": "dhwStarts",
+        "label": "DHW Starts",
+        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+    {
+        "key": "deactivationsIFC",
+        "label": "Deactivations IFC",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+    {
+        "key": "deactivationsTemplimiter",
+        "label": "Deactivations Temperature Limiter",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "cast_int": True,
+    },
+]
+
 CYLINDER_CONFIG_SENSOR_FIELDS = [
     {
         "key": "maxSetpointC",
@@ -477,6 +538,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 field=field,
             )
             for field in BOILER_STATE_SENSOR_FIELDS
+        )
+        sensors.extend(
+            HelianthusBoilerDiagnosticsSensor(
+                coordinator=boiler_coordinator,
+                entry_id=entry.entry_id,
+                manufacturer=manufacturer,
+                boiler_device_id=boiler_device_id,
+                field=field,
+            )
+            for field in BOILER_DIAGNOSTICS_SENSOR_FIELDS
         )
 
     if circuit_coordinator and circuit_coordinator.data:
@@ -891,6 +962,58 @@ class HelianthusBoilerStateSensor(CoordinatorEntity, SensorEntity):
         boiler_status = payload.get("boilerStatus") or {}
         state = boiler_status.get("state") if isinstance(boiler_status, dict) else {}
         value = state.get(self._field["key"]) if isinstance(state, dict) else None
+        if value is None:
+            return None
+        if self._field.get("cast_int"):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+        return None
+
+
+class HelianthusBoilerDiagnosticsSensor(CoordinatorEntity, SensorEntity):
+    """Boiler diagnostic counter sensor (hours, starts, deactivations)."""
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        boiler_device_id: tuple[str, str],
+        field: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._boiler_device_id = boiler_device_id
+        self._field = field
+        self._attr_name = f"Boiler {field['label']}"
+        self._attr_unique_id = f"{entry_id}-boiler-diag-{field['key']}"
+        if field.get("device_class") is not None:
+            self._attr_device_class = field["device_class"]
+        if field.get("native_unit") is not None:
+            self._attr_native_unit_of_measurement = field["native_unit"]
+        if field.get("state_class") is not None:
+            self._attr_state_class = field["state_class"]
+        if field.get("entity_category") is not None:
+            self._attr_entity_category = field["entity_category"]
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._boiler_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def native_value(self) -> Any:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") or {}
+        diagnostics = boiler_status.get("diagnostics") if isinstance(boiler_status, dict) else {}
+        value = diagnostics.get(self._field["key"]) if isinstance(diagnostics, dict) else None
         if value is None:
             return None
         if self._field.get("cast_int"):
