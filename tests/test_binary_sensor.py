@@ -31,6 +31,8 @@ def _ensure_homeassistant_stubs() -> None:
     if not hasattr(binary_sensor_module, "BinarySensorDeviceClass"):
         class _BinarySensorDeviceClass:
             RUNNING = "running"
+            OPENING = "opening"
+            PROBLEM = "problem"
 
         binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
@@ -180,3 +182,76 @@ def test_async_setup_entry_skips_boiler_state_binary_sensors_without_physical_ba
     ]
 
     assert boiler_entities == []
+
+
+def _build_zone_payload(valve_position_pct):
+    return {
+        "semantic_coordinator": _FakeCoordinator({
+            "zones": [
+                {
+                    "id": "zone-1",
+                    "name": "Living Room",
+                    "state": {"valvePositionPct": valve_position_pct},
+                    "config": {"roomTemperatureZoneMapping": None},
+                },
+            ],
+            "dhw": None,
+        }),
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV2-15"),
+        "regulator_manufacturer": "Vaillant",
+        "zone_parent_device_ids": {"zone-1": ("helianthus", "entry-1-bus-BASV2-15")},
+    }
+
+
+def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
+    payload = _build_zone_payload(valve_position_pct=50.0)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    valve_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, binary_sensor_platform.HelianthusZoneValveBinarySensor)
+    ]
+    assert len(valve_entities) == 1
+    valve = valve_entities[0]
+    assert valve._attr_unique_id == "entry-1-zone-zone-1-binary-valve"
+    assert valve._attr_name == "Living Room Valve"
+    assert valve.is_on is True
+
+
+def test_zone_valve_binary_sensor_closed_when_position_zero() -> None:
+    payload = _build_zone_payload(valve_position_pct=0)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    valve_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, binary_sensor_platform.HelianthusZoneValveBinarySensor)
+    ]
+    assert len(valve_entities) == 1
+    assert valve_entities[0].is_on is False
+
+
+def test_zone_valve_binary_sensor_none_when_position_absent() -> None:
+    payload = _build_zone_payload(valve_position_pct=None)
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    valve_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, binary_sensor_platform.HelianthusZoneValveBinarySensor)
+    ]
+    assert len(valve_entities) == 1
+    assert valve_entities[0].is_on is None

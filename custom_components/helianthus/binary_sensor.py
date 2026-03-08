@@ -145,6 +145,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     schedule_label=schedule_label,
                 )
             )
+        entities.append(
+            HelianthusZoneValveBinarySensor(
+                coordinator=coordinator,
+                entry_id=entry.entry_id,
+                manufacturer=manufacturer,
+                zone_id=str(zone_id),
+                zone_name=zone_name,
+                target_device_id=parent_device_id,
+            )
+        )
 
     dhw = coordinator.data.get("dhw") if coordinator.data else None
     if dhw is not None:
@@ -633,3 +643,58 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
         if isinstance(value, bool):
             return value
         return None
+
+
+class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Zone valve open/closed derived from valve_position_pct."""
+
+    _attr_device_class = BinarySensorDeviceClass.OPENING
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        manufacturer: str,
+        zone_id: str,
+        zone_name: str,
+        target_device_id: tuple[str, str] | None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._zone_id = zone_id
+        self._target_device_id = target_device_id
+        self._attr_name = f"{zone_name} Valve"
+        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-binary-valve"
+
+    def _zone(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        for zone in payload.get("zones", []) or []:
+            if not isinstance(zone, dict):
+                continue
+            if str(zone.get("id")) == self._zone_id:
+                return zone
+        return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        identifier = self._target_device_id
+        if identifier is None:
+            raise RuntimeError("Zone valve binary sensor created without a physical parent device")
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        zone = self._zone()
+        state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
+        value = state.get("valvePositionPct") if isinstance(state, dict) else None
+        if value is None:
+            return None
+        try:
+            return float(value) > 0
+        except (TypeError, ValueError):
+            return None
