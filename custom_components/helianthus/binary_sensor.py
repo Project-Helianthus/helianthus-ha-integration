@@ -106,6 +106,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     regulator_device_id = data.get("regulator_device_id")
     vr71_device_id = data.get("vr71_device_id") or regulator_device_id
     zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
+    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
@@ -276,14 +277,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if slot is None or bus_key is None:
                 continue
             group, instance = slot
+            # ADR-001: re-parent to physical bus device for merged B524 slots.
+            merge_target = b524_merge_targets.get(bus_key)
+            target_device_id = merge_target if merge_target is not None else radio_device_identifier(entry.entry_id, bus_key)
             entities.append(
                 HelianthusRadioConnectedBinarySensor(
                     coordinator=radio_coordinator,
                     entry_id=entry.entry_id,
                     manufacturer=manufacturer,
-                    radio_device_id=radio_device_identifier(entry.entry_id, bus_key),
+                    radio_device_id=target_device_id,
                     group=group,
                     instance=instance,
+                    label="B524 Connected" if merge_target is not None else "Device Connected",
                 )
             )
 
@@ -601,13 +606,14 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
         radio_device_id: tuple[str, str],
         group: int,
         instance: int,
+        label: str = "Device Connected",
     ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._radio_device_id = radio_device_id
         self._group = group
         self._instance = instance
-        self._attr_name = "Device Connected"
+        self._attr_name = label
         self._attr_unique_id = f"{entry_id}-radio-{group:02x}-{instance:02d}-connected"
 
     def _device(self) -> dict[str, Any] | None:

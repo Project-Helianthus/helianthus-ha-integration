@@ -48,6 +48,7 @@ class CircuitSensorField:
     entity_category: str | None = None
     cast_int: bool = False
     include_circuit_attributes: bool = False
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,7 @@ CIRCUIT_SENSOR_FIELDS = [
         state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         cast_int=True,
+        icon="mdi:counter",
     ),
 ]
 
@@ -298,6 +300,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "dhwStarts",
@@ -305,18 +308,21 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "deactivationsIFC",
         "label": "Deactivations IFC",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "deactivationsTemplimiter",
         "label": "Deactivations Temperature Limiter",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
 ]
 
@@ -470,6 +476,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     vr71_device_id = data.get("vr71_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
     zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
+    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
@@ -647,6 +654,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
                 )
             elif group == 0x0C:
+                # ADR-001: suppress redundant sensors for merged B524 function modules.
+                if bus_key in b524_merge_targets:
+                    continue
                 for key, label in [
                     ("deviceClassAddress", "Device Class Address"),
                     ("hardwareIdentifier", "Hardware Identifier"),
@@ -1000,6 +1010,8 @@ class HelianthusBoilerDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field["state_class"]
         if field.get("entity_category") is not None:
             self._attr_entity_category = field["entity_category"]
+        if field.get("icon") is not None:
+            self._attr_icon = field["icon"]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1055,6 +1067,8 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field.state_class
         if field.entity_category is not None:
             self._attr_entity_category = field.entity_category
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}

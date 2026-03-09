@@ -10,7 +10,7 @@ if git grep -nIwiE 'm[a]ster|s[l]ave'; then
   exit 1
 fi
 
-echo "==> python tests"
+echo "==> python tests (includes ADR-026 entity icon gate)"
 pytest
 
 echo "==> gateway parity gate readiness"
