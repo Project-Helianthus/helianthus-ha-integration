@@ -62,7 +62,7 @@ async def async_setup_entry(
         if zone == 255:
             target_device_id = dhw_identifier(entry.entry_id)
         else:
-            zone_id = str(zone)
+            zone_id = f"zone-{zone + 1}"
             target_device_id = zone_parent_device_ids.get(
                 zone_id, zone_identifier(entry.entry_id, zone_id)
             )
@@ -106,8 +106,8 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
             self._attr_name = f"{hc_label} Schedule"
             zone_tag = "dhw"
         else:
-            self._attr_name = f"Zone {zone} {hc_label} Schedule"
-            zone_tag = f"zone_{zone}"
+            self._attr_name = f"Zone {zone + 1} {hc_label} Schedule"
+            zone_tag = f"zone-{zone + 1}"
 
         self._attr_unique_id = (
             f"{entry_id}-schedule-{zone_tag}-{hc}"
