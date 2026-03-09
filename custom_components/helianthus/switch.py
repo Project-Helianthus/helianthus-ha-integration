@@ -68,6 +68,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     """Writable switch for circuit cooling mode."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:snowflake"
 
     def __init__(
         self,
@@ -162,6 +163,7 @@ class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
     """Read-only interpreted solar config switch."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:solar-power"
 
     def __init__(
         self,

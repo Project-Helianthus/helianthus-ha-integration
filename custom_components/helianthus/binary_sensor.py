@@ -322,6 +322,14 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_name = f"{target_name} {schedule_label}"
         unique_target = target_id or "dhw"
         self._attr_unique_id = f"{entry_id}-{target_kind}-{unique_target}-schedule-{schedule_key}"
+        _SCHEDULE_ICONS: dict[str, str] = {
+            "schedule": "mdi:calendar-clock",
+            "quickveto": "mdi:timer-alert-outline",
+            "away": "mdi:airplane",
+        }
+        schedule_icon = _SCHEDULE_ICONS.get(schedule_key)
+        if schedule_icon is not None:
+            self._attr_icon = schedule_icon
 
     def _target_payload(self) -> dict[str, Any]:
         if not self.coordinator.data:
@@ -390,6 +398,16 @@ class HelianthusBoilerStateBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._key = key
         self._attr_name = label
         self._attr_unique_id = f"{entry_id}-boiler-binary-{key}"
+        _BOILER_STATE_ICONS: dict[str, str] = {
+            "flameActive": "mdi:fire",
+            "gasValveActive": "mdi:gas-cylinder",
+            "centralHeatingPumpActive": "mdi:pump",
+            "externalPumpActive": "mdi:pump",
+            "circulationPumpActive": "mdi:pump",
+        }
+        boiler_icon = _BOILER_STATE_ICONS.get(key)
+        if boiler_icon is not None:
+            self._attr_icon = boiler_icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -483,6 +501,14 @@ class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_name = label
         self._attr_unique_id = f"{entry_id}-solar-binary-{key}"
         self._attr_entity_registry_enabled_default = enabled_by_default
+        _SOLAR_ICONS: dict[str, str] = {
+            "pumpActive": "mdi:pump",
+            "solarEnabled": "mdi:solar-power",
+            "functionMode": "mdi:solar-panel",
+        }
+        solar_icon = _SOLAR_ICONS.get(key)
+        if solar_icon is not None:
+            self._attr_icon = solar_icon
 
     @property
     def available(self) -> bool:
@@ -572,6 +598,12 @@ class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
             self._attr_device_class = device_class
         if entity_category is not None:
             self._attr_entity_category = entity_category
+        _SYSTEM_BINARY_ICONS: dict[str, str] = {
+            "adaptiveHeatingCurve": "mdi:chart-bell-curve-cumulative",
+        }
+        system_icon = _SYSTEM_BINARY_ICONS.get(key)
+        if system_icon is not None:
+            self._attr_icon = system_icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -596,6 +628,7 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
     """Remote-slot connected-state binary sensor."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:radio-tower"
 
     def __init__(
         self,

@@ -30,6 +30,7 @@ from .energy import compute_total
 class InventoryField:
     key: str
     name: str
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,16 +62,17 @@ class SystemSensorField:
     state_class: str | None = None
     entity_category: str | None = None
     cast_int: bool = False
+    icon: str | None = None
 
 
 STATUS_FIELDS = [
-    InventoryField("status", "Status"),
-    InventoryField("firmwareVersion", "Firmware Version"),
-    InventoryField("updatesAvailable", "Updates Available"),
+    InventoryField("status", "Status", icon="mdi:information-outline"),
+    InventoryField("firmwareVersion", "Firmware Version", icon="mdi:tag-text-outline"),
+    InventoryField("updatesAvailable", "Updates Available", icon="mdi:update"),
 ]
 
 DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
-    InventoryField("initiatorAddress", "eBUS Initiator Address")
+    InventoryField("initiatorAddress", "eBUS Initiator Address", icon="mdi:chip")
 ]
 
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
@@ -125,11 +127,13 @@ CIRCUIT_SENSOR_FIELDS = [
         native_unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:valve",
     ),
     CircuitSensorField(
         key="circuitState",
         label="State",
         include_circuit_attributes=True,
+        icon="mdi:information-outline",
     ),
     CircuitSensorField(
         key="humidity",
@@ -218,6 +222,7 @@ SYSTEM_SENSOR_FIELDS = [
         source="properties",
         entity_category=EntityCategory.DIAGNOSTIC,
         cast_int=True,
+        icon="mdi:sitemap-outline",
     ),
 ]
 
@@ -228,6 +233,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:gas-burner",
     },
     {
         "key": "fanSpeedRpm",
@@ -236,6 +242,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:fan",
     },
     {
         "key": "ionisationVoltageUa",
@@ -244,6 +251,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:flash-triangle-outline",
     },
     {
         "key": "storageLoadPumpPct",
@@ -251,6 +259,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:pump",
     },
     {
         "key": "diverterValvePositionPct",
@@ -258,6 +267,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:valve",
     },
 ]
 
@@ -333,6 +343,7 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:thermometer-high",
     },
     {
         "key": "chargeHysteresisC",
@@ -340,6 +351,7 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:thermometer",
     },
     {
         "key": "chargeOffsetC",
@@ -347,6 +359,7 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
+        "icon": "mdi:thermometer",
     },
 ]
 
@@ -657,6 +670,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
                 )
             elif group == 0x0C:
+                _radio_metadata_icons = {
+                    "deviceClassAddress": "mdi:identifier",
+                    "hardwareIdentifier": "mdi:identifier",
+                    "remoteControlAddress": "mdi:remote",
+                    "zoneAssignment": "mdi:home-map-marker",
+                }
                 for key, label in [
                     ("deviceClassAddress", "Device Class Address"),
                     ("hardwareIdentifier", "Hardware Identifier"),
@@ -678,6 +697,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                             label=label,
                             entity_category=EntityCategory.DIAGNOSTIC,
                             cast_int=True,
+                            icon=_radio_metadata_icons.get(key),
                         )
                     )
 
@@ -698,13 +718,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             solar = fm5_payload.get("solar")
             if isinstance(solar, dict):
                 solar_device_id = solar_identifier(entry.entry_id)
-                for key, label, device_class, unit, state_class in [
+                for key, label, device_class, unit, state_class, icon in [
                     (
                         "collectorTemperatureC",
                         "Collector Temperature",
                         SensorDeviceClass.TEMPERATURE,
                         UnitOfTemperature.CELSIUS,
                         SensorStateClass.MEASUREMENT,
+                        None,
                     ),
                     (
                         "returnTemperatureC",
@@ -712,9 +733,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         SensorDeviceClass.TEMPERATURE,
                         UnitOfTemperature.CELSIUS,
                         SensorStateClass.MEASUREMENT,
+                        None,
                     ),
-                    ("currentYield", "Current Yield", None, None, None),
-                    ("pumpHours", "Pump Hours", _SENSOR_DEVICE_CLASS_DURATION, "h", _SENSOR_STATE_CLASS_TOTAL_INCREASING),
+                    ("currentYield", "Current Yield", None, None, None, "mdi:solar-power"),
+                    ("pumpHours", "Pump Hours", _SENSOR_DEVICE_CLASS_DURATION, "h", _SENSOR_STATE_CLASS_TOTAL_INCREASING, None),
                 ]:
                     sensors.append(
                         HelianthusSolarSensor(
@@ -728,6 +750,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                             device_class=device_class,
                             native_unit=unit,
                             state_class=state_class,
+                            icon=icon,
                         )
                     )
 
@@ -848,6 +871,7 @@ class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
     """eBUS address sensor for a physical bus device."""
 
     entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:chip"
 
     def __init__(
         self,
@@ -889,6 +913,8 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         self._identifier = identifier or (DOMAIN, f"unknown-{target_name.lower()}")
         self._attr_name = f"{target_name} {field.name}"
         self._attr_unique_id = f"{self._identifier[1]}-{field.key}"
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -958,6 +984,8 @@ class HelianthusBoilerStateSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field["state_class"]
         if field.get("entity_category") is not None:
             self._attr_entity_category = field["entity_category"]
+        if field.get("icon") is not None:
+            self._attr_icon = field["icon"]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1158,6 +1186,8 @@ class HelianthusSystemSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field.state_class
         if field.entity_category is not None:
             self._attr_entity_category = field.entity_category
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1208,6 +1238,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         state_class: str | None = None,
         entity_category: str | None = None,
         cast_int: bool = False,
+        icon: str | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
@@ -1227,6 +1258,8 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = state_class
         if entity_category is not None:
             self._attr_entity_category = entity_category
+        if icon is not None:
+            self._attr_icon = icon
         self._attr_entity_registry_enabled_default = self._device_value_present()
 
     def _device(self) -> dict[str, Any] | None:
@@ -1260,6 +1293,24 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         )
 
     @property
+    def icon(self) -> str | None:
+        """Dynamic icon for signal quality (ADR-026); static for others."""
+        if self._key == "receptionStrength":
+            value = self.native_value
+            if value is None:
+                return "mdi:signal-cellular-outline"
+            try:
+                strength = int(value)
+            except (TypeError, ValueError):
+                return "mdi:signal-cellular-outline"
+            if strength < 33:
+                return "mdi:signal-cellular-1"
+            if strength < 67:
+                return "mdi:signal-cellular-2"
+            return "mdi:signal-cellular-3"
+        return self._attr_icon
+
+    @property
     def native_value(self) -> Any:
         device = self._device()
         if not isinstance(device, dict):
@@ -1281,6 +1332,7 @@ class HelianthusFM5ModeSensor(CoordinatorEntity, SensorEntity):
     """FM5 semantic mode marker."""
 
     entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:chip"
 
     def __init__(
         self,
@@ -1323,6 +1375,7 @@ class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
         label: str,
         device_class: str | None,
         native_unit: str | None,
+        icon: str | None = None,
         state_class: str | None,
     ) -> None:
         super().__init__(coordinator)
@@ -1338,6 +1391,8 @@ class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_unit_of_measurement = native_unit
         if state_class is not None:
             self._attr_state_class = state_class
+        if icon is not None:
+            self._attr_icon = icon
         self._attr_entity_registry_enabled_default = self._solar_value_present()
 
     @property
@@ -1467,6 +1522,8 @@ class HelianthusCylinderConfigSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field["state_class"]
         if field.get("entity_category") is not None:
             self._attr_entity_category = field["entity_category"]
+        if field.get("icon") is not None:
+            self._attr_icon = field["icon"]
         self._attr_entity_registry_enabled_default = self._cylinder().get(field["key"]) is not None
 
     def _cylinder(self) -> dict[str, Any]:
@@ -1514,6 +1571,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:valve"
 
     def __init__(
         self,
@@ -1572,6 +1630,7 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
     entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:heat-wave"
 
     def __init__(
         self,
@@ -1643,6 +1702,7 @@ class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
     """DHW charging/status sensor."""
 
     entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:water-boiler"
 
     def __init__(
         self,
