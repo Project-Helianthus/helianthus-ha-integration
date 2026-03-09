@@ -43,6 +43,9 @@ from custom_components.helianthus.coordinator import (
     QUERY_EXTENDED_V3_NO_PART,
     QUERY_FM5,
     QUERY_RADIO_DEVICES,
+    QUERY_SEMANTIC,
+    QUERY_SEMANTIC_NO_QV,
+    QUERY_SEMANTIC_LEGACY,
     QUERY_STATUS,
     QUERY_STATUS_LEGACY,
     QUERY_SYSTEM,
@@ -54,6 +57,7 @@ from custom_components.helianthus.coordinator import (
     HelianthusFM5Coordinator,
     HelianthusRadioDeviceCoordinator,
     HelianthusScheduleCoordinator,
+    HelianthusSemanticCoordinator,
     HelianthusSystemCoordinator,
     HelianthusStatusCoordinator,
     QUERY_SCHEDULES,
@@ -669,3 +673,106 @@ def test_schedule_coordinator_returns_empty_on_null_schedules() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert result == {"programs": []}
+
+
+# --- Semantic coordinator quick veto fallback tests ---
+
+
+def _build_semantic_coordinator(client: _ScriptedClient) -> HelianthusSemanticCoordinator:
+    coordinator = object.__new__(HelianthusSemanticCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _semantic_payload(**config_overrides: object) -> dict:
+    config = {
+        "operatingMode": "auto",
+        "preset": "schedule",
+        "targetTempC": 21.5,
+        "allowedModes": ["off", "auto", "heat"],
+        "circuitType": "heating",
+        "associatedCircuit": 0,
+        "roomTemperatureZoneMapping": 1,
+    }
+    config.update(config_overrides)
+    return {
+        "zones": [
+            {
+                "id": "zone-1",
+                "name": "Living Room",
+                "state": {"currentTempC": 20.0},
+                "config": config,
+            }
+        ],
+        "dhw": None,
+    }
+
+
+def test_semantic_full_query_succeeds() -> None:
+    payload = _semantic_payload(
+        quickVeto=False, quickVetoSetpointC=16.0, quickVetoDurationH=3.0
+    )
+    client = _ScriptedClient([payload])
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert len(result["zones"]) == 1
+    assert result["zones"][0]["config"]["quickVeto"] is False
+    assert client.calls == [QUERY_SEMANTIC]
+
+
+def test_semantic_falls_back_to_no_qv() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+            ),
+            _semantic_payload(),
+        ]
+    )
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert len(result["zones"]) == 1
+    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV]
+
+
+def test_semantic_falls_back_to_legacy() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+            ),
+            GraphQLResponseError(
+                [
+                    {
+                        "message": 'Cannot query field "roomTemperatureZoneMapping" on type "ZoneConfig".'
+                    }
+                ]
+            ),
+            _semantic_payload(),
+        ]
+    )
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert len(result["zones"]) == 1
+    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+
+
+def test_semantic_returns_empty_on_zones_missing() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "zones" on type "Query".'}]
+            ),
+        ]
+    )
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == {"zones": [], "dhw": None}

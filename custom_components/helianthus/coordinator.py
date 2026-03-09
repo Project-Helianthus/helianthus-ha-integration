@@ -191,6 +191,48 @@ query Semantic {
       circuitType
       associatedCircuit
       roomTemperatureZoneMapping
+      quickVeto
+      quickVetoSetpointC
+      quickVetoDurationH
+      quickVetoExpiry
+    }
+  }
+  dhw {
+    state {
+      currentTempC
+      specialFunction
+      heatingDemandPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+    }
+  }
+}
+"""
+
+QUERY_SEMANTIC_NO_QV = """
+query Semantic {
+  zones {
+    id
+    name
+    state {
+      currentTempC
+      currentHumidityPct
+      hvacAction
+      specialFunction
+      heatingDemandPct
+      valvePositionPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      allowedModes
+      circuitType
+      associatedCircuit
+      roomTemperatureZoneMapping
     }
   }
   dhw {
@@ -244,6 +286,9 @@ query Semantic {
   }
 }
 """
+
+_QV_FIELDS = ["quickVeto", "quickVetoSetpointC", "quickVetoDurationH", "quickVetoExpiry"]
+_SEMANTIC_RECOVERABLE_FIELDS = _QV_FIELDS + ["roomTemperatureZoneMapping"]
 
 QUERY_CIRCUITS = """
 query Circuits {
@@ -540,24 +585,20 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
 
     async def _async_update_data(self) -> dict[str, Any]:
-        try:
-            payload = await self._client.execute(QUERY_SEMANTIC)
-        except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["roomTemperatureZoneMapping"]):
-                try:
-                    payload = await self._client.execute(QUERY_SEMANTIC_LEGACY)
-                except GraphQLResponseError as nested:
-                    if _is_missing_field_error(nested.errors, ["zones", "dhw"]):
-                        return {"zones": [], "dhw": None}
-                    raise UpdateFailed(str(nested)) from nested
-                except GraphQLClientError as nested:
-                    raise UpdateFailed(str(nested)) from nested
-            elif _is_missing_field_error(exc.errors, ["zones", "dhw"]):
-                return {"zones": [], "dhw": None}
-            else:
+        queries = [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+        payload = None
+        for query in queries:
+            try:
+                payload = await self._client.execute(query)
+                break
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
+                    return {"zones": [], "dhw": None}
+                if _is_missing_field_error(exc.errors, _SEMANTIC_RECOVERABLE_FIELDS):
+                    continue
                 raise UpdateFailed(str(exc)) from exc
-        except GraphQLClientError as exc:
-            raise UpdateFailed(str(exc)) from exc
+            except GraphQLClientError as exc:
+                raise UpdateFailed(str(exc)) from exc
 
         if not isinstance(payload, dict):
             return {"zones": [], "dhw": None}
