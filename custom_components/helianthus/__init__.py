@@ -519,7 +519,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not isinstance(radio_devices_payload, list):
         radio_devices_payload = []
 
-    # ADR-001: Merge B524 function-module enrichment into physical bus devices.
+    # ADR-027: Merge B524 function-module enrichment into physical bus devices.
     # Group 0x0C entries whose deviceClassAddress matches a known bus address
     # are enrichment metadata for that bus device, not standalone devices.
     _B524_FUNCTION_MODULE_GROUP = 0x0C
@@ -561,7 +561,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not bus_key:
             bus_key = build_radio_bus_key(group, instance)
         known_radio_bus_keys.add(bus_key)
-        # ADR-001: skip HA device creation for merged B524 function module slots.
+        # ADR-027: skip HA device creation for merged B524 function module slots.
         if bus_key in b524_merge_targets:
             continue
         radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
@@ -725,7 +725,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return "temperatureC" in live_keys
         return False
 
-    # ADR-001: build set of merged B524 slot prefixes for entity cleanup.
+    # ADR-027: build set of merged B524 slot prefixes for entity cleanup.
     # bus_key format: "g0c-i01" -> unique_id slot format: "0c-01"
     def _bus_key_to_uid_slot(bk: str) -> str:
         return bk.replace("g", "").replace("-i", "-")
@@ -749,7 +749,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 unique_id,
             ):
                 remove_entry = True
-            # ADR-001: remove redundant sensor entities from merged B524 slots.
+            # ADR-027: remove redundant sensor entities from merged B524 slots.
             elif entity_entry.domain == "sensor" and any(
                 unique_id.startswith(prefix) for prefix in _b524_merged_uid_prefixes
             ):
@@ -811,7 +811,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if cylinder_index is not None and cylinder_index not in known_cylinder_indexes:
                     remove_device = True
                     break
-                # ADR-001: remove shadow radio device for merged B524 function modules.
+                # ADR-027: remove shadow radio device for merged B524 function modules.
                 radio_prefix = f"{entry.entry_id}-radio-"
                 if token.startswith(radio_prefix):
                     radio_bus_key = token[len(radio_prefix):]
