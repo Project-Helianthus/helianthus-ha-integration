@@ -85,6 +85,7 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
     """Calendar entity representing a B555 timer schedule program."""
 
     _attr_has_entity_name = True
+    _attr_icon = "mdi:calendar-clock"
 
     def __init__(
         self,

@@ -84,6 +84,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_options = _OPTIONS
+    _attr_icon = "mdi:thermostat"
 
     def __init__(
         self,

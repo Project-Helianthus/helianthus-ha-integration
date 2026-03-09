@@ -60,6 +60,7 @@ class CircuitNumberField:
     maximum: float
     step: float
     unit: str | None = None
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class SystemNumberField:
     step: float
     unit: str | None = None
     cast_int: bool = False
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,7 @@ class CylinderNumberField:
     maximum: float
     step: float
     unit: str | None = None
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,10 +95,11 @@ class BoilerNumberField:
     maximum: float
     step: float
     unit: str | None = None
+    icon: str | None = None
 
 
 _CIRCUIT_NUMBER_FIELDS = [
-    CircuitNumberField("heatingCurve", "Heating Curve", 0.1, 4.0, 0.1),
+    CircuitNumberField("heatingCurve", "Heating Curve", 0.1, 4.0, 0.1, icon="mdi:chart-bell-curve-cumulative"),
     CircuitNumberField(
         "flowTempMaxC",
         "Flow Temperature Maximum",
@@ -103,6 +107,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         80.0,
         1.0,
         UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-chevron-up",
     ),
     CircuitNumberField(
         "flowTempMinC",
@@ -111,6 +116,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         30.0,
         1.0,
         UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-chevron-down",
     ),
     CircuitNumberField(
         "summerLimitC",
@@ -119,6 +125,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         30.0,
         1.0,
         UnitOfTemperature.CELSIUS,
+        icon="mdi:weather-sunny",
     ),
     CircuitNumberField(
         "frostProtC",
@@ -127,6 +134,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         10.0,
         1.0,
         UnitOfTemperature.CELSIUS,
+        icon="mdi:snowflake-thermometer",
     ),
 ]
 
@@ -139,6 +147,7 @@ _SYSTEM_NUMBER_FIELDS = [
         maximum=30.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer",
     ),
     SystemNumberField(
         mutation_field="dhwBivalencePointC",
@@ -148,6 +157,7 @@ _SYSTEM_NUMBER_FIELDS = [
         maximum=50.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer",
     ),
     SystemNumberField(
         mutation_field="hcEmergencyTempC",
@@ -157,6 +167,7 @@ _SYSTEM_NUMBER_FIELDS = [
         maximum=80.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-alert",
     ),
     SystemNumberField(
         mutation_field="hwcMaxFlowTempC",
@@ -166,6 +177,7 @@ _SYSTEM_NUMBER_FIELDS = [
         maximum=80.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-chevron-up",
     ),
     SystemNumberField(
         mutation_field="maxRoomHumidityPct",
@@ -176,6 +188,7 @@ _SYSTEM_NUMBER_FIELDS = [
         step=1.0,
         unit=PERCENTAGE,
         cast_int=True,
+        icon="mdi:water-percent",
     ),
 ]
 
@@ -187,6 +200,7 @@ _CYLINDER_NUMBER_FIELDS = [
         maximum=80.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-high",
     ),
     CylinderNumberField(
         key="chargeHysteresisC",
@@ -195,6 +209,7 @@ _CYLINDER_NUMBER_FIELDS = [
         maximum=30.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer",
     ),
     CylinderNumberField(
         key="chargeOffsetC",
@@ -203,6 +218,7 @@ _CYLINDER_NUMBER_FIELDS = [
         maximum=20.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer",
     ),
 ]
 
@@ -214,6 +230,7 @@ _BOILER_NUMBER_FIELDS = [
         maximum=80.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
         key="flowsetHwcMaxC",
@@ -222,6 +239,7 @@ _BOILER_NUMBER_FIELDS = [
         maximum=65.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
         key="partloadHcKW",
@@ -230,6 +248,7 @@ _BOILER_NUMBER_FIELDS = [
         maximum=40.0,
         step=0.1,
         unit="kW",
+        icon="mdi:lightning-bolt",
     ),
     BoilerNumberField(
         key="partloadHwcKW",
@@ -238,6 +257,7 @@ _BOILER_NUMBER_FIELDS = [
         maximum=40.0,
         step=0.1,
         unit="kW",
+        icon="mdi:lightning-bolt",
     ),
 ]
 
@@ -359,6 +379,8 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = field.step
         if field.unit is not None:
             self._attr_native_unit_of_measurement = field.unit
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -436,6 +458,8 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = field.step
         if field.unit is not None:
             self._attr_native_unit_of_measurement = field.unit
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -535,6 +559,8 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = field.step
         if field.unit is not None:
             self._attr_native_unit_of_measurement = field.unit
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -617,6 +643,8 @@ class HelianthusCylinderConfigNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = field.step
         if field.unit is not None:
             self._attr_native_unit_of_measurement = field.unit
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     def _cylinder(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}

@@ -68,6 +68,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     """DHW water heater entity."""
 
+    _attr_icon = "mdi:water-boiler"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         WaterHeaterEntityFeature.TARGET_TEMPERATURE | WaterHeaterEntityFeature.OPERATION_MODE
