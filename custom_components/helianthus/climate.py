@@ -477,7 +477,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         await self._write_ext_register(_ZONE_QUICK_VETO_DURATION_ADDR, duration_payload)
 
     async def _activate_away(self) -> None:
-        """Activate away/holiday mode with start=today, end=today+N days."""
+        """Activate away/holiday mode with start=today, end=today+N days.
+
+        Writes non-activating fields first; start_date last to minimise
+        the window where the controller sees a partial holiday state.
+        """
         config = self._zone_config()
         setpoint = config.get("holidaySetpoint")
         if setpoint is None:
@@ -488,15 +492,23 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         start_date_payload = [today.day, today.month, today.year - 2000]
         end_date_payload = [end.day, end.month, end.year - 2000]
         setpoint_payload = list(struct.pack("<f", setpoint))
-        await self._write_ext_register(_ZONE_HOLIDAY_START_DATE_ADDR, start_date_payload)
         await self._write_ext_register(_ZONE_HOLIDAY_END_DATE_ADDR, end_date_payload)
         await self._write_ext_register(_ZONE_HOLIDAY_SETPOINT_ADDR, setpoint_payload)
-        await self._write_ext_register(_ZONE_HOLIDAY_START_TIME_ADDR, [0x00, 0x00])
-        await self._write_ext_register(_ZONE_HOLIDAY_END_TIME_ADDR, [0x00, 0x00])
+        await self._write_ext_register(_ZONE_HOLIDAY_START_TIME_ADDR, [0x00, 0x00, 0x00])
+        await self._write_ext_register(_ZONE_HOLIDAY_END_TIME_ADDR, [0x00, 0x00, 0x00])
+        await self._write_ext_register(_ZONE_HOLIDAY_START_DATE_ADDR, start_date_payload)
 
     async def _cancel_away(self) -> None:
-        """Cancel away/holiday mode by writing sentinel dates."""
-        if self.preset_mode != "away":
+        """Cancel away/holiday mode by writing sentinel dates.
+
+        Checks both preset token and holiday date presence to avoid
+        missing cancellation when coordinator state is stale.
+        """
+        config = self._zone_config()
+        has_holiday_dates = bool(
+            config.get("holidayStartDate") or config.get("holidayEndDate")
+        )
+        if self.preset_mode != "away" and not has_holiday_dates:
             return
         await self._write_ext_register(_ZONE_HOLIDAY_START_DATE_ADDR, list(_HOLIDAY_SENTINEL_DATE))
         await self._write_ext_register(_ZONE_HOLIDAY_END_DATE_ADDR, list(_HOLIDAY_SENTINEL_DATE))
