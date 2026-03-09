@@ -470,6 +470,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     vr71_device_id = data.get("vr71_device_id")
     via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
     zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
+    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
@@ -647,6 +648,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
                 )
             elif group == 0x0C:
+                # ADR-001: suppress redundant sensors for merged B524 function modules.
+                if bus_key in b524_merge_targets:
+                    continue
                 for key, label in [
                     ("deviceClassAddress", "Device Class Address"),
                     ("hardwareIdentifier", "Hardware Identifier"),

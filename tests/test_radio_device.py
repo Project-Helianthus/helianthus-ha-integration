@@ -56,6 +56,7 @@ def _ensure_homeassistant_stubs() -> None:
         class _BinarySensorDeviceClass:
             RUNNING = "running"
             PROBLEM = "problem"
+            OPENING = "opening"
 
         binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
@@ -182,6 +183,7 @@ def _base_payload(radio_devices: list[dict]) -> dict:
         "adapter_device_id": ("helianthus", "adapter-entry-1"),
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
         "regulator_manufacturer": "Vaillant",
+        "b524_merge_targets": {},
     }
 
 
@@ -336,3 +338,179 @@ def test_radio_zone_candidates_update_on_reassignment() -> None:
     )
     assert 1 in coordinator.data["radioZoneCandidates"]
     assert 0 not in coordinator.data["radioZoneCandidates"]
+
+
+# ---------------------------------------------------------------------------
+# ADR-001: B524 function-module merge predicate tests
+# ---------------------------------------------------------------------------
+
+_VR71_BUS_DEVICE_ID = ("helianthus", "entry-1-bus-VR_71-26-5904-0100")
+
+
+def _merge_payload(radio_devices: list[dict], merge_targets: dict[str, tuple[str, str]] | None = None) -> dict:
+    """Payload helper with b524_merge_targets support."""
+    p = _base_payload(radio_devices)
+    if merge_targets is not None:
+        p["b524_merge_targets"] = merge_targets
+    return p
+
+
+def test_adr001_merged_group_0c_sensor_entities_suppressed() -> None:
+    """ADR-001 CE-positive: group 0x0C with matching bus device -> sensors suppressed."""
+    radio_devices = [
+        {
+            "group": 0x0C,
+            "instance": 1,
+            "radioBusKey": "g0c-i01",
+            "deviceClassAddress": 38,
+            "deviceConnected": True,
+            "hardwareIdentifier": 0x1704,
+            "staleCycles": 0,
+        },
+    ]
+    merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
+    hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    radio_sensor_uids = {
+        e._attr_unique_id
+        for e in entities
+        if isinstance(e, sensor_platform.HelianthusRadioSensor)
+    }
+    # Redundant sensors must NOT be created for merged slots.
+    assert "entry-1-radio-0c-01-sensor-deviceClassAddress" not in radio_sensor_uids
+    assert "entry-1-radio-0c-01-sensor-hardwareIdentifier" not in radio_sensor_uids
+
+
+def test_adr001_unmerged_group_0c_sensor_entities_created() -> None:
+    """ADR-001 CE-3: group 0x0C with NO matching bus device -> sensors created normally."""
+    radio_devices = [
+        {
+            "group": 0x0C,
+            "instance": 2,
+            "radioBusKey": "g0c-i02",
+            "deviceClassAddress": 0x99,
+            "deviceConnected": False,
+            "hardwareIdentifier": 0x2233,
+            "staleCycles": 0,
+        },
+    ]
+    # No merge targets — bus device at 0x99 doesn't exist.
+    hass = _FakeHass(_merge_payload(radio_devices, {}))
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    radio_sensor_uids = {
+        e._attr_unique_id
+        for e in entities
+        if isinstance(e, sensor_platform.HelianthusRadioSensor)
+    }
+    assert "entry-1-radio-0c-02-sensor-deviceClassAddress" in radio_sensor_uids
+    assert "entry-1-radio-0c-02-sensor-hardwareIdentifier" in radio_sensor_uids
+
+
+def test_adr001_merged_binary_sensor_reparented_to_bus_device() -> None:
+    """ADR-001: Device Connected entity for merged group 0x0C -> parented to bus device."""
+    radio_devices = [
+        {
+            "group": 0x0C,
+            "instance": 1,
+            "radioBusKey": "g0c-i01",
+            "deviceClassAddress": 38,
+            "deviceConnected": True,
+            "staleCycles": 0,
+        },
+    ]
+    merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
+    hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    connected = [
+        e for e in entities
+        if isinstance(e, binary_sensor_platform.HelianthusRadioConnectedBinarySensor)
+        and e._group == 0x0C and e._instance == 1
+    ]
+    assert len(connected) == 1
+    entity = connected[0]
+    # Must be parented to bus device, not to radio device.
+    assert entity._radio_device_id == _VR71_BUS_DEVICE_ID
+    # Must be labelled "B524 Connected" when merged.
+    assert entity._attr_name == "B524 Connected"
+
+
+def test_adr001_unmerged_binary_sensor_stays_on_radio_device() -> None:
+    """ADR-001 CE-1: group 0x09 -> binary sensor stays on radio device (no merge)."""
+    radio_devices = [
+        {
+            "group": 0x09,
+            "instance": 1,
+            "radioBusKey": "g09-i01",
+            "deviceClassAddress": 0x15,
+            "deviceConnected": True,
+            "staleCycles": 0,
+        },
+    ]
+    hass = _FakeHass(_merge_payload(radio_devices, {}))
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    connected = [
+        e for e in entities
+        if isinstance(e, binary_sensor_platform.HelianthusRadioConnectedBinarySensor)
+        and e._group == 0x09 and e._instance == 1
+    ]
+    assert len(connected) == 1
+    entity = connected[0]
+    # Must stay on radio device, NOT merged into BASV2.
+    expected_radio_id = ("helianthus", "entry-1-radio-g09-i01")
+    assert entity._radio_device_id == expected_radio_id
+    assert entity._attr_name == "Device Connected"
+
+
+def test_adr001_idempotency_multiple_runs_same_result() -> None:
+    """ADR-001 A7: running setup twice produces identical entity sets."""
+    radio_devices = [
+        {
+            "group": 0x0C,
+            "instance": 1,
+            "radioBusKey": "g0c-i01",
+            "deviceClassAddress": 38,
+            "deviceConnected": True,
+            "hardwareIdentifier": 0x1704,
+            "staleCycles": 0,
+        },
+        {
+            "group": 0x09,
+            "instance": 1,
+            "radioBusKey": "g09-i01",
+            "deviceClassAddress": 0x15,
+            "deviceConnected": True,
+            "receptionStrength": 7,
+            "roomTemperatureC": 21.5,
+            "roomHumidityPct": 45.0,
+            "staleCycles": 0,
+        },
+    ]
+    merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
+
+    def run_once():
+        hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
+        entry = _FakeEntry("entry-1")
+        sensor_entities: list = []
+        binary_entities: list = []
+        asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
+        asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, binary_entities.extend))
+        sensor_uids = sorted(e._attr_unique_id for e in sensor_entities if hasattr(e, "_attr_unique_id"))
+        binary_uids = sorted(e._attr_unique_id for e in binary_entities if hasattr(e, "_attr_unique_id"))
+        return sensor_uids, binary_uids
+
+    first_sensors, first_binaries = run_once()
+    second_sensors, second_binaries = run_once()
+    assert first_sensors == second_sensors
+    assert first_binaries == second_binaries
