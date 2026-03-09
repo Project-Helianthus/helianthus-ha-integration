@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 # Stub homeassistant modules before importing calendar.py
 ha = types.ModuleType("homeassistant")
@@ -57,10 +57,17 @@ ha_config_entries.ConfigEntry = _ConfigEntry
 ha_core.HomeAssistant = _HomeAssistant
 ha_helpers_entity_platform.AddEntitiesCallback = type(None)
 
+ha_util = types.ModuleType("homeassistant.util")
+ha_util_dt = types.ModuleType("homeassistant.util.dt")
+ha_util_dt.DEFAULT_TIME_ZONE = timezone.utc
+ha_util_dt.now = lambda: datetime.now(timezone.utc)
+ha_util.dt = ha_util_dt
+
 ha.core = ha_core
 ha.helpers = ha_helpers
 ha.config_entries = ha_config_entries
 ha.components = ha_components
+ha.util = ha_util
 ha_helpers.update_coordinator = ha_helpers_update_coordinator
 ha_helpers.entity_platform = ha_helpers_entity_platform
 ha_helpers.device_registry = ha_helpers_device_registry
@@ -75,6 +82,8 @@ sys.modules.setdefault("homeassistant.helpers.entity_platform", ha_helpers_entit
 sys.modules.setdefault("homeassistant.helpers.device_registry", ha_helpers_device_registry)
 sys.modules.setdefault("homeassistant.components", ha_components)
 sys.modules.setdefault("homeassistant.components.calendar", ha_calendar)
+sys.modules.setdefault("homeassistant.util", ha_util)
+sys.modules.setdefault("homeassistant.util.dt", ha_util_dt)
 
 from custom_components.helianthus.calendar import HelianthusScheduleCalendar
 
@@ -156,8 +165,8 @@ def test_make_event_with_temperature() -> None:
 
     assert event is not None
     assert event.summary == "Heating 22.5°C"
-    assert event.start == datetime(2026, 3, 9, 6, 0)
-    assert event.end == datetime(2026, 3, 9, 22, 0)
+    assert event.start == datetime(2026, 3, 9, 6, 0, tzinfo=timezone.utc)
+    assert event.end == datetime(2026, 3, 9, 22, 0, tzinfo=timezone.utc)
 
 
 def test_make_event_24h_end() -> None:
@@ -170,8 +179,8 @@ def test_make_event_24h_end() -> None:
 
     assert event is not None
     assert event.summary == "DHW"
-    assert event.start == datetime(2026, 3, 9, 0, 0)
-    assert event.end == datetime(2026, 3, 10, 0, 0)
+    assert event.start == datetime(2026, 3, 9, 0, 0, tzinfo=timezone.utc)
+    assert event.end == datetime(2026, 3, 10, 0, 0, tzinfo=timezone.utc)
 
 
 def test_make_event_zero_duration_returns_none() -> None:
