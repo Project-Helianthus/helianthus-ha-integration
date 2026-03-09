@@ -1258,8 +1258,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = state_class
         if entity_category is not None:
             self._attr_entity_category = entity_category
-        if icon is not None:
-            self._attr_icon = icon
+        self._attr_icon = icon
         self._attr_entity_registry_enabled_default = self._device_value_present()
 
     def _device(self) -> dict[str, Any] | None:
