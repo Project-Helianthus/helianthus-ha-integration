@@ -375,8 +375,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
         for field, key in [
             ("quick_veto", "quickVeto"),
-            ("quick_veto_setpoint_c", "quickVetoSetpointC"),
-            ("quick_veto_duration_h", "quickVetoDurationH"),
+            ("quick_veto_setpoint_c", "quickVetoSetpoint"),
+            ("quick_veto_duration_h", "quickVetoDuration"),
             ("quick_veto_expiry", "quickVetoExpiry"),
         ]:
             value = config.get(key)
@@ -446,7 +446,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         config = self._zone_config()
         temp = config.get("targetTempC")
         if temp is None:
-            temp = config.get("quickVetoSetpointC")
+            temp = config.get("quickVetoSetpoint")
         if temp is None:
             temp = 20.0
         temp = max(5.0, min(30.0, float(temp)))

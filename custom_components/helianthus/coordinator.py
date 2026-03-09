@@ -192,8 +192,8 @@ query Semantic {
       associatedCircuit
       roomTemperatureZoneMapping
       quickVeto
-      quickVetoSetpointC
-      quickVetoDurationH
+      quickVetoSetpoint
+      quickVetoDuration
       quickVetoExpiry
     }
   }
@@ -287,7 +287,7 @@ query Semantic {
 }
 """
 
-_QV_FIELDS = ["quickVeto", "quickVetoSetpointC", "quickVetoDurationH", "quickVetoExpiry"]
+_QV_FIELDS = ["quickVeto", "quickVetoSetpoint", "quickVetoDuration", "quickVetoExpiry"]
 _SEMANTIC_RECOVERABLE_FIELDS = _QV_FIELDS + ["roomTemperatureZoneMapping"]
 
 QUERY_CIRCUITS = """

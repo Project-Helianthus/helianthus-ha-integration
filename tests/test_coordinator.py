@@ -710,7 +710,7 @@ def _semantic_payload(**config_overrides: object) -> dict:
 
 def test_semantic_full_query_succeeds() -> None:
     payload = _semantic_payload(
-        quickVeto=False, quickVetoSetpointC=16.0, quickVetoDurationH=3.0
+        quickVeto=False, quickVetoSetpoint=16.0, quickVetoDuration=3.0
     )
     client = _ScriptedClient([payload])
     coordinator = _build_semantic_coordinator(client)

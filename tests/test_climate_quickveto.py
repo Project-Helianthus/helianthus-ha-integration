@@ -156,9 +156,9 @@ def _make_entity(
         "quickVeto": qv_active,
     }
     if qv_setpoint is not None:
-        config["quickVetoSetpointC"] = qv_setpoint
+        config["quickVetoSetpoint"] = qv_setpoint
     if qv_duration is not None:
-        config["quickVetoDurationH"] = qv_duration
+        config["quickVetoDuration"] = qv_duration
     zone_data = {
         "zones": [
             {
