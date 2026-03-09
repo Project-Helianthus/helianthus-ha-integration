@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity, HVACMode
@@ -42,7 +43,14 @@ _ZONE_TARGET_TEMP_DESIRED_ADDR = 0x0022
 _ZONE_MODE_ADDR = 0x0006
 _ZONE_QUICK_VETO_TEMP_ADDR = 0x0008
 _ZONE_QUICK_VETO_DURATION_ADDR = 0x0026
+_ZONE_HOLIDAY_START_DATE_ADDR = 0x0003
+_ZONE_HOLIDAY_END_DATE_ADDR = 0x0004
+_ZONE_HOLIDAY_SETPOINT_ADDR = 0x0005
+_ZONE_HOLIDAY_END_TIME_ADDR = 0x0020
+_ZONE_HOLIDAY_START_TIME_ADDR = 0x0021
 _QUICK_VETO_DEFAULT_DURATION_H = 3.0
+_HOLIDAY_DEFAULT_DAYS = 1
+_HOLIDAY_SENTINEL_DATE = [0x01, 0x01, 0x0F]
 
 OPERATING_MODE_MAP = {
     "heating": HVACMode.HEAT,
@@ -63,6 +71,11 @@ _ZONE_WRITABLE_REGISTERS: dict[int, str] = {
     _ZONE_TARGET_TEMP_ADDR: "configuration.heating.manual_mode_setpoint",
     _ZONE_QUICK_VETO_TEMP_ADDR: "configuration.heating.quick_veto_temperature",
     _ZONE_QUICK_VETO_DURATION_ADDR: "configuration.heating.quick_veto_duration",
+    _ZONE_HOLIDAY_START_DATE_ADDR: "configuration.heating.holiday_start_date",
+    _ZONE_HOLIDAY_END_DATE_ADDR: "configuration.heating.holiday_end_date",
+    _ZONE_HOLIDAY_SETPOINT_ADDR: "configuration.heating.holiday_setpoint",
+    _ZONE_HOLIDAY_END_TIME_ADDR: "configuration.heating.holiday_end_time",
+    _ZONE_HOLIDAY_START_TIME_ADDR: "configuration.heating.holiday_start_time",
 }
 
 _ROOM_TEMPERATURE_ZONE_MAPPING_TEXT = {
@@ -378,6 +391,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             ("quick_veto_setpoint_c", "quickVetoSetpoint"),
             ("quick_veto_duration_h", "quickVetoDuration"),
             ("quick_veto_expiry", "quickVetoExpiry"),
+            ("holiday_start_date", "holidayStartDate"),
+            ("holiday_end_date", "holidayEndDate"),
+            ("holiday_setpoint_c", "holidaySetpoint"),
+            ("holiday_start_time", "holidayStartTime"),
+            ("holiday_end_time", "holidayEndTime"),
         ]:
             value = config.get(key)
             if value is not None:
@@ -430,15 +448,17 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if token not in ALLOWED_ZONE_PRESETS:
             raise HomeAssistantError(f"Unsupported preset mode: {preset_mode}")
         if token == "schedule":
+            await self._cancel_away()
             await self._write_ext_register(_ZONE_MODE_ADDR, [1, 0x00])
         elif token == "manual":
+            await self._cancel_away()
             await self._write_ext_register(_ZONE_MODE_ADDR, [2, 0x00])
         elif token == "quickveto":
             await self._activate_quick_veto()
+        elif token == "away":
+            await self._activate_away()
         else:
-            raise HomeAssistantError(
-                "Preset write blocked: away requires holiday mode registers"
-            )
+            raise HomeAssistantError(f"Unsupported preset mode: {preset_mode}")
         await self.coordinator.async_request_refresh()
 
     async def _activate_quick_veto(self) -> None:
@@ -455,6 +475,31 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         duration_payload = list(struct.pack("<f", duration))
         await self._write_ext_register(_ZONE_QUICK_VETO_TEMP_ADDR, temp_payload)
         await self._write_ext_register(_ZONE_QUICK_VETO_DURATION_ADDR, duration_payload)
+
+    async def _activate_away(self) -> None:
+        """Activate away/holiday mode with start=today, end=today+N days."""
+        config = self._zone_config()
+        setpoint = config.get("holidaySetpoint")
+        if setpoint is None:
+            setpoint = 10.0
+        setpoint = max(5.0, min(30.0, float(setpoint)))
+        today = date.today()
+        end = today + timedelta(days=_HOLIDAY_DEFAULT_DAYS)
+        start_date_payload = [today.day, today.month, today.year - 2000]
+        end_date_payload = [end.day, end.month, end.year - 2000]
+        setpoint_payload = list(struct.pack("<f", setpoint))
+        await self._write_ext_register(_ZONE_HOLIDAY_START_DATE_ADDR, start_date_payload)
+        await self._write_ext_register(_ZONE_HOLIDAY_END_DATE_ADDR, end_date_payload)
+        await self._write_ext_register(_ZONE_HOLIDAY_SETPOINT_ADDR, setpoint_payload)
+        await self._write_ext_register(_ZONE_HOLIDAY_START_TIME_ADDR, [0x00, 0x00])
+        await self._write_ext_register(_ZONE_HOLIDAY_END_TIME_ADDR, [0x00, 0x00])
+
+    async def _cancel_away(self) -> None:
+        """Cancel away/holiday mode by writing sentinel dates."""
+        if self.preset_mode != "away":
+            return
+        await self._write_ext_register(_ZONE_HOLIDAY_START_DATE_ADDR, list(_HOLIDAY_SENTINEL_DATE))
+        await self._write_ext_register(_ZONE_HOLIDAY_END_DATE_ADDR, list(_HOLIDAY_SENTINEL_DATE))
 
     async def _write_ext_register(self, addr: int, data: list[int]) -> None:
         if addr not in _ZONE_WRITABLE_REGISTERS:

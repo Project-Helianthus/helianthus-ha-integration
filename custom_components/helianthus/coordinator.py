@@ -195,6 +195,55 @@ query Semantic {
       quickVetoSetpoint
       quickVetoDuration
       quickVetoExpiry
+      holidayStartDate
+      holidayEndDate
+      holidaySetpoint
+      holidayStartTime
+      holidayEndTime
+    }
+  }
+  dhw {
+    state {
+      currentTempC
+      specialFunction
+      heatingDemandPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      holidayStartDate
+      holidayEndDate
+    }
+  }
+}
+"""
+
+QUERY_SEMANTIC_NO_HOLIDAY = """
+query Semantic {
+  zones {
+    id
+    name
+    state {
+      currentTempC
+      currentHumidityPct
+      hvacAction
+      specialFunction
+      heatingDemandPct
+      valvePositionPct
+    }
+    config {
+      operatingMode
+      preset
+      targetTempC
+      allowedModes
+      circuitType
+      associatedCircuit
+      roomTemperatureZoneMapping
+      quickVeto
+      quickVetoSetpoint
+      quickVetoDuration
+      quickVetoExpiry
     }
   }
   dhw {
@@ -287,8 +336,9 @@ query Semantic {
 }
 """
 
+_HOLIDAY_FIELDS = ["holidayStartDate", "holidayEndDate", "holidaySetpoint", "holidayStartTime", "holidayEndTime"]
 _QV_FIELDS = ["quickVeto", "quickVetoSetpoint", "quickVetoDuration", "quickVetoExpiry"]
-_SEMANTIC_RECOVERABLE_FIELDS = _QV_FIELDS + ["roomTemperatureZoneMapping"]
+_SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["roomTemperatureZoneMapping"]
 
 QUERY_CIRCUITS = """
 query Circuits {
@@ -585,7 +635,7 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
 
     async def _async_update_data(self) -> dict[str, Any]:
-        queries = [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+        queries = [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
         payload = None
         for query in queries:
             try:
