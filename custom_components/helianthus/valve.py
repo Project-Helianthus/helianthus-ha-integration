@@ -82,6 +82,18 @@ class HelianthusReadOnlyValve(CoordinatorEntity, ValveEntity):
     _attr_supported_features = ValveEntityFeature(0)
     _attr_reports_position = True
 
+    @property
+    def icon(self) -> str:
+        """Dynamic icon based on valve position (ADR-026)."""
+        pos = self.current_valve_position
+        if pos is None:
+            return "mdi:valve"
+        if pos == 0:
+            return "mdi:valve-closed"
+        if pos >= 100:
+            return "mdi:valve-open"
+        return "mdi:valve"
+
     async def async_open_valve(self, **kwargs: Any) -> None:
         raise HomeAssistantError("Helianthus valve entities are read-only")
 
@@ -121,7 +133,6 @@ def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
 class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
     """Read-only diverter valve position under the Hydraulics sub-device."""
 
-    _attr_icon = "mdi:valve"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -170,8 +181,6 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
 
 class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     """Read-only circuit mixing valve position."""
-
-    _attr_icon = "mdi:valve"
 
     def __init__(
         self,
@@ -227,8 +236,6 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
 
 class HelianthusZoneValve(HelianthusReadOnlyValve):
     """Read-only zone valve status (0/100)."""
-
-    _attr_icon = "mdi:valve"
 
     def __init__(
         self,

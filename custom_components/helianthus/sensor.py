@@ -48,6 +48,7 @@ class CircuitSensorField:
     entity_category: str | None = None
     cast_int: bool = False
     include_circuit_attributes: bool = False
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,7 @@ CIRCUIT_SENSOR_FIELDS = [
         state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         cast_int=True,
+        icon="mdi:counter",
     ),
 ]
 
@@ -298,6 +300,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "dhwStarts",
@@ -305,18 +308,21 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "deactivationsIFC",
         "label": "Deactivations IFC",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
     {
         "key": "deactivationsTemplimiter",
         "label": "Deactivations Temperature Limiter",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
+        "icon": "mdi:counter",
     },
 ]
 
@@ -1004,6 +1010,8 @@ class HelianthusBoilerDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field["state_class"]
         if field.get("entity_category") is not None:
             self._attr_entity_category = field["entity_category"]
+        if field.get("icon") is not None:
+            self._attr_icon = field["icon"]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1059,6 +1067,8 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = field.state_class
         if field.entity_category is not None:
             self._attr_entity_category = field.entity_category
+        if field.icon is not None:
+            self._attr_icon = field.icon
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
