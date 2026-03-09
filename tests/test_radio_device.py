@@ -341,7 +341,7 @@ def test_radio_zone_candidates_update_on_reassignment() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ADR-001: B524 function-module merge predicate tests
+# ADR-027: B524 function-module merge predicate tests
 # ---------------------------------------------------------------------------
 
 _VR71_BUS_DEVICE_ID = ("helianthus", "entry-1-bus-VR_71-26-5904-0100")
@@ -355,8 +355,8 @@ def _merge_payload(radio_devices: list[dict], merge_targets: dict[str, tuple[str
     return p
 
 
-def test_adr001_merged_group_0c_sensor_entities_suppressed() -> None:
-    """ADR-001 CE-positive: group 0x0C with matching bus device -> sensors suppressed."""
+def test_adr027_merged_group_0c_sensor_entities_suppressed() -> None:
+    """ADR-027 CE-positive: group 0x0C with matching bus device -> sensors suppressed."""
     radio_devices = [
         {
             "group": 0x0C,
@@ -384,8 +384,8 @@ def test_adr001_merged_group_0c_sensor_entities_suppressed() -> None:
     assert "entry-1-radio-0c-01-sensor-hardwareIdentifier" not in radio_sensor_uids
 
 
-def test_adr001_unmerged_group_0c_sensor_entities_created() -> None:
-    """ADR-001 CE-3: group 0x0C with NO matching bus device -> sensors created normally."""
+def test_adr027_unmerged_group_0c_sensor_entities_created() -> None:
+    """ADR-027 CE-3: group 0x0C with NO matching bus device -> sensors created normally."""
     radio_devices = [
         {
             "group": 0x0C,
@@ -412,8 +412,8 @@ def test_adr001_unmerged_group_0c_sensor_entities_created() -> None:
     assert "entry-1-radio-0c-02-sensor-hardwareIdentifier" in radio_sensor_uids
 
 
-def test_adr001_merged_binary_sensor_reparented_to_bus_device() -> None:
-    """ADR-001: Device Connected entity for merged group 0x0C -> parented to bus device."""
+def test_adr027_merged_binary_sensor_reparented_to_bus_device() -> None:
+    """ADR-027: Device Connected entity for merged group 0x0C -> parented to bus device."""
     radio_devices = [
         {
             "group": 0x0C,
@@ -443,8 +443,8 @@ def test_adr001_merged_binary_sensor_reparented_to_bus_device() -> None:
     assert entity._attr_name == "B524 Connected"
 
 
-def test_adr001_unmerged_binary_sensor_stays_on_radio_device() -> None:
-    """ADR-001 CE-1: group 0x09 -> binary sensor stays on radio device (no merge)."""
+def test_adr027_unmerged_binary_sensor_stays_on_radio_device() -> None:
+    """ADR-027 CE-1: group 0x09 -> binary sensor stays on radio device (no merge)."""
     radio_devices = [
         {
             "group": 0x09,
@@ -473,8 +473,8 @@ def test_adr001_unmerged_binary_sensor_stays_on_radio_device() -> None:
     assert entity._attr_name == "Device Connected"
 
 
-def test_adr001_idempotency_multiple_runs_same_result() -> None:
-    """ADR-001 A7: running setup twice produces identical entity sets."""
+def test_adr027_idempotency_multiple_runs_same_result() -> None:
+    """ADR-027 A7: running setup twice produces identical entity sets."""
     radio_devices = [
         {
             "group": 0x0C,

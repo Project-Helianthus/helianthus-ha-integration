@@ -600,6 +600,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if slot is None or bus_key is None:
                 continue
             group, instance = slot
+            # ADR-027: skip all sensors for merged B524 function-module slots.
+            if bus_key in b524_merge_targets:
+                continue
             class_address = _parse_optional_int(radio.get("deviceClassAddress"))
             is_room = class_address in _RADIO_ROOM_CLASSES
             radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
@@ -654,9 +657,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
                 )
             elif group == 0x0C:
-                # ADR-001: suppress redundant sensors for merged B524 function modules.
-                if bus_key in b524_merge_targets:
-                    continue
                 for key, label in [
                     ("deviceClassAddress", "Device Class Address"),
                     ("hardwareIdentifier", "Hardware Identifier"),

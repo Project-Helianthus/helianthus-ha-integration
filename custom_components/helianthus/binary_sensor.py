@@ -277,7 +277,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if slot is None or bus_key is None:
                 continue
             group, instance = slot
-            # ADR-001: re-parent to physical bus device for merged B524 slots.
+            # ADR-027: re-parent to physical bus device for merged B524 slots.
             merge_target = b524_merge_targets.get(bus_key)
             target_device_id = merge_target if merge_target is not None else radio_device_identifier(entry.entry_id, bus_key)
             entities.append(
