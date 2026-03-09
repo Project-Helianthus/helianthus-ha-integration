@@ -40,6 +40,9 @@ _ZONE_GROUP = 0x03
 _ZONE_TARGET_TEMP_ADDR = 0x0014
 _ZONE_TARGET_TEMP_DESIRED_ADDR = 0x0022
 _ZONE_MODE_ADDR = 0x0006
+_ZONE_QUICK_VETO_TEMP_ADDR = 0x0008
+_ZONE_QUICK_VETO_DURATION_ADDR = 0x0026
+_QUICK_VETO_DEFAULT_DURATION_H = 3.0
 
 OPERATING_MODE_MAP = {
     "heating": HVACMode.HEAT,
@@ -58,6 +61,8 @@ _ZONE_WRITABLE_REGISTERS: dict[int, str] = {
     _ZONE_MODE_ADDR: "configuration.heating.operation_mode",
     _ZONE_TARGET_TEMP_DESIRED_ADDR: "configuration.heating.desired_setpoint",
     _ZONE_TARGET_TEMP_ADDR: "configuration.heating.manual_mode_setpoint",
+    _ZONE_QUICK_VETO_TEMP_ADDR: "configuration.heating.quick_veto_temperature",
+    _ZONE_QUICK_VETO_DURATION_ADDR: "configuration.heating.quick_veto_duration",
 }
 
 _ROOM_TEMPERATURE_ZONE_MAPPING_TEXT = {
@@ -368,6 +373,16 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             else None
         )
 
+        for field, key in [
+            ("quick_veto", "quickVeto"),
+            ("quick_veto_setpoint_c", "quickVetoSetpoint"),
+            ("quick_veto_duration_h", "quickVetoDuration"),
+            ("quick_veto_expiry", "quickVetoExpiry"),
+        ]:
+            value = config.get(key)
+            if value is not None:
+                attrs[field] = value
+
         selected = self._selected_radio_candidate()
         if selected is not None:
             slot = (
@@ -389,8 +404,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             raise HomeAssistantError("temperature is required")
         payload = list(struct.pack("<f", float(temperature)))
-        await self._write_ext_register(_ZONE_TARGET_TEMP_DESIRED_ADDR, payload)
-        await self._write_ext_register(_ZONE_TARGET_TEMP_ADDR, payload)
+        if self.preset_mode == "quickveto":
+            await self._write_ext_register(_ZONE_QUICK_VETO_TEMP_ADDR, payload)
+        else:
+            await self._write_ext_register(_ZONE_TARGET_TEMP_DESIRED_ADDR, payload)
+            await self._write_ext_register(_ZONE_TARGET_TEMP_ADDR, payload)
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -415,11 +433,28 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             await self._write_ext_register(_ZONE_MODE_ADDR, [1, 0x00])
         elif token == "manual":
             await self._write_ext_register(_ZONE_MODE_ADDR, [2, 0x00])
+        elif token == "quickveto":
+            await self._activate_quick_veto()
         else:
             raise HomeAssistantError(
-                "Preset write blocked: quickveto/away require non-configuration registers"
+                "Preset write blocked: away requires holiday mode registers"
             )
         await self.coordinator.async_request_refresh()
+
+    async def _activate_quick_veto(self) -> None:
+        """Activate quick veto with the current target temperature and default duration."""
+        config = self._zone_config()
+        temp = config.get("targetTempC")
+        if temp is None:
+            temp = config.get("quickVetoSetpoint")
+        if temp is None:
+            temp = 20.0
+        temp = max(5.0, min(30.0, float(temp)))
+        duration = _QUICK_VETO_DEFAULT_DURATION_H
+        temp_payload = list(struct.pack("<f", temp))
+        duration_payload = list(struct.pack("<f", duration))
+        await self._write_ext_register(_ZONE_QUICK_VETO_TEMP_ADDR, temp_payload)
+        await self._write_ext_register(_ZONE_QUICK_VETO_DURATION_ADDR, duration_payload)
 
     async def _write_ext_register(self, addr: int, data: list[int]) -> None:
         if addr not in _ZONE_WRITABLE_REGISTERS:
