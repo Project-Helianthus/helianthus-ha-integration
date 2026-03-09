@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .device_ids import zone_identifier, dhw_identifier
@@ -148,7 +149,7 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
         if program is None:
             return None
 
-        now = datetime.now()
+        now = dt_util.now()
         today = now.date()
         weekday_index = today.weekday()
         slots = self._get_day_slots(program, weekday_index)
@@ -156,23 +157,9 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
         for slot in slots:
             if not isinstance(slot, dict):
                 continue
-            start_h = slot.get("startHour", 0)
-            start_m = slot.get("startMinute", 0)
-            end_h = slot.get("endHour", 0)
-            end_m = slot.get("endMinute", 0)
-
-            start_dt = datetime.combine(today, datetime.min.time().replace(
-                hour=min(start_h, 23), minute=min(start_m, 59)
-            ))
-            if end_h >= 24:
-                end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time())
-            else:
-                end_dt = datetime.combine(today, datetime.min.time().replace(
-                    hour=min(end_h, 23), minute=min(end_m, 59)
-                ))
-
-            if start_dt <= now < end_dt:
-                return self._make_event(slot, today)
+            ev = self._make_event(slot, today)
+            if ev is not None and ev.start <= now < ev.end:
+                return ev
 
         return None
 
@@ -215,15 +202,18 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
         end_m = slot.get("endMinute", 0)
         temp_c = slot.get("temperatureC")
 
+        tz = dt_util.DEFAULT_TIME_ZONE
         start_dt = datetime.combine(day, datetime.min.time().replace(
             hour=min(start_h, 23), minute=min(start_m, 59)
-        ))
+        ), tzinfo=tz)
         if end_h >= 24:
-            end_dt = datetime.combine(day + timedelta(days=1), datetime.min.time())
+            end_dt = datetime.combine(
+                day + timedelta(days=1), datetime.min.time(), tzinfo=tz
+            )
         else:
             end_dt = datetime.combine(day, datetime.min.time().replace(
                 hour=min(end_h, 23), minute=min(end_m, 59)
-            ))
+            ), tzinfo=tz)
 
         if start_dt >= end_dt:
             return None
