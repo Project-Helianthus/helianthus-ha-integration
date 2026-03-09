@@ -44,6 +44,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_FM5,
     QUERY_RADIO_DEVICES,
     QUERY_SEMANTIC,
+    QUERY_SEMANTIC_NO_HOLIDAY,
     QUERY_SEMANTIC_NO_QV,
     QUERY_SEMANTIC_LEGACY,
     QUERY_STATUS,
@@ -722,9 +723,29 @@ def test_semantic_full_query_succeeds() -> None:
     assert client.calls == [QUERY_SEMANTIC]
 
 
+def test_semantic_falls_back_to_no_holiday() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "holidayStartDate" on type "ZoneConfig".'}]
+            ),
+            _semantic_payload(),
+        ]
+    )
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert len(result["zones"]) == 1
+    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY]
+
+
 def test_semantic_falls_back_to_no_qv() -> None:
     client = _ScriptedClient(
         [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+            ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
             ),
@@ -736,12 +757,15 @@ def test_semantic_falls_back_to_no_qv() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV]
+    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV]
 
 
 def test_semantic_falls_back_to_legacy() -> None:
     client = _ScriptedClient(
         [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+            ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
             ),
@@ -760,7 +784,7 @@ def test_semantic_falls_back_to_legacy() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
 
 
 def test_semantic_returns_empty_on_zones_missing() -> None:
