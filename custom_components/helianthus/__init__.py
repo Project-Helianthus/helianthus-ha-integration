@@ -719,6 +719,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     def cleanup_obsolete_devices(reason: str) -> None:
+        # Remove stale calendar entities with old zone_N unique_id format
+        # (pre-fix: B555 zone indices were used directly instead of semantic zone IDs).
+        _stale_schedule_re = re.compile(
+            rf"^{re.escape(entry.entry_id)}-schedule-zone_\d+-"
+        )
+        stale_removed = 0
+        for entity_entry in tuple(_entry_entities()):
+            uid = str(entity_entry.unique_id or "")
+            if _stale_schedule_re.match(uid):
+                entity_registry.async_remove(entity_entry.entity_id)
+                stale_removed += 1
+        if stale_removed:
+            _LOGGER.info(
+                "Helianthus cleanup removed %d stale schedule entities for entry %s (%s)",
+                stale_removed,
+                entry.entry_id,
+                reason,
+            )
+
         removed = 0
         for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
             identifier_pairs = _iter_identifier_pairs(device_entry.identifiers)
