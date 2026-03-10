@@ -175,6 +175,54 @@ def _is_stale_bus_identifier(token: str, entry_id: str, known_bus_devices: set[s
     return token[len(prefix) :] not in known_bus_devices
 
 
+def _bus_identifier_tokens_for_entry(identifiers: set[object], entry_id: str) -> tuple[str, ...]:
+    prefix = f"{entry_id}-bus-"
+    return tuple(
+        token
+        for identifier_domain, token in _iter_identifier_pairs(identifiers)
+        if identifier_domain == DOMAIN and token.startswith(prefix)
+    )
+
+
+def _select_bus_migration_target(
+    existing_devices: tuple[object, ...],
+    *,
+    entry_id: str,
+    stable_identifier: tuple[str, str],
+    manufacturer: str,
+    model_name: str,
+    serial_number: str | None,
+) -> object | None:
+    _, stable_token = stable_identifier
+    best: tuple[int, int, int, int, int, object] | None = None
+    for device_entry in existing_devices:
+        tokens = _bus_identifier_tokens_for_entry(getattr(device_entry, "identifiers", set()), entry_id)
+        if not tokens:
+            continue
+        if stable_token in tokens:
+            return device_entry
+        entry_manufacturer = _clean_label(getattr(device_entry, "manufacturer", None))
+        if entry_manufacturer and entry_manufacturer != manufacturer:
+            continue
+        entry_model = _clean_label(getattr(device_entry, "model", None))
+        entry_serial = _clean_label(getattr(device_entry, "serial_number", None))
+        serial_match = int(bool(serial_number and entry_serial and entry_serial == serial_number))
+        model_match = int(bool(entry_model and entry_model == model_name))
+        if not serial_match and not model_match:
+            continue
+        score = (
+            serial_match,
+            model_match,
+            int(bool(entry_serial)),
+            int(bool(getattr(device_entry, "area_id", None))),
+            -len(tokens),
+            device_entry,
+        )
+        if best is None or score > best:
+            best = score
+    return None if best is None else best[-1]
+
+
 def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
     pairs: list[tuple[str, str]] = []
     for identifier in identifiers:
@@ -310,6 +358,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     daemon_device_id = daemon_identifier(entry.entry_id)
     adapter_device_id = adapter_identifier(entry.entry_id)
+    existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -493,6 +542,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model_name = _canonical_bus_model_name(device)
 
         bus_device_id = bus_identifier(entry.entry_id, bus_device_key)
+        migration_target = _select_bus_migration_target(
+            existing_entry_devices,
+            entry_id=entry.entry_id,
+            stable_identifier=bus_device_id,
+            manufacturer=manufacturer,
+            model_name=model_name,
+            serial_number=_clean_label(serial_number),
+        )
+        if migration_target is not None:
+            update_kwargs: dict[str, object] = {
+                "merge_identifiers": {bus_device_id},
+                "manufacturer": manufacturer,
+                "model": model_name,
+                "name": device_name,
+                "via_device_id": adapter_device_id,
+            }
+            if serial_number:
+                update_kwargs["serial_number"] = str(serial_number)
+            if sw_version:
+                update_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
+            if hw_version:
+                update_kwargs["hw_version"] = hw_version
+            device_registry.async_update_device(migration_target.id, **update_kwargs)
+
         device_kwargs = {
             "config_entry_id": entry.entry_id,
             "identifiers": {bus_device_id},
