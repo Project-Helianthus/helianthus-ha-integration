@@ -577,22 +577,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if hw_version:
                 update_kwargs["hw_version"] = hw_version
             device_registry.async_update_device(migration_target.id, **update_kwargs)
-
-        device_kwargs = {
-            "config_entry_id": entry.entry_id,
-            "identifiers": {bus_device_id},
-            "manufacturer": manufacturer,
-            "model": model_name,
-            "name": device_name,
-            "via_device": adapter_device_id,
-        }
-        if serial_number:
-            device_kwargs["serial_number"] = str(serial_number)
-        if sw_version:
-            device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
-        if hw_version:
-            device_kwargs["hw_version"] = hw_version
-        device_registry.async_get_or_create(**device_kwargs)
+        else:
+            device_kwargs = {
+                "config_entry_id": entry.entry_id,
+                "identifiers": {bus_device_id},
+                "manufacturer": manufacturer,
+                "model": model_name,
+                "name": device_name,
+                "via_device": adapter_device_id,
+            }
+            if serial_number:
+                device_kwargs["serial_number"] = str(serial_number)
+            if sw_version:
+                device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
+            if hw_version:
+                device_kwargs["hw_version"] = hw_version
+            device_registry.async_get_or_create(**device_kwargs)
         bus_address_device_ids[address] = bus_device_id
 
         device_id_upper = str(device_id).upper()
