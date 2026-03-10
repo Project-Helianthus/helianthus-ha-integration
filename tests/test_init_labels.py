@@ -14,6 +14,7 @@ from custom_components.helianthus import (
     _parse_zone_schedule_helper_bindings,
     _select_bus_migration_target,
     _stable_bus_identity_model,
+    _stale_bus_address_unique_id,
     _zone_instance_from_id,
 )
 from types import SimpleNamespace
@@ -77,6 +78,30 @@ def test_is_stale_bus_identifier_flags_legacy_bus_device_for_cleanup() -> None:
         known_bus_devices,
     )
     assert not _is_stale_bus_identifier("entry-1-bus-VUW-08", "entry-1", known_bus_devices)
+
+
+def test_stale_bus_address_unique_id_flags_legacy_sensor_for_cleanup() -> None:
+    known_bus_devices = {"VUW-08", "VRC-720f/2-15"}
+    assert _stale_bus_address_unique_id(
+        "entry-1-bus-VUW-32CS/1-5-(N-INT2)-sn-21-22-01-0010024604-0001-005034-N9-ebus-address",
+        "entry-1",
+        known_bus_devices,
+    )
+    assert _stale_bus_address_unique_id(
+        "entry-1-bus-BAI00-08-7603-1201-ebus-address",
+        "entry-1",
+        known_bus_devices,
+    )
+    assert not _stale_bus_address_unique_id(
+        "entry-1-bus-VUW-08-ebus-address",
+        "entry-1",
+        known_bus_devices,
+    )
+    assert not _stale_bus_address_unique_id(
+        "entry-1-zone-zone-1-schedule-away",
+        "entry-1",
+        known_bus_devices,
+    )
 
 
 def test_bus_identifier_tokens_for_entry_filters_bus_tokens_only() -> None:

@@ -169,6 +169,21 @@ def _is_stale_bus_identifier(token: str, entry_id: str, known_bus_devices: set[s
     return token[len(prefix) :] not in known_bus_devices
 
 
+def _stale_bus_address_unique_id(
+    unique_id: str | None,
+    entry_id: str,
+    known_bus_devices: set[str],
+) -> bool:
+    if not unique_id:
+        return False
+    prefix = f"{entry_id}-bus-"
+    suffix = "-ebus-address"
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        return False
+    bus_device_key = unique_id[len(prefix) : -len(suffix)]
+    return bus_device_key not in known_bus_devices
+
+
 def _bus_identifier_tokens_for_entry(identifiers: set[object], entry_id: str) -> tuple[str, ...]:
     prefix = f"{entry_id}-bus-"
     return tuple(
@@ -832,6 +847,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unique_id = str(entity_entry.unique_id or "")
             remove_entry = False
             if entity_entry.domain in {"fan", "valve", "switch"}:
+                remove_entry = True
+            elif _stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
                 remove_entry = True
             elif entity_entry.domain == "number" and re.match(
                 rf"^{re.escape(entry.entry_id)}-cylinder-\d+-number-",
