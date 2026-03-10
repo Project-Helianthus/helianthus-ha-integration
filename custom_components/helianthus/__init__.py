@@ -1244,6 +1244,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Run stale cleanup again after platform setup so registry-backed entities
+    # created by prior installs are removed from the fully materialized registry.
+    cleanup_obsolete_entity_registry_entries()
     auto_enable_sparse_entities("post-platform setup")
     cleanup_obsolete_devices("post-platform setup")
 
