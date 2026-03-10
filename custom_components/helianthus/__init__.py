@@ -115,6 +115,18 @@ def _canonical_bus_model_name(device: dict) -> str:
     return f"{base_model} (eBUS: {ebus_code})"
 
 
+def _stable_bus_identity_model(device: dict) -> str:
+    device_id = _clean_label(device.get("deviceId"))
+    ebus_code = _normalized_ebus_code(device_id)
+    known = _KNOWN_BUS_MODELS.get(ebus_code)
+    if known:
+        return known
+    product_model = _clean_label(device.get("productModel"))
+    if product_model:
+        return product_model
+    return device_id or "unknown"
+
+
 def _parse_bus_address(value: object | None) -> int | None:
     if value is None:
         return None
@@ -154,6 +166,13 @@ def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> boo
         if _identifier_belongs_to_entry(token, entry_id):
             return True
     return False
+
+
+def _is_stale_bus_identifier(token: str, entry_id: str, known_bus_devices: set[str]) -> bool:
+    prefix = f"{entry_id}-bus-"
+    if not token.startswith(prefix):
+        return False
+    return token[len(prefix) :] not in known_bus_devices
 
 
 def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
@@ -357,7 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
-        model = _clean_label(device.get("productModel")) or _clean_label(device.get("deviceId"))
+        model = _stable_bus_identity_model(device)
         return build_bus_device_key(
             model=model,
             address=address,
@@ -802,6 +821,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"{entry.entry_id}-boiler-burner",
                     f"{entry.entry_id}-boiler-hydraulics",
                 }:
+                    remove_device = True
+                    break
+                if _is_stale_bus_identifier(token, entry.entry_id, known_bus_devices):
                     remove_device = True
                     break
                 if token.startswith(f"{entry.entry_id}-zone-"):

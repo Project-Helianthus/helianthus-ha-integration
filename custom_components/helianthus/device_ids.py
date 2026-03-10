@@ -96,23 +96,14 @@ def build_bus_device_key(
 ) -> str:
     """Return a stable identifier key for a physical eBUS device.
 
-    Identity priority: serial number, then MAC, then model+address+hw/sw fallback.
+    Physical device identity is stable `<model>-<addr>`.
+    Serial/MAC/HW/SW are metadata enrichment, not identity.
     """
 
     model_token = _token(model) if model else "unknown"
 
-    serial_token = _clean(serial_number)
-    if serial_token:
-        return f"{model_token}-sn-{_token(serial_token).upper()}"
-
-    mac_token = _normalized_mac(mac_address)
-    if mac_token:
-        return f"{model_token}-mac-{mac_token}"
-
     address_token = f"{address:02x}" if isinstance(address, int) else _token(address)
-    hw_token = _token(hardware_version)
-    sw_token = _token(software_version)
-    return f"{model_token}-{address_token}-{hw_token}-{sw_token}"
+    return f"{model_token}-{address_token}"
 
 
 def daemon_identifier(config_entry_id: str) -> tuple[str, str]:

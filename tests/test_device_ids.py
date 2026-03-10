@@ -22,51 +22,17 @@ from custom_components.helianthus.device_ids import (
 )
 
 
-def test_build_bus_device_key_prefers_serial() -> None:
-    first = build_bus_device_key(
-        model="BAI00",
-        address=0x08,
-        serial_number="ABC123",
-        mac_address="aa:bb:cc:dd:ee:ff",
-    )
-    second = build_bus_device_key(
-        model="VR_71",
-        address=0x26,
-        serial_number="abc123",
-        mac_address="11:22:33:44:55:66",
-    )
-    assert first == "BAI00-sn-ABC123"
-    assert second == "VR_71-sn-ABC123"
-
-
-def test_build_bus_device_key_prefers_mac_when_serial_missing() -> None:
+def test_build_bus_device_key_uses_stable_model_and_address_only() -> None:
     assert (
         build_bus_device_key(
             model="BASV2",
             address=0x15,
+            serial_number="ABC123",
             mac_address="AA:BB:CC:DD:EE:FF",
-        )
-        == "BASV2-mac-aabbccddeeff"
-    )
-    assert (
-        build_bus_device_key(
-            model="BASV2",
-            address=0x16,
-            mac_address="aa-bb-cc-dd-ee-ff",
-        )
-        == "BASV2-mac-aabbccddeeff"
-    )
-
-
-def test_build_bus_device_key_falls_back_to_model_address_hw_sw() -> None:
-    assert (
-        build_bus_device_key(
-            model="BASV2",
-            address=0x15,
             hardware_version="7",
             software_version="0125",
         )
-        == "BASV2-15-7-0125"
+        == "BASV2-15"
     )
 
 

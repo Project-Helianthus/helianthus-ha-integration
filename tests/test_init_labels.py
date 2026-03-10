@@ -6,9 +6,11 @@ from custom_components.helianthus import (
     _clean_label,
     _identifier_belongs_to_entry,
     _identifier_matches_any_entry,
+    _is_stale_bus_identifier,
     _iter_identifier_pairs,
     _parse_bus_address,
     _parse_zone_schedule_helper_bindings,
+    _stable_bus_identity_model,
     _zone_instance_from_id,
 )
 
@@ -40,6 +42,13 @@ def test_canonical_bus_model_name_includes_ebus_code() -> None:
     assert netx3 == "VR940f (eBUS: NETX3)"
 
 
+def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_payloads() -> None:
+    enriched = _stable_bus_identity_model({"deviceId": "BAI00", "productModel": "VUW 32CS/1-5 (N-INT2)"})
+    sparse = _stable_bus_identity_model({"deviceId": "BAI00"})
+    assert enriched == "VUW"
+    assert sparse == "VUW"
+
+
 def test_identifier_belongs_to_entry() -> None:
     assert _identifier_belongs_to_entry("daemon-entry-1", "entry-1")
     assert _identifier_belongs_to_entry("adapter-entry-1", "entry-1")
@@ -54,6 +63,16 @@ def test_identifier_matches_any_entry() -> None:
     assert _identifier_matches_any_entry("entry-2-energy", active)
     assert _identifier_matches_any_entry("entry-1-bus-VR_71-26", active)
     assert not _identifier_matches_any_entry("legacy-device", active)
+
+
+def test_is_stale_bus_identifier_flags_legacy_bus_device_for_cleanup() -> None:
+    known_bus_devices = {"VUW-08", "VRC-720f/2-15"}
+    assert _is_stale_bus_identifier(
+        "entry-1-bus-VUW-32CS/1-5-(N-INT2)-sn-21-22-01-0010024604-0001-005034-N9",
+        "entry-1",
+        known_bus_devices,
+    )
+    assert not _is_stale_bus_identifier("entry-1-bus-VUW-08", "entry-1", known_bus_devices)
 
 
 def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
