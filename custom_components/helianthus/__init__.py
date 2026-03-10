@@ -116,15 +116,9 @@ def _canonical_bus_model_name(device: dict) -> str:
 
 
 def _stable_bus_identity_model(device: dict) -> str:
-    device_id = _clean_label(device.get("deviceId"))
-    ebus_code = _normalized_ebus_code(device_id)
-    known = _KNOWN_BUS_MODELS.get(ebus_code)
-    if known:
-        return known
-    product_model = _clean_label(device.get("productModel"))
-    if product_model:
-        return product_model
-    return device_id or "unknown"
+    from .device_ids import stable_bus_identity_model
+
+    return stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
 
 
 def _parse_bus_address(value: object | None) -> int | None:
@@ -314,6 +308,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
+        stable_bus_identity_model,
         zone_identifier,
     )
     from .subscriptions import start_subscriptions
@@ -360,7 +355,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     adapter_device_id = adapter_identifier(entry.entry_id)
     existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
 
-    device_registry.async_get_or_create(
+    daemon_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={daemon_device_id},
         manufacturer="Helianthus",
@@ -368,7 +363,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="Helianthus Daemon",
     )
 
-    device_registry.async_get_or_create(
+    adapter_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={adapter_device_id},
         manufacturer="Helianthus",
@@ -376,6 +371,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="eBUS Adapter",
         via_device=daemon_device_id,
     )
+    adapter_registry_device_id = adapter_device_entry.id
+    del daemon_device_entry
 
     host = entry.data.get(CONF_HOST)
     port = entry.data.get(CONF_PORT)
@@ -425,7 +422,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
-        model = _stable_bus_identity_model(device)
+        model = stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
         return build_bus_device_key(
             model=model,
             address=address,
@@ -556,7 +553,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "manufacturer": manufacturer,
                 "model": model_name,
                 "name": device_name,
-                "via_device_id": adapter_device_id,
+                "via_device_id": adapter_registry_device_id,
             }
             if serial_number:
                 update_kwargs["serial_number"] = str(serial_number)

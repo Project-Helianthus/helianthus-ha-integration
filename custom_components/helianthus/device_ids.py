@@ -9,6 +9,13 @@ from .const import DOMAIN
 
 _MAC_TOKEN_RE = re.compile(r"[^0-9A-Fa-f]")
 DeviceIdentifier = tuple[str, str]
+_KNOWN_BUS_IDENTITY_MODELS: dict[str, str] = {
+    "BASV": "VRC 720f/2",
+    "VR_71": "VR 71",
+    "VR71": "VR 71",
+    "BAI00": "VUW",
+    "NETX3": "VR940f",
+}
 
 
 def _token(value: object | None) -> str:
@@ -22,6 +29,20 @@ def _clean(value: object | None) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def stable_bus_identity_model(device_id: object | None, product_model: object | None = None) -> str:
+    normalized_device_id = _clean(device_id)
+    token = (normalized_device_id or "unknown").upper()
+    if token.startswith("BASV"):
+        token = "BASV"
+    known = _KNOWN_BUS_IDENTITY_MODELS.get(token)
+    if known:
+        return known
+    model = _clean(product_model)
+    if model:
+        return model
+    return normalized_device_id or "unknown"
 
 
 def _parse_bus_address(value: object | None) -> int | None:
