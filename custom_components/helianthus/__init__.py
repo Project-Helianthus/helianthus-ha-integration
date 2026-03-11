@@ -115,6 +115,12 @@ def _canonical_bus_model_name(device: dict) -> str:
     return f"{base_model} (eBUS: {ebus_code})"
 
 
+def _stable_bus_identity_model(device: dict) -> str:
+    from .device_ids import stable_bus_identity_model
+
+    return stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
+
+
 def _parse_bus_address(value: object | None) -> int | None:
     if value is None:
         return None
@@ -154,6 +160,111 @@ def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> boo
         if _identifier_belongs_to_entry(token, entry_id):
             return True
     return False
+
+
+def _is_stale_bus_identifier(token: str, entry_id: str, known_bus_devices: set[str]) -> bool:
+    prefix = f"{entry_id}-bus-"
+    if not token.startswith(prefix):
+        return False
+    return token[len(prefix) :] not in known_bus_devices
+
+
+def _stale_bus_address_unique_id(
+    unique_id: str | None,
+    entry_id: str,
+    known_bus_devices: set[str],
+) -> bool:
+    if not unique_id:
+        return False
+    prefix = f"{entry_id}-bus-"
+    suffix = "-ebus-address"
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        return False
+    bus_device_key = unique_id[len(prefix) : -len(suffix)]
+    return bus_device_key not in known_bus_devices
+
+
+def _bus_identifier_tokens_for_entry(identifiers: set[object], entry_id: str) -> tuple[str, ...]:
+    prefix = f"{entry_id}-bus-"
+    return tuple(
+        token
+        for identifier_domain, token in _iter_identifier_pairs(identifiers)
+        if identifier_domain == DOMAIN and token.startswith(prefix)
+    )
+
+
+def _legacy_bus_identifier_address(token: str, entry_id: str) -> int | None:
+    prefix = f"{entry_id}-bus-"
+    if not token.startswith(prefix):
+        return None
+    bus_key = token[len(prefix) :]
+    if "-sn-" in bus_key or "-mac-" in bus_key:
+        return None
+    for part in reversed([chunk.strip() for chunk in bus_key.split("-") if chunk.strip()]):
+        if len(part) != 2:
+            continue
+        try:
+            return int(part, 16)
+        except ValueError:
+            continue
+    return None
+
+
+def _select_bus_migration_target(
+    existing_devices: tuple[object, ...],
+    *,
+    entry_id: str,
+    stable_identifier: tuple[str, str],
+    address: int | None,
+    manufacturer: str,
+    model_name: str,
+    serial_number: str | None,
+) -> object | None:
+    _, stable_token = stable_identifier
+    best_score: tuple[int, int, int, int, int, int] | None = None
+    best_entry: object | None = None
+    serialized_model_matches: list[object] = []
+    for device_entry in existing_devices:
+        tokens = _bus_identifier_tokens_for_entry(getattr(device_entry, "identifiers", set()), entry_id)
+        if not tokens:
+            continue
+        if stable_token in tokens:
+            return device_entry
+        entry_manufacturer = _clean_label(getattr(device_entry, "manufacturer", None))
+        if entry_manufacturer and entry_manufacturer != manufacturer:
+            continue
+        entry_model = _clean_label(getattr(device_entry, "model", None))
+        entry_serial = _clean_label(getattr(device_entry, "serial_number", None))
+        serial_match = int(bool(serial_number and entry_serial and entry_serial == serial_number))
+        model_match = int(bool(entry_model and entry_model == model_name))
+        if not serial_match and not model_match:
+            continue
+        if serial_match:
+            return device_entry
+        address_match = int(
+            any(
+                candidate == address
+                for candidate in (_legacy_bus_identifier_address(token, entry_id) for token in tokens)
+                if candidate is not None
+            )
+        )
+        if entry_serial and model_match:
+            serialized_model_matches.append(device_entry)
+        if not address_match:
+            continue
+        score = (
+            address_match,
+            model_match,
+            int(bool(entry_serial)),
+            int(bool(getattr(device_entry, "area_id", None))),
+            -len(tokens),
+        )
+        if best_score is None or score > best_score:
+            best_score = score
+            best_entry = device_entry
+    if len(serialized_model_matches) == 1:
+        return serialized_model_matches[0]
+    return best_entry
 
 
 def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
@@ -247,6 +358,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
+        stable_bus_identity_model,
         zone_identifier,
     )
     from .subscriptions import start_subscriptions
@@ -291,8 +403,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     daemon_device_id = daemon_identifier(entry.entry_id)
     adapter_device_id = adapter_identifier(entry.entry_id)
+    existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
 
-    device_registry.async_get_or_create(
+    daemon_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={daemon_device_id},
         manufacturer="Helianthus",
@@ -300,7 +413,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="Helianthus Daemon",
     )
 
-    device_registry.async_get_or_create(
+    adapter_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={adapter_device_id},
         manufacturer="Helianthus",
@@ -308,6 +421,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="eBUS Adapter",
         via_device=daemon_device_id,
     )
+    adapter_registry_device_id = adapter_device_entry.id
+    del daemon_device_entry
 
     host = entry.data.get(CONF_HOST)
     port = entry.data.get(CONF_PORT)
@@ -357,7 +472,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
-        model = _clean_label(device.get("productModel")) or _clean_label(device.get("deviceId"))
+        model = stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
         return build_bus_device_key(
             model=model,
             address=address,
@@ -474,21 +589,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model_name = _canonical_bus_model_name(device)
 
         bus_device_id = bus_identifier(entry.entry_id, bus_device_key)
-        device_kwargs = {
-            "config_entry_id": entry.entry_id,
-            "identifiers": {bus_device_id},
-            "manufacturer": manufacturer,
-            "model": model_name,
-            "name": device_name,
-            "via_device": adapter_device_id,
-        }
-        if serial_number:
-            device_kwargs["serial_number"] = str(serial_number)
-        if sw_version:
-            device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
-        if hw_version:
-            device_kwargs["hw_version"] = hw_version
-        device_registry.async_get_or_create(**device_kwargs)
+        migration_target = _select_bus_migration_target(
+            existing_entry_devices,
+            entry_id=entry.entry_id,
+            stable_identifier=bus_device_id,
+            address=address,
+            manufacturer=manufacturer,
+            model_name=model_name,
+            serial_number=_clean_label(serial_number),
+        )
+        if migration_target is not None:
+            update_kwargs: dict[str, object] = {
+                "merge_identifiers": {bus_device_id},
+                "manufacturer": manufacturer,
+                "model": model_name,
+                "name": device_name,
+                "via_device_id": adapter_registry_device_id,
+            }
+            if serial_number:
+                update_kwargs["serial_number"] = str(serial_number)
+            if sw_version:
+                update_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
+            if hw_version:
+                update_kwargs["hw_version"] = hw_version
+            device_registry.async_update_device(migration_target.id, **update_kwargs)
+        else:
+            device_kwargs = {
+                "config_entry_id": entry.entry_id,
+                "identifiers": {bus_device_id},
+                "manufacturer": manufacturer,
+                "model": model_name,
+                "name": device_name,
+                "via_device": adapter_device_id,
+            }
+            if serial_number:
+                device_kwargs["serial_number"] = str(serial_number)
+            if sw_version:
+                device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
+            if hw_version:
+                device_kwargs["hw_version"] = hw_version
+            device_registry.async_get_or_create(**device_kwargs)
         bus_address_device_ids[address] = bus_device_id
 
         device_id_upper = str(device_id).upper()
@@ -744,6 +884,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             remove_entry = False
             if entity_entry.domain in {"fan", "valve", "switch"}:
                 remove_entry = True
+            elif _stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
+                remove_entry = True
             elif entity_entry.domain == "number" and re.match(
                 rf"^{re.escape(entry.entry_id)}-cylinder-\d+-number-",
                 unique_id,
@@ -802,6 +944,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"{entry.entry_id}-boiler-burner",
                     f"{entry.entry_id}-boiler-hydraulics",
                 }:
+                    remove_device = True
+                    break
+                if _is_stale_bus_identifier(token, entry.entry_id, known_bus_devices):
                     remove_device = True
                     break
                 if token.startswith(f"{entry.entry_id}-zone-"):
@@ -1135,6 +1280,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Run stale cleanup again after platform setup so registry-backed entities
+    # created by prior installs are removed from the fully materialized registry.
+    cleanup_obsolete_entity_registry_entries()
     auto_enable_sparse_entities("post-platform setup")
     cleanup_obsolete_devices("post-platform setup")
 

@@ -22,6 +22,7 @@ from .device_ids import (
     radio_device_identifier,
     resolve_bus_address,
     solar_identifier,
+    stable_bus_identity_model,
 )
 from .energy import compute_total
 
@@ -499,7 +500,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             continue
-        model = _clean_text(device.get("productModel")) or device_id
+        model = stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
         bus_key = build_bus_device_key(
             model=model,
             address=address,

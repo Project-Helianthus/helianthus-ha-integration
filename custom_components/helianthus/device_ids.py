@@ -9,6 +9,13 @@ from .const import DOMAIN
 
 _MAC_TOKEN_RE = re.compile(r"[^0-9A-Fa-f]")
 DeviceIdentifier = tuple[str, str]
+_KNOWN_BUS_IDENTITY_MODELS: dict[str, str] = {
+    "BASV": "VRC 720f/2",
+    "VR_71": "VR 71",
+    "VR71": "VR 71",
+    "BAI00": "VUW",
+    "NETX3": "VR940f",
+}
 
 
 def _token(value: object | None) -> str:
@@ -22,6 +29,20 @@ def _clean(value: object | None) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def stable_bus_identity_model(device_id: object | None, product_model: object | None = None) -> str:
+    normalized_device_id = _clean(device_id)
+    token = (normalized_device_id or "unknown").upper()
+    if token.startswith("BASV"):
+        token = "BASV"
+    known = _KNOWN_BUS_IDENTITY_MODELS.get(token)
+    if known:
+        return known
+    model = _clean(product_model)
+    if model:
+        return model
+    return normalized_device_id or "unknown"
 
 
 def _parse_bus_address(value: object | None) -> int | None:
@@ -96,23 +117,14 @@ def build_bus_device_key(
 ) -> str:
     """Return a stable identifier key for a physical eBUS device.
 
-    Identity priority: serial number, then MAC, then model+address+hw/sw fallback.
+    Physical device identity is stable `<model>-<addr>`.
+    Serial/MAC/HW/SW are metadata enrichment, not identity.
     """
 
     model_token = _token(model) if model else "unknown"
 
-    serial_token = _clean(serial_number)
-    if serial_token:
-        return f"{model_token}-sn-{_token(serial_token).upper()}"
-
-    mac_token = _normalized_mac(mac_address)
-    if mac_token:
-        return f"{model_token}-mac-{mac_token}"
-
     address_token = f"{address:02x}" if isinstance(address, int) else _token(address)
-    hw_token = _token(hardware_version)
-    sw_token = _token(software_version)
-    return f"{model_token}-{address_token}-{hw_token}-{sw_token}"
+    return f"{model_token}-{address_token}"
 
 
 def daemon_identifier(config_entry_id: str) -> tuple[str, str]:
