@@ -193,17 +193,37 @@ def _bus_identifier_tokens_for_entry(identifiers: set[object], entry_id: str) ->
     )
 
 
+def _legacy_bus_identifier_address(token: str, entry_id: str) -> int | None:
+    prefix = f"{entry_id}-bus-"
+    if not token.startswith(prefix):
+        return None
+    bus_key = token[len(prefix) :]
+    if "-sn-" in bus_key or "-mac-" in bus_key:
+        return None
+    for part in reversed([chunk.strip() for chunk in bus_key.split("-") if chunk.strip()]):
+        if len(part) != 2:
+            continue
+        try:
+            return int(part, 16)
+        except ValueError:
+            continue
+    return None
+
+
 def _select_bus_migration_target(
     existing_devices: tuple[object, ...],
     *,
     entry_id: str,
     stable_identifier: tuple[str, str],
+    address: int | None,
     manufacturer: str,
     model_name: str,
     serial_number: str | None,
 ) -> object | None:
     _, stable_token = stable_identifier
-    best: tuple[int, int, int, int, int, object] | None = None
+    best_score: tuple[int, int, int, int, int, int] | None = None
+    best_entry: object | None = None
+    serialized_model_matches: list[object] = []
     for device_entry in existing_devices:
         tokens = _bus_identifier_tokens_for_entry(getattr(device_entry, "identifiers", set()), entry_id)
         if not tokens:
@@ -219,17 +239,32 @@ def _select_bus_migration_target(
         model_match = int(bool(entry_model and entry_model == model_name))
         if not serial_match and not model_match:
             continue
+        if serial_match:
+            return device_entry
+        address_match = int(
+            any(
+                candidate == address
+                for candidate in (_legacy_bus_identifier_address(token, entry_id) for token in tokens)
+                if candidate is not None
+            )
+        )
+        if entry_serial and model_match:
+            serialized_model_matches.append(device_entry)
+        if not address_match:
+            continue
         score = (
-            serial_match,
+            address_match,
             model_match,
             int(bool(entry_serial)),
             int(bool(getattr(device_entry, "area_id", None))),
             -len(tokens),
-            device_entry,
         )
-        if best is None or score > best:
-            best = score
-    return None if best is None else best[-1]
+        if best_score is None or score > best_score:
+            best_score = score
+            best_entry = device_entry
+    if len(serialized_model_matches) == 1:
+        return serialized_model_matches[0]
+    return best_entry
 
 
 def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
@@ -558,6 +593,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             existing_entry_devices,
             entry_id=entry.entry_id,
             stable_identifier=bus_device_id,
+            address=address,
             manufacturer=manufacturer,
             model_name=model_name,
             serial_number=_clean_label(serial_number),

@@ -9,6 +9,7 @@ from custom_components.helianthus import (
     _identifier_belongs_to_entry,
     _identifier_matches_any_entry,
     _is_stale_bus_identifier,
+    _legacy_bus_identifier_address,
     _iter_identifier_pairs,
     _parse_bus_address,
     _parse_zone_schedule_helper_bindings,
@@ -113,6 +114,13 @@ def test_bus_identifier_tokens_for_entry_filters_bus_tokens_only() -> None:
     assert _bus_identifier_tokens_for_entry(identifiers, "entry-1") == ("entry-1-bus-VUW-08",)
 
 
+def test_legacy_bus_identifier_address_parses_sparse_keys_only() -> None:
+    assert _legacy_bus_identifier_address("entry-1-bus-VUW-08", "entry-1") == 0x08
+    assert _legacy_bus_identifier_address("entry-1-bus-BAI00-08-7603-1201", "entry-1") == 0x08
+    assert _legacy_bus_identifier_address("entry-1-bus-VUW-32CS/1-5-(N-INT2)-08", "entry-1") == 0x08
+    assert _legacy_bus_identifier_address("entry-1-bus-VUW-sn-ABC123", "entry-1") is None
+
+
 def test_select_bus_migration_target_prefers_existing_enriched_device() -> None:
     stable_identifier = (DOMAIN, "entry-1-bus-VUW-08")
     old_good = SimpleNamespace(
@@ -135,6 +143,7 @@ def test_select_bus_migration_target_prefers_existing_enriched_device() -> None:
         (sparse_duplicate, old_good),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
+        address=0x08,
         manufacturer="Vaillant",
         model_name="VUW 32CS/1-5 (N-INT2) (eBUS: BAI00)",
         serial_number="ABC123",
@@ -164,11 +173,72 @@ def test_select_bus_migration_target_prefers_serialized_area_device_for_sparse_p
         (sparse_duplicate, old_good),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
+        address=0x04,
         manufacturer="Vaillant",
         model_name="VR940f (eBUS: NETX3)",
         serial_number=None,
     )
     assert selected is old_good
+
+
+def test_select_bus_migration_target_matches_sparse_duplicate_by_address() -> None:
+    stable_identifier = (DOMAIN, "entry-1-bus-VUW-09")
+    wrong_address = SimpleNamespace(
+        id="wrong-address",
+        identifiers={(DOMAIN, "entry-1-bus-BAI00-08-7603-1201")},
+        manufacturer="Vaillant",
+        model="VUW (eBUS: BAI00)",
+        serial_number=None,
+        area_id="garage",
+    )
+    correct_address = SimpleNamespace(
+        id="correct-address",
+        identifiers={(DOMAIN, "entry-1-bus-BAI00-09-7603-1201")},
+        manufacturer="Vaillant",
+        model="VUW (eBUS: BAI00)",
+        serial_number=None,
+        area_id=None,
+    )
+    selected = _select_bus_migration_target(
+        (wrong_address, correct_address),
+        entry_id="entry-1",
+        stable_identifier=stable_identifier,
+        address=0x09,
+        manufacturer="Vaillant",
+        model_name="VUW (eBUS: BAI00)",
+        serial_number=None,
+    )
+    assert selected is correct_address
+
+
+def test_select_bus_migration_target_tie_does_not_compare_objects() -> None:
+    stable_identifier = (DOMAIN, "entry-1-bus-VUW-08")
+    first = SimpleNamespace(
+        id="first",
+        identifiers={(DOMAIN, "entry-1-bus-BAI00-08-7603-1201")},
+        manufacturer="Vaillant",
+        model="VUW (eBUS: BAI00)",
+        serial_number=None,
+        area_id=None,
+    )
+    second = SimpleNamespace(
+        id="second",
+        identifiers={(DOMAIN, "entry-1-bus-BAI00-08-7604-1202")},
+        manufacturer="Vaillant",
+        model="VUW (eBUS: BAI00)",
+        serial_number=None,
+        area_id=None,
+    )
+    selected = _select_bus_migration_target(
+        (first, second),
+        entry_id="entry-1",
+        stable_identifier=stable_identifier,
+        address=0x08,
+        manufacturer="Vaillant",
+        model_name="VUW (eBUS: BAI00)",
+        serial_number=None,
+    )
+    assert selected is first
 
 
 def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
