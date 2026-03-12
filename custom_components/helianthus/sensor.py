@@ -865,6 +865,82 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             ]
         )
 
+    adapter_info_coordinator = data.get("adapter_info_coordinator")
+    adapter_device_id = data.get("adapter_device_id")
+    if adapter_info_coordinator and adapter_device_id:
+        adapter_hw = adapter_info_coordinator.data
+        is_wifi = isinstance(adapter_hw, dict) and adapter_hw.get("isWifi") is True
+        has_reset = isinstance(adapter_hw, dict) and adapter_hw.get("resetCause") is not None
+        sensors.append(
+            HelianthusAdapterInfoSensor(
+                adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                key="temperatureC", label="Adapter Temperature",
+                device_class=SensorDeviceClass.TEMPERATURE,
+                native_unit=UnitOfTemperature.CELSIUS,
+                state_class=SensorStateClass.MEASUREMENT,
+                icon="mdi:thermometer",
+            )
+        )
+        sensors.append(
+            HelianthusAdapterInfoSensor(
+                adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                key="supplyVoltageMv", label="Adapter Supply Voltage",
+                device_class=SensorDeviceClass.VOLTAGE,
+                native_unit="mV",
+                state_class=SensorStateClass.MEASUREMENT,
+                icon="mdi:flash",
+            )
+        )
+        sensors.append(
+            HelianthusAdapterInfoSensor(
+                adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                key="busVoltageMaxDv", label="eBUS Voltage Max",
+                device_class=SensorDeviceClass.VOLTAGE,
+                native_unit="V",
+                state_class=SensorStateClass.MEASUREMENT,
+                icon="mdi:sine-wave",
+                scale=0.1,
+            )
+        )
+        sensors.append(
+            HelianthusAdapterInfoSensor(
+                adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                key="busVoltageMinDv", label="eBUS Voltage Min",
+                device_class=SensorDeviceClass.VOLTAGE,
+                native_unit="V",
+                state_class=SensorStateClass.MEASUREMENT,
+                icon="mdi:sine-wave",
+                scale=0.1,
+            )
+        )
+        sensors.append(
+            HelianthusAdapterInfoSensor(
+                adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                key="restartCount", label="Adapter Restart Count",
+                state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
+                icon="mdi:counter",
+            )
+        )
+        if has_reset:
+            sensors.append(
+                HelianthusAdapterInfoSensor(
+                    adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                    key="resetCause", label="Adapter Reset Cause",
+                    icon="mdi:alert-circle-outline",
+                )
+            )
+        if is_wifi:
+            sensors.append(
+                HelianthusAdapterInfoSensor(
+                    adapter_info_coordinator, entry.entry_id, adapter_device_id,
+                    key="wifiRssiDbm", label="Adapter WiFi Signal",
+                    device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+                    native_unit="dBm",
+                    state_class=SensorStateClass.MEASUREMENT,
+                    icon="mdi:wifi",
+                )
+            )
+
     async_add_entities(sensors)
 
 
@@ -1798,3 +1874,57 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         yearly = series.get("yearly") if isinstance(series.get("yearly"), list) else None
         today = series.get("today")
         return compute_total(yearly, today)
+
+
+class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):
+    """Adapter hardware telemetry diagnostic sensor."""
+
+    entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator,
+        entry_id: str,
+        adapter_device_id: tuple[str, str],
+        *,
+        key: str,
+        label: str,
+        device_class: str | None = None,
+        native_unit: str | None = None,
+        state_class: str | None = None,
+        icon: str | None = None,
+        scale: float | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._adapter_device_id = adapter_device_id
+        self._key = key
+        self._scale = scale
+        self._attr_name = label
+        self._attr_unique_id = f"{entry_id}-adapter-hw-{key}"
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if native_unit is not None:
+            self._attr_native_unit_of_measurement = native_unit
+        if state_class is not None:
+            self._attr_state_class = state_class
+        if icon is not None:
+            self._attr_icon = icon
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={self._adapter_device_id})
+
+    @property
+    def native_value(self) -> Any:
+        info = self.coordinator.data
+        if not isinstance(info, dict):
+            return None
+        value = info.get(self._key)
+        if value is None:
+            return None
+        if self._scale is not None:
+            try:
+                return round(float(value) * self._scale, 1)
+            except (TypeError, ValueError):
+                return None
+        return value
