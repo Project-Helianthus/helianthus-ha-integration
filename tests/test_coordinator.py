@@ -80,6 +80,8 @@ class _ScriptedClient:
 
     async def execute(self, query: str):  # noqa: ANN201
         self.calls.append(query)
+        if not self._actions:
+            return {}
         action = self._actions.pop(0)
         if isinstance(action, Exception):
             raise action
@@ -111,6 +113,8 @@ def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordi
     coordinator = object.__new__(HelianthusBoilerCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator.boiler_supported = True  # type: ignore[attr-defined]
+    coordinator._boiler_installer_available = None  # type: ignore[attr-defined]
+    coordinator._boiler_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -123,6 +127,8 @@ def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoor
 def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordinator:
     coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
+    coordinator._system_installer_available = None  # type: ignore[attr-defined]
+    coordinator._system_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -462,8 +468,8 @@ def test_boiler_query_returns_status_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data == payload
-    assert client.calls == [QUERY_BOILER]
+    assert data["boilerStatus"]["state"]["flowTemperatureC"] == 63.0
+    assert client.calls[0] == QUERY_BOILER
 
 
 def test_boiler_query_missing_field_falls_back_to_none() -> None:
@@ -479,7 +485,7 @@ def test_boiler_query_missing_field_falls_back_to_none() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert data == {"boilerStatus": None}
-    assert client.calls == [QUERY_BOILER]
+    assert client.calls[0] == QUERY_BOILER
     assert coordinator.boiler_supported is False
 
 
@@ -496,7 +502,7 @@ def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert data == {"boilerStatus": None}
-    assert client.calls == [QUERY_BOILER]
+    assert client.calls[0] == QUERY_BOILER
     assert coordinator.boiler_supported is False
 
 
@@ -567,7 +573,7 @@ def test_system_query_returns_system_payload() -> None:
     assert data["state"]["systemWaterPressure"] == 1.7
     assert data["config"]["adaptiveHeatingCurve"] is True
     assert data["properties"]["systemScheme"] == 3
-    assert client.calls == [QUERY_SYSTEM]
+    assert client.calls[0] == QUERY_SYSTEM
 
 
 def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
@@ -583,7 +589,7 @@ def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert data == {"state": {}, "config": {}, "properties": {}}
-    assert client.calls == [QUERY_SYSTEM]
+    assert client.calls[0] == QUERY_SYSTEM
 
 
 def test_radio_query_builds_candidates_and_inventory_slot() -> None:

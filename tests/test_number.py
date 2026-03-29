@@ -150,12 +150,13 @@ def test_async_setup_entry_adds_boiler_config_numbers_on_bai00() -> None:
     boiler_numbers = [
         entity for entity in entities if isinstance(entity, number_platform.HelianthusBoilerNumber)
     ]
-    assert len(boiler_numbers) == 4
+    assert len(boiler_numbers) == 5
     assert {entity._attr_name for entity in boiler_numbers} == {
         "CH Max Flow Setpoint",
         "DHW Max Flow Setpoint",
         "CH Partload",
         "DHW Partload",
+        "Boiler Installer Menu Code",
     }
     for entity in boiler_numbers:
         assert entity._attr_entity_category == number_platform.EntityCategory.CONFIG

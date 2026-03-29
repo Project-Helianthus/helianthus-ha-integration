@@ -35,6 +35,8 @@ PLATFORMS: list[str] = [
     "select",
     "switch",
     "calendar",
+    "text",
+    "date",
 ]
 
 if TYPE_CHECKING:

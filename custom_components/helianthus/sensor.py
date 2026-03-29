@@ -570,6 +570,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             )
             for field in BOILER_DIAGNOSTICS_SENSOR_FIELDS
         )
+        sensors.append(
+            HelianthusBoilerHoursTillServiceSensor(
+                coordinator=boiler_coordinator,
+                entry_id=entry.entry_id,
+                manufacturer=manufacturer,
+                boiler_device_id=boiler_device_id,
+            )
+        )
 
     if circuit_coordinator and circuit_coordinator.data:
         circuits = circuit_coordinator.data.get("circuits", []) or []
@@ -1928,3 +1936,44 @@ class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):
             except (TypeError, ValueError):
                 return None
         return value
+
+
+class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
+    """Hours until next boiler service (B509 read-only counter)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = _SENSOR_DEVICE_CLASS_DURATION
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:wrench-clock"
+
+    def __init__(self, *, coordinator, entry_id, manufacturer, boiler_device_id) -> None:
+        super().__init__(coordinator)
+        self._manufacturer = manufacturer
+        self._boiler_device_id = boiler_device_id
+        self._attr_unique_id = f"{entry_id}-boiler-sensor-hoursTillService"
+        self._attr_name = "Hours Till Service"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={self._boiler_device_id},
+            manufacturer=self._manufacturer,
+        )
+
+    @property
+    def available(self) -> bool:
+        return super().available and getattr(self.coordinator, "boiler_installer_available", True)
+
+    @property
+    def native_value(self) -> int | None:
+        payload = self.coordinator.data or {}
+        boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+        config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
+        value = config.get("hoursTillService")
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None

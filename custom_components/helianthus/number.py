@@ -74,6 +74,7 @@ class SystemNumberField:
     unit: str | None = None
     cast_int: bool = False
     icon: str | None = None
+    sensitive: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ class BoilerNumberField:
     step: float
     unit: str | None = None
     icon: str | None = None
+    sensitive: bool = False
 
 
 _CIRCUIT_NUMBER_FIELDS = [
@@ -190,6 +192,17 @@ _SYSTEM_NUMBER_FIELDS = [
         cast_int=True,
         icon="mdi:water-percent",
     ),
+    SystemNumberField(
+        mutation_field="installerMenuCode",
+        config_key="installerMenuCode",
+        label="Installer Menu Code",
+        minimum=0.0,
+        maximum=999.0,
+        step=1.0,
+        cast_int=True,
+        icon="mdi:key-variant",
+        sensitive=True,
+    ),
 ]
 
 _CYLINDER_NUMBER_FIELDS = [
@@ -258,6 +271,15 @@ _BOILER_NUMBER_FIELDS = [
         step=0.1,
         unit="kW",
         icon="mdi:lightning-bolt",
+    ),
+    BoilerNumberField(
+        key="installerMenuCode",
+        label="Boiler Installer Menu Code",
+        minimum=0.0,
+        maximum=255.0,
+        step=1.0,
+        icon="mdi:key-variant",
+        sensitive=True,
     ),
 ]
 
@@ -381,6 +403,9 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_unit_of_measurement = field.unit
         if field.icon is not None:
             self._attr_icon = field.icon
+        if field.sensitive:
+            self._attr_entity_registry_visible_default = False
+            self._attr_entity_registry_enabled_default = False
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -561,6 +586,9 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_unit_of_measurement = field.unit
         if field.icon is not None:
             self._attr_icon = field.icon
+        if field.sensitive:
+            self._attr_entity_registry_visible_default = False
+            self._attr_entity_registry_enabled_default = False
 
     @property
     def device_info(self) -> DeviceInfo:
