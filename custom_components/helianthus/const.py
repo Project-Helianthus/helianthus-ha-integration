@@ -6,6 +6,7 @@ MDNS_SERVICE_TYPE = "_helianthus-graphql._tcp.local."
 CONF_PATH = "path"
 CONF_TRANSPORT = "transport"
 CONF_VERSION = "version"
+CONF_INSTANCE_GUID = "instance_guid"
 
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_USE_SUBSCRIPTIONS = "use_subscriptions"

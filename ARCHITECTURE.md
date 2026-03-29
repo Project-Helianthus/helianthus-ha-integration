@@ -10,6 +10,19 @@ Discovery uses mDNS service `_helianthus-graphql._tcp` with TXT fields:
 - `path` (default `/graphql`)
 - `version` (semantic API version)
 - `transport` (e.g., `http`)
+- `instance_guid` (installation-scoped lowercase UUIDv4)
+
+The integration does not trust Zeroconf TXT alone for identity. Every new bind or rebind must verify
+`gatewayIdentity.instanceGuid` over GraphQL before Home Assistant will create or rewrite a config entry.
+
+## Config Entry Identity
+
+- `config_entry.unique_id` is the verified Helianthus `instance_guid`.
+- `host`, `port`, `path`, and `transport` are mutable transport coordinates, not identity.
+- Reachable legacy `host:port` entries migrate in place during setup by querying
+  `gatewayIdentity.instanceGuid` from the configured endpoint.
+- Rediscovery may update stored coordinates only when the discovered endpoint verifies to the same GUID and
+  the currently stored endpoint no longer verifies.
 
 ## Device Tree
 

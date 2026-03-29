@@ -22,6 +22,7 @@ class MdnsService:
     path: str
     transport: str
     version: str | None
+    instance_guid: str | None
 
 
 def _format_addresses(addresses: Iterable[bytes | str] | None) -> list[str]:
@@ -76,6 +77,7 @@ def parse_mdns_service(info: object) -> MdnsService:
     path = txt.get("path") or DEFAULT_GRAPHQL_PATH
     transport = normalize_transport(txt.get("transport"))
     version = txt.get("version") or None
+    instance_guid = txt.get("instance_guid") or None
 
     if not host or port is None:
         raise ValueError("mDNS info missing host or port")
@@ -88,4 +90,5 @@ def parse_mdns_service(info: object) -> MdnsService:
         path=path,
         transport=transport,
         version=version,
+        instance_guid=instance_guid,
     )

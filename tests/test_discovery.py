@@ -46,6 +46,7 @@ def test_parse_mdns_service_txt_fields() -> None:
             b"Path": b"/gql",
             b"VERSION": b"1.2.3",
             b"Transport": b"https",
+            b"instance_guid": b"4d9336aa-f125-4f12-8b07-fcd18dbfcb10",
         },
     )
 
@@ -54,6 +55,7 @@ def test_parse_mdns_service_txt_fields() -> None:
     assert record.path == "/gql"
     assert record.transport == "https"
     assert record.version == "1.2.3"
+    assert record.instance_guid == "4d9336aa-f125-4f12-8b07-fcd18dbfcb10"
 
 
 def test_parse_mdns_service_invalid_transport_falls_back() -> None:

@@ -23,6 +23,13 @@
 - Suitable for onboarding contributors and validating operator workflows.
 - Supports polling by default and optional subscriptions with polling fallback.
 
+## Stable Instance Identity
+
+- Helianthus discovery now treats `instance_guid` as the canonical installation identity.
+- Config entries bind `unique_id` to the verified GraphQL value from `gatewayIdentity.instanceGuid`, not to `host:port`.
+- `host`, `port`, `path`, and `transport` remain mutable transport coordinates and may be rewritten on verified rediscovery.
+- Legacy reachable entries migrate in place on setup by fetching the stable GUID from the configured gateway endpoint.
+
 ## Helianthus Dependency Chain
 
 ```text
@@ -98,6 +105,8 @@ path: "/graphql"
 transport: "http"     # http | https
 version: "optional"
 ```
+
+Manual setup verifies `gatewayIdentity.instanceGuid` before the entry is created. Zeroconf rediscovery only rebinding when TXT `instance_guid` and GraphQL `gatewayIdentity.instanceGuid` match.
 
 Options flow fields:
 
