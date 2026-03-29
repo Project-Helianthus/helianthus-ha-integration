@@ -108,6 +108,20 @@ def _to_ws_url(url: str) -> str:
     return urlunparse(parsed._replace(scheme=scheme, path=path))
 
 
+def _merge_dicts(current: dict[str, Any] | None, update: dict[str, Any] | None) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(current or {})
+    if not isinstance(update, dict):
+        return merged
+
+    for key, value in update.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _merge_dicts(existing, value)
+            continue
+        merged[key] = value
+    return merged
+
+
 async def start_subscriptions(
     session: aiohttp.ClientSession,
     url: str,
@@ -192,14 +206,18 @@ async def _handle_message(
         return
     if message.get("type") != "next":
         return
-    payload = message.get("payload", {})
-    data = payload.get("data", {})
+    payload = message.get("payload")
+    if not isinstance(payload, dict):
+        return
+    data = payload.get("data")
     if not isinstance(data, dict):
         return
 
     if "zoneUpdate" in data:
-        zone = data.get("zoneUpdate") or {}
-        if semantic_coordinator and semantic_coordinator.data is not None:
+        zone = data.get("zoneUpdate")
+        if not isinstance(zone, dict):
+            zone = {}
+        if semantic_coordinator and isinstance(semantic_coordinator.data, dict):
             current = semantic_coordinator.data
             zones = list(current.get("zones", []) or [])
             zone_id = zone.get("id")
@@ -210,17 +228,22 @@ async def _handle_message(
 
     if "dhwUpdate" in data:
         dhw = data.get("dhwUpdate")
-        if semantic_coordinator and semantic_coordinator.data is not None:
+        if semantic_coordinator and isinstance(semantic_coordinator.data, dict) and (
+            dhw is None or isinstance(dhw, dict)
+        ):
             current = semantic_coordinator.data
             semantic_coordinator.async_set_updated_data({"zones": current.get("zones", []), "dhw": dhw})
 
     if "energyUpdate" in data and energy_coordinator:
         energy = data.get("energyUpdate")
-        energy_coordinator.async_set_updated_data({"energyTotals": energy})
+        if isinstance(energy, dict):
+            energy_coordinator.async_set_updated_data({"energyTotals": energy})
 
     if "boilerStatusUpdate" in data and boiler_coordinator:
         boiler = data.get("boilerStatusUpdate")
-        boiler_coordinator.async_set_updated_data({"boilerStatus": boiler})
+        if isinstance(boiler, dict):
+            current = boiler_coordinator.data if isinstance(boiler_coordinator.data, dict) else {}
+            boiler_coordinator.async_set_updated_data(_merge_dicts(current, {"boilerStatus": boiler}))
 
     if "radioDevicesUpdate" in data and radio_coordinator:
         radio_devices = data.get("radioDevicesUpdate")

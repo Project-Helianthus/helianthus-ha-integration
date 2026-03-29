@@ -32,6 +32,8 @@ sys.modules.setdefault("homeassistant.helpers", helpers_module)
 sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordinator_module)
 
 from custom_components.helianthus.coordinator import (
+    QUERY_ADAPTER_HARDWARE_INFO,
+    QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
     QUERY_BOILER,
     QUERY_CIRCUITS,
     QUERY_ENERGY,
@@ -54,6 +56,7 @@ from custom_components.helianthus.coordinator import (
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
     HelianthusCoordinator,
+    HelianthusAdapterInfoCoordinator,
     HelianthusEnergyCoordinator,
     HelianthusFM5Coordinator,
     HelianthusRadioDeviceCoordinator,
@@ -88,6 +91,13 @@ def _build_coordinator(client: _ScriptedClient) -> HelianthusCoordinator:
 def _build_status_coordinator(client: _ScriptedClient) -> HelianthusStatusCoordinator:
     coordinator = object.__new__(HelianthusStatusCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
+    return coordinator
+
+
+def _build_adapter_info_coordinator(client: _ScriptedClient) -> HelianthusAdapterInfoCoordinator:
+    coordinator = object.__new__(HelianthusAdapterInfoCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+    coordinator._use_minimal = False  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -310,6 +320,62 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     assert data["daemon"]["status"] == "running"
     assert "initiatorAddress" not in data["daemon"]
     assert client.calls == [QUERY_STATUS, QUERY_STATUS_LEGACY]
+
+
+def test_adapter_info_query_missing_field_downgrades_to_minimal_queries() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "adapterHardwareInfo" on type "Query".'}]
+            ),
+            {"adapterHardwareInfo": {"firmwareVersion": "1.2.3", "infoSupported": True}},
+            {"adapterHardwareInfo": {"firmwareVersion": "1.2.4", "infoSupported": True}},
+        ]
+    )
+    coordinator = _build_adapter_info_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["firmwareVersion"] == "1.2.3"
+    assert second["firmwareVersion"] == "1.2.4"
+    assert coordinator._use_minimal is True  # type: ignore[attr-defined]
+    assert client.calls == [
+        QUERY_ADAPTER_HARDWARE_INFO,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
+    ]
+
+
+def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError([{"message": 'boom on "adapterStatus"'}]),
+            {"adapterHardwareInfo": {"firmwareVersion": "2.0.0", "infoSupported": True}},
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.1",
+                    "infoSupported": True,
+                    "temperatureC": 31.5,
+                }
+            },
+        ]
+    )
+    coordinator = _build_adapter_info_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["firmwareVersion"] == "2.0.0"
+    assert "temperatureC" not in first
+    assert second["firmwareVersion"] == "2.0.1"
+    assert second["temperatureC"] == 31.5
+    assert coordinator._use_minimal is False  # type: ignore[attr-defined]
+    assert client.calls == [
+        QUERY_ADAPTER_HARDWARE_INFO,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
+        QUERY_ADAPTER_HARDWARE_INFO,
+    ]
 
 
 def test_boiler_query_returns_status_payload() -> None:

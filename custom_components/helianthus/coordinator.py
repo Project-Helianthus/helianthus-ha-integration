@@ -1408,15 +1408,15 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
         except GraphQLResponseError as exc:
             if _is_missing_field_error(exc.errors, ["adapterHardwareInfo"]):
                 self._use_minimal = True
-                return None
-            if not self._use_minimal:
-                self._use_minimal = True
+                try:
+                    payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
+                except (GraphQLClientError, GraphQLResponseError) as fallback_exc:
+                    raise UpdateFailed(str(fallback_exc)) from fallback_exc
+            else:
                 try:
                     payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
                 except (GraphQLClientError, GraphQLResponseError):
-                    return None
-            else:
-                raise UpdateFailed(str(exc)) from exc
+                    raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 

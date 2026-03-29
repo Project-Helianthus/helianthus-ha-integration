@@ -303,6 +303,79 @@ def test_subscription_dispatches_radio_updates_to_radio_coordinator() -> None:
     assert fake.seen[0]["group"] == 0x09
 
 
+def test_subscription_ignores_null_frames_without_crashing() -> None:
+    class _FakeBoilerCoordinator:
+        def __init__(self) -> None:
+            self.data = {
+                "boilerStatus": {
+                    "state": {"flowTemperatureC": 60.0, "centralHeatingPumpActive": False},
+                    "diagnostics": {"heatingStatusRaw": 1},
+                }
+            }
+
+        def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
+            self.data = payload
+
+    boiler = _FakeBoilerCoordinator()
+
+    asyncio.run(
+        subscriptions._handle_message(
+            {"type": "next", "payload": None},
+            semantic_coordinator=None,
+            energy_coordinator=None,
+            boiler_coordinator=boiler,
+            radio_coordinator=None,
+        )
+    )
+
+    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 60.0
+    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
+
+
+def test_subscription_merges_partial_boiler_updates_non_destructively() -> None:
+    class _FakeBoilerCoordinator:
+        def __init__(self) -> None:
+            self.data = {
+                "boilerStatus": {
+                    "state": {
+                        "flowTemperatureC": 60.0,
+                        "returnTemperatureC": 41.5,
+                        "centralHeatingPumpActive": False,
+                    },
+                    "diagnostics": {"heatingStatusRaw": 1},
+                }
+            }
+
+        def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
+            self.data = payload
+
+    boiler = _FakeBoilerCoordinator()
+
+    asyncio.run(
+        subscriptions._handle_message(
+            {
+                "type": "next",
+                "payload": {
+                    "data": {
+                        "boilerStatusUpdate": {
+                            "state": {"flowTemperatureC": 63.5},
+                        }
+                    }
+                },
+            },
+            semantic_coordinator=None,
+            energy_coordinator=None,
+            boiler_coordinator=boiler,
+            radio_coordinator=None,
+        )
+    )
+
+    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 63.5
+    assert boiler.data["boilerStatus"]["state"]["returnTemperatureC"] == 41.5
+    assert boiler.data["boilerStatus"]["state"]["centralHeatingPumpActive"] is False
+    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
+
+
 def test_radio_zone_candidates_update_on_reassignment() -> None:
     coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
     coordinator._last_by_slot = {}
