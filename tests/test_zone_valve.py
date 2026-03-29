@@ -422,6 +422,85 @@ def test_build_zone_parent_device_ids_flags_mapped_zone_without_physical_parent(
     assert unresolved == ("zone-2",)
 
 
+def test_build_zone_parent_device_ids_recovers_once_live_radio_payload_is_available() -> None:
+    zones = [
+        {
+            "id": "zone-1",
+            "name": "Parter",
+            "config": {"roomTemperatureZoneMapping": 1},
+        },
+        {
+            "id": "zone-2",
+            "name": "Etaj",
+            "config": {"roomTemperatureZoneMapping": 2},
+        },
+    ]
+    regulator = ("helianthus", "entry-1-bus-BASV-15")
+    sparse_payload = {
+        "radioDevices": [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "radioBusKey": "g09-i01",
+                "deviceConnected": False,
+                "remoteControlAddress": 0,
+                "zoneAssignment": 1,
+            },
+            {
+                "group": 0x0A,
+                "instance": 1,
+                "radioBusKey": "g0a-i01",
+                "deviceConnected": False,
+                "remoteControlAddress": 1,
+                "zoneAssignment": 2,
+            },
+        ],
+        "radioZoneCandidates": {},
+    }
+    live_payload = {
+        "radioDevices": [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "radioBusKey": "g09-i01",
+                "deviceConnected": True,
+                "remoteControlAddress": 0,
+                "zoneAssignment": 1,
+            },
+            {
+                "group": 0x0A,
+                "instance": 1,
+                "radioBusKey": "g0a-i01",
+                "deviceConnected": True,
+                "remoteControlAddress": 1,
+                "zoneAssignment": 2,
+            },
+        ],
+        "radioZoneCandidates": {},
+    }
+
+    sparse_parent_ids, sparse_unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        zones,
+        sparse_payload,
+        regulator,
+    )
+    live_parent_ids, live_unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        zones,
+        live_payload,
+        regulator,
+    )
+
+    assert sparse_parent_ids == {}
+    assert sparse_unresolved == ("zone-1", "zone-2")
+    assert live_parent_ids == {
+        "zone-1": radio_device_identifier("entry-1", "g09-i01"),
+        "zone-2": radio_device_identifier("entry-1", "g0a-i01"),
+    }
+    assert live_unresolved == ()
+
+
 def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
     payload = {
         "semantic_coordinator": _FakeCoordinator(
