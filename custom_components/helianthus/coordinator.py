@@ -1343,3 +1343,88 @@ def _normalize_energy_totals_payload(payload: Any) -> dict[str, Any] | None:
             if "today" not in series or "yearly" not in series:
                 return None
     return totals
+
+
+QUERY_ADAPTER_HARDWARE_INFO = """
+query AdapterHardwareInfo {
+  adapterHardwareInfo {
+    firmwareVersion
+    firmwareChecksum
+    bootloaderVersion
+    bootloaderChecksum
+    hardwareID
+    hardwareConfig
+    features
+    jumpers
+    jumperFlags
+    isWifi
+    isEthernet
+    temperatureC
+    supplyVoltageMv
+    busVoltageMaxDv
+    busVoltageMinDv
+    resetCause
+    resetCauseCode
+    restartCount
+    wifiRssiDbm
+    lastIdentityQuery
+    lastTelemetryQuery
+    versionResponseLen
+    infoSupported
+  }
+}
+"""
+
+QUERY_ADAPTER_HARDWARE_INFO_MINIMAL = """
+query AdapterHardwareInfo {
+  adapterHardwareInfo {
+    firmwareVersion
+    isWifi
+    isEthernet
+    infoSupported
+    versionResponseLen
+  }
+}
+"""
+
+
+class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
+    """Coordinator fetching adapter hardware telemetry via GraphQL."""
+
+    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+        super().__init__(
+            hass,
+            logger=logging.getLogger(__name__),
+            name="helianthus_adapter_info",
+            update_interval=timedelta(seconds=max(scan_interval, 60)),
+        )
+        self._client = client
+        self._use_minimal = False
+
+    async def _async_update_data(self) -> dict[str, Any] | None:
+        query = QUERY_ADAPTER_HARDWARE_INFO_MINIMAL if self._use_minimal else QUERY_ADAPTER_HARDWARE_INFO
+        try:
+            payload = await self._client.execute(query)
+        except GraphQLResponseError as exc:
+            if _is_missing_field_error(exc.errors, ["adapterHardwareInfo"]):
+                self._use_minimal = True
+                return None
+            if not self._use_minimal:
+                self._use_minimal = True
+                try:
+                    payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
+                except (GraphQLClientError, GraphQLResponseError):
+                    return None
+            else:
+                raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            raise UpdateFailed(str(exc)) from exc
+
+        if not isinstance(payload, dict):
+            return None
+
+        info = payload.get("adapterHardwareInfo")
+        if not isinstance(info, dict):
+            return None
+
+        return info

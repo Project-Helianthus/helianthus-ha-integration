@@ -333,6 +333,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
     from .coordinator import (
+        HelianthusAdapterInfoCoordinator,
         HelianthusBoilerCoordinator,
         HelianthusCircuitCoordinator,
         HelianthusCoordinator,
@@ -446,6 +447,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
     boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
     schedule_coordinator = HelianthusScheduleCoordinator(hass, client, scan_interval)
+    adapter_info_coordinator = HelianthusAdapterInfoCoordinator(hass, client, scan_interval)
     await device_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
     await semantic_coordinator.async_config_entry_first_refresh()
@@ -456,6 +458,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await system_coordinator.async_config_entry_first_refresh()
     await boiler_coordinator.async_config_entry_first_refresh()
     await schedule_coordinator.async_config_entry_first_refresh()
+    await adapter_info_coordinator.async_config_entry_first_refresh()
+
+    adapter_hw = adapter_info_coordinator.data
+    if isinstance(adapter_hw, dict) and adapter_hw.get("firmwareVersion"):
+        hw_id = adapter_hw.get("hardwareID") or None
+        device_registry.async_update_device(
+            adapter_device_entry.id,
+            sw_version=adapter_hw["firmwareVersion"],
+            hw_version=hw_id,
+            serial_number=hw_id,
+        )
 
     devices = device_coordinator.data or []
     reload_scheduled = False
@@ -1259,6 +1272,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "system_coordinator": system_coordinator,
         "boiler_coordinator": boiler_coordinator,
         "schedule_coordinator": schedule_coordinator,
+        "adapter_info_coordinator": adapter_info_coordinator,
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
