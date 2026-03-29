@@ -6,6 +6,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 update_coordinator_module = types.ModuleType("homeassistant.helpers.update_coordinator")
 
 
@@ -30,6 +32,8 @@ homeassistant_module.helpers = helpers_module
 sys.modules.setdefault("homeassistant", homeassistant_module)
 sys.modules.setdefault("homeassistant.helpers", helpers_module)
 sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordinator_module)
+
+import custom_components.helianthus.coordinator as coordinator_module
 
 from custom_components.helianthus.coordinator import (
     QUERY_ADAPTER_HARDWARE_INFO,
@@ -98,6 +102,8 @@ def _build_adapter_info_coordinator(client: _ScriptedClient) -> HelianthusAdapte
     coordinator = object.__new__(HelianthusAdapterInfoCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator._hardware_info_supported = None  # type: ignore[attr-defined]
+    coordinator._hardware_info_reprobe_at = None  # type: ignore[attr-defined]
+    coordinator._hardware_info_reprobe_delay_s = 300.0  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -322,32 +328,56 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     assert client.calls == [QUERY_STATUS, QUERY_STATUS_LEGACY]
 
 
-def test_adapter_info_query_missing_root_field_stays_non_fatal() -> None:
+def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = _ScriptedClient(
         [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "adapterHardwareInfo" on type "Query".'}]
+            ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "adapterHardwareInfo" on type "Query".'}]
             ),
         ]
     )
     coordinator = _build_adapter_info_coordinator(client)
+    current_time = 1_000.0
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: current_time)
 
     first = asyncio.run(coordinator._async_update_data())
+    current_time += 60.0
+    second = asyncio.run(coordinator._async_update_data())
+    current_time += 300.0
+    third = asyncio.run(coordinator._async_update_data())
 
     assert first is None
-    assert coordinator._hardware_info_supported is False  # type: ignore[attr-defined]
-    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO]
+    assert second is None
+    assert third is None
+    assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
+    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO, QUERY_ADAPTER_HARDWARE_INFO]
 
 
 def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError([{"message": 'boom on "adapterStatus"'}]),
-            {"adapterHardwareInfo": {"firmwareVersion": "2.0.0", "infoSupported": True}},
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.0",
+                    "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
+                }
+            },
             {
                 "adapterHardwareInfo": {
                     "firmwareVersion": "2.0.1",
                     "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
                     "temperatureC": 31.5,
                 }
             },
@@ -359,7 +389,7 @@ def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
     second = asyncio.run(coordinator._async_update_data())
 
     assert first["firmwareVersion"] == "2.0.0"
-    assert "temperatureC" not in first
+    assert first["isWifi"] is True
     assert second["firmwareVersion"] == "2.0.1"
     assert second["temperatureC"] == 31.5
     assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
@@ -367,6 +397,50 @@ def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
         QUERY_ADAPTER_HARDWARE_INFO,
         QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
         QUERY_ADAPTER_HARDWARE_INFO,
+    ]
+
+
+def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "bootloaderVersion" on type "AdapterHardwareInfo".'}]
+            ),
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.0",
+                    "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
+                }
+            },
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.1",
+                    "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
+                    "temperatureC": 31.5,
+                }
+            },
+        ]
+    )
+    coordinator = _build_adapter_info_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["firmwareVersion"] == "2.0.0"
+    assert first["isWifi"] is True
+    assert second["firmwareVersion"] == "2.0.1"
+    assert second["temperatureC"] == 31.5
+    assert coordinator._hardware_info_supported is False  # type: ignore[attr-defined]
+    assert client.calls == [
+        QUERY_ADAPTER_HARDWARE_INFO,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
     ]
 
 
