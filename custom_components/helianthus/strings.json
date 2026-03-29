@@ -20,12 +20,22 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to the Helianthus GraphQL endpoint.",
-      "invalid_response": "Helianthus responded with an invalid schema.",
+      "invalid_response": "Helianthus responded with an invalid identity payload.",
+      "requires_gateway_upgrade": "The Helianthus gateway must be updated before this integration can bind to it.",
+      "missing_instance_guid": "The Helianthus gateway did not expose a stable instance GUID.",
+      "identity_mismatch": "Discovered identity did not match the verified Helianthus gateway.",
       "unknown": "Unexpected error."
     },
     "abort": {
       "already_configured": "This Helianthus endpoint is already configured.",
-      "invalid_discovery_info": "Discovery data is invalid."
+      "invalid_discovery_info": "Discovery data is invalid.",
+      "cannot_connect": "Failed to connect to the discovered Helianthus GraphQL endpoint.",
+      "invalid_response": "The discovered Helianthus gateway returned an invalid identity payload.",
+      "requires_gateway_upgrade": "The discovered Helianthus gateway must be updated before it can be added.",
+      "missing_instance_guid": "The discovered Helianthus gateway did not advertise a stable instance GUID.",
+      "identity_mismatch": "Discovery TXT data did not match the verified Helianthus gateway identity.",
+      "duplicate_instance_guid": "Another live Helianthus endpoint already claims this instance GUID. Automatic rebinding was refused.",
+      "reconfigured": "The existing Helianthus entry was rebound to the rediscovered endpoint."
     }
   }
 }

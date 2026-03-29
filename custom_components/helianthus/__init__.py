@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 
 from .const import (
     CONF_DHW_SCHEDULE_HELPER,
+    CONF_INSTANCE_GUID,
     CONF_PATH,
     CONF_TRANSPORT,
     CONF_USE_SUBSCRIPTIONS,
+    CONF_VERSION,
     CONF_ZONE_SCHEDULE_HELPERS,
     DEFAULT_DHW_SCHEDULE_HELPER,
     DEFAULT_SCAN_INTERVAL,
@@ -332,6 +334,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.helpers.event import async_track_state_change_event
     from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
     from .graphql import GraphQLClient, build_graphql_url
+    from .identity import (
+        GatewayIdentityVerificationError,
+        configured_instance_guid,
+        normalize_instance_guid,
+        updated_entry_data,
+        verify_gateway_identity,
+    )
     from .coordinator import (
         HelianthusAdapterInfoCoordinator,
         HelianthusBoilerCoordinator,
@@ -434,6 +443,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     path = entry.data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
     transport = entry.data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+    version = (entry.data.get(CONF_VERSION) or "").strip() or None
+    entry_instance_guid = configured_instance_guid(entry.data, entry.unique_id)
+    if entry_instance_guid is None:
+        try:
+            verified_endpoint = await verify_gateway_identity(
+                session=session,
+                host=str(host),
+                port=int(port),
+                path=path,
+                transport=transport,
+                expected_instance_guid=None,
+                version=version,
+            )
+        except GatewayIdentityVerificationError as exc:
+            _LOGGER.debug(
+                "Stable identity adoption skipped for Helianthus entry %s: %s",
+                entry.entry_id,
+                exc.reason,
+            )
+        else:
+            entry_instance_guid = verified_endpoint.instance_guid
+            hass.config_entries.async_update_entry(
+                entry,
+                data=updated_entry_data(
+                    entry.data,
+                    verified_endpoint,
+                    version=version or verified_endpoint.version,
+                ),
+                unique_id=entry_instance_guid,
+            )
+            host = verified_endpoint.host
+            port = verified_endpoint.port
+            path = verified_endpoint.path
+            transport = verified_endpoint.transport
+            version = version or verified_endpoint.version
+            _LOGGER.info(
+                "Migrated Helianthus entry %s to stable instance GUID %s",
+                entry.entry_id,
+                entry_instance_guid,
+            )
+    else:
+        normalized_unique_id = normalize_instance_guid(entry.unique_id)
+        stored_data_guid = normalize_instance_guid(entry.data.get(CONF_INSTANCE_GUID))
+        if normalized_unique_id != entry_instance_guid or stored_data_guid != entry_instance_guid:
+            updated_data = dict(entry.data)
+            updated_data[CONF_INSTANCE_GUID] = entry_instance_guid
+            hass.config_entries.async_update_entry(
+                entry,
+                data=updated_data,
+                unique_id=entry_instance_guid,
+            )
+
     graphql_url = build_graphql_url(host, port, path=path, transport=transport)
     client = GraphQLClient(session=session, url=graphql_url)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
