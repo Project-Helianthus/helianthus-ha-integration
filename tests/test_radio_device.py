@@ -376,6 +376,106 @@ def test_subscription_merges_partial_boiler_updates_non_destructively() -> None:
     assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
 
 
+def test_subscription_keeps_nested_boiler_diagnostics_on_explicit_null() -> None:
+    class _FakeBoilerCoordinator:
+        def __init__(self) -> None:
+            self.data = {
+                "boilerStatus": {
+                    "state": {
+                        "flowTemperatureC": 60.0,
+                        "centralHeatingPumpActive": False,
+                    },
+                    "diagnostics": {"heatingStatusRaw": 1},
+                }
+            }
+
+        def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
+            self.data = payload
+
+    boiler = _FakeBoilerCoordinator()
+
+    asyncio.run(
+        subscriptions._handle_message(
+            {
+                "type": "next",
+                "payload": {
+                    "data": {
+                        "boilerStatusUpdate": {
+                            "diagnostics": None,
+                        }
+                    }
+                },
+            },
+            semantic_coordinator=None,
+            energy_coordinator=None,
+            boiler_coordinator=boiler,
+            radio_coordinator=None,
+        )
+    )
+
+    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
+    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 60.0
+
+
+def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_entries() -> None:
+    class _FakeSemanticCoordinator:
+        def __init__(self) -> None:
+            self.data = {
+                "zones": [
+                    "legacy-slot",
+                    {
+                        "id": "zone-1",
+                        "name": "Living",
+                        "state": {"currentTempC": 20.0},
+                        "config": {
+                            "operatingMode": "auto",
+                            "roomTemperatureZoneMapping": 2,
+                            "targetTempC": 21.0,
+                        },
+                    },
+                    {
+                        "id": "zone-2",
+                        "name": "Etaj",
+                        "state": {"currentTempC": 19.0},
+                        "config": {"roomTemperatureZoneMapping": 3},
+                    },
+                ],
+                "dhw": None,
+            }
+
+        def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
+            self.data = payload
+
+    semantic = _FakeSemanticCoordinator()
+
+    asyncio.run(
+        subscriptions._handle_message(
+            {
+                "type": "next",
+                "payload": {
+                    "data": {
+                        "zoneUpdate": {
+                            "id": "zone-1",
+                            "state": {"currentTempC": 21.5},
+                        }
+                    }
+                },
+            },
+            semantic_coordinator=semantic,
+            energy_coordinator=None,
+            boiler_coordinator=None,
+            radio_coordinator=None,
+        )
+    )
+
+    assert semantic.data["zones"][0] == "legacy-slot"
+    merged_zone = semantic.data["zones"][1]
+    assert merged_zone["state"]["currentTempC"] == 21.5
+    assert merged_zone["config"]["roomTemperatureZoneMapping"] == 2
+    assert merged_zone["config"]["targetTempC"] == 21.0
+    assert semantic.data["zones"][2]["id"] == "zone-2"
+
+
 def test_radio_zone_candidates_update_on_reassignment() -> None:
     coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
     coordinator._last_by_slot = {}

@@ -115,11 +115,39 @@ def _merge_dicts(current: dict[str, Any] | None, update: dict[str, Any] | None) 
 
     for key, value in update.items():
         existing = merged.get(key)
+        if value is None and key in merged:
+            continue
         if isinstance(existing, dict) and isinstance(value, dict):
             merged[key] = _merge_dicts(existing, value)
             continue
         merged[key] = value
     return merged
+
+
+def _merge_zone_update(
+    current_zones: list[Any],
+    zone_update: dict[str, Any],
+) -> list[Any]:
+    zone_id = zone_update.get("id")
+    if zone_id is None:
+        return list(current_zones)
+
+    merged_zones: list[Any] = []
+    merged_existing = False
+    for zone in current_zones:
+        if not isinstance(zone, dict):
+            merged_zones.append(zone)
+            continue
+        if zone.get("id") != zone_id:
+            merged_zones.append(zone)
+            continue
+        merged_zones.append(_merge_dicts(zone, zone_update))
+        merged_existing = True
+
+    if not merged_existing:
+        merged_zones.append(zone_update)
+
+    return merged_zones
 
 
 async def start_subscriptions(
@@ -219,12 +247,14 @@ async def _handle_message(
             zone = {}
         if semantic_coordinator and isinstance(semantic_coordinator.data, dict):
             current = semantic_coordinator.data
-            zones = list(current.get("zones", []) or [])
-            zone_id = zone.get("id")
-            if zone_id:
-                zones = [z for z in zones if z.get("id") != zone_id]
-                zones.append(zone)
-            semantic_coordinator.async_set_updated_data({"zones": zones, "dhw": current.get("dhw")})
+            zones = current.get("zones", [])
+            if isinstance(zones, list):
+                semantic_coordinator.async_set_updated_data(
+                    {
+                        "zones": _merge_zone_update(zones, zone),
+                        "dhw": current.get("dhw"),
+                    }
+                )
 
     if "dhwUpdate" in data:
         dhw = data.get("dhwUpdate")
@@ -232,7 +262,13 @@ async def _handle_message(
             dhw is None or isinstance(dhw, dict)
         ):
             current = semantic_coordinator.data
-            semantic_coordinator.async_set_updated_data({"zones": current.get("zones", []), "dhw": dhw})
+            zones = current.get("zones", [])
+            semantic_coordinator.async_set_updated_data(
+                {
+                    "zones": zones if isinstance(zones, list) else [],
+                    "dhw": dhw if dhw is None or isinstance(dhw, dict) else current.get("dhw"),
+                }
+            )
 
     if "energyUpdate" in data and energy_coordinator:
         energy = data.get("energyUpdate")

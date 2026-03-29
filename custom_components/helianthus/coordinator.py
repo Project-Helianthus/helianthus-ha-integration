@@ -1399,24 +1399,22 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
             update_interval=timedelta(seconds=max(scan_interval, 60)),
         )
         self._client = client
-        self._use_minimal = False
+        self._hardware_info_supported: bool | None = None
 
     async def _async_update_data(self) -> dict[str, Any] | None:
-        query = QUERY_ADAPTER_HARDWARE_INFO_MINIMAL if self._use_minimal else QUERY_ADAPTER_HARDWARE_INFO
+        if self._hardware_info_supported is False:
+            return None
+
         try:
-            payload = await self._client.execute(query)
+            payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO)
         except GraphQLResponseError as exc:
             if _is_missing_field_error(exc.errors, ["adapterHardwareInfo"]):
-                self._use_minimal = True
-                try:
-                    payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
-                except (GraphQLClientError, GraphQLResponseError) as fallback_exc:
-                    raise UpdateFailed(str(fallback_exc)) from fallback_exc
-            else:
-                try:
-                    payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
-                except (GraphQLClientError, GraphQLResponseError):
-                    raise UpdateFailed(str(exc)) from exc
+                self._hardware_info_supported = False
+                return None
+            try:
+                payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
+            except (GraphQLClientError, GraphQLResponseError):
+                return None
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
