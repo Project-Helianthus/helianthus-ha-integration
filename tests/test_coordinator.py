@@ -358,6 +358,48 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
     assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO, QUERY_ADAPTER_HARDWARE_INFO]
 
 
+def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError([{"message": 'boom on "adapterStatus"'}]),
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.0",
+                    "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
+                }
+            },
+            {
+                "adapterHardwareInfo": {
+                    "firmwareVersion": "2.0.1",
+                    "infoSupported": True,
+                    "isWifi": True,
+                    "isEthernet": False,
+                    "versionResponseLen": 8,
+                    "temperatureC": 31.5,
+                }
+            },
+        ]
+    )
+    coordinator = _build_adapter_info_coordinator(client)
+
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+
+    assert first["firmwareVersion"] == "2.0.0"
+    assert first["isWifi"] is True
+    assert second["firmwareVersion"] == "2.0.1"
+    assert second["temperatureC"] == 31.5
+    assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
+    assert client.calls == [
+        QUERY_ADAPTER_HARDWARE_INFO,
+        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
+        QUERY_ADAPTER_HARDWARE_INFO,
+    ]
+
+
 def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() -> None:
     client = _ScriptedClient(
         [

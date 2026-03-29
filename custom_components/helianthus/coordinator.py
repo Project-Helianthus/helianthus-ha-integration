@@ -1388,6 +1388,27 @@ query AdapterHardwareInfo {
 }
 """
 
+_ADAPTER_HARDWARE_INFO_DETAILED_ONLY_FIELDS = [
+    "firmwareChecksum",
+    "bootloaderVersion",
+    "bootloaderChecksum",
+    "hardwareID",
+    "hardwareConfig",
+    "features",
+    "jumpers",
+    "jumperFlags",
+    "temperatureC",
+    "supplyVoltageMv",
+    "busVoltageMaxDv",
+    "busVoltageMinDv",
+    "resetCause",
+    "resetCauseCode",
+    "restartCount",
+    "wifiRssiDbm",
+    "lastIdentityQuery",
+    "lastTelemetryQuery",
+]
+
 _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S = 300.0
 _ADAPTER_HARDWARE_INFO_REPROBE_MAX_DELAY_S = 3600.0
 
@@ -1424,7 +1445,11 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
                 self._schedule_hardware_info_reprobe(now)
                 return None
             if query == QUERY_ADAPTER_HARDWARE_INFO:
-                self._hardware_info_supported = False
+                if _is_missing_field_error(
+                    exc.errors,
+                    _ADAPTER_HARDWARE_INFO_DETAILED_ONLY_FIELDS,
+                ):
+                    self._hardware_info_supported = False
                 try:
                     payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
                 except GraphQLResponseError as minimal_exc:
