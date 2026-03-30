@@ -923,6 +923,29 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
 
+QUERY_SYSTEM_INSTALLER = """
+query SystemInstaller {
+  system {
+    config {
+      maintenanceDate
+      installerName
+      installerPhone
+    }
+  }
+}
+"""
+
+QUERY_SYSTEM_SENSITIVE = """
+query SystemSensitive {
+  system {
+    config {
+      installerMenuCode
+    }
+  }
+}
+"""
+
+
 class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic system data."""
 
@@ -934,6 +957,16 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._system_installer_available: bool | None = None
+        self._system_sensitive_available: bool | None = None
+
+    @property
+    def system_installer_available(self) -> bool:
+        return self._system_installer_available is not False
+
+    @property
+    def system_sensitive_available(self) -> bool:
+        return self._system_sensitive_available is not False
 
     async def _async_update_data(self) -> dict[str, Any]:
         empty = {"state": {}, "config": {}, "properties": {}}
@@ -978,11 +1011,45 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state = system.get("state")
         config = system.get("config")
         properties = system.get("properties")
-        return {
+        result = {
             "state": state if isinstance(state, dict) else {},
             "config": config if isinstance(config, dict) else {},
             "properties": properties if isinstance(properties, dict) else {},
         }
+
+        # Optional installer query (backward-compat with older gateways).
+        if self._system_installer_available is not False:
+            try:
+                inst_payload = await self._client.execute(QUERY_SYSTEM_INSTALLER)
+                inst_sys = inst_payload.get("system", {}) if isinstance(inst_payload, dict) else {}
+                inst_cfg = inst_sys.get("config", {}) if isinstance(inst_sys, dict) else {}
+                if isinstance(inst_cfg, dict):
+                    result["config"].update(inst_cfg)
+                if self._system_installer_available is None:
+                    self._system_installer_available = True
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["maintenanceDate", "installerName", "installerPhone"]):
+                    self._system_installer_available = False
+            except GraphQLClientError:
+                pass  # transient — retry next cycle
+
+        # Optional sensitive query (independent of installer query).
+        if self._system_sensitive_available is not False:
+            try:
+                sens_payload = await self._client.execute(QUERY_SYSTEM_SENSITIVE)
+                sens_sys = sens_payload.get("system", {}) if isinstance(sens_payload, dict) else {}
+                sens_cfg = sens_sys.get("config", {}) if isinstance(sens_sys, dict) else {}
+                if isinstance(sens_cfg, dict):
+                    result["config"].update(sens_cfg)
+                if self._system_sensitive_available is None:
+                    self._system_sensitive_available = True
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["installerMenuCode"]):
+                    self._system_sensitive_available = False
+            except GraphQLClientError:
+                pass  # transient — retry next cycle
+
+        return result
 
 
 class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -1029,6 +1096,28 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {"energyTotals": None}
 
 
+QUERY_BOILER_INSTALLER = """
+query BoilerInstaller {
+  boilerStatus {
+    config {
+      phoneNumber
+      hoursTillService
+    }
+  }
+}
+"""
+
+QUERY_BOILER_SENSITIVE = """
+query BoilerSensitive {
+  boilerStatus {
+    config {
+      installerMenuCode
+    }
+  }
+}
+"""
+
+
 class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching boiler semantic status."""
 
@@ -1041,10 +1130,20 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self._client = client
         self.boiler_supported = True
+        self._boiler_installer_available: bool | None = None
+        self._boiler_sensitive_available: bool | None = None
 
     @property
     def client(self) -> GraphQLClient:
         return self._client
+
+    @property
+    def boiler_installer_available(self) -> bool:
+        return self._boiler_installer_available is not False
+
+    @property
+    def boiler_sensitive_available(self) -> bool:
+        return self._boiler_sensitive_available is not False
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -1091,7 +1190,49 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.boiler_supported = False
             return {"boilerStatus": None}
         self.boiler_supported = True
-        return {"boilerStatus": payload.get("boilerStatus")}
+        result = {"boilerStatus": payload.get("boilerStatus")}
+
+        boiler_status = result.get("boilerStatus")
+        if not isinstance(boiler_status, dict):
+            return result
+        config = boiler_status.get("config")
+        if not isinstance(config, dict):
+            config = {}
+            boiler_status["config"] = config
+
+        # Optional installer query (backward-compat).
+        if self._boiler_installer_available is not False:
+            try:
+                inst_payload = await self._client.execute(QUERY_BOILER_INSTALLER)
+                inst_boiler = inst_payload.get("boilerStatus", {}) if isinstance(inst_payload, dict) else {}
+                inst_cfg = inst_boiler.get("config", {}) if isinstance(inst_boiler, dict) else {}
+                if isinstance(inst_cfg, dict):
+                    config.update(inst_cfg)
+                if self._boiler_installer_available is None:
+                    self._boiler_installer_available = True
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["phoneNumber", "hoursTillService"]):
+                    self._boiler_installer_available = False
+            except GraphQLClientError:
+                pass
+
+        # Optional sensitive query (independent).
+        if self._boiler_sensitive_available is not False:
+            try:
+                sens_payload = await self._client.execute(QUERY_BOILER_SENSITIVE)
+                sens_boiler = sens_payload.get("boilerStatus", {}) if isinstance(sens_payload, dict) else {}
+                sens_cfg = sens_boiler.get("config", {}) if isinstance(sens_boiler, dict) else {}
+                if isinstance(sens_cfg, dict):
+                    config.update(sens_cfg)
+                if self._boiler_sensitive_available is None:
+                    self._boiler_sensitive_available = True
+            except GraphQLResponseError as exc:
+                if _is_missing_field_error(exc.errors, ["installerMenuCode"]):
+                    self._boiler_sensitive_available = False
+            except GraphQLClientError:
+                pass
+
+        return result
 
 
 QUERY_SCHEDULES = """
