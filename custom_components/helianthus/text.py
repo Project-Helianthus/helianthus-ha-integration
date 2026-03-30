@@ -44,14 +44,12 @@ class InstallerTextField:
 
 
 _SYSTEM_TEXT_FIELDS = [
-    InstallerTextField(key="installerName1", label="Installer Name Part 1", max_length=6, source="system"),
-    InstallerTextField(key="installerName2", label="Installer Name Part 2", max_length=6, source="system"),
-    InstallerTextField(key="installerPhone1", label="Installer Phone Part 1", max_length=6, source="system", icon="mdi:phone-outline"),
-    InstallerTextField(key="installerPhone2", label="Installer Phone Part 2", max_length=6, source="system", icon="mdi:phone-outline"),
+    InstallerTextField(key="installerName", label="Installer Name", max_length=12, source="system"),
+    InstallerTextField(key="installerPhone", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
 ]
 
 _BOILER_TEXT_FIELDS = [
-    InstallerTextField(key="phoneNumber", label="Boiler Phone Number", max_length=16, source="boiler", icon="mdi:phone-outline"),
+    InstallerTextField(key="phoneNumber", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
 ]
 
 
@@ -137,9 +135,15 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
-        for i, ch in enumerate(value.encode("utf-8")):
-            if ch > 0x7F:
-                raise HomeAssistantError(f"Non-ASCII character at position {i}")
+        if self._field.key == "installerPhone":
+            allowed = set("0123456789+() ")
+            for i, ch in enumerate(value):
+                if ch not in allowed:
+                    raise HomeAssistantError(f"Invalid character '{ch}' at position {i} (allowed: digits, +, (, ), space)")
+        else:
+            for i, ch in enumerate(value.encode("utf-8")):
+                if ch < 0x20 or ch > 0x7E:
+                    raise HomeAssistantError(f"Non-printable character at position {i}")
         if len(value) > self._field.max_length:
             raise HomeAssistantError(f"Value length {len(value)} exceeds max {self._field.max_length}")
         if self._client is None:
@@ -194,11 +198,11 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
-        value_clean = value.strip().lower()
-        if not all(c in "0123456789abcdef" for c in value_clean):
-            raise HomeAssistantError("Value must contain only hex characters (0-9, a-f)")
-        if len(value_clean) != self._field.max_length:
-            raise HomeAssistantError(f"Value must be exactly {self._field.max_length} hex characters")
+        value_clean = value.strip()
+        if not all(c in "0123456789" for c in value_clean):
+            raise HomeAssistantError("Value must contain only digits (0-9)")
+        if len(value_clean) > self._field.max_length:
+            raise HomeAssistantError(f"Value length {len(value_clean)} exceeds max {self._field.max_length} digits")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
 

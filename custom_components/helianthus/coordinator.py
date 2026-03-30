@@ -928,10 +928,8 @@ query SystemInstaller {
   system {
     config {
       maintenanceDate
-      installerName1
-      installerName2
-      installerPhone1
-      installerPhone2
+      installerName
+      installerPhone
     }
   }
 }
@@ -1030,7 +1028,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._system_installer_available is None:
                     self._system_installer_available = True
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["maintenanceDate", "installerName1", "installerName2", "installerPhone1", "installerPhone2"]):
+                if _is_missing_field_error(exc.errors, ["maintenanceDate", "installerName", "installerPhone"]):
                     self._system_installer_available = False
             except GraphQLClientError:
                 pass  # transient — retry next cycle
