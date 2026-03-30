@@ -67,13 +67,13 @@ async def async_setup_entry(
     boiler_coordinator = data.get("boiler_coordinator")
     manufacturer = data.get("manufacturer", "Vaillant")
     entry_id = entry.entry_id
-    client = data.get("client")
-    daemon_device_id = data.get("daemon_device_id")
+    client = data.get("graphql_client")
+    regulator_device_id = data.get("regulator_device_id")
     boiler_device_id = data.get("boiler_device_id")
 
     entities: list[TextEntity] = []
 
-    if system_coordinator is not None and daemon_device_id is not None:
+    if system_coordinator is not None and regulator_device_id is not None:
         for field in _SYSTEM_TEXT_FIELDS:
             entities.append(
                 HelianthusSystemText(
@@ -81,7 +81,7 @@ async def async_setup_entry(
                     entry_id=entry_id,
                     manufacturer=manufacturer,
                     client=client,
-                    device_id=daemon_device_id,
+                    device_id=regulator_device_id,
                     field=field,
                 )
             )
