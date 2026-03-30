@@ -298,7 +298,7 @@ def test_system_number_entities_write_set_system_config_mutation() -> None:
     system_numbers = [
         entity for entity in entities if isinstance(entity, number_platform.HelianthusSystemNumber)
     ]
-    assert len(system_numbers) == 6
+    assert len(system_numbers) == 5
 
     hc_bivalence = next(
         entity for entity in system_numbers if entity._field.mutation_field == "hcBivalencePointC"

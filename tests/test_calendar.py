@@ -129,7 +129,7 @@ def test_unique_id_dhw() -> None:
 def test_name_zone() -> None:
     program = _make_program(zone=1, hc="cooling")
     cal = _make_calendar(program, zone=1, hc="cooling")
-    assert cal._attr_name == "Zone 2 Cooling Schedule"
+    assert cal._attr_name == "Cooling Schedule"
 
 
 def test_name_dhw() -> None:

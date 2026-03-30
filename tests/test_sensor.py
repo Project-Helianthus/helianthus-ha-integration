@@ -187,10 +187,10 @@ def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only
         "entry-1-boiler-dhwStorageTemperatureC",
     }
     assert {entity._attr_name for entity in boiler_entities} == {
-        "Boiler Flow Temperature",
-        "Boiler Return Temperature",
-        "Boiler DHW Temperature",
-        "Boiler DHW Storage Temperature",
+        "Flow Temperature",
+        "Return Temperature",
+        "DHW Temperature",
+        "DHW Storage Temperature",
     }
     assert {entity.native_value for entity in boiler_entities} == {
         63.1,

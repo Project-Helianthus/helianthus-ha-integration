@@ -60,6 +60,7 @@ async def async_setup_entry(
 class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
     """Writable maintenance date from B524 controller."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:calendar-clock"
 

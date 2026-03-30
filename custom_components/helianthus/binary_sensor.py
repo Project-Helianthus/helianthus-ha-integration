@@ -298,6 +298,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Read-only schedule mirror binary sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         *,
@@ -319,7 +321,7 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._target_name = target_name
         self._target_device_id = target_device_id
         self._schedule_key = schedule_key
-        self._attr_name = f"{target_name} {schedule_label}"
+        self._attr_name = schedule_label
         unique_target = target_id or "dhw"
         self._attr_unique_id = f"{entry_id}-{target_kind}-{unique_target}-schedule-{schedule_key}"
         _SCHEDULE_ICONS: dict[str, str] = {
@@ -380,6 +382,7 @@ class HelianthusBoilerStateBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Boiler read-only boolean state exposed on the physical boiler device."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -431,6 +434,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Per-circuit pump active state."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -447,7 +451,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._manufacturer = manufacturer
         self._circuit_index = circuit_index
         self._initial_name = initial_name
-        self._attr_name = f"{initial_name} Pump Active"
+        self._attr_name = "Pump Active"
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-binary-pumpActive"
 
     def _circuit(self) -> dict[str, Any]:
@@ -479,6 +483,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Sparse solar binary sensor that auto-enables when live data appears."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -543,6 +548,7 @@ class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Reduced-profile central heating pump state on physical BAI00."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -553,7 +559,7 @@ class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._boiler_device_id = boiler_device_id
-        self._attr_name = "Boiler Central Heating Pump Active"
+        self._attr_name = "Central Heating Pump Active"
         self._attr_unique_id = f"{entry_id}-boiler-central-heating-pump-active"
 
     @property
@@ -573,6 +579,8 @@ class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
 class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """System-level BASV2 binary sensor."""
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -628,6 +636,7 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
     """Remote-slot connected-state binary sensor."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_has_entity_name = True
     _attr_icon = "mdi:radio-tower"
 
     def __init__(
@@ -688,6 +697,7 @@ class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Zone valve open/closed derived from valve_position_pct."""
 
     _attr_device_class = BinarySensorDeviceClass.OPENING
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -704,7 +714,7 @@ class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._manufacturer = manufacturer
         self._zone_id = zone_id
         self._target_device_id = target_device_id
-        self._attr_name = f"{zone_name} Valve"
+        self._attr_name = "Valve"
         self._attr_unique_id = f"{entry_id}-zone-{zone_id}-binary-valve"
 
     def _zone(self) -> dict[str, Any]:

@@ -1102,6 +1102,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ", ".join(unresolved_zone_ids),
         )
 
+    # Reverse map: device_id → zone_name for radio device naming (HA 2026.4).
+    radio_device_zone_names: dict[tuple[str, str], str] = {}
+    if isinstance(semantic_coordinator.data, dict):
+        for zone in semantic_coordinator.data.get("zones", []) or []:
+            if not isinstance(zone, dict):
+                continue
+            zone_id = zone.get("id")
+            zone_name = zone.get("name")
+            if zone_id is None or not zone_name:
+                continue
+            from .climate import _normalize_zone_id as _nzid
+            normalized = _nzid(zone_id)
+            if normalized is None:
+                continue
+            device_id = zone_parent_device_ids.get(normalized)
+            if device_id is not None and device_id != regulator_device:
+                radio_device_zone_names[device_id] = str(zone_name).strip()
+
     zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
         str(
             entry.options.get(
@@ -1352,6 +1370,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "boiler_burner_device_id": boiler_burner_device_id,
         "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
         "zone_parent_device_ids": zone_parent_device_ids,
+        "radio_device_zone_names": radio_device_zone_names,
         "unresolved_zone_ids": unresolved_zone_ids,
         "b524_merge_targets": b524_merge_targets,
     }

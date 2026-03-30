@@ -103,11 +103,10 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
         self._target_device_id = target_device_id or regulator_device_id
 
         hc_label = _HC_LABELS.get(hc, hc)
+        self._attr_name = f"{hc_label} Schedule"
         if zone == 255:
-            self._attr_name = f"{hc_label} Schedule"
             zone_tag = "dhw"
         else:
-            self._attr_name = f"Zone {zone + 1} {hc_label} Schedule"
             zone_tag = f"zone-{zone + 1}"
 
         self._attr_unique_id = (

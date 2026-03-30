@@ -153,6 +153,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             target_device_id = regulator_device_id
         if target_device_id is None:
             continue
+        is_dedicated_device = target_device_id != regulator_device_id
         entities.append(
             HelianthusZoneClimate(
                 entry.entry_id,
@@ -165,6 +166,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 source_address,
                 zone_id,
                 zone.get("name"),
+                is_dedicated_device=is_dedicated_device,
             )
         )
     async_add_entities([entity for entity in entities if entity.zone_id])
@@ -173,6 +175,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     """Zone climate entity."""
 
+    _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
@@ -190,6 +193,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         source_address: int | None,
         zone_id: str | None,
         name: str | None,
+        *,
+        is_dedicated_device: bool = False,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
@@ -201,7 +206,12 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         self._source_address = source_address
         self._zone_id = _normalize_zone_id(zone_id)
         self._zone_instance = _zone_instance(self._zone_id)
-        self._attr_name = name or _zone_default_name(self._zone_id)
+        self._zone_name = name or _zone_default_name(self._zone_id)
+        self._is_dedicated_device = is_dedicated_device
+        if is_dedicated_device:
+            self._attr_name = "Thermostat"
+        else:
+            self._attr_name = f"{self._zone_name} Thermostat"
         if self._zone_id:
             self._attr_unique_id = f"{entry_id}-zone-{self._zone_id}"
 
@@ -219,9 +229,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def name(self) -> str | None:
+        if self._is_dedicated_device:
+            return "Thermostat"
         zone_name = self._zone().get("name")
         if zone_name is not None and str(zone_name).strip():
-            return str(zone_name).strip()
+            return f"{str(zone_name).strip()} Thermostat"
         return self._attr_name
 
     @property

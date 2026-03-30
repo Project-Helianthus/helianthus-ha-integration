@@ -105,6 +105,7 @@ def _coerce_percentage(value: object | None) -> int | None:
 class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
     """Read-only burner state exposed as a fan."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:fire"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -168,6 +169,7 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
 class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
     """Read-only boiler pump state under the Hydraulics sub-device."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:pump"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -242,6 +244,7 @@ class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
 class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
     """Read-only circuit pump state as a fan entity."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:pump"
 
     def __init__(
@@ -271,7 +274,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name()} Pump"
+        return "Pump"
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -313,6 +316,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
 class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
     """Read-only solar pump state."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:pump"
     _attr_supported_features = FanEntityFeature(0)
 
@@ -329,7 +333,7 @@ class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
         self._manufacturer = manufacturer
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
-        self._attr_name = "Solar Pump"
+        self._attr_name = "Pump"
         self._attr_unique_id = f"{entry_id}-solar-pump"
 
     @property
