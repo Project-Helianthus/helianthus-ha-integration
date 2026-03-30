@@ -198,11 +198,16 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
-        value_clean = value.strip()
-        if not all(c in "0123456789" for c in value_clean):
-            raise HomeAssistantError("Value must contain only digits (0-9)")
+        # Accept formatting characters but strip them for BCD encoding.
+        value_stripped = value.strip()
+        allowed = set("0123456789+() ")
+        for i, ch in enumerate(value_stripped):
+            if ch not in allowed:
+                raise HomeAssistantError(f"Invalid character '{ch}' at position {i} (allowed: digits, +, (, ), space)")
+        # Strip formatting — only digits go to BCD wire encoding.
+        value_clean = "".join(c for c in value_stripped if c.isdigit())
         if len(value_clean) > self._field.max_length:
-            raise HomeAssistantError(f"Value length {len(value_clean)} exceeds max {self._field.max_length} digits")
+            raise HomeAssistantError(f"Digit count {len(value_clean)} exceeds max {self._field.max_length}")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
 
