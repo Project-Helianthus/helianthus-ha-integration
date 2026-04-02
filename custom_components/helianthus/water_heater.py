@@ -68,6 +68,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     """DHW water heater entity."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:water-boiler"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
@@ -91,7 +92,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         self._client = client
         self._regulator_bus_address = regulator_bus_address
         self._source_address = source_address
-        self._attr_name = "Domestic Hot Water"
+        self._attr_name = None
         self._attr_unique_id = f"{entry_id}-dhw"
 
     def _dhw(self) -> dict[str, Any]:
@@ -132,7 +133,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         return float(value) if value is not None else None
 
     @property
-    def operation_mode(self) -> str | None:
+    def current_operation(self) -> str | None:
         mode = str(self._dhw_config().get("operatingMode") or "").strip().lower()
         if mode in {"off", "auto", "manual"}:
             return mode

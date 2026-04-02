@@ -67,6 +67,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     """Writable switch for circuit cooling mode."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:snowflake"
 
@@ -87,7 +88,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-cooling-enabled"
-        self._attr_name = f"{initial_name} Cooling Enabled"
+        self._attr_name = "Cooling Enabled"
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -100,7 +101,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name()} Cooling Enabled"
+        return "Cooling Enabled"
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -162,6 +163,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
 class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
     """Read-only interpreted solar config switch."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:solar-power"
 
@@ -181,7 +183,7 @@ class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
         self._key = key
-        self._attr_name = f"Solar {label}"
+        self._attr_name = label
         self._attr_unique_id = f"{entry_id}-solar-switch-{key}"
 
     @property

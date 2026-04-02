@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.number import NumberEntity
+
+try:
+    from homeassistant.components.number import NumberMode
+except ImportError:
+    class NumberMode:  # type: ignore[no-redef]
+        BOX = "box"
+        SLIDER = "slider"
 from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -192,17 +199,6 @@ _SYSTEM_NUMBER_FIELDS = [
         cast_int=True,
         icon="mdi:water-percent",
     ),
-    SystemNumberField(
-        mutation_field="installerMenuCode",
-        config_key="installerMenuCode",
-        label="Installer Menu Code",
-        minimum=0.0,
-        maximum=999.0,
-        step=1.0,
-        cast_int=True,
-        icon="mdi:key-variant",
-        sensitive=True,
-    ),
 ]
 
 _CYLINDER_NUMBER_FIELDS = [
@@ -271,15 +267,6 @@ _BOILER_NUMBER_FIELDS = [
         step=0.1,
         unit="kW",
         icon="mdi:lightning-bolt",
-    ),
-    BoilerNumberField(
-        key="installerMenuCode",
-        label="Boiler Installer Menu Code",
-        minimum=0.0,
-        maximum=255.0,
-        step=1.0,
-        icon="mdi:key-variant",
-        sensitive=True,
     ),
 ]
 
@@ -377,7 +364,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
     """Writable boiler configuration number on the physical BAI00 device."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
 
     def __init__(
         self,
@@ -456,7 +445,9 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
 class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
     """Writable circuit configuration number."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
 
     def __init__(
         self,
@@ -477,7 +468,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
         self._initial_name = initial_name
         self._field = field
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-number-{field.key}"
-        self._attr_name = f"{initial_name} {field.label}"
+        self._attr_name = field.label
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step
@@ -497,7 +488,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name()} {self._field.label}"
+        return self._field.label
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -560,7 +551,9 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
 class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
     """Writable BASV2 system configuration number."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
 
     def __init__(
         self,
@@ -646,7 +639,9 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
 class HelianthusCylinderConfigNumber(CoordinatorEntity, NumberEntity):
     """Read-only interpreted cylinder configuration number."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
 
     def __init__(
         self,
@@ -665,7 +660,7 @@ class HelianthusCylinderConfigNumber(CoordinatorEntity, NumberEntity):
         self._cylinder_index = cylinder_index
         self._field = field
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-number-{field.key}"
-        self._attr_name = f"Cylinder {cylinder_index + 1} {field.label}"
+        self._attr_name = field.label
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step

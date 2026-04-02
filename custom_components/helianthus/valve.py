@@ -133,6 +133,7 @@ def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
 class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
     """Read-only diverter valve position under the Hydraulics sub-device."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
@@ -182,6 +183,8 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
 class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     """Read-only circuit mixing valve position."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         *,
@@ -209,7 +212,7 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name()} Mixing Valve"
+        return "Mixing Valve"
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -236,6 +239,8 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
 
 class HelianthusZoneValve(HelianthusReadOnlyValve):
     """Read-only zone valve status (0/100)."""
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -264,10 +269,7 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
 
     @property
     def name(self) -> str | None:
-        zone_name = self._zone().get("name")
-        if zone_name is not None and str(zone_name).strip():
-            return f"{str(zone_name).strip()} Valve"
-        return f"{self._initial_name} Valve"
+        return "Valve"
 
     @property
     def device_info(self) -> DeviceInfo:

@@ -82,6 +82,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
     """Circuit room temperature control select."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_options = _OPTIONS
     _attr_icon = "mdi:thermostat"
@@ -103,7 +104,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-room-temp-control"
-        self._attr_name = f"{initial_name} Room Temperature Control"
+        self._attr_name = "Room Temperature Control"
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -116,7 +117,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name()} Room Temperature Control"
+        return "Room Temperature Control"
 
     def _device_name(self) -> str:
         circuit = self._circuit()

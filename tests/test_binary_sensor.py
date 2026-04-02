@@ -219,7 +219,7 @@ def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
     assert len(valve_entities) == 1
     valve = valve_entities[0]
     assert valve._attr_unique_id == "entry-1-zone-zone-1-binary-valve"
-    assert valve._attr_name == "Living Room Valve"
+    assert valve._attr_name == "Valve"
     assert valve.is_on is True
 
 
