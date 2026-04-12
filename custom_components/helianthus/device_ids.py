@@ -230,7 +230,7 @@ def managing_device_identifier(
         if role == "REGULATOR":
             return regulator_device_id
         if role == "FUNCTION_MODULE":
-            device_id = _clean((managing_device or {}).get("deviceId"))
+            device_id = _clean((managing_device or {}).get("device_id"))
             if device_id is None:
                 device_id = _clean((managing_device or {}).get("device_id"))
             address = _parse_bus_address((managing_device or {}).get("address"))

@@ -97,7 +97,7 @@ def _make_program(zone=0, hc="heating", days=None, config=None):
     return {
         "zone": zone,
         "hc": hc,
-        "config": config or {"maxSlots": 3, "hasTemperature": True},
+        "config": config or {"max_slots": 3, "has_temperature": True},
         "days": days or [],
     }
 
@@ -152,7 +152,7 @@ def test_event_returns_none_when_no_program() -> None:
 
 
 def test_make_event_with_temperature() -> None:
-    slot = {"startHour": 6, "startMinute": 0, "endHour": 22, "endMinute": 0, "temperatureC": 22.5}
+    slot = {"start_hour": 6, "start_minute": 0, "end_hour": 22, "end_minute": 0, "temperature_c": 22.5}
     program = _make_program(
         zone=0,
         hc="heating",
@@ -170,7 +170,7 @@ def test_make_event_with_temperature() -> None:
 
 
 def test_make_event_24h_end() -> None:
-    slot = {"startHour": 0, "startMinute": 0, "endHour": 24, "endMinute": 0}
+    slot = {"start_hour": 0, "start_minute": 0, "end_hour": 24, "end_minute": 0}
     program = _make_program(zone=255, hc="dhw")
     cal = _make_calendar(program, zone=255, hc="dhw")
     today = date(2026, 3, 9)
@@ -184,7 +184,7 @@ def test_make_event_24h_end() -> None:
 
 
 def test_make_event_zero_duration_returns_none() -> None:
-    slot = {"startHour": 10, "startMinute": 0, "endHour": 10, "endMinute": 0}
+    slot = {"start_hour": 10, "start_minute": 0, "end_hour": 10, "end_minute": 0}
     program = _make_program()
     cal = _make_calendar(program)
 
@@ -194,7 +194,7 @@ def test_make_event_zero_duration_returns_none() -> None:
 
 
 def test_get_day_slots_matches_weekday() -> None:
-    slot = {"startHour": 6, "startMinute": 0, "endHour": 22, "endMinute": 0}
+    slot = {"start_hour": 6, "start_minute": 0, "end_hour": 22, "end_minute": 0}
     program = _make_program(
         days=[
             {"weekday": "monday", "slots": [slot]},

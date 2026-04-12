@@ -72,8 +72,8 @@ def test_verify_gateway_identity_uses_fallback_address() -> None:
             _FakeResponse(
                 payload={
                     "data": {
-                        "gatewayIdentity": {
-                            "instanceGuid": INSTANCE_GUID,
+                        "gateway_identity": {
+                            "instance_guid": INSTANCE_GUID,
                         }
                     }
                 }
@@ -114,8 +114,8 @@ def test_verify_gateway_identity_rejects_guid_mismatch() -> None:
             _FakeResponse(
                 payload={
                     "data": {
-                        "gatewayIdentity": {
-                            "instanceGuid": "ccccccee-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "gateway_identity": {
+                            "instance_guid": "ccccccee-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         }
                     }
                 }
@@ -146,7 +146,7 @@ def test_verify_gateway_identity_requires_gateway_upgrade_on_graphql_error() -> 
             _FakeResponse(
                 payload={
                     "errors": [
-                        {"message": 'Cannot query field "gatewayIdentity" on type "Query".'}
+                        {"message": 'Cannot query field "gateway_identity" on type "Query".'}
                     ]
                 }
             )
@@ -175,8 +175,8 @@ def test_verify_gateway_identity_reports_missing_guid() -> None:
             _FakeResponse(
                 payload={
                     "data": {
-                        "gatewayIdentity": {
-                            "instanceGuid": "",
+                        "gateway_identity": {
+                            "instance_guid": "",
                         }
                     }
                 }

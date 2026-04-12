@@ -145,7 +145,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if zone_id is None:
             continue
         config = zone.get("config")
-        mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+        mapping = _parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
         target_device_id = zone_parent_device_ids.get(zone_id)
         if target_device_id is None:
             if mapping in (1, 2, 3, 4):
@@ -250,12 +250,12 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         return self._zone().get("config") or {}
 
     def _room_temperature_zone_mapping(self) -> int | None:
-        return _parse_optional_int(self._zone_config().get("roomTemperatureZoneMapping"))
+        return _parse_optional_int(self._zone_config().get("room_temperature_zone_mapping"))
 
     def _radio_zone_candidates(self) -> dict[int, list[dict[str, Any]]]:
         if self._radio_coordinator is None or not isinstance(self._radio_coordinator.data, dict):
             return {}
-        raw_candidates = self._radio_coordinator.data.get("radioZoneCandidates")
+        raw_candidates = self._radio_coordinator.data.get("radio_zone_candidates")
         if not isinstance(raw_candidates, dict):
             return {}
         out: dict[int, list[dict[str, Any]]] = {}
@@ -279,7 +279,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     def _radio_devices(self) -> list[dict[str, Any]]:
         if self._radio_coordinator is None or not isinstance(self._radio_coordinator.data, dict):
             return []
-        items = self._radio_coordinator.data.get("radioDevices")
+        items = self._radio_coordinator.data.get("radio_devices")
         if not isinstance(items, list):
             return []
         return [item for item in items if isinstance(item, dict)]
@@ -291,7 +291,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             instance = _parse_optional_int(device.get("instance"))
             if group is None or instance is None:
                 continue
-            bus_key = str(device.get("radioBusKey") or "").strip()
+            bus_key = str(device.get("radio_bus_key") or "").strip()
             if not bus_key:
                 bus_key = build_radio_bus_key(group, instance)
             out[(group, instance)] = radio_device_identifier(self._entry_id, bus_key)
@@ -304,8 +304,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             instance = _parse_optional_int(device.get("instance"))
             if group is None or instance is None:
                 continue
-            model = str(device.get("deviceModel") or "").strip()
-            class_address = _parse_optional_int(device.get("deviceClassAddress"))
+            model = str(device.get("device_model") or "").strip()
+            class_address = _parse_optional_int(device.get("device_class_address"))
             if not model:
                 if class_address == 0x15:
                     model = "VRC720f/2"
@@ -332,7 +332,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        mode = str(self._zone_config().get("operatingMode") or "").strip().lower()
+        mode = str(self._zone_config().get("operating_mode") or "").strip().lower()
         if not mode:
             return None
         return OPERATING_MODE_MAP.get(mode, HVACMode.AUTO)
@@ -340,7 +340,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     @property
     def hvac_modes(self) -> list[HVACMode]:
         supported: list[HVACMode] = []
-        for token in normalize_allowed_mode_tokens(self._zone_config().get("allowedModes")):
+        for token in normalize_allowed_mode_tokens(self._zone_config().get("allowed_modes")):
             mapped = OPERATING_MODE_MAP.get(token)
             if mapped is not None and mapped not in supported:
                 supported.append(mapped)
@@ -358,17 +358,17 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        value = self._zone_state().get("currentTempC")
+        value = self._zone_state().get("current_temp_c")
         return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
-        value = self._zone_config().get("targetTempC")
+        value = self._zone_config().get("target_temp_c")
         return float(value) if value is not None else None
 
     @property
     def current_humidity(self) -> float | None:
-        value = self._zone_state().get("currentHumidityPct")
+        value = self._zone_state().get("current_humidity_pct")
         return float(value) if value is not None else None
 
     @property
@@ -377,15 +377,15 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         state = self._zone_state()
         config = self._zone_config()
         mapping = self._room_temperature_zone_mapping()
-        demand = state.get("heatingDemandPct")
+        demand = state.get("heating_demand_pct")
         if demand is not None:
             attrs["heating_demand_pct"] = demand
         for field, source, key in [
-            ("hvac_action", state, "hvacAction"),
-            ("special_function", state, "specialFunction"),
-            ("valve_position_pct", state, "valvePositionPct"),
-            ("circuit_type", config, "circuitType"),
-            ("associated_circuit", config, "associatedCircuit"),
+            ("hvac_action", state, "hvac_action"),
+            ("special_function", state, "special_function"),
+            ("valve_position_pct", state, "valve_position_pct"),
+            ("circuit_type", config, "circuit_type"),
+            ("associated_circuit", config, "associated_circuit"),
         ]:
             value = source.get(key)
             if value is not None and str(value).strip() != "":
@@ -399,15 +399,15 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         )
 
         for field, key in [
-            ("quick_veto", "quickVeto"),
-            ("quick_veto_setpoint_c", "quickVetoSetpoint"),
-            ("quick_veto_duration_h", "quickVetoDuration"),
-            ("quick_veto_expiry", "quickVetoExpiry"),
-            ("holiday_start_date", "holidayStartDate"),
-            ("holiday_end_date", "holidayEndDate"),
-            ("holiday_setpoint_c", "holidaySetpoint"),
-            ("holiday_start_time", "holidayStartTime"),
-            ("holiday_end_time", "holidayEndTime"),
+            ("quick_veto", "quick_veto"),
+            ("quick_veto_setpoint_c", "quick_veto_setpoint"),
+            ("quick_veto_duration_h", "quick_veto_duration"),
+            ("quick_veto_expiry", "quick_veto_expiry"),
+            ("holiday_start_date", "holiday_start_date"),
+            ("holiday_end_date", "holiday_end_date"),
+            ("holiday_setpoint_c", "holiday_setpoint"),
+            ("holiday_start_time", "holiday_start_time"),
+            ("holiday_end_time", "holiday_end_time"),
         ]:
             value = config.get(key)
             if value is not None:
@@ -476,9 +476,9 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     async def _activate_quick_veto(self) -> None:
         """Activate quick veto with the current target temperature and default duration."""
         config = self._zone_config()
-        temp = config.get("targetTempC")
+        temp = config.get("target_temp_c")
         if temp is None:
-            temp = config.get("quickVetoSetpoint")
+            temp = config.get("quick_veto_setpoint")
         if temp is None:
             temp = 20.0
         temp = max(5.0, min(30.0, float(temp)))
@@ -495,7 +495,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         the window where the controller sees a partial holiday state.
         """
         config = self._zone_config()
-        setpoint = config.get("holidaySetpoint")
+        setpoint = config.get("holiday_setpoint")
         if setpoint is None:
             setpoint = 10.0
         setpoint = max(5.0, min(30.0, float(setpoint)))
@@ -518,7 +518,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         """
         config = self._zone_config()
         has_holiday_dates = bool(
-            config.get("holidayStartDate") or config.get("holidayEndDate")
+            config.get("holiday_start_date") or config.get("holiday_end_date")
         )
         if self.preset_mode != "away" and not has_holiday_dates:
             return

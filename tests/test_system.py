@@ -161,7 +161,7 @@ class _FakeClient:
 
     async def mutation(self, query: str, variables: dict):  # noqa: ANN201
         self.calls.append({"query": query, "variables": variables})
-        return {"setSystemConfig": {"success": True, "error": None}}
+        return {"set_system_config": {"success": True, "error": None}}
 
 
 class _FakeEntry:
@@ -178,25 +178,25 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
     system_coordinator = _FakeCoordinator(
         {
             "state": {
-                "systemWaterPressure": 1.8,
-                "outdoorTemperature": 6.2,
-                "outdoorTemperatureAvg24h": 4.1,
-                "systemFlowTemperature": 48.0,
-                "hwcCylinderTemperatureTop": 46.5,
-                "hwcCylinderTemperatureBottom": 38.0,
-                "maintenanceDue": True,
+                "system_water_pressure": 1.8,
+                "outdoor_temperature": 6.2,
+                "outdoor_temperature_avg24h": 4.1,
+                "system_flow_temperature": 48.0,
+                "hwc_cylinder_temperature_top": 46.5,
+                "hwc_cylinder_temperature_bottom": 38.0,
+                "maintenance_due": True,
             },
             "config": {
-                "adaptiveHeatingCurve": False,
-                "heatingCircuitBivalencePoint": -2.0,
-                "dhwBivalencePoint": 5.0,
-                "hcEmergencyTemperature": 55.0,
-                "hwcMaxFlowTempDesired": 62.0,
-                "maxRoomHumidity": 65,
+                "adaptive_heating_curve": False,
+                "heating_circuit_bivalence_point": -2.0,
+                "dhw_bivalence_point": 5.0,
+                "hc_emergency_temperature": 55.0,
+                "hwc_max_flow_temp_desired": 62.0,
+                "max_room_humidity": 65,
             },
             "properties": {
-                "systemScheme": 3,
-                "moduleConfigurationVR71": 1,
+                "system_scheme": 3,
+                "module_configuration_vr71": 1,
             },
         }
     )
@@ -232,23 +232,23 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
     ]
     assert len(system_entities) == len(sensor_platform.SYSTEM_SENSOR_FIELDS)
     assert {entity._attr_unique_id for entity in system_entities} == {
-        "entry-1-system-sensor-systemWaterPressure",
-        "entry-1-system-sensor-outdoorTemperature",
-        "entry-1-system-sensor-outdoorTemperatureAvg24h",
-        "entry-1-system-sensor-systemFlowTemperature",
-        "entry-1-system-sensor-hwcCylinderTemperatureTop",
-        "entry-1-system-sensor-hwcCylinderTemperatureBottom",
-        "entry-1-system-sensor-systemScheme",
+        "entry-1-system-sensor-system_water_pressure",
+        "entry-1-system-sensor-outdoor_temperature",
+        "entry-1-system-sensor-outdoor_temperature_avg24h",
+        "entry-1-system-sensor-system_flow_temperature",
+        "entry-1-system-sensor-hwc_cylinder_temperature_top",
+        "entry-1-system-sensor-hwc_cylinder_temperature_bottom",
+        "entry-1-system-sensor-system_scheme",
     }
     pressure = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-sensor-systemWaterPressure"
+        if entity._attr_unique_id == "entry-1-system-sensor-system_water_pressure"
     )
     scheme = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-sensor-systemScheme"
+        if entity._attr_unique_id == "entry-1-system-sensor-system_scheme"
     )
     assert pressure.native_value == 1.8
     assert scheme.native_value == 3
@@ -273,12 +273,12 @@ def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
     maintenance = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-binary-maintenanceDue"
+        if entity._attr_unique_id == "entry-1-system-binary-maintenance_due"
     )
     adaptive = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-binary-adaptiveHeatingCurve"
+        if entity._attr_unique_id == "entry-1-system-binary-adaptive_heating_curve"
     )
     assert maintenance.is_on is True
     assert adaptive.is_on is False
@@ -301,18 +301,18 @@ def test_system_number_entities_write_set_system_config_mutation() -> None:
     assert len(system_numbers) == 5
 
     hc_bivalence = next(
-        entity for entity in system_numbers if entity._field.mutation_field == "hcBivalencePointC"
+        entity for entity in system_numbers if entity._field.mutation_field == "hc_bivalence_point_c"
     )
     max_humidity = next(
-        entity for entity in system_numbers if entity._field.mutation_field == "maxRoomHumidityPct"
+        entity for entity in system_numbers if entity._field.mutation_field == "max_room_humidity_pct"
     )
 
     asyncio.run(hc_bivalence.async_set_native_value(-1.0))
     asyncio.run(max_humidity.async_set_native_value(70.0))
 
     assert [call["variables"]["field"] for call in client.calls] == [
-        "hcBivalencePointC",
-        "maxRoomHumidityPct",
+        "hc_bivalence_point_c",
+        "max_room_humidity_pct",
     ]
     assert [call["variables"]["value"] for call in client.calls] == ["-1.0", "70"]
     assert system_coordinator.refresh_requests == 2

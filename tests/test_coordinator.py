@@ -158,7 +158,7 @@ def _build_fm5_coordinator(client: _ScriptedClient) -> HelianthusFM5Coordinator:
 
 def _energy_totals_payload(today: float = 3.5) -> dict[str, dict]:
     return {
-        "energyTotals": {
+        "energy_totals": {
             "gas": {
                 "dhw": {"today": today, "yearly": [120.0, 240.0]},
                 "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
@@ -179,16 +179,16 @@ def test_v3_falls_back_to_v3_without_part_number() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "partNumber" on type "Device".'}]
+                [{"message": 'Cannot query field "part_number" on type "Device".'}]
             ),
             {
                 "devices": [
                     {
                         "address": 8,
                         "manufacturer": "Vaillant",
-                        "displayName": "sensoCOMFORT",
-                        "productFamily": "sensoCOMFORT",
-                        "productModel": "VRC 720f/2",
+                        "display_name": "sensoCOMFORT",
+                        "product_family": "sensoCOMFORT",
+                        "product_model": "VRC 720f/2",
                     }
                 ]
             },
@@ -199,7 +199,7 @@ def test_v3_falls_back_to_v3_without_part_number() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert len(data) == 1
-    assert data[0]["displayName"] == "sensoCOMFORT"
+    assert data[0]["display_name"] == "sensoCOMFORT"
     assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_PART]
 
 
@@ -214,7 +214,7 @@ def test_v3_falls_back_when_addresses_field_missing() -> None:
                     {
                         "address": 8,
                         "manufacturer": "Vaillant",
-                        "deviceId": "BASV2",
+                        "device_id": "BASV2",
                     }
                 ]
             },
@@ -233,7 +233,7 @@ def test_v2_fallback_wraps_transport_error_as_update_failed() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "displayName" on type "Device".'}]
+                [{"message": 'Cannot query field "display_name" on type "Device".'}]
             ),
             GraphQLClientError("timeout while reading response"),
         ]
@@ -254,7 +254,7 @@ def test_v2_fallback_drops_addresses_when_missing() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "displayName" on type "Device".'}]
+                [{"message": 'Cannot query field "display_name" on type "Device".'}]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "addresses" on type "Device".'}]
@@ -264,7 +264,7 @@ def test_v2_fallback_drops_addresses_when_missing() -> None:
                     {
                         "address": 21,
                         "manufacturer": "Vaillant",
-                        "deviceId": "BASV2",
+                        "device_id": "BASV2",
                     }
                 ]
             },
@@ -283,16 +283,16 @@ def test_status_query_uses_initiator_field_when_available() -> None:
     client = _ScriptedClient(
         [
             {
-                "daemonStatus": {
+                "daemon_status": {
                     "status": "running",
-                    "firmwareVersion": "0.3.10",
-                    "updatesAvailable": False,
-                    "initiatorAddress": "0xF7",
+                    "firmware_version": "0.3.10",
+                    "updates_available": False,
+                    "initiator_address": "0xF7",
                 },
-                "adapterStatus": {
+                "adapter_status": {
                     "status": "ok",
-                    "firmwareVersion": "3.0",
-                    "updatesAvailable": False,
+                    "firmware_version": "3.0",
+                    "updates_available": False,
                 },
             }
         ]
@@ -301,7 +301,7 @@ def test_status_query_uses_initiator_field_when_available() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["daemon"]["initiatorAddress"] == "0xF7"
+    assert data["daemon"]["initiator_address"] == "0xF7"
     assert client.calls == [QUERY_STATUS]
 
 
@@ -309,18 +309,18 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "initiatorAddress" on type "ServiceStatus".'}]
+                [{"message": 'Cannot query field "initiator_address" on type "ServiceStatus".'}]
             ),
             {
-                "daemonStatus": {
+                "daemon_status": {
                     "status": "running",
-                    "firmwareVersion": "0.3.10",
-                    "updatesAvailable": False,
+                    "firmware_version": "0.3.10",
+                    "updates_available": False,
                 },
-                "adapterStatus": {
+                "adapter_status": {
                     "status": "ok",
-                    "firmwareVersion": "3.0",
-                    "updatesAvailable": False,
+                    "firmware_version": "3.0",
+                    "updates_available": False,
                 },
             },
         ]
@@ -330,7 +330,7 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert data["daemon"]["status"] == "running"
-    assert "initiatorAddress" not in data["daemon"]
+    assert "initiator_address" not in data["daemon"]
     assert client.calls == [QUERY_STATUS, QUERY_STATUS_LEGACY]
 
 
@@ -340,10 +340,10 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "adapterHardwareInfo" on type "Query".'}]
+                [{"message": 'Cannot query field "adapter_hardware_info" on type "Query".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "adapterHardwareInfo" on type "Query".'}]
+                [{"message": 'Cannot query field "adapter_hardware_info" on type "Query".'}]
             ),
         ]
     )
@@ -367,24 +367,24 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
 def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
     client = _ScriptedClient(
         [
-            GraphQLResponseError([{"message": 'boom on "adapterStatus"'}]),
+            GraphQLResponseError([{"message": 'boom on "adapter_status"'}]),
             {
-                "adapterHardwareInfo": {
-                    "firmwareVersion": "2.0.0",
-                    "infoSupported": True,
-                    "isWifi": True,
-                    "isEthernet": False,
-                    "versionResponseLen": 8,
+                "adapter_hardware_info": {
+                    "firmware_version": "2.0.0",
+                    "info_supported": True,
+                    "is_wifi": True,
+                    "is_ethernet": False,
+                    "version_response_len": 8,
                 }
             },
             {
-                "adapterHardwareInfo": {
-                    "firmwareVersion": "2.0.1",
-                    "infoSupported": True,
-                    "isWifi": True,
-                    "isEthernet": False,
-                    "versionResponseLen": 8,
-                    "temperatureC": 31.5,
+                "adapter_hardware_info": {
+                    "firmware_version": "2.0.1",
+                    "info_supported": True,
+                    "is_wifi": True,
+                    "is_ethernet": False,
+                    "version_response_len": 8,
+                    "temperature_c": 31.5,
                 }
             },
         ]
@@ -394,10 +394,10 @@ def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
 
-    assert first["firmwareVersion"] == "2.0.0"
-    assert first["isWifi"] is True
-    assert second["firmwareVersion"] == "2.0.1"
-    assert second["temperatureC"] == 31.5
+    assert first["firmware_version"] == "2.0.0"
+    assert first["is_wifi"] is True
+    assert second["firmware_version"] == "2.0.1"
+    assert second["temperature_c"] == 31.5
     assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
     assert client.calls == [
         QUERY_ADAPTER_HARDWARE_INFO,
@@ -410,25 +410,25 @@ def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() ->
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "bootloaderVersion" on type "AdapterHardwareInfo".'}]
+                [{"message": 'Cannot query field "bootloader_version" on type "AdapterHardwareInfo".'}]
             ),
             {
-                "adapterHardwareInfo": {
-                    "firmwareVersion": "2.0.0",
-                    "infoSupported": True,
-                    "isWifi": True,
-                    "isEthernet": False,
-                    "versionResponseLen": 8,
+                "adapter_hardware_info": {
+                    "firmware_version": "2.0.0",
+                    "info_supported": True,
+                    "is_wifi": True,
+                    "is_ethernet": False,
+                    "version_response_len": 8,
                 }
             },
             {
-                "adapterHardwareInfo": {
-                    "firmwareVersion": "2.0.1",
-                    "infoSupported": True,
-                    "isWifi": True,
-                    "isEthernet": False,
-                    "versionResponseLen": 8,
-                    "temperatureC": 31.5,
+                "adapter_hardware_info": {
+                    "firmware_version": "2.0.1",
+                    "info_supported": True,
+                    "is_wifi": True,
+                    "is_ethernet": False,
+                    "version_response_len": 8,
+                    "temperature_c": 31.5,
                 }
             },
         ]
@@ -438,10 +438,10 @@ def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() ->
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
 
-    assert first["firmwareVersion"] == "2.0.0"
-    assert first["isWifi"] is True
-    assert second["firmwareVersion"] == "2.0.1"
-    assert second["temperatureC"] == 31.5
+    assert first["firmware_version"] == "2.0.0"
+    assert first["is_wifi"] is True
+    assert second["firmware_version"] == "2.0.1"
+    assert second["temperature_c"] == 31.5
     assert coordinator._hardware_info_supported is False  # type: ignore[attr-defined]
     assert client.calls == [
         QUERY_ADAPTER_HARDWARE_INFO,
@@ -452,14 +452,14 @@ def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() ->
 
 def test_boiler_query_returns_status_payload() -> None:
     payload = {
-        "boilerStatus": {
+        "boiler_status": {
             "state": {
-                "flowTemperatureC": 63.0,
-                "returnTemperatureC": None,
-                "centralHeatingPumpActive": True,
+                "flow_temperature_c": 63.0,
+                "return_temperature_c": None,
+                "central_heating_pump_active": True,
             },
             "diagnostics": {
-                "heatingStatusRaw": 4,
+                "heating_status_raw": 4,
             },
         }
     }
@@ -468,7 +468,7 @@ def test_boiler_query_returns_status_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["boilerStatus"]["state"]["flowTemperatureC"] == 63.0
+    assert data["boiler_status"]["state"]["flow_temperature_c"] == 63.0
     assert client.calls[0] == QUERY_BOILER
 
 
@@ -476,7 +476,7 @@ def test_boiler_query_missing_field_falls_back_to_none() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "boilerStatus" on type "Query".'}]
+                [{"message": 'Cannot query field "boiler_status" on type "Query".'}]
             )
         ]
     )
@@ -484,7 +484,7 @@ def test_boiler_query_missing_field_falls_back_to_none() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data == {"boilerStatus": None}
+    assert data == {"boiler_status": None}
     assert client.calls[0] == QUERY_BOILER
     assert coordinator.boiler_supported is False
 
@@ -493,7 +493,7 @@ def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "centralHeatingPumpActive" on type "BoilerState".'}]
+                [{"message": 'Cannot query field "central_heating_pump_active" on type "BoilerState".'}]
             )
         ]
     )
@@ -501,7 +501,7 @@ def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data == {"boilerStatus": None}
+    assert data == {"boiler_status": None}
     assert client.calls[0] == QUERY_BOILER
     assert coordinator.boiler_supported is False
 
@@ -511,15 +511,15 @@ def test_circuit_query_returns_circuit_payload() -> None:
         "circuits": [
             {
                 "index": 0,
-                "circuitType": "heating",
-                "hasMixer": True,
-                "managingDevice": {
+                "circuit_type": "heating",
+                "has_mixer": True,
+                "managing_device": {
                     "role": "FUNCTION_MODULE",
-                    "deviceId": "VR_71",
+                    "device_id": "VR_71",
                     "address": 0x26,
                 },
-                "state": {"pumpActive": True},
-                "config": {"coolingEnabled": False},
+                "state": {"pump_active": True},
+                "config": {"cooling_enabled": False},
             }
         ]
     }
@@ -552,16 +552,16 @@ def test_system_query_returns_system_payload() -> None:
     payload = {
         "system": {
             "state": {
-                "systemWaterPressure": 1.7,
-                "maintenanceDue": False,
+                "system_water_pressure": 1.7,
+                "maintenance_due": False,
             },
             "config": {
-                "adaptiveHeatingCurve": True,
-                "maxRoomHumidity": 60,
+                "adaptive_heating_curve": True,
+                "max_room_humidity": 60,
             },
             "properties": {
-                "systemScheme": 3,
-                "moduleConfigurationVR71": 1,
+                "system_scheme": 3,
+                "module_configuration_vr71": 1,
             },
         }
     }
@@ -570,9 +570,9 @@ def test_system_query_returns_system_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["state"]["systemWaterPressure"] == 1.7
-    assert data["config"]["adaptiveHeatingCurve"] is True
-    assert data["properties"]["systemScheme"] == 3
+    assert data["state"]["system_water_pressure"] == 1.7
+    assert data["config"]["adaptive_heating_curve"] is True
+    assert data["properties"]["system_scheme"] == 3
     assert client.calls[0] == QUERY_SYSTEM
 
 
@@ -594,29 +594,29 @@ def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
 
 def test_radio_query_builds_candidates_and_inventory_slot() -> None:
     payload = {
-        "radioDevices": [
+        "radio_devices": [
             {
                 "group": 0x09,
                 "instance": 1,
-                "deviceConnected": True,
-                "deviceClassAddress": 0x15,
-                "zoneAssignment": 2,
-                "remoteControlAddress": 0,
+                "device_connected": True,
+                "device_class_address": 0x15,
+                "zone_assignment": 2,
+                "remote_control_address": 0,
             },
             {
                 "group": 0x09,
                 "instance": 2,
-                "deviceConnected": False,
-                "deviceClassAddress": 0x15,
-                "zoneAssignment": 3,
+                "device_connected": False,
+                "device_class_address": 0x15,
+                "zone_assignment": 3,
             },
             {
                 "group": 0x0C,
                 "instance": 1,
-                "deviceConnected": False,
-                "deviceClassAddress": 0x26,
-                "firmwareVersion": "0805",
-                "hardwareIdentifier": 0x1234,
+                "device_connected": False,
+                "device_class_address": 0x26,
+                "firmware_version": "0805",
+                "hardware_identifier": 0x1234,
             },
         ]
     }
@@ -625,11 +625,11 @@ def test_radio_query_builds_candidates_and_inventory_slot() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    slots = {(int(item["group"]), int(item["instance"])) for item in data["radioDevices"]}
+    slots = {(int(item["group"]), int(item["instance"])) for item in data["radio_devices"]}
     assert slots == {(0x09, 1), (0x0C, 1)}
-    assert 1 in data["radioZoneCandidates"]
-    assert data["radioZoneCandidates"][1][0]["group"] == 0x09
-    assert data["radioZoneCandidates"][1][0]["instance"] == 1
+    assert 1 in data["radio_zone_candidates"]
+    assert data["radio_zone_candidates"][1][0]["group"] == 0x09
+    assert data["radio_zone_candidates"][1][0]["instance"] == 1
     assert client.calls == [QUERY_RADIO_DEVICES]
 
 
@@ -637,12 +637,12 @@ def test_radio_query_uses_stale_grace_cycles_for_disconnected_slot() -> None:
     client = _ScriptedClient(
         [
             {
-                "radioDevices": [
+                "radio_devices": [
                     {
                         "group": 0x09,
                         "instance": 1,
-                        "deviceConnected": True,
-                        "deviceClassAddress": 0x15,
+                        "device_connected": True,
+                        "device_class_address": 0x15,
                     }
                 ]
             }
@@ -650,28 +650,28 @@ def test_radio_query_uses_stale_grace_cycles_for_disconnected_slot() -> None:
     )
     coordinator = _build_radio_coordinator(client)
     first = asyncio.run(coordinator._async_update_data())
-    assert len(first["radioDevices"]) == 1
+    assert len(first["radio_devices"]) == 1
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
     )
-    assert coordinator.data["radioDevices"][0]["staleCycles"] == 1  # type: ignore[index]
+    assert coordinator.data["radio_devices"][0]["stale_cycles"] == 1  # type: ignore[index]
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
     )
-    assert coordinator.data["radioDevices"][0]["staleCycles"] == 2  # type: ignore[index]
+    assert coordinator.data["radio_devices"][0]["stale_cycles"] == 2  # type: ignore[index]
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "deviceConnected": False, "deviceClassAddress": 0x15}]
+        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
     )
-    assert coordinator.data["radioDevices"][0]["staleCycles"] == 3  # type: ignore[index]
+    assert coordinator.data["radio_devices"][0]["stale_cycles"] == 3  # type: ignore[index]
 
 
 def test_fm5_query_suppresses_interpreted_payload_when_gpio_only() -> None:
     client = _ScriptedClient(
         [
             {
-                "fm5SemanticMode": "GPIO_ONLY",
-                "solar": {"collectorTemperatureC": 70.0},
-                "cylinders": [{"index": 0, "temperatureC": 48.0}],
+                "fm5_semantic_mode": "GPIO_ONLY",
+                "solar": {"collector_temperature_c": 70.0},
+                "cylinders": [{"index": 0, "temperature_c": 48.0}],
             }
         ]
     )
@@ -679,7 +679,7 @@ def test_fm5_query_suppresses_interpreted_payload_when_gpio_only() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["fm5SemanticMode"] == "GPIO_ONLY"
+    assert data["fm5_semantic_mode"] == "GPIO_ONLY"
     assert data["solar"] is None
     assert data["cylinders"] == []
     assert client.calls == [QUERY_FM5]
@@ -689,9 +689,9 @@ def test_fm5_query_returns_interpreted_payload() -> None:
     client = _ScriptedClient(
         [
             {
-                "fm5SemanticMode": "INTERPRETED",
-                "solar": {"collectorTemperatureC": 70.0},
-                "cylinders": [{"index": 0, "temperatureC": 48.0}],
+                "fm5_semantic_mode": "INTERPRETED",
+                "solar": {"collector_temperature_c": 70.0},
+                "cylinders": [{"index": 0, "temperature_c": 48.0}],
             }
         ]
     )
@@ -699,8 +699,8 @@ def test_fm5_query_returns_interpreted_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["fm5SemanticMode"] == "INTERPRETED"
-    assert data["solar"]["collectorTemperatureC"] == 70.0
+    assert data["fm5_semantic_mode"] == "INTERPRETED"
+    assert data["solar"]["collector_temperature_c"] == 70.0
     assert data["cylinders"][0]["index"] == 0
 
 
@@ -708,7 +708,7 @@ def test_energy_query_uses_root_energy_totals_and_caches_last_good() -> None:
     client = _ScriptedClient(
         [
             _energy_totals_payload(today=3.5),
-            {"energyTotals": None},
+            {"energy_totals": None},
         ]
     )
     coordinator = _build_energy_coordinator(client)
@@ -716,8 +716,8 @@ def test_energy_query_uses_root_energy_totals_and_caches_last_good() -> None:
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
 
-    assert first["energyTotals"]["gas"]["dhw"]["today"] == 3.5
-    assert second["energyTotals"]["gas"]["dhw"]["today"] == 3.5
+    assert first["energy_totals"]["gas"]["dhw"]["today"] == 3.5
+    assert second["energy_totals"]["gas"]["dhw"]["today"] == 3.5
     assert client.calls == [QUERY_ENERGY, QUERY_ENERGY]
 
 
@@ -725,7 +725,7 @@ def test_energy_query_returns_unavailable_before_first_valid_sample() -> None:
     client = _ScriptedClient(
         [
             GraphQLClientError("temporary upstream timeout"),
-            {"energyTotals": None},
+            {"energy_totals": None},
         ]
     )
     coordinator = _build_energy_coordinator(client)
@@ -733,8 +733,8 @@ def test_energy_query_returns_unavailable_before_first_valid_sample() -> None:
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
 
-    assert first == {"energyTotals": None}
-    assert second == {"energyTotals": None}
+    assert first == {"energy_totals": None}
+    assert second == {"energy_totals": None}
 
 
 def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
@@ -752,8 +752,8 @@ def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
 
-    assert first["energyTotals"]["gas"]["dhw"]["today"] == 5.0
-    assert second["energyTotals"]["gas"]["dhw"]["today"] == 6.0
+    assert first["energy_totals"]["gas"]["dhw"]["today"] == 5.0
+    assert second["energy_totals"]["gas"]["dhw"]["today"] == 6.0
     assert client.calls == [QUERY_ENERGY, QUERY_ENERGY_LEGACY, QUERY_ENERGY_LEGACY]
     assert coordinator._monthly_supported is False
 
@@ -772,9 +772,9 @@ def test_schedule_coordinator_returns_programs() -> None:
                 {
                     "zone": 0,
                     "hc": "heating",
-                    "config": {"maxSlots": 12, "hasTemperature": True},
+                    "config": {"max_slots": 12, "has_temperature": True},
                     "days": [
-                        {"weekday": "monday", "slots": [{"startHour": 6, "endHour": 22}]}
+                        {"weekday": "monday", "slots": [{"start_hour": 6, "end_hour": 22}]}
                     ],
                 }
             ]
@@ -825,13 +825,13 @@ def _build_semantic_coordinator(client: _ScriptedClient) -> HelianthusSemanticCo
 
 def _semantic_payload(**config_overrides: object) -> dict:
     config = {
-        "operatingMode": "auto",
+        "operating_mode": "auto",
         "preset": "schedule",
-        "targetTempC": 21.5,
-        "allowedModes": ["off", "auto", "heat"],
-        "circuitType": "heating",
-        "associatedCircuit": 0,
-        "roomTemperatureZoneMapping": 1,
+        "target_temp_c": 21.5,
+        "allowed_modes": ["off", "auto", "heat"],
+        "circuit_type": "heating",
+        "associated_circuit": 0,
+        "room_temperature_zone_mapping": 1,
     }
     config.update(config_overrides)
     return {
@@ -839,7 +839,7 @@ def _semantic_payload(**config_overrides: object) -> dict:
             {
                 "id": "zone-1",
                 "name": "Living Room",
-                "state": {"currentTempC": 20.0},
+                "state": {"current_temp_c": 20.0},
                 "config": config,
             }
         ],
@@ -849,7 +849,7 @@ def _semantic_payload(**config_overrides: object) -> dict:
 
 def test_semantic_full_query_succeeds() -> None:
     payload = _semantic_payload(
-        quickVeto=False, quickVetoSetpoint=16.0, quickVetoDuration=3.0
+        quick_veto=False, quick_veto_setpoint=16.0, quick_veto_duration=3.0
     )
     client = _ScriptedClient([payload])
     coordinator = _build_semantic_coordinator(client)
@@ -857,7 +857,7 @@ def test_semantic_full_query_succeeds() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert result["zones"][0]["config"]["quickVeto"] is False
+    assert result["zones"][0]["config"]["quick_veto"] is False
     assert client.calls == [QUERY_SEMANTIC]
 
 
@@ -865,7 +865,7 @@ def test_semantic_falls_back_to_no_holiday() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "holidayStartDate" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
             ),
             _semantic_payload(),
         ]
@@ -882,10 +882,10 @@ def test_semantic_falls_back_to_no_qv() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
             ),
             _semantic_payload(),
         ]
@@ -902,15 +902,15 @@ def test_semantic_falls_back_to_legacy() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quickVeto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
                 [
                     {
-                        "message": 'Cannot query field "roomTemperatureZoneMapping" on type "ZoneConfig".'
+                        "message": 'Cannot query field "room_temperature_zone_mapping" on type "ZoneConfig".'
                     }
                 ]
             ),

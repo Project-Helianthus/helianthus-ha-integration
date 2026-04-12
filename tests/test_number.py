@@ -98,7 +98,7 @@ class _FakeClient:
 
     async def mutation(self, query: str, variables: dict):  # noqa: ANN201
         self.calls.append({"query": query, "variables": variables})
-        return {"setBoilerConfig": {"success": True, "error": None}}
+        return {"set_boiler_config": {"success": True, "error": None}}
 
 
 class _FakeEntry:
@@ -114,12 +114,12 @@ class _FakeHass:
 def _payload(*, boiler_device_id: tuple[str, str] | None):
     boiler_coordinator = _FakeCoordinator(
         {
-            "boilerStatus": {
+            "boiler_status": {
                 "config": {
-                    "flowsetHcMaxC": 70.0,
-                    "flowsetHwcMaxC": 59.0,
-                    "partloadHcKW": 18.5,
-                    "partloadHwcKW": 22.0,
+                    "flowset_hc_max_c": 70.0,
+                    "flowset_hwc_max_c": 59.0,
+                    "partload_hc_kw": 18.5,
+                    "partload_hwc_kw": 22.0,
                 }
             }
         }
@@ -184,15 +184,15 @@ def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     boiler_numbers = [
         entity for entity in entities if isinstance(entity, number_platform.HelianthusBoilerNumber)
     ]
-    ch_max = next(entity for entity in boiler_numbers if entity._field.key == "flowsetHcMaxC")
-    dhw_partload = next(entity for entity in boiler_numbers if entity._field.key == "partloadHwcKW")
+    ch_max = next(entity for entity in boiler_numbers if entity._field.key == "flowset_hc_max_c")
+    dhw_partload = next(entity for entity in boiler_numbers if entity._field.key == "partload_hwc_kw")
 
     asyncio.run(ch_max.async_set_native_value(68.0))
     asyncio.run(dhw_partload.async_set_native_value(21.5))
 
     assert [call["variables"]["field"] for call in client.calls] == [
-        "flowsetHcMaxC",
-        "partloadHwcKW",
+        "flowset_hc_max_c",
+        "partload_hwc_kw",
     ]
     assert [call["variables"]["value"] for call in client.calls] == ["68.0", "21.5"]
     assert boiler_coordinator.refresh_requests == 2

@@ -105,18 +105,18 @@ def _payload(*, boiler_device_id: tuple[str, str] | None, position: float | None
                 "circuits": [
                     {
                         "index": 0,
-                        "hasMixer": True,
-                        "state": {"mixerPositionPct": 42.0},
+                        "has_mixer": True,
+                        "state": {"mixer_position_pct": 42.0},
                         "config": {},
                     }
                 ]
             }
         ),
         "semantic_coordinator": _FakeCoordinator(
-            {"zones": [{"id": "zone-1", "name": "Living", "state": {"valvePositionPct": 73.4}}], "dhw": None}
+            {"zones": [{"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 73.4}}], "dhw": None}
         ),
         "boiler_coordinator": _FakeCoordinator(
-            {"boilerStatus": {"state": {"diverterValvePositionPct": position}}}
+            {"boiler_status": {"state": {"diverter_valve_position_pct": position}}}
         ),
         "boiler_device_id": boiler_device_id,
         "boiler_via_device_id": boiler_device_id,

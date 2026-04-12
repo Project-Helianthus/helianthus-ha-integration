@@ -69,7 +69,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
         self._manufacturer = manufacturer
         self._client = client
         self._device_id = device_id
-        self._attr_unique_id = f"{entry_id}-system-date-maintenanceDate"
+        self._attr_unique_id = f"{entry_id}-system-date-maintenance_date"
         self._attr_name = "Maintenance Date"
 
     @property
@@ -84,7 +84,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
     def native_value(self) -> datetime.date | None:
         payload = self.coordinator.data or {}
         config = payload.get("config", {})
-        raw = config.get("maintenanceDate")
+        raw = config.get("maintenance_date")
         if raw is None or not isinstance(raw, str):
             return None
         try:
@@ -99,13 +99,13 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
 
-        variables = {"field": "maintenanceDate", "value": iso}
+        variables = {"field": "maintenance_date", "value": iso}
         try:
             payload = await self._client.mutation(_SET_SYSTEM_CONFIG_MUTATION, variables)
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_system_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

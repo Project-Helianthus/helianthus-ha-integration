@@ -63,7 +63,7 @@ def zone_instance_from_id(zone_id: object | None) -> int | None:
 def radio_devices_from_payload(radio_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(radio_payload, dict):
         return []
-    items = radio_payload.get("radioDevices")
+    items = radio_payload.get("radio_devices")
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
@@ -74,7 +74,7 @@ def radio_zone_candidates_from_payload(
 ) -> dict[int, list[dict[str, Any]]]:
     if not isinstance(radio_payload, dict):
         return {}
-    raw_candidates = radio_payload.get("radioZoneCandidates")
+    raw_candidates = radio_payload.get("radio_zone_candidates")
     if not isinstance(raw_candidates, dict):
         return {}
     out: dict[int, list[dict[str, Any]]] = {}
@@ -104,12 +104,12 @@ def radio_device_ids_from_payload(
             {
                 "group": device.get("group"),
                 "instance": device.get("instance"),
-                "remote_control_address": device.get("remoteControlAddress"),
+                "remote_control_address": device.get("remote_control_address"),
             }
         )
         if normalized is None:
             continue
-        bus_key = str(device.get("radioBusKey") or "").strip()
+        bus_key = str(device.get("radio_bus_key") or "").strip()
         if not bus_key:
             bus_key = build_radio_bus_key(normalized["group"], normalized["instance"])
         out[(normalized["group"], normalized["instance"])] = radio_device_identifier(entry_id, bus_key)
@@ -121,13 +121,13 @@ def build_global_radio_candidates(radio_devices: list[dict[str, Any]]) -> list[d
     for device in radio_devices:
         if not isinstance(device, dict):
             continue
-        if device.get("deviceConnected") is not True:
+        if device.get("device_connected") is not True:
             continue
         normalized = normalize_radio_slot_candidate(
             {
                 "group": device.get("group"),
                 "instance": device.get("instance"),
-                "remote_control_address": device.get("remoteControlAddress"),
+                "remote_control_address": device.get("remote_control_address"),
             }
         )
         if normalized is None:
@@ -262,7 +262,7 @@ def build_zone_parent_device_ids(
         if zone_id is None or zone_instance is None:
             continue
         config = zone.get("config")
-        mapping = parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+        mapping = parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
         parent_device_id = zone_via_device(
             zone_instance,
             mapping,

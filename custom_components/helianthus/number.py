@@ -108,9 +108,9 @@ class BoilerNumberField:
 
 
 _CIRCUIT_NUMBER_FIELDS = [
-    CircuitNumberField("heatingCurve", "Heating Curve", 0.1, 4.0, 0.1, icon="mdi:chart-bell-curve-cumulative"),
+    CircuitNumberField("heating_curve", "Heating Curve", 0.1, 4.0, 0.1, icon="mdi:chart-bell-curve-cumulative"),
     CircuitNumberField(
-        "flowTempMaxC",
+        "flow_temp_max_c",
         "Flow Temperature Maximum",
         15.0,
         80.0,
@@ -119,7 +119,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     CircuitNumberField(
-        "flowTempMinC",
+        "flow_temp_min_c",
         "Flow Temperature Minimum",
         5.0,
         30.0,
@@ -128,7 +128,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-down",
     ),
     CircuitNumberField(
-        "summerLimitC",
+        "summer_limit_c",
         "Summer Limit",
         15.0,
         30.0,
@@ -137,7 +137,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         icon="mdi:weather-sunny",
     ),
     CircuitNumberField(
-        "frostProtC",
+        "frost_prot_c",
         "Frost Protection",
         -20.0,
         10.0,
@@ -149,8 +149,8 @@ _CIRCUIT_NUMBER_FIELDS = [
 
 _SYSTEM_NUMBER_FIELDS = [
     SystemNumberField(
-        mutation_field="hcBivalencePointC",
-        config_key="heatingCircuitBivalencePoint",
+        mutation_field="hc_bivalence_point_c",
+        config_key="heating_circuit_bivalence_point",
         label="HC Bivalence Point",
         minimum=-20.0,
         maximum=30.0,
@@ -159,8 +159,8 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer",
     ),
     SystemNumberField(
-        mutation_field="dhwBivalencePointC",
-        config_key="dhwBivalencePoint",
+        mutation_field="dhw_bivalence_point_c",
+        config_key="dhw_bivalence_point",
         label="DHW Bivalence Point",
         minimum=-20.0,
         maximum=50.0,
@@ -169,8 +169,8 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer",
     ),
     SystemNumberField(
-        mutation_field="hcEmergencyTempC",
-        config_key="hcEmergencyTemperature",
+        mutation_field="hc_emergency_temp_c",
+        config_key="hc_emergency_temperature",
         label="HC Emergency Temperature",
         minimum=20.0,
         maximum=80.0,
@@ -179,8 +179,8 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer-alert",
     ),
     SystemNumberField(
-        mutation_field="hwcMaxFlowTempC",
-        config_key="hwcMaxFlowTempDesired",
+        mutation_field="hwc_max_flow_temp_c",
+        config_key="hwc_max_flow_temp_desired",
         label="HWC Max Flow Temperature",
         minimum=15.0,
         maximum=80.0,
@@ -189,8 +189,8 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     SystemNumberField(
-        mutation_field="maxRoomHumidityPct",
-        config_key="maxRoomHumidity",
+        mutation_field="max_room_humidity_pct",
+        config_key="max_room_humidity",
         label="Max Room Humidity",
         minimum=30.0,
         maximum=80.0,
@@ -203,7 +203,7 @@ _SYSTEM_NUMBER_FIELDS = [
 
 _CYLINDER_NUMBER_FIELDS = [
     CylinderNumberField(
-        key="maxSetpointC",
+        key="max_setpoint_c",
         label="Max Setpoint",
         minimum=20.0,
         maximum=80.0,
@@ -212,7 +212,7 @@ _CYLINDER_NUMBER_FIELDS = [
         icon="mdi:thermometer-high",
     ),
     CylinderNumberField(
-        key="chargeHysteresisC",
+        key="charge_hysteresis_c",
         label="Charge Hysteresis",
         minimum=0.0,
         maximum=30.0,
@@ -221,7 +221,7 @@ _CYLINDER_NUMBER_FIELDS = [
         icon="mdi:thermometer",
     ),
     CylinderNumberField(
-        key="chargeOffsetC",
+        key="charge_offset_c",
         label="Charge Offset",
         minimum=-20.0,
         maximum=20.0,
@@ -233,7 +233,7 @@ _CYLINDER_NUMBER_FIELDS = [
 
 _BOILER_NUMBER_FIELDS = [
     BoilerNumberField(
-        key="flowsetHcMaxC",
+        key="flowset_hc_max_c",
         label="CH Max Flow Setpoint",
         minimum=20.0,
         maximum=80.0,
@@ -242,7 +242,7 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
-        key="flowsetHwcMaxC",
+        key="flowset_hwc_max_c",
         label="DHW Max Flow Setpoint",
         minimum=30.0,
         maximum=65.0,
@@ -251,7 +251,7 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
-        key="partloadHcKW",
+        key="partload_hc_kw",
         label="CH Partload",
         minimum=0.0,
         maximum=40.0,
@@ -260,7 +260,7 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:lightning-bolt",
     ),
     BoilerNumberField(
-        key="partloadHwcKW",
+        key="partload_hwc_kw",
         label="DHW Partload",
         minimum=0.0,
         maximum=40.0,
@@ -284,7 +284,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuitType") or "").strip().lower()
+    token = str(circuit.get("circuit_type") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
     return f"Circuit {index + 1} ({label})"
 
@@ -292,7 +292,7 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
 def _fm5_mode(payload: dict[str, Any] | None) -> str:
     if not isinstance(payload, dict):
         return "ABSENT"
-    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
     if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
         return "ABSENT"
     return mode
@@ -406,7 +406,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
     @property
     def native_value(self) -> float | None:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+        boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config") if isinstance(boiler_status, dict) else {}
         value = config.get(self._field.key)
         if value is None:
@@ -430,7 +430,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setBoilerConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_boiler_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -536,7 +536,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setCircuitConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_circuit_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -624,7 +624,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_system_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

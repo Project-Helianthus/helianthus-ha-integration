@@ -124,17 +124,17 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        value = self._dhw_state().get("currentTempC")
+        value = self._dhw_state().get("current_temp_c")
         return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
-        value = self._dhw_config().get("targetTempC")
+        value = self._dhw_config().get("target_temp_c")
         return float(value) if value is not None else None
 
     @property
     def current_operation(self) -> str | None:
-        mode = str(self._dhw_config().get("operatingMode") or "").strip().lower()
+        mode = str(self._dhw_config().get("operating_mode") or "").strip().lower()
         if mode in {"off", "auto", "manual"}:
             return mode
         if mode == "heat":
@@ -161,10 +161,10 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             attrs["preset"] = "away"
         elif preset:
             attrs["preset"] = preset
-        demand = state.get("heatingDemandPct")
+        demand = state.get("heating_demand_pct")
         if demand is not None:
             attrs["heating_demand_pct"] = demand
-        special = state.get("specialFunction")
+        special = state.get("special_function")
         if special is not None and str(special).strip() != "":
             attrs["special_function"] = special
         return attrs

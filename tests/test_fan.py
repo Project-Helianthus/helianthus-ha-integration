@@ -115,17 +115,17 @@ def _payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
         "fm5_coordinator": None,
         "boiler_coordinator": _FakeCoordinator(
             {
-                "boilerStatus": {
+                "boiler_status": {
                     "state": {
-                        "centralHeatingPumpActive": True,
-                        "externalPumpActive": False,
-                        "circulationPumpActive": True,
-                        "storageLoadPumpPct": 42.4,
-                        "flameActive": True,
-                        "modulationPct": 37.6,
-                        "gasValveActive": True,
-                        "fanSpeedRpm": 1860,
-                        "ionisationVoltageUa": 91,
+                        "central_heating_pump_active": True,
+                        "external_pump_active": False,
+                        "circulation_pump_active": True,
+                        "storage_load_pump_pct": 42.4,
+                        "flame_active": True,
+                        "modulation_pct": 37.6,
+                        "gas_valve_active": True,
+                        "fan_speed_rpm": 1860,
+                        "ionisation_voltage_ua": 91,
                     }
                 }
             }

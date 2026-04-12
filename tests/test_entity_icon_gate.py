@@ -349,7 +349,7 @@ def test_valve_base_has_dynamic_icon_property() -> None:
 
 
 def test_valve_icon_at_zero_is_closed() -> None:
-    coord = _FakeCoordinator({"boilerStatus": {"state": {"diverterValvePositionPct": 0}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 0}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -361,7 +361,7 @@ def test_valve_icon_at_zero_is_closed() -> None:
 
 
 def test_valve_icon_at_100_is_open() -> None:
-    coord = _FakeCoordinator({"boilerStatus": {"state": {"diverterValvePositionPct": 100}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 100}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -373,7 +373,7 @@ def test_valve_icon_at_100_is_open() -> None:
 
 
 def test_valve_icon_intermediate() -> None:
-    coord = _FakeCoordinator({"boilerStatus": {"state": {"diverterValvePositionPct": 42}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 42}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -385,7 +385,7 @@ def test_valve_icon_intermediate() -> None:
 
 
 def test_valve_icon_none_position() -> None:
-    coord = _FakeCoordinator({"boilerStatus": {"state": {}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -397,7 +397,7 @@ def test_valve_icon_none_position() -> None:
 
 
 def test_mixing_valve_icon_dynamic() -> None:
-    coord = _FakeCoordinator({"circuits": [{"index": 0, "state": {"mixerPositionPct": 0}}]})
+    coord = _FakeCoordinator({"circuits": [{"index": 0, "state": {"mixer_position_pct": 0}}]})
     valve = HelianthusCircuitMixingValve(
         coordinator=coord,
         entry_id="test",
@@ -409,7 +409,7 @@ def test_mixing_valve_icon_dynamic() -> None:
 
 
 def test_zone_valve_icon_dynamic() -> None:
-    coord = _FakeCoordinator({"zones": [{"id": "zone-1", "name": "Living", "state": {"valvePositionPct": 100}}]})
+    coord = _FakeCoordinator({"zones": [{"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 100}}]})
     valve = HelianthusZoneValve(
         coordinator=coord,
         entry_id="test",
@@ -486,13 +486,13 @@ def test_circuit_counter_icon_is_mdi_counter() -> None:
 
 def test_circuit_mixer_position_has_valve_icon() -> None:
     for field in CIRCUIT_SENSOR_FIELDS:
-        if field.key == "mixerPositionPct":
+        if field.key == "mixer_position_pct":
             assert field.icon == "mdi:valve"
 
 
 def test_circuit_state_has_info_icon() -> None:
     for field in CIRCUIT_SENSOR_FIELDS:
-        if field.key == "circuitState":
+        if field.key == "circuit_state":
             assert field.icon == "mdi:information-outline"
 
 
@@ -511,11 +511,11 @@ def test_boiler_state_fields_have_icons() -> None:
 
 def test_boiler_state_specific_icons() -> None:
     expected = {
-        "modulationPct": "mdi:gas-burner",
-        "fanSpeedRpm": "mdi:fan",
-        "ionisationVoltageUa": "mdi:flash-triangle-outline",
-        "storageLoadPumpPct": "mdi:pump",
-        "diverterValvePositionPct": "mdi:valve",
+        "modulation_pct": "mdi:gas-burner",
+        "fan_speed_rpm": "mdi:fan",
+        "ionisation_voltage_ua": "mdi:flash-triangle-outline",
+        "storage_load_pump_pct": "mdi:pump",
+        "diverter_valve_position_pct": "mdi:valve",
     }
     for field in BOILER_STATE_SENSOR_FIELDS:
         key = field["key"]
@@ -547,9 +547,9 @@ def test_daemon_status_fields_have_icons() -> None:
 def test_status_specific_icons() -> None:
     expected = {
         "status": "mdi:information-outline",
-        "firmwareVersion": "mdi:tag-text-outline",
-        "updatesAvailable": "mdi:update",
-        "initiatorAddress": "mdi:chip",
+        "firmware_version": "mdi:tag-text-outline",
+        "updates_available": "mdi:update",
+        "initiator_address": "mdi:chip",
     }
     for field in DAEMON_STATUS_FIELDS:
         if field.key in expected:
@@ -565,7 +565,7 @@ def test_status_specific_icons() -> None:
 
 def test_system_scheme_has_icon() -> None:
     for field in SYSTEM_SENSOR_FIELDS:
-        if field.key == "systemScheme":
+        if field.key == "system_scheme":
             assert field.icon == "mdi:sitemap-outline"
 
 
@@ -583,9 +583,9 @@ def test_cylinder_config_fields_have_icons() -> None:
 
 def test_cylinder_config_specific_icons() -> None:
     expected = {
-        "maxSetpointC": "mdi:thermometer-high",
-        "chargeHysteresisC": "mdi:thermometer",
-        "chargeOffsetC": "mdi:thermometer",
+        "max_setpoint_c": "mdi:thermometer-high",
+        "charge_hysteresis_c": "mdi:thermometer",
+        "charge_offset_c": "mdi:thermometer",
     }
     for field in CYLINDER_CONFIG_SENSOR_FIELDS:
         key = field["key"]
@@ -630,7 +630,7 @@ def test_radio_sensor_has_dynamic_icon_property() -> None:
 
 def test_radio_signal_icon_low() -> None:
     coord = _FakeCoordinator({
-        "radioDevices": [{"group": 0x0C, "instance": 1, "receptionStrength": 15}],
+        "radio_devices": [{"group": 0x0C, "instance": 1, "reception_strength": 15}],
     })
     sensor = HelianthusRadioSensor(
         coordinator=coord,
@@ -640,7 +640,7 @@ def test_radio_signal_icon_low() -> None:
         radio_name="Test Radio",
         group=0x0C,
         instance=1,
-        key="receptionStrength",
+        key="reception_strength",
         label="Signal Quality",
         icon=None,
     )
@@ -649,7 +649,7 @@ def test_radio_signal_icon_low() -> None:
 
 def test_radio_signal_icon_medium() -> None:
     coord = _FakeCoordinator({
-        "radioDevices": [{"group": 0x0C, "instance": 1, "receptionStrength": 50}],
+        "radio_devices": [{"group": 0x0C, "instance": 1, "reception_strength": 50}],
     })
     sensor = HelianthusRadioSensor(
         coordinator=coord,
@@ -659,7 +659,7 @@ def test_radio_signal_icon_medium() -> None:
         radio_name="Test Radio",
         group=0x0C,
         instance=1,
-        key="receptionStrength",
+        key="reception_strength",
         label="Signal Quality",
         icon=None,
     )
@@ -668,7 +668,7 @@ def test_radio_signal_icon_medium() -> None:
 
 def test_radio_signal_icon_high() -> None:
     coord = _FakeCoordinator({
-        "radioDevices": [{"group": 0x0C, "instance": 1, "receptionStrength": 90}],
+        "radio_devices": [{"group": 0x0C, "instance": 1, "reception_strength": 90}],
     })
     sensor = HelianthusRadioSensor(
         coordinator=coord,
@@ -678,7 +678,7 @@ def test_radio_signal_icon_high() -> None:
         radio_name="Test Radio",
         group=0x0C,
         instance=1,
-        key="receptionStrength",
+        key="reception_strength",
         label="Signal Quality",
         icon=None,
     )
@@ -687,7 +687,7 @@ def test_radio_signal_icon_high() -> None:
 
 def test_radio_signal_icon_none() -> None:
     coord = _FakeCoordinator({
-        "radioDevices": [{"group": 0x0C, "instance": 1}],
+        "radio_devices": [{"group": 0x0C, "instance": 1}],
     })
     sensor = HelianthusRadioSensor(
         coordinator=coord,
@@ -697,7 +697,7 @@ def test_radio_signal_icon_none() -> None:
         radio_name="Test Radio",
         group=0x0C,
         instance=1,
-        key="receptionStrength",
+        key="reception_strength",
         label="Signal Quality",
         icon=None,
     )
@@ -707,7 +707,7 @@ def test_radio_signal_icon_none() -> None:
 def test_radio_metadata_sensor_static_icon() -> None:
     """Non-signal radio sensors should use their static icon."""
     coord = _FakeCoordinator({
-        "radioDevices": [{"group": 0x0C, "instance": 1, "hardwareIdentifier": "ABC123"}],
+        "radio_devices": [{"group": 0x0C, "instance": 1, "hardware_identifier": "ABC123"}],
     })
     sensor = HelianthusRadioSensor(
         coordinator=coord,
@@ -717,7 +717,7 @@ def test_radio_metadata_sensor_static_icon() -> None:
         radio_name="Test Radio",
         group=0x0C,
         instance=1,
-        key="hardwareIdentifier",
+        key="hardware_identifier",
         label="Hardware ID",
         icon="mdi:identifier",
     )
@@ -772,13 +772,13 @@ def test_schedule_binary_sensor_icons() -> None:
 def test_boiler_state_binary_sensor_icons() -> None:
     """Boiler binary sensors must have correct icons by key."""
     expected = {
-        "flameActive": "mdi:fire",
-        "gasValveActive": "mdi:gas-cylinder",
-        "centralHeatingPumpActive": "mdi:pump",
-        "externalPumpActive": "mdi:pump",
-        "circulationPumpActive": "mdi:pump",
+        "flame_active": "mdi:fire",
+        "gas_valve_active": "mdi:gas-cylinder",
+        "central_heating_pump_active": "mdi:pump",
+        "external_pump_active": "mdi:pump",
+        "circulation_pump_active": "mdi:pump",
     }
-    coord = _FakeCoordinator({"boilerStatus": {"state": {}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {}}})
     for key, expected_icon in expected.items():
         sensor = HelianthusBoilerStateBinarySensor(
             coordinator=coord,
@@ -796,11 +796,11 @@ def test_boiler_state_binary_sensor_icons() -> None:
 def test_solar_binary_sensor_icons() -> None:
     """Solar binary sensors must have correct icons by key."""
     expected = {
-        "pumpActive": "mdi:pump",
-        "solarEnabled": "mdi:solar-power",
-        "functionMode": "mdi:solar-panel",
+        "pump_active": "mdi:pump",
+        "solar_enabled": "mdi:solar-power",
+        "function_mode": "mdi:solar-panel",
     }
-    coord = _FakeCoordinator({"fm5SemanticMode": "INTERPRETED", "solar": {}})
+    coord = _FakeCoordinator({"fm5_semantic_mode": "INTERPRETED", "solar": {}})
     for key, expected_icon in expected.items():
         sensor = HelianthusSolarBinarySensor(
             coordinator=coord,
@@ -818,14 +818,14 @@ def test_solar_binary_sensor_icons() -> None:
 
 
 def test_system_binary_adaptive_heating_curve_icon() -> None:
-    coord = _FakeCoordinator({"config": {"adaptiveHeatingCurve": True}})
+    coord = _FakeCoordinator({"config": {"adaptive_heating_curve": True}})
     sensor = HelianthusSystemBinarySensor(
         coordinator=coord,
         entry_id="test",
         manufacturer="V",
         regulator_device_id=("r", "x"),
         source="config",
-        key="adaptiveHeatingCurve",
+        key="adaptive_heating_curve",
         label="Adaptive Heating Curve",
         device_class=None,
         entity_category="diagnostic",
@@ -834,15 +834,15 @@ def test_system_binary_adaptive_heating_curve_icon() -> None:
 
 
 def test_system_binary_maintenance_due_no_icon_override() -> None:
-    """maintenanceDue has PROBLEM device_class — should NOT override icon."""
-    coord = _FakeCoordinator({"state": {"maintenanceDue": False}})
+    """maintenance_due has PROBLEM device_class — should NOT override icon."""
+    coord = _FakeCoordinator({"state": {"maintenance_due": False}})
     sensor = HelianthusSystemBinarySensor(
         coordinator=coord,
         entry_id="test",
         manufacturer="V",
         regulator_device_id=("r", "x"),
         source="state",
-        key="maintenanceDue",
+        key="maintenance_due",
         label="Maintenance Due",
         device_class="problem",
         entity_category="diagnostic",
@@ -868,11 +868,11 @@ def test_circuit_number_fields_all_have_icons() -> None:
 
 def test_circuit_number_specific_icons() -> None:
     expected = {
-        "heatingCurve": "mdi:chart-bell-curve-cumulative",
-        "flowTempMaxC": "mdi:thermometer-chevron-up",
-        "flowTempMinC": "mdi:thermometer-chevron-down",
-        "summerLimitC": "mdi:weather-sunny",
-        "frostProtC": "mdi:snowflake-thermometer",
+        "heating_curve": "mdi:chart-bell-curve-cumulative",
+        "flow_temp_max_c": "mdi:thermometer-chevron-up",
+        "flow_temp_min_c": "mdi:thermometer-chevron-down",
+        "summer_limit_c": "mdi:weather-sunny",
+        "frost_prot_c": "mdi:snowflake-thermometer",
     }
     for field in _CIRCUIT_NUMBER_FIELDS:
         if field.key in expected:
@@ -890,11 +890,11 @@ def test_system_number_fields_all_have_icons() -> None:
 
 def test_system_number_specific_icons() -> None:
     expected = {
-        "hcBivalencePointC": "mdi:thermometer",
-        "dhwBivalencePointC": "mdi:thermometer",
-        "hcEmergencyTempC": "mdi:thermometer-alert",
-        "hwcMaxFlowTempC": "mdi:thermometer-chevron-up",
-        "maxRoomHumidityPct": "mdi:water-percent",
+        "hc_bivalence_point_c": "mdi:thermometer",
+        "dhw_bivalence_point_c": "mdi:thermometer",
+        "hc_emergency_temp_c": "mdi:thermometer-alert",
+        "hwc_max_flow_temp_c": "mdi:thermometer-chevron-up",
+        "max_room_humidity_pct": "mdi:water-percent",
     }
     for field in _SYSTEM_NUMBER_FIELDS:
         if field.mutation_field in expected:
@@ -919,10 +919,10 @@ def test_boiler_number_fields_all_have_icons() -> None:
 
 def test_boiler_number_specific_icons() -> None:
     expected = {
-        "flowsetHcMaxC": "mdi:thermometer-chevron-up",
-        "flowsetHwcMaxC": "mdi:thermometer-chevron-up",
-        "partloadHcKW": "mdi:lightning-bolt",
-        "partloadHwcKW": "mdi:lightning-bolt",
+        "flowset_hc_max_c": "mdi:thermometer-chevron-up",
+        "flowset_hwc_max_c": "mdi:thermometer-chevron-up",
+        "partload_hc_kw": "mdi:lightning-bolt",
+        "partload_hwc_kw": "mdi:lightning-bolt",
     }
     for field in _BOILER_NUMBER_FIELDS:
         if field.key in expected:

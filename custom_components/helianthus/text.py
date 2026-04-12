@@ -44,12 +44,12 @@ class InstallerTextField:
 
 
 _SYSTEM_TEXT_FIELDS = [
-    InstallerTextField(key="installerName", label="Installer Name", max_length=12, source="system"),
-    InstallerTextField(key="installerPhone", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
+    InstallerTextField(key="installer_name", label="Installer Name", max_length=12, source="system"),
+    InstallerTextField(key="installer_phone", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
 ]
 
 _BOILER_TEXT_FIELDS = [
-    InstallerTextField(key="phoneNumber", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
+    InstallerTextField(key="phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
 ]
 
 
@@ -64,11 +64,11 @@ class InstallerMenuCodeField:
 
 
 _SYSTEM_MENU_CODE_FIELD = InstallerMenuCodeField(
-    key="installerMenuCode", label="Installer Menu Code", max_value=999, digits=3, source="system",
+    key="installer_menu_code", label="Installer Menu Code", max_value=999, digits=3, source="system",
 )
 
 _BOILER_MENU_CODE_FIELD = InstallerMenuCodeField(
-    key="installerMenuCode", label="Boiler Installer Menu Code", max_value=255, digits=3, source="boiler",
+    key="installer_menu_code", label="Boiler Installer Menu Code", max_value=255, digits=3, source="boiler",
 )
 
 
@@ -113,7 +113,7 @@ async def async_setup_entry(
                 device_id=regulator_device_id,
                 field=_SYSTEM_MENU_CODE_FIELD,
                 mutation=_SET_SYSTEM_CONFIG_MUTATION,
-                mutation_key="setSystemConfig",
+                mutation_key="set_system_config",
             )
         )
 
@@ -138,7 +138,7 @@ async def async_setup_entry(
                 device_id=boiler_device_id,
                 field=_BOILER_MENU_CODE_FIELD,
                 mutation=_SET_BOILER_CONFIG_MUTATION,
-                mutation_key="setBoilerConfig",
+                mutation_key="set_boiler_config",
             )
         )
 
@@ -179,7 +179,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
-        if self._field.key == "installerPhone":
+        if self._field.key == "installer_phone":
             allowed = set("0123456789+() ")
             for i, ch in enumerate(value):
                 if ch not in allowed:
@@ -199,7 +199,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_system_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -237,7 +237,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
     @property
     def native_value(self) -> str | None:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+        boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
         value = config.get(self._field.key)
         return str(value) if value is not None else None
@@ -262,7 +262,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setBoilerConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_boiler_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -319,7 +319,7 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
     def native_value(self) -> str | None:
         if self._field.source == "boiler":
             payload = self.coordinator.data or {}
-            boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+            boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
             config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
         else:
             payload = self.coordinator.data or {}

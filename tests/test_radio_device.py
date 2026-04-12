@@ -173,7 +173,7 @@ def _base_payload(radio_devices: list[dict]) -> dict:
         "energy_coordinator": None,
         "circuit_coordinator": None,
         "radio_coordinator": _FakeCoordinator(
-            {"radioDevices": radio_devices, "radioZoneCandidates": {}}
+            {"radio_devices": radio_devices, "radio_zone_candidates": {}}
         ),
         "system_coordinator": None,
         "boiler_coordinator": None,
@@ -192,24 +192,24 @@ def test_radio_sensor_entities_cover_room_and_inventory_devices() -> None:
         {
             "group": 0x09,
             "instance": 1,
-            "radioBusKey": "g09-i01",
-            "deviceClassAddress": 0x15,
-            "deviceConnected": True,
-            "receptionStrength": 84,
-            "roomTemperatureC": 21.5,
-            "roomHumidityPct": 45.0,
-            "staleCycles": 0,
+            "radio_bus_key": "g09-i01",
+            "device_class_address": 0x15,
+            "device_connected": True,
+            "reception_strength": 84,
+            "room_temperature_c": 21.5,
+            "room_humidity_pct": 45.0,
+            "stale_cycles": 0,
         },
         {
             "group": 0x0C,
             "instance": 2,
-            "radioBusKey": "g0c-i02",
-            "deviceClassAddress": 0x99,
-            "deviceConnected": False,
-            "hardwareIdentifier": 0x2233,
-            "remoteControlAddress": 17,
-            "zoneAssignment": 0,
-            "staleCycles": 0,
+            "radio_bus_key": "g0c-i02",
+            "device_class_address": 0x99,
+            "device_connected": False,
+            "hardware_identifier": 0x2233,
+            "remote_control_address": 17,
+            "zone_assignment": 0,
+            "stale_cycles": 0,
         },
     ]
     hass = _FakeHass(_base_payload(radio_devices))
@@ -222,11 +222,11 @@ def test_radio_sensor_entities_cover_room_and_inventory_devices() -> None:
         entity for entity in entities if isinstance(entity, sensor_platform.HelianthusRadioSensor)
     ]
     unique_ids = {entity._attr_unique_id for entity in radio_entities}
-    assert "entry-1-radio-09-01-sensor-roomTemperatureC" in unique_ids
-    assert "entry-1-radio-09-01-sensor-roomHumidityPct" in unique_ids
-    assert "entry-1-radio-09-01-sensor-receptionStrength" in unique_ids
-    assert "entry-1-radio-0c-02-sensor-deviceClassAddress" in unique_ids
-    assert "entry-1-radio-0c-02-sensor-hardwareIdentifier" in unique_ids
+    assert "entry-1-radio-09-01-sensor-room_temperature_c" in unique_ids
+    assert "entry-1-radio-09-01-sensor-room_humidity_pct" in unique_ids
+    assert "entry-1-radio-09-01-sensor-reception_strength" in unique_ids
+    assert "entry-1-radio-0c-02-sensor-device_class_address" in unique_ids
+    assert "entry-1-radio-0c-02-sensor-hardware_identifier" in unique_ids
 
 
 def test_radio_connected_entity_becomes_unavailable_after_third_stale_cycle() -> None:
@@ -234,10 +234,10 @@ def test_radio_connected_entity_becomes_unavailable_after_third_stale_cycle() ->
         {
             "group": 0x09,
             "instance": 1,
-            "radioBusKey": "g09-i01",
-            "deviceClassAddress": 0x15,
-            "deviceConnected": True,
-            "staleCycles": 0,
+            "radio_bus_key": "g09-i01",
+            "device_class_address": 0x15,
+            "device_connected": True,
+            "stale_cycles": 0,
         }
     ]
     payload = _base_payload(radio_devices)
@@ -256,15 +256,15 @@ def test_radio_connected_entity_becomes_unavailable_after_third_stale_cycle() ->
     assert connected_entity.is_on is True
 
     payload["radio_coordinator"].data = {
-        "radioDevices": [{**radio_devices[0], "deviceConnected": False, "staleCycles": 2}],
-        "radioZoneCandidates": {},
+        "radio_devices": [{**radio_devices[0], "device_connected": False, "stale_cycles": 2}],
+        "radio_zone_candidates": {},
     }
     assert connected_entity.available is True
     assert connected_entity.is_on is False
 
     payload["radio_coordinator"].data = {
-        "radioDevices": [{**radio_devices[0], "deviceConnected": False, "staleCycles": 3}],
-        "radioZoneCandidates": {},
+        "radio_devices": [{**radio_devices[0], "device_connected": False, "stale_cycles": 3}],
+        "radio_zone_candidates": {},
     }
     assert connected_entity.available is False
 
@@ -282,8 +282,8 @@ def test_subscription_dispatches_radio_updates_to_radio_coordinator() -> None:
         "type": "next",
         "payload": {
             "data": {
-                "radioDevicesUpdate": [
-                    {"group": 0x09, "instance": 1, "deviceConnected": True}
+                "radio_devices_update": [
+                    {"group": 0x09, "instance": 1, "device_connected": True}
                 ]
             }
         },
@@ -307,9 +307,9 @@ def test_subscription_ignores_null_frames_without_crashing() -> None:
     class _FakeBoilerCoordinator:
         def __init__(self) -> None:
             self.data = {
-                "boilerStatus": {
-                    "state": {"flowTemperatureC": 60.0, "centralHeatingPumpActive": False},
-                    "diagnostics": {"heatingStatusRaw": 1},
+                "boiler_status": {
+                    "state": {"flow_temperature_c": 60.0, "central_heating_pump_active": False},
+                    "diagnostics": {"heating_status_raw": 1},
                 }
             }
 
@@ -328,21 +328,21 @@ def test_subscription_ignores_null_frames_without_crashing() -> None:
         )
     )
 
-    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 60.0
-    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
+    assert boiler.data["boiler_status"]["state"]["flow_temperature_c"] == 60.0
+    assert boiler.data["boiler_status"]["diagnostics"]["heating_status_raw"] == 1
 
 
 def test_subscription_merges_partial_boiler_updates_non_destructively() -> None:
     class _FakeBoilerCoordinator:
         def __init__(self) -> None:
             self.data = {
-                "boilerStatus": {
+                "boiler_status": {
                     "state": {
-                        "flowTemperatureC": 60.0,
-                        "returnTemperatureC": 41.5,
-                        "centralHeatingPumpActive": False,
+                        "flow_temperature_c": 60.0,
+                        "return_temperature_c": 41.5,
+                        "central_heating_pump_active": False,
                     },
-                    "diagnostics": {"heatingStatusRaw": 1},
+                    "diagnostics": {"heating_status_raw": 1},
                 }
             }
 
@@ -357,8 +357,8 @@ def test_subscription_merges_partial_boiler_updates_non_destructively() -> None:
                 "type": "next",
                 "payload": {
                     "data": {
-                        "boilerStatusUpdate": {
-                            "state": {"flowTemperatureC": 63.5},
+                        "boiler_status_update": {
+                            "state": {"flow_temperature_c": 63.5},
                         }
                     }
                 },
@@ -370,22 +370,22 @@ def test_subscription_merges_partial_boiler_updates_non_destructively() -> None:
         )
     )
 
-    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 63.5
-    assert boiler.data["boilerStatus"]["state"]["returnTemperatureC"] == 41.5
-    assert boiler.data["boilerStatus"]["state"]["centralHeatingPumpActive"] is False
-    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
+    assert boiler.data["boiler_status"]["state"]["flow_temperature_c"] == 63.5
+    assert boiler.data["boiler_status"]["state"]["return_temperature_c"] == 41.5
+    assert boiler.data["boiler_status"]["state"]["central_heating_pump_active"] is False
+    assert boiler.data["boiler_status"]["diagnostics"]["heating_status_raw"] == 1
 
 
 def test_subscription_keeps_nested_boiler_diagnostics_on_explicit_null() -> None:
     class _FakeBoilerCoordinator:
         def __init__(self) -> None:
             self.data = {
-                "boilerStatus": {
+                "boiler_status": {
                     "state": {
-                        "flowTemperatureC": 60.0,
-                        "centralHeatingPumpActive": False,
+                        "flow_temperature_c": 60.0,
+                        "central_heating_pump_active": False,
                     },
-                    "diagnostics": {"heatingStatusRaw": 1},
+                    "diagnostics": {"heating_status_raw": 1},
                 }
             }
 
@@ -400,7 +400,7 @@ def test_subscription_keeps_nested_boiler_diagnostics_on_explicit_null() -> None
                 "type": "next",
                 "payload": {
                     "data": {
-                        "boilerStatusUpdate": {
+                        "boiler_status_update": {
                             "diagnostics": None,
                         }
                     }
@@ -413,8 +413,8 @@ def test_subscription_keeps_nested_boiler_diagnostics_on_explicit_null() -> None
         )
     )
 
-    assert boiler.data["boilerStatus"]["diagnostics"]["heatingStatusRaw"] == 1
-    assert boiler.data["boilerStatus"]["state"]["flowTemperatureC"] == 60.0
+    assert boiler.data["boiler_status"]["diagnostics"]["heating_status_raw"] == 1
+    assert boiler.data["boiler_status"]["state"]["flow_temperature_c"] == 60.0
 
 
 def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_entries() -> None:
@@ -426,18 +426,18 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                     {
                         "id": "zone-1",
                         "name": "Living",
-                        "state": {"currentTempC": 20.0},
+                        "state": {"current_temp_c": 20.0},
                         "config": {
-                            "operatingMode": "auto",
-                            "roomTemperatureZoneMapping": 2,
-                            "targetTempC": 21.0,
+                            "operating_mode": "auto",
+                            "room_temperature_zone_mapping": 2,
+                            "target_temp_c": 21.0,
                         },
                     },
                     {
                         "id": "zone-2",
                         "name": "Etaj",
-                        "state": {"currentTempC": 19.0},
-                        "config": {"roomTemperatureZoneMapping": 3},
+                        "state": {"current_temp_c": 19.0},
+                        "config": {"room_temperature_zone_mapping": 3},
                     },
                 ],
                 "dhw": None,
@@ -454,9 +454,9 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                 "type": "next",
                 "payload": {
                     "data": {
-                        "zoneUpdate": {
+                        "zone_update": {
                             "id": "zone-1",
-                            "state": {"currentTempC": 21.5},
+                            "state": {"current_temp_c": 21.5},
                         }
                     }
                 },
@@ -470,9 +470,9 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
 
     assert semantic.data["zones"][0] == "legacy-slot"
     merged_zone = semantic.data["zones"][1]
-    assert merged_zone["state"]["currentTempC"] == 21.5
-    assert merged_zone["config"]["roomTemperatureZoneMapping"] == 2
-    assert merged_zone["config"]["targetTempC"] == 21.0
+    assert merged_zone["state"]["current_temp_c"] == 21.5
+    assert merged_zone["config"]["room_temperature_zone_mapping"] == 2
+    assert merged_zone["config"]["target_temp_c"] == 21.0
     assert semantic.data["zones"][2]["id"] == "zone-2"
 
 
@@ -488,29 +488,29 @@ def test_radio_zone_candidates_update_on_reassignment() -> None:
             {
                 "group": 0x09,
                 "instance": 1,
-                "deviceConnected": True,
-                "deviceClassAddress": 0x15,
-                "zoneAssignment": 1,
-                "remoteControlAddress": 0,
+                "device_connected": True,
+                "device_class_address": 0x15,
+                "zone_assignment": 1,
+                "remote_control_address": 0,
             }
         ]
     )
-    assert 0 in coordinator.data["radioZoneCandidates"]
+    assert 0 in coordinator.data["radio_zone_candidates"]
 
     coordinator.apply_radio_update(
         [
             {
                 "group": 0x09,
                 "instance": 1,
-                "deviceConnected": True,
-                "deviceClassAddress": 0x15,
-                "zoneAssignment": 2,
-                "remoteControlAddress": 0,
+                "device_connected": True,
+                "device_class_address": 0x15,
+                "zone_assignment": 2,
+                "remote_control_address": 0,
             }
         ]
     )
-    assert 1 in coordinator.data["radioZoneCandidates"]
-    assert 0 not in coordinator.data["radioZoneCandidates"]
+    assert 1 in coordinator.data["radio_zone_candidates"]
+    assert 0 not in coordinator.data["radio_zone_candidates"]
 
 
 # ---------------------------------------------------------------------------
@@ -534,11 +534,11 @@ def test_adr027_merged_group_0c_sensor_entities_suppressed() -> None:
         {
             "group": 0x0C,
             "instance": 1,
-            "radioBusKey": "g0c-i01",
-            "deviceClassAddress": 38,
-            "deviceConnected": True,
-            "hardwareIdentifier": 0x1704,
-            "staleCycles": 0,
+            "radio_bus_key": "g0c-i01",
+            "device_class_address": 38,
+            "device_connected": True,
+            "hardware_identifier": 0x1704,
+            "stale_cycles": 0,
         },
     ]
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
@@ -553,8 +553,8 @@ def test_adr027_merged_group_0c_sensor_entities_suppressed() -> None:
         if isinstance(e, sensor_platform.HelianthusRadioSensor)
     }
     # Redundant sensors must NOT be created for merged slots.
-    assert "entry-1-radio-0c-01-sensor-deviceClassAddress" not in radio_sensor_uids
-    assert "entry-1-radio-0c-01-sensor-hardwareIdentifier" not in radio_sensor_uids
+    assert "entry-1-radio-0c-01-sensor-device_class_address" not in radio_sensor_uids
+    assert "entry-1-radio-0c-01-sensor-hardware_identifier" not in radio_sensor_uids
 
 
 def test_adr027_unmerged_group_0c_sensor_entities_created() -> None:
@@ -563,11 +563,11 @@ def test_adr027_unmerged_group_0c_sensor_entities_created() -> None:
         {
             "group": 0x0C,
             "instance": 2,
-            "radioBusKey": "g0c-i02",
-            "deviceClassAddress": 0x99,
-            "deviceConnected": False,
-            "hardwareIdentifier": 0x2233,
-            "staleCycles": 0,
+            "radio_bus_key": "g0c-i02",
+            "device_class_address": 0x99,
+            "device_connected": False,
+            "hardware_identifier": 0x2233,
+            "stale_cycles": 0,
         },
     ]
     # No merge targets — bus device at 0x99 doesn't exist.
@@ -581,8 +581,8 @@ def test_adr027_unmerged_group_0c_sensor_entities_created() -> None:
         for e in entities
         if isinstance(e, sensor_platform.HelianthusRadioSensor)
     }
-    assert "entry-1-radio-0c-02-sensor-deviceClassAddress" in radio_sensor_uids
-    assert "entry-1-radio-0c-02-sensor-hardwareIdentifier" in radio_sensor_uids
+    assert "entry-1-radio-0c-02-sensor-device_class_address" in radio_sensor_uids
+    assert "entry-1-radio-0c-02-sensor-hardware_identifier" in radio_sensor_uids
 
 
 def test_adr027_merged_binary_sensor_reparented_to_bus_device() -> None:
@@ -591,10 +591,10 @@ def test_adr027_merged_binary_sensor_reparented_to_bus_device() -> None:
         {
             "group": 0x0C,
             "instance": 1,
-            "radioBusKey": "g0c-i01",
-            "deviceClassAddress": 38,
-            "deviceConnected": True,
-            "staleCycles": 0,
+            "radio_bus_key": "g0c-i01",
+            "device_class_address": 38,
+            "device_connected": True,
+            "stale_cycles": 0,
         },
     ]
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
@@ -622,10 +622,10 @@ def test_adr027_unmerged_binary_sensor_stays_on_radio_device() -> None:
         {
             "group": 0x09,
             "instance": 1,
-            "radioBusKey": "g09-i01",
-            "deviceClassAddress": 0x15,
-            "deviceConnected": True,
-            "staleCycles": 0,
+            "radio_bus_key": "g09-i01",
+            "device_class_address": 0x15,
+            "device_connected": True,
+            "stale_cycles": 0,
         },
     ]
     hass = _FakeHass(_merge_payload(radio_devices, {}))
@@ -652,22 +652,22 @@ def test_adr027_idempotency_multiple_runs_same_result() -> None:
         {
             "group": 0x0C,
             "instance": 1,
-            "radioBusKey": "g0c-i01",
-            "deviceClassAddress": 38,
-            "deviceConnected": True,
-            "hardwareIdentifier": 0x1704,
-            "staleCycles": 0,
+            "radio_bus_key": "g0c-i01",
+            "device_class_address": 38,
+            "device_connected": True,
+            "hardware_identifier": 0x1704,
+            "stale_cycles": 0,
         },
         {
             "group": 0x09,
             "instance": 1,
-            "radioBusKey": "g09-i01",
-            "deviceClassAddress": 0x15,
-            "deviceConnected": True,
-            "receptionStrength": 7,
-            "roomTemperatureC": 21.5,
-            "roomHumidityPct": 45.0,
-            "staleCycles": 0,
+            "radio_bus_key": "g09-i01",
+            "device_class_address": 0x15,
+            "device_connected": True,
+            "reception_strength": 7,
+            "room_temperature_c": 21.5,
+            "room_humidity_pct": 45.0,
+            "stale_cycles": 0,
         },
     ]
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}

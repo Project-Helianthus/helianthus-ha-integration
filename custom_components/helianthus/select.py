@@ -45,7 +45,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuitType") or "").strip().lower()
+    token = str(circuit.get("circuit_type") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
     return f"Circuit {index + 1} ({label})"
 
@@ -139,7 +139,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
     def current_option(self) -> str | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
-        token = str(config.get("roomTempControl") or "").strip().lower()
+        token = str(config.get("room_temp_control") or "").strip().lower()
         if token in _OPTIONS:
             return token
         return None
@@ -153,7 +153,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
 
         variables = {
             "index": int(self._circuit_index),
-            "field": "roomTempControl",
+            "field": "room_temp_control",
             "value": token,
         }
         try:
@@ -161,7 +161,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setCircuitConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_circuit_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

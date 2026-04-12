@@ -196,11 +196,11 @@ class HelianthusScheduleCalendar(CoordinatorEntity, CalendarEntity):
     def _make_event(
         self, slot: dict[str, Any], day: date
     ) -> CalendarEvent | None:
-        start_h = slot.get("startHour", 0)
-        start_m = slot.get("startMinute", 0)
-        end_h = slot.get("endHour", 0)
-        end_m = slot.get("endMinute", 0)
-        temp_c = slot.get("temperatureC")
+        start_h = slot.get("start_hour", 0)
+        start_m = slot.get("start_minute", 0)
+        end_h = slot.get("end_hour", 0)
+        end_m = slot.get("end_minute", 0)
+        temp_c = slot.get("temperature_c")
 
         tz = dt_util.DEFAULT_TIME_ZONE
         start_dt = datetime.combine(day, datetime.min.time().replace(

@@ -45,7 +45,7 @@ def _success_responses() -> dict[str, dict]:
     return {
         "SmokeConnection": {"data": {"__typename": "Query"}},
         "SmokeSubscriptionIntrospection": {
-            "data": {"__schema": {"subscriptionType": {"name": "Subscription"}}}
+            "data": {"__schema": {"subscription_type": {"name": "Subscription"}}}
         },
         "SmokeDevicesExtended": {
             "data": {
@@ -53,30 +53,30 @@ def _success_responses() -> dict[str, dict]:
                     {
                         "address": 8,
                         "manufacturer": "Vaillant",
-                        "deviceId": "BAI00",
-                        "serialNumber": "SER123",
-                        "macAddress": "AA:BB:CC:DD:EE:FF",
-                        "softwareVersion": "0102",
-                        "hardwareVersion": "7603",
+                        "device_id": "BAI00",
+                        "serial_number": "SER123",
+                        "mac_address": "AA:BB:CC:DD:EE:FF",
+                        "software_version": "0102",
+                        "hardware_version": "7603",
                     }
                 ]
             }
         },
         "SmokeStatus": {
             "data": {
-                "daemonStatus": {"status": "ok", "initiatorAddress": "0xF7"},
-                "adapterStatus": {"status": "ok"},
+                "daemon_status": {"status": "ok", "initiator_address": "0xF7"},
+                "adapter_status": {"status": "ok"},
             }
         },
         "SmokeSemantic": {
             "data": {
                 "zones": [{"id": "z1", "name": "Living", "state": {}, "config": {}}],
-                "dhw": {"state": {}, "config": {"operatingMode": "auto"}},
+                "dhw": {"state": {}, "config": {"operating_mode": "auto"}},
             }
         },
         "SmokeEnergy": {
             "data": {
-                "energyTotals": {
+                "energy_totals": {
                     "gas": {
                         "dhw": {"today": 0.0, "yearly": [0.0, 0.0]},
                         "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
@@ -119,9 +119,9 @@ def test_run_smoke_profile_uses_fallback_paths() -> None:
     executor = FakeExecutor(
         {
             "SmokeConnection": {"data": {"__typename": "Query"}},
-            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscriptionType": None}}},
+            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscription_type": None}}},
             "SmokeDevicesExtended": {
-                "errors": [{'message': 'Cannot query field "serialNumber" on type "Device".'}]
+                "errors": [{'message': 'Cannot query field "serial_number" on type "Device".'}]
             },
             "SmokeDevicesBase": {
                 "data": {
@@ -129,24 +129,24 @@ def test_run_smoke_profile_uses_fallback_paths() -> None:
                         {
                             "address": 21,
                             "manufacturer": "Vaillant",
-                            "deviceId": "BASV2",
-                            "softwareVersion": "0101",
-                            "hardwareVersion": "7603",
+                            "device_id": "BASV2",
+                            "software_version": "0101",
+                            "hardware_version": "7603",
                         }
                     ]
                 }
             },
             "SmokeStatus": {
                 "data": {
-                    "daemonStatus": {"status": "ok"},
-                    "adapterStatus": {"status": "ok"},
+                    "daemon_status": {"status": "ok"},
+                    "adapter_status": {"status": "ok"},
                 }
             },
             "SmokeSemantic": {
                 "errors": [{'message': 'Cannot query field "zones" on type "Query".'}]
             },
             "SmokeEnergy": {
-                "errors": [{'message': 'Cannot query field "energyTotals" on type "Query".'}]
+                "errors": [{'message': 'Cannot query field "energy_totals" on type "Query".'}]
             },
         }
     )
@@ -165,16 +165,16 @@ def test_run_smoke_profile_fails_when_no_devices() -> None:
     executor = FakeExecutor(
         {
             "SmokeConnection": {"data": {"__typename": "Query"}},
-            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscriptionType": None}}},
+            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscription_type": None}}},
             "SmokeDevicesExtended": {"data": {"devices": []}},
             "SmokeStatus": {
                 "data": {
-                    "daemonStatus": {"status": "ok"},
-                    "adapterStatus": {"status": "ok"},
+                    "daemon_status": {"status": "ok"},
+                    "adapter_status": {"status": "ok"},
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"energyTotals": None}},
+            "SmokeEnergy": {"data": {"energy_totals": None}},
         }
     )
 
@@ -199,23 +199,23 @@ def test_run_smoke_profile_subscription_introspection_error_uses_polling_fallbac
                         {
                             "address": 8,
                             "manufacturer": "Vaillant",
-                            "deviceId": "BAI00",
-                            "serialNumber": "SER123",
-                            "macAddress": "AA:BB:CC:DD:EE:FF",
-                            "softwareVersion": "0102",
-                            "hardwareVersion": "7603",
+                            "device_id": "BAI00",
+                            "serial_number": "SER123",
+                            "mac_address": "AA:BB:CC:DD:EE:FF",
+                            "software_version": "0102",
+                            "hardware_version": "7603",
                         }
                     ]
                 }
             },
             "SmokeStatus": {
                 "data": {
-                    "daemonStatus": {"status": "ok"},
-                    "adapterStatus": {"status": "ok"},
+                    "daemon_status": {"status": "ok"},
+                    "adapter_status": {"status": "ok"},
                 }
             },
             "SmokeSemantic": {"data": {"zones": [], "dhw": None}},
-            "SmokeEnergy": {"data": {"energyTotals": None}},
+            "SmokeEnergy": {"data": {"energy_totals": None}},
         }
     )
 
@@ -232,18 +232,18 @@ def test_run_smoke_profile_handles_entity_creation_executor_error() -> None:
     executor = FakeExecutor(
         {
             "SmokeConnection": {"data": {"__typename": "Query"}},
-            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscriptionType": None}}},
+            "SmokeSubscriptionIntrospection": {"data": {"__schema": {"subscription_type": None}}},
             "SmokeDevicesExtended": {
                 "data": {
                     "devices": [
                         {
                             "address": 8,
                             "manufacturer": "Vaillant",
-                            "deviceId": "BAI00",
-                            "serialNumber": "SER123",
-                            "macAddress": "AA:BB:CC:DD:EE:FF",
-                            "softwareVersion": "0102",
-                            "hardwareVersion": "7603",
+                            "device_id": "BAI00",
+                            "serial_number": "SER123",
+                            "mac_address": "AA:BB:CC:DD:EE:FF",
+                            "software_version": "0102",
+                            "hardware_version": "7603",
                         }
                     ]
                 }

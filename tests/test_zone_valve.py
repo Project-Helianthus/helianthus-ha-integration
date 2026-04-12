@@ -187,20 +187,20 @@ def test_zone_via_device_prefers_expected_radio_candidates() -> None:
         {
             "group": 0x09,
             "instance": 1,
-            "remoteControlAddress": 0,
-            "deviceConnected": True,
+            "remote_control_address": 0,
+            "device_connected": True,
         },
         {
             "group": 0x0A,
             "instance": 1,
-            "remoteControlAddress": 1,
-            "deviceConnected": True,
+            "remote_control_address": 1,
+            "device_connected": True,
         },
         {
             "group": 0x0A,
             "instance": 2,
-            "remoteControlAddress": 2,
-            "deviceConnected": True,
+            "remote_control_address": 2,
+            "device_connected": True,
         },
     ]
     regulator = ("helianthus", "entry-1-bus-BASV-15")
@@ -218,15 +218,15 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
                 {
                     "id": "zone-1",
                     "name": "Living",
-                    "state": {"valvePositionPct": 45.0},
+                    "state": {"valve_position_pct": 45.0},
                     "config": {
-                        "operatingMode": "auto",
+                        "operating_mode": "auto",
                         "preset": "schedule",
-                        "targetTempC": 21.0,
-                        "allowedModes": ["off", "auto", "heat"],
-                        "circuitType": "heating",
-                        "associatedCircuit": 0,
-                        "roomTemperatureZoneMapping": 2,
+                        "target_temp_c": 21.0,
+                        "allowed_modes": ["off", "auto", "heat"],
+                        "circuit_type": "heating",
+                        "associated_circuit": 0,
+                        "room_temperature_zone_mapping": 2,
                     },
                 }
             ],
@@ -235,15 +235,15 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
     )
     radio_coordinator = _FakeCoordinator(
         {
-            "radioDevices": [
+            "radio_devices": [
                 {
                     "group": 0x0A,
                     "instance": 1,
-                    "radioBusKey": "g0a-i01",
-                    "deviceModel": "VR92f",
+                    "radio_bus_key": "g0a-i01",
+                    "device_model": "VR92f",
                 }
             ],
-            "radioZoneCandidates": {
+            "radio_zone_candidates": {
                 0: [{"group": 0x0A, "instance": 1, "remote_control_address": 1}]
             },
         }
@@ -288,13 +288,13 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
                     "name": "Parter",
                     "state": {},
                     "config": {
-                        "operatingMode": "heat",
+                        "operating_mode": "heat",
                         "preset": "manual",
-                        "targetTempC": 12.0,
-                        "allowedModes": ["off", "auto", "heat"],
-                        "circuitType": "underfloor",
-                        "associatedCircuit": 0,
-                        "roomTemperatureZoneMapping": 1,
+                        "target_temp_c": 12.0,
+                        "allowed_modes": ["off", "auto", "heat"],
+                        "circuit_type": "underfloor",
+                        "associated_circuit": 0,
+                        "room_temperature_zone_mapping": 1,
                     },
                 }
             ],
@@ -303,18 +303,18 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
     )
     radio_coordinator = _FakeCoordinator(
         {
-            "radioDevices": [
+            "radio_devices": [
                 {
                     "group": 0x09,
                     "instance": 1,
-                    "radioBusKey": "g09-i01",
-                    "deviceModel": "VRC720",
-                    "deviceConnected": True,
-                    "remoteControlAddress": 0,
-                    "zoneAssignment": 2,
+                    "radio_bus_key": "g09-i01",
+                    "device_model": "VRC720",
+                    "device_connected": True,
+                    "remote_control_address": 0,
+                    "zone_assignment": 2,
                 }
             ],
-            "radioZoneCandidates": {},
+            "radio_zone_candidates": {},
         }
     )
     payload = {
@@ -351,8 +351,8 @@ def test_zone_valve_position_sensors_are_created_per_zone() -> None:
         "semantic_coordinator": _FakeCoordinator(
             {
                 "zones": [
-                    {"id": "zone-1", "name": "Living", "state": {"valvePositionPct": 100}},
-                    {"id": "zone-2", "name": "Bedroom", "state": {"valvePositionPct": 0}},
+                    {"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 100}},
+                    {"id": "zone-2", "name": "Bedroom", "state": {"valve_position_pct": 0}},
                 ],
                 "dhw": None,
             }
@@ -383,8 +383,8 @@ def test_zone_valve_position_sensors_are_created_per_zone() -> None:
     ]
     assert len(valve_entities) == 2
     assert {entity._attr_unique_id for entity in valve_entities} == {
-        "entry-1-zone-zone-1-sensor-valvePositionPct",
-        "entry-1-zone-zone-2-sensor-valvePositionPct",
+        "entry-1-zone-zone-1-sensor-valve_position_pct",
+        "entry-1-zone-zone-2-sensor-valve_position_pct",
     }
     assert {entity.native_value for entity in valve_entities} == {0.0, 100.0}
     assert all(
@@ -400,20 +400,20 @@ def test_build_zone_parent_device_ids_flags_mapped_zone_without_physical_parent(
             {
                 "id": "zone-2",
                 "name": "Etaj",
-                "config": {"roomTemperatureZoneMapping": 2},
+                "config": {"room_temperature_zone_mapping": 2},
             }
         ],
         {
-            "radioDevices": [
+            "radio_devices": [
                 {
                     "group": 0x09,
                     "instance": 1,
-                    "radioBusKey": "g09-i01",
-                    "deviceConnected": True,
-                    "remoteControlAddress": 0,
+                    "radio_bus_key": "g09-i01",
+                    "device_connected": True,
+                    "remote_control_address": 0,
                 }
             ],
-            "radioZoneCandidates": {},
+            "radio_zone_candidates": {},
         },
         ("helianthus", "entry-1-bus-BASV-15"),
     )
@@ -427,56 +427,56 @@ def test_build_zone_parent_device_ids_recovers_once_live_radio_payload_is_availa
         {
             "id": "zone-1",
             "name": "Parter",
-            "config": {"roomTemperatureZoneMapping": 1},
+            "config": {"room_temperature_zone_mapping": 1},
         },
         {
             "id": "zone-2",
             "name": "Etaj",
-            "config": {"roomTemperatureZoneMapping": 2},
+            "config": {"room_temperature_zone_mapping": 2},
         },
     ]
     regulator = ("helianthus", "entry-1-bus-BASV-15")
     sparse_payload = {
-        "radioDevices": [
+        "radio_devices": [
             {
                 "group": 0x09,
                 "instance": 1,
-                "radioBusKey": "g09-i01",
-                "deviceConnected": False,
-                "remoteControlAddress": 0,
-                "zoneAssignment": 1,
+                "radio_bus_key": "g09-i01",
+                "device_connected": False,
+                "remote_control_address": 0,
+                "zone_assignment": 1,
             },
             {
                 "group": 0x0A,
                 "instance": 1,
-                "radioBusKey": "g0a-i01",
-                "deviceConnected": False,
-                "remoteControlAddress": 1,
-                "zoneAssignment": 2,
+                "radio_bus_key": "g0a-i01",
+                "device_connected": False,
+                "remote_control_address": 1,
+                "zone_assignment": 2,
             },
         ],
-        "radioZoneCandidates": {},
+        "radio_zone_candidates": {},
     }
     live_payload = {
-        "radioDevices": [
+        "radio_devices": [
             {
                 "group": 0x09,
                 "instance": 1,
-                "radioBusKey": "g09-i01",
-                "deviceConnected": True,
-                "remoteControlAddress": 0,
-                "zoneAssignment": 1,
+                "radio_bus_key": "g09-i01",
+                "device_connected": True,
+                "remote_control_address": 0,
+                "zone_assignment": 1,
             },
             {
                 "group": 0x0A,
                 "instance": 1,
-                "radioBusKey": "g0a-i01",
-                "deviceConnected": True,
-                "remoteControlAddress": 1,
-                "zoneAssignment": 2,
+                "radio_bus_key": "g0a-i01",
+                "device_connected": True,
+                "remote_control_address": 1,
+                "zone_assignment": 2,
             },
         ],
-        "radioZoneCandidates": {},
+        "radio_zone_candidates": {},
     }
 
     sparse_parent_ids, sparse_unresolved = build_zone_parent_device_ids(
@@ -510,13 +510,13 @@ def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
                         "id": "zone-1",
                         "name": "Parter",
                         "state": {},
-                        "config": {"roomTemperatureZoneMapping": 1},
+                        "config": {"room_temperature_zone_mapping": 1},
                     }
                 ],
                 "dhw": None,
             }
         ),
-        "radio_coordinator": _FakeCoordinator({"radioDevices": [], "radioZoneCandidates": {}}),
+        "radio_coordinator": _FakeCoordinator({"radio_devices": [], "radio_zone_candidates": {}}),
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
         "zone_parent_device_ids": {},
         "adapter_device_id": ("helianthus", "adapter-entry-1"),

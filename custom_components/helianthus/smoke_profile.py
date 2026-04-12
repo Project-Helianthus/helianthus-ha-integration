@@ -143,7 +143,7 @@ query SmokeEnergy {
 }
 """
 
-MISSING_DEVICE_FIELDS = ["serialNumber", "macAddress"]
+MISSING_DEVICE_FIELDS = ["serial_number", "mac_address"]
 INVENTORY_FIELD_COUNT = 7
 DAEMON_STATUS_FIELD_COUNT = 4
 ADAPTER_STATUS_FIELD_COUNT = 3
@@ -323,7 +323,7 @@ def _check_subscriptions_fallback(execute: GraphQLExecutor) -> SmokeCheck:
     if isinstance(data, dict):
         schema = data.get("__schema", {})
         if isinstance(schema, dict):
-            subscription_type = schema.get("subscriptionType")
+            subscription_type = schema.get("subscription_type")
             if isinstance(subscription_type, dict):
                 raw_name = subscription_type.get("name")
                 if isinstance(raw_name, str):
@@ -360,8 +360,8 @@ def _check_entity_creation(execute: GraphQLExecutor) -> SmokeCheck:
         if error:
             return SmokeCheck("entity_creation", False, error)
 
-        daemon_status = status_data.get("daemonStatus")
-        adapter_status = status_data.get("adapterStatus")
+        daemon_status = status_data.get("daemon_status")
+        adapter_status = status_data.get("adapter_status")
         if not isinstance(daemon_status, dict) or not isinstance(adapter_status, dict):
             return SmokeCheck(
                 "entity_creation",
@@ -372,7 +372,7 @@ def _check_entity_creation(execute: GraphQLExecutor) -> SmokeCheck:
         valid_devices = [
             device
             for device in devices
-            if isinstance(device, dict) and device.get("address") is not None and device.get("deviceId")
+            if isinstance(device, dict) and device.get("address") is not None and device.get("device_id")
         ]
         if len(valid_devices) == 0:
             return SmokeCheck("entity_creation", False, "no devices discovered for entity creation")
@@ -497,7 +497,7 @@ def _fetch_status(execute: GraphQLExecutor) -> tuple[dict[str, Any], str | None]
     if response is None:
         return {}, "status query returned no response"
     data, error, errors = _extract_data_with_errors(response)
-    if error and _is_missing_field_error(errors, ["initiatorAddress"]):
+    if error and _is_missing_field_error(errors, ["initiator_address"]):
         fallback, fallback_error = _execute_graphql(execute, QUERY_STATUS_LEGACY, "status_legacy")
         if fallback_error:
             return {}, fallback_error
@@ -546,14 +546,14 @@ def _fetch_energy(execute: GraphQLExecutor) -> tuple[dict[str, Any], str, str | 
         if error:
             return {}, "", f"energy legacy query failed: {error}"
         if not isinstance(data, dict):
-            return {"energyTotals": None}, "fallback_non_object", None
+            return {"energy_totals": None}, "fallback_non_object", None
         return data, "legacy", None
-    if error and _is_missing_field_error(errors, ["energyTotals"]):
-        return {"energyTotals": None}, "fallback_missing_field", None
+    if error and _is_missing_field_error(errors, ["energy_totals"]):
+        return {"energy_totals": None}, "fallback_missing_field", None
     if error:
         return {}, "", f"energy query failed: {error}"
     if not isinstance(data, dict):
-        return {"energyTotals": None}, "fallback_non_object", None
+        return {"energy_totals": None}, "fallback_non_object", None
     return data, "full", None
 
 
