@@ -199,7 +199,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("set_system_config") if isinstance(payload, dict) else None
+        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -262,7 +262,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("set_boiler_config") if isinstance(payload, dict) else None
+        result = payload.get("setBoilerConfig") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

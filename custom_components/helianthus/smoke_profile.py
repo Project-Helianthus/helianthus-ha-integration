@@ -34,11 +34,11 @@ query SmokeDevicesExtended {
   devices {
     address
     manufacturer
-    deviceId
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -48,40 +48,40 @@ query SmokeDevicesBase {
   devices {
     address
     manufacturer
-    deviceId
-    softwareVersion
-    hardwareVersion
+    device_id
+    software_version
+    hardware_version
   }
 }
 """
 
 QUERY_STATUS = """
 query SmokeStatus {
-  daemonStatus {
+  daemon_status {
     status
-    firmwareVersion
-    updatesAvailable
-    initiatorAddress
+    firmware_version
+    updates_available
+    initiator_address
   }
-  adapterStatus {
+  adapter_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
 }
 """
 
 QUERY_STATUS_LEGACY = """
 query SmokeStatus {
-  daemonStatus {
+  daemon_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
-  adapterStatus {
+  adapter_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
 }
 """
@@ -92,32 +92,32 @@ query SmokeSemantic {
     id
     name
     state {
-      currentTempC
-      currentHumidityPct
-      hvacAction
-      specialFunction
-      heatingDemandPct
-      valvePositionPct
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      allowedModes
-      circuitType
-      associatedCircuit
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
     }
   }
   dhw {
     state {
-      currentTempC
-      specialFunction
-      heatingDemandPct
+      current_temp_c
+      special_function
+      heating_demand_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
+      target_temp_c
     }
   }
 }
@@ -125,7 +125,7 @@ query SmokeSemantic {
 
 QUERY_ENERGY = """
 query SmokeEnergy {
-  energyTotals {
+  energy_totals {
     gas { dhw { today yearly monthly } climate { today yearly monthly } }
     electric { dhw { today yearly monthly } climate { today yearly monthly } }
     solar { dhw { today yearly monthly } climate { today yearly monthly } }
@@ -135,7 +135,7 @@ query SmokeEnergy {
 
 QUERY_ENERGY_LEGACY = """
 query SmokeEnergy {
-  energyTotals {
+  energy_totals {
     gas { dhw { today yearly } climate { today yearly } }
     electric { dhw { today yearly } climate { today yearly } }
     solar { dhw { today yearly } climate { today yearly } }
@@ -323,7 +323,7 @@ def _check_subscriptions_fallback(execute: GraphQLExecutor) -> SmokeCheck:
     if isinstance(data, dict):
         schema = data.get("__schema", {})
         if isinstance(schema, dict):
-            subscription_type = schema.get("subscription_type")
+            subscription_type = schema.get("subscriptionType")
             if isinstance(subscription_type, dict):
                 raw_name = subscription_type.get("name")
                 if isinstance(raw_name, str):

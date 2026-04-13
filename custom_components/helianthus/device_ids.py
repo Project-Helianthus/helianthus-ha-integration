@@ -232,7 +232,7 @@ def managing_device_identifier(
         if role == "FUNCTION_MODULE":
             device_id = _clean((managing_device or {}).get("device_id"))
             if device_id is None:
-                device_id = _clean((managing_device or {}).get("device_id"))
+                device_id = _clean((managing_device or {}).get("deviceId"))
             address = _parse_bus_address((managing_device or {}).get("address"))
             if vr71_device_id and (device_id == "VR_71" or address == 0x26):
                 return vr71_device_id

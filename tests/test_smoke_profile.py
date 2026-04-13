@@ -45,7 +45,7 @@ def _success_responses() -> dict[str, dict]:
     return {
         "SmokeConnection": {"data": {"__typename": "Query"}},
         "SmokeSubscriptionIntrospection": {
-            "data": {"__schema": {"subscription_type": {"name": "Subscription"}}}
+            "data": {"__schema": {"subscriptionType": {"name": "Subscription"}}}
         },
         "SmokeDevicesExtended": {
             "data": {

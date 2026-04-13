@@ -161,7 +161,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("set_circuit_config") if isinstance(payload, dict) else None
+        result = payload.get("setCircuitConfig") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

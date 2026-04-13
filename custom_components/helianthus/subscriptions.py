@@ -14,48 +14,48 @@ _LOGGER = logging.getLogger(__name__)
 SUBSCRIPTIONS = {
     "zones": """
     subscription {
-      zoneUpdate {
+      zone_update {
         id
         name
         state {
-          currentTempC
-          currentHumidityPct
-          hvacAction
-          specialFunction
-          heatingDemandPct
-          valvePositionPct
+          current_temp_c
+          current_humidity_pct
+          hvac_action
+          special_function
+          heating_demand_pct
+          valve_position_pct
         }
         config {
-          operatingMode
+          operating_mode
           preset
-          targetTempC
-          allowedModes
-          circuitType
-          associatedCircuit
-          roomTemperatureZoneMapping
+          target_temp_c
+          allowed_modes
+          circuit_type
+          associated_circuit
+          room_temperature_zone_mapping
         }
       }
     }
     """,
     "dhw": """
     subscription {
-      dhwUpdate {
+      dhw_update {
         state {
-          currentTempC
-          specialFunction
-          heatingDemandPct
+          current_temp_c
+          special_function
+          heating_demand_pct
         }
         config {
-          operatingMode
+          operating_mode
           preset
-          targetTempC
+          target_temp_c
         }
       }
     }
     """,
     "energy": """
     subscription {
-      energyUpdate {
+      energy_update {
         gas { dhw { today yearly } climate { today yearly } }
         electric { dhw { today yearly } climate { today yearly } }
         solar { dhw { today yearly } climate { today yearly } }
@@ -64,35 +64,35 @@ SUBSCRIPTIONS = {
     """,
     "boiler": """
     subscription {
-      boilerStatusUpdate {
+      boiler_status_update {
         state {
-          flowTemperatureC
-          returnTemperatureC
-          centralHeatingPumpActive
+          flow_temperature_c
+          return_temperature_c
+          central_heating_pump_active
         }
         diagnostics {
-          heatingStatusRaw
+          heating_status_raw
         }
       }
     }
     """,
     "radio_devices": """
     subscription {
-      radioDevicesUpdate {
+      radio_devices_update {
         group
         instance
-        slotMode
-        deviceConnected
-        deviceClassAddress
-        deviceModel
-        firmwareVersion
-        hardwareIdentifier
-        remoteControlAddress
-        devicePaired
-        receptionStrength
-        zoneAssignment
-        roomTemperatureC
-        roomHumidityPct
+        slot_mode
+        device_connected
+        device_class_address
+        device_model
+        firmware_version
+        hardware_identifier
+        remote_control_address
+        device_paired
+        reception_strength
+        zone_assignment
+        room_temperature_c
+        room_humidity_pct
       }
     }
     """,
