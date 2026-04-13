@@ -28,8 +28,8 @@ _INSTANCE_GUID_RE = re.compile(
 
 QUERY_GATEWAY_IDENTITY = """
 query GatewayIdentity {
-  gatewayIdentity {
-    instanceGuid
+  gateway_identity {
+    instance_guid
   }
 }
 """
