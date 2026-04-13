@@ -209,7 +209,7 @@ class _FakeClient:
 
     async def mutation(self, query: str, variables: dict):  # noqa: ANN201
         self.calls.append({"query": query, "variables": variables})
-        return {"setCircuitConfig": {"success": True, "error": None}}
+        return {"set_circuit_config": {"success": True, "error": None}}
 
 
 class _FakeEntry:

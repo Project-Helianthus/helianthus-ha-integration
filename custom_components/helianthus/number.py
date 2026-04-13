@@ -24,7 +24,7 @@ from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 _SET_CIRCUIT_CONFIG_MUTATION = """
 mutation SetCircuitConfig($index: Int!, $field: String!, $value: String!) {
-  setCircuitConfig(index: $index, field: $field, value: $value) {
+  set_circuit_config(index: $index, field: $field, value: $value) {
     success
     error
   }
@@ -33,7 +33,7 @@ mutation SetCircuitConfig($index: Int!, $field: String!, $value: String!) {
 
 _SET_SYSTEM_CONFIG_MUTATION = """
 mutation SetSystemConfig($field: String!, $value: String!) {
-  setSystemConfig(field: $field, value: $value) {
+  set_system_config(field: $field, value: $value) {
     success
     error
   }
@@ -42,7 +42,7 @@ mutation SetSystemConfig($field: String!, $value: String!) {
 
 _SET_BOILER_CONFIG_MUTATION = """
 mutation SetBoilerConfig($field: String!, $value: String!) {
-  setBoilerConfig(field: $field, value: $value) {
+  set_boiler_config(field: $field, value: $value) {
     success
     error
   }
@@ -430,7 +430,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setBoilerConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_boiler_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -536,7 +536,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setCircuitConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_circuit_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
@@ -624,7 +624,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_system_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return

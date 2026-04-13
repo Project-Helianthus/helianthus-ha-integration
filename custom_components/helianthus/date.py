@@ -17,7 +17,7 @@ from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 _SET_SYSTEM_CONFIG_MUTATION = """
 mutation SetSystemConfig($field: String!, $value: String!) {
-  setSystemConfig(field: $field, value: $value) {
+  set_system_config(field: $field, value: $value) {
     success
     error
   }
@@ -105,7 +105,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
         except (GraphQLClientError, GraphQLResponseError) as exc:
             raise HomeAssistantError(f"Helianthus write failed: {exc}") from exc
 
-        result = payload.get("setSystemConfig") if isinstance(payload, dict) else None
+        result = payload.get("set_system_config") if isinstance(payload, dict) else None
         if isinstance(result, dict) and result.get("success"):
             await self.coordinator.async_request_refresh()
             return
