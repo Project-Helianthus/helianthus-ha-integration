@@ -132,14 +132,14 @@ def test_sensor_platform_adds_dhw_status_sensor() -> None:
                 "zones": [],
                 "dhw": {
                     "state": {
-                        "currentTempC": 48.1,
-                        "specialFunction": "charging",
-                        "heatingDemandPct": 67,
+                        "current_temp_c": 48.1,
+                        "special_function": "charging",
+                        "heating_demand_pct": 67,
                     },
                     "config": {
-                        "operatingMode": "auto",
+                        "operating_mode": "auto",
                         "preset": "schedule",
-                        "targetTempC": 50.0,
+                        "target_temp_c": 50.0,
                     },
                 },
             }

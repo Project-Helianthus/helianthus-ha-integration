@@ -69,21 +69,21 @@ class SystemSensorField:
 
 STATUS_FIELDS = [
     InventoryField("status", "Status", icon="mdi:information-outline"),
-    InventoryField("firmwareVersion", "Firmware Version", icon="mdi:tag-text-outline"),
-    InventoryField("updatesAvailable", "Updates Available", icon="mdi:update"),
+    InventoryField("firmware_version", "Firmware Version", icon="mdi:tag-text-outline"),
+    InventoryField("updates_available", "Updates Available", icon="mdi:update"),
 ]
 
 DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
-    InventoryField("initiatorAddress", "eBUS Initiator Address", icon="mdi:chip")
+    InventoryField("initiator_address", "eBUS Initiator Address", icon="mdi:chip")
 ]
 
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
 
 REDUCED_BOILER_TEMPERATURE_FIELDS = [
-    BoilerTemperatureField("flowTemperatureC", "Flow Temperature"),
-    BoilerTemperatureField("returnTemperatureC", "Return Temperature"),
-    BoilerTemperatureField("dhwTemperatureC", "DHW Temperature"),
-    BoilerTemperatureField("dhwStorageTemperatureC", "DHW Storage Temperature"),
+    BoilerTemperatureField("flow_temperature_c", "Flow Temperature"),
+    BoilerTemperatureField("return_temperature_c", "Return Temperature"),
+    BoilerTemperatureField("dhw_temperature_c", "DHW Temperature"),
+    BoilerTemperatureField("dhw_storage_temperature_c", "DHW Storage Temperature"),
 ]
 
 _SENSOR_DEVICE_CLASS_HUMIDITY = getattr(SensorDeviceClass, "HUMIDITY", None)
@@ -103,28 +103,28 @@ _CIRCUIT_TYPE_LABELS = {
 
 CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
-        key="flowTemperatureC",
+        key="flow_temperature_c",
         label="Flow Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="flowSetpointC",
+        key="flow_setpoint_c",
         label="Flow Setpoint",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="calcFlowTempC",
+        key="calc_flow_temp_c",
         label="Calculated Flow Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="mixerPositionPct",
+        key="mixer_position_pct",
         label="Mixing Valve Position",
         native_unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -132,7 +132,7 @@ CIRCUIT_SENSOR_FIELDS = [
         icon="mdi:valve",
     ),
     CircuitSensorField(
-        key="circuitState",
+        key="circuit_state",
         label="State",
         include_circuit_attributes=True,
         icon="mdi:information-outline",
@@ -145,14 +145,14 @@ CIRCUIT_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="dewPoint",
+        key="dew_point",
         label="Dew Point",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="pumpHours",
+        key="pump_hours",
         label="Pump Hours",
         device_class=_SENSOR_DEVICE_CLASS_DURATION,
         native_unit="h",
@@ -160,7 +160,7 @@ CIRCUIT_SENSOR_FIELDS = [
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     CircuitSensorField(
-        key="pumpStarts",
+        key="pump_starts",
         label="Pump Starts",
         state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -171,7 +171,7 @@ CIRCUIT_SENSOR_FIELDS = [
 
 SYSTEM_SENSOR_FIELDS = [
     SystemSensorField(
-        key="systemWaterPressure",
+        key="system_water_pressure",
         label="System Water Pressure",
         source="state",
         device_class=_SENSOR_DEVICE_CLASS_PRESSURE,
@@ -179,7 +179,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="outdoorTemperature",
+        key="outdoor_temperature",
         label="Outdoor Temperature",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -187,7 +187,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="outdoorTemperatureAvg24h",
+        key="outdoor_temperature_avg24h",
         label="Outdoor Temperature 24h Average",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -195,7 +195,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="systemFlowTemperature",
+        key="system_flow_temperature",
         label="System Flow Temperature",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -203,7 +203,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="hwcCylinderTemperatureTop",
+        key="hwc_cylinder_temperature_top",
         label="HWC Cylinder Temperature Top",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -212,7 +212,7 @@ SYSTEM_SENSOR_FIELDS = [
         optional=True,
     ),
     SystemSensorField(
-        key="hwcCylinderTemperatureBottom",
+        key="hwc_cylinder_temperature_bottom",
         label="HWC Cylinder Temperature Bottom",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -221,7 +221,7 @@ SYSTEM_SENSOR_FIELDS = [
         optional=True,
     ),
     SystemSensorField(
-        key="systemScheme",
+        key="system_scheme",
         label="System Scheme",
         source="properties",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -232,7 +232,7 @@ SYSTEM_SENSOR_FIELDS = [
 
 BOILER_STATE_SENSOR_FIELDS = [
     {
-        "key": "modulationPct",
+        "key": "modulation_pct",
         "label": "Burner Modulation",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -240,7 +240,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:gas-burner",
     },
     {
-        "key": "fanSpeedRpm",
+        "key": "fan_speed_rpm",
         "label": "Burner Fan Speed",
         "native_unit": "rpm",
         "state_class": SensorStateClass.MEASUREMENT,
@@ -249,7 +249,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:fan",
     },
     {
-        "key": "ionisationVoltageUa",
+        "key": "ionisation_voltage_ua",
         "label": "Burner Ionisation",
         "native_unit": "uA",
         "state_class": SensorStateClass.MEASUREMENT,
@@ -258,7 +258,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:flash-triangle-outline",
     },
     {
-        "key": "storageLoadPumpPct",
+        "key": "storage_load_pump_pct",
         "label": "Hydraulics Storage Load Pump",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -266,7 +266,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:pump",
     },
     {
-        "key": "diverterValvePositionPct",
+        "key": "diverter_valve_position_pct",
         "label": "Hydraulics Diverter Valve Position",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -277,7 +277,7 @@ BOILER_STATE_SENSOR_FIELDS = [
 
 BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
     {
-        "key": "centralHeatingHours",
+        "key": "central_heating_hours",
         "label": "Central Heating Hours",
         "device_class": _SENSOR_DEVICE_CLASS_DURATION,
         "native_unit": "h",
@@ -285,7 +285,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "dhwHours",
+        "key": "dhw_hours",
         "label": "DHW Hours",
         "device_class": _SENSOR_DEVICE_CLASS_DURATION,
         "native_unit": "h",
@@ -293,7 +293,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "pumpHours",
+        "key": "pump_hours",
         "label": "Pump Hours",
         "device_class": _SENSOR_DEVICE_CLASS_DURATION,
         "native_unit": "h",
@@ -301,7 +301,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "fanHours",
+        "key": "fan_hours",
         "label": "Fan Hours",
         "device_class": _SENSOR_DEVICE_CLASS_DURATION,
         "native_unit": "h",
@@ -309,7 +309,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "centralHeatingStarts",
+        "key": "central_heating_starts",
         "label": "Central Heating Starts",
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
@@ -317,7 +317,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "icon": "mdi:counter",
     },
     {
-        "key": "dhwStarts",
+        "key": "dhw_starts",
         "label": "DHW Starts",
         "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
@@ -325,14 +325,14 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "icon": "mdi:counter",
     },
     {
-        "key": "deactivationsIFC",
+        "key": "deactivations_ifc",
         "label": "Deactivations IFC",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
         "icon": "mdi:counter",
     },
     {
-        "key": "deactivationsTemplimiter",
+        "key": "deactivations_templimiter",
         "label": "Deactivations Temperature Limiter",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
@@ -342,7 +342,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
 
 CYLINDER_CONFIG_SENSOR_FIELDS = [
     {
-        "key": "maxSetpointC",
+        "key": "max_setpoint_c",
         "label": "Max Setpoint",
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -350,7 +350,7 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "icon": "mdi:thermometer-high",
     },
     {
-        "key": "chargeHysteresisC",
+        "key": "charge_hysteresis_c",
         "label": "Charge Hysteresis",
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -358,7 +358,7 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "icon": "mdi:thermometer",
     },
     {
-        "key": "chargeOffsetC",
+        "key": "charge_offset_c",
         "label": "Charge Offset",
         "native_unit": UnitOfTemperature.CELSIUS,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -410,17 +410,17 @@ def _radio_bus_key(device: dict[str, Any]) -> str | None:
     slot = _radio_slot(device)
     if slot is None:
         return None
-    explicit = _clean_text(device.get("radioBusKey"))
+    explicit = _clean_text(device.get("radio_bus_key"))
     if explicit:
         return explicit
     return build_radio_bus_key(slot[0], slot[1])
 
 
 def _radio_model_name(device: dict[str, Any]) -> str:
-    model = _clean_text(device.get("deviceModel"))
+    model = _clean_text(device.get("device_model"))
     if model:
         return model
-    class_address = _parse_optional_int(device.get("deviceClassAddress"))
+    class_address = _parse_optional_int(device.get("device_class_address"))
     if class_address == 0x15:
         return "VRC720f/2"
     if class_address == 0x35:
@@ -435,14 +435,14 @@ def _radio_model_name(device: dict[str, Any]) -> str:
 def _fm5_mode(payload: dict[str, Any] | None) -> str:
     if not isinstance(payload, dict):
         return "ABSENT"
-    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
     if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
         return "ABSENT"
     return mode
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuitType") or "").strip().lower()
+    token = str(circuit.get("circuit_type") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
     return f"Circuit {index + 1} ({label})"
 
@@ -500,18 +500,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     sensors: list[SensorEntity] = []
     seen_bus_keys: set[str] = set()
     for device in device_coordinator.data or []:
-        device_id = _clean_text(device.get("deviceId")) or "unknown"
+        device_id = _clean_text(device.get("device_id")) or "unknown"
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             continue
-        model = stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
+        model = stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
         bus_key = build_bus_device_key(
             model=model,
             address=address,
-            serial_number=_clean_text(device.get("serialNumber")),
-            mac_address=_clean_text(device.get("macAddress")),
-            hardware_version=_clean_text(device.get("hardwareVersion")),
-            software_version=_clean_text(device.get("softwareVersion")),
+            serial_number=_clean_text(device.get("serial_number")),
+            mac_address=_clean_text(device.get("mac_address")),
+            hardware_version=_clean_text(device.get("hardware_version")),
+            software_version=_clean_text(device.get("software_version")),
         )
         if bus_key in seen_bus_keys:
             continue
@@ -621,7 +621,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             )
 
     if radio_coordinator and radio_coordinator.data:
-        radio_devices = radio_coordinator.data.get("radioDevices", []) or []
+        radio_devices = radio_coordinator.data.get("radio_devices", []) or []
         for radio in radio_devices:
             if not isinstance(radio, dict):
                 continue
@@ -633,12 +633,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             # ADR-027: skip all sensors for merged B524 function-module slots.
             if bus_key in b524_merge_targets:
                 continue
-            class_address = _parse_optional_int(radio.get("deviceClassAddress"))
+            class_address = _parse_optional_int(radio.get("device_class_address"))
             is_room = class_address in _RADIO_ROOM_CLASSES
             radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
             radio_name = _radio_model_name(radio)
             radio_zone_name = radio_device_zone_names.get(radio_device_id)
-            if is_room or radio.get("receptionStrength") is not None:
+            if is_room or radio.get("reception_strength") is not None:
                 sensors.append(
                     HelianthusRadioSensor(
                         coordinator=radio_coordinator,
@@ -648,7 +648,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         radio_name=radio_name,
                         group=group,
                         instance=instance,
-                        key="receptionStrength",
+                        key="reception_strength",
                         label="Signal Quality",
                         entity_category=EntityCategory.DIAGNOSTIC,
                         cast_int=True,
@@ -665,7 +665,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         radio_name=radio_name,
                         group=group,
                         instance=instance,
-                        key="roomTemperatureC",
+                        key="room_temperature_c",
                         label="Room Temperature",
                         device_class=SensorDeviceClass.TEMPERATURE,
                         native_unit=UnitOfTemperature.CELSIUS,
@@ -682,7 +682,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         radio_name=radio_name,
                         group=group,
                         instance=instance,
-                        key="roomHumidityPct",
+                        key="room_humidity_pct",
                         label="Room Humidity",
                         device_class=_SENSOR_DEVICE_CLASS_HUMIDITY,
                         native_unit=PERCENTAGE,
@@ -692,16 +692,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 )
             elif group == 0x0C:
                 _radio_metadata_icons = {
-                    "deviceClassAddress": "mdi:identifier",
-                    "hardwareIdentifier": "mdi:identifier",
-                    "remoteControlAddress": "mdi:remote",
-                    "zoneAssignment": "mdi:home-map-marker",
+                    "device_class_address": "mdi:identifier",
+                    "hardware_identifier": "mdi:identifier",
+                    "remote_control_address": "mdi:remote",
+                    "zone_assignment": "mdi:home-map-marker",
                 }
                 for key, label in [
-                    ("deviceClassAddress", "Device Class Address"),
-                    ("hardwareIdentifier", "Hardware Identifier"),
-                    ("remoteControlAddress", "Remote Control Address"),
-                    ("zoneAssignment", "Zone Assignment"),
+                    ("device_class_address", "Device Class Address"),
+                    ("hardware_identifier", "Hardware Identifier"),
+                    ("remote_control_address", "Remote Control Address"),
+                    ("zone_assignment", "Zone Assignment"),
                 ]:
                     if radio.get(key) is None:
                         continue
@@ -742,7 +742,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 solar_device_id = solar_identifier(entry.entry_id)
                 for key, label, device_class, unit, state_class, icon in [
                     (
-                        "collectorTemperatureC",
+                        "collector_temperature_c",
                         "Collector Temperature",
                         SensorDeviceClass.TEMPERATURE,
                         UnitOfTemperature.CELSIUS,
@@ -750,15 +750,15 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         None,
                     ),
                     (
-                        "returnTemperatureC",
+                        "return_temperature_c",
                         "Return Temperature",
                         SensorDeviceClass.TEMPERATURE,
                         UnitOfTemperature.CELSIUS,
                         SensorStateClass.MEASUREMENT,
                         None,
                     ),
-                    ("currentYield", "Current Yield", None, None, None, "mdi:solar-power"),
-                    ("pumpHours", "Pump Hours", _SENSOR_DEVICE_CLASS_DURATION, "h", _SENSOR_STATE_CLASS_TOTAL_INCREASING, None),
+                    ("current_yield", "Current Yield", None, None, None, "mdi:solar-power"),
+                    ("pump_hours", "Pump Hours", _SENSOR_DEVICE_CLASS_DURATION, "h", _SENSOR_STATE_CLASS_TOTAL_INCREASING, None),
                 ]:
                     sensors.append(
                         HelianthusSolarSensor(
@@ -812,7 +812,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if normalized_zone_id is None:
                     continue
                 config = zone.get("config")
-                mapping = _parse_optional_int(config.get("roomTemperatureZoneMapping")) if isinstance(config, dict) else None
+                mapping = _parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
                 target_device_id = zone_parent_device_ids.get(normalized_zone_id)
                 if target_device_id is None:
                     if mapping in (1, 2, 3, 4):
@@ -890,12 +890,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     adapter_device_id = data.get("adapter_device_id")
     if adapter_info_coordinator and adapter_device_id:
         adapter_hw = adapter_info_coordinator.data
-        is_wifi = isinstance(adapter_hw, dict) and adapter_hw.get("isWifi") is True
-        has_reset = isinstance(adapter_hw, dict) and adapter_hw.get("resetCause") is not None
+        is_wifi = isinstance(adapter_hw, dict) and adapter_hw.get("is_wifi") is True
+        has_reset = isinstance(adapter_hw, dict) and adapter_hw.get("reset_cause") is not None
         sensors.append(
             HelianthusAdapterInfoSensor(
                 adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                key="temperatureC", label="Adapter Temperature",
+                key="temperature_c", label="Adapter Temperature",
                 device_class=SensorDeviceClass.TEMPERATURE,
                 native_unit=UnitOfTemperature.CELSIUS,
                 state_class=SensorStateClass.MEASUREMENT,
@@ -905,7 +905,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         sensors.append(
             HelianthusAdapterInfoSensor(
                 adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                key="supplyVoltageMv", label="Adapter Supply Voltage",
+                key="supply_voltage_mv", label="Adapter Supply Voltage",
                 device_class=SensorDeviceClass.VOLTAGE,
                 native_unit="mV",
                 state_class=SensorStateClass.MEASUREMENT,
@@ -915,7 +915,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         sensors.append(
             HelianthusAdapterInfoSensor(
                 adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                key="busVoltageMaxDv", label="eBUS Voltage Max",
+                key="bus_voltage_max_dv", label="eBUS Voltage Max",
                 device_class=SensorDeviceClass.VOLTAGE,
                 native_unit="V",
                 state_class=SensorStateClass.MEASUREMENT,
@@ -926,7 +926,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         sensors.append(
             HelianthusAdapterInfoSensor(
                 adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                key="busVoltageMinDv", label="eBUS Voltage Min",
+                key="bus_voltage_min_dv", label="eBUS Voltage Min",
                 device_class=SensorDeviceClass.VOLTAGE,
                 native_unit="V",
                 state_class=SensorStateClass.MEASUREMENT,
@@ -937,7 +937,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         sensors.append(
             HelianthusAdapterInfoSensor(
                 adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                key="restartCount", label="Adapter Restart Count",
+                key="restart_count", label="Adapter Restart Count",
                 state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
                 icon="mdi:counter",
             )
@@ -946,7 +946,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             sensors.append(
                 HelianthusAdapterInfoSensor(
                     adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                    key="resetCause", label="Adapter Reset Cause",
+                    key="reset_cause", label="Adapter Reset Cause",
                     icon="mdi:alert-circle-outline",
                 )
             )
@@ -954,7 +954,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             sensors.append(
                 HelianthusAdapterInfoSensor(
                     adapter_info_coordinator, entry.entry_id, adapter_device_id,
-                    key="wifiRssiDbm", label="Adapter WiFi Signal",
+                    key="wifi_rssi_dbm", label="Adapter WiFi Signal",
                     device_class=SensorDeviceClass.SIGNAL_STRENGTH,
                     native_unit="dBm",
                     state_class=SensorStateClass.MEASUREMENT,
@@ -1048,7 +1048,7 @@ class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
 
     def _boiler_state(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") or {}
+        boiler_status = payload.get("boiler_status") or {}
         return boiler_status.get("state") or {}
 
     @property
@@ -1100,7 +1100,7 @@ class HelianthusBoilerStateSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") or {}
+        boiler_status = payload.get("boiler_status") or {}
         state = boiler_status.get("state") if isinstance(boiler_status, dict) else {}
         value = state.get(self._field["key"]) if isinstance(state, dict) else None
         if value is None:
@@ -1156,7 +1156,7 @@ class HelianthusBoilerDiagnosticsSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") or {}
+        boiler_status = payload.get("boiler_status") or {}
         diagnostics = boiler_status.get("diagnostics") if isinstance(boiler_status, dict) else {}
         value = diagnostics.get(self._field["key"]) if isinstance(diagnostics, dict) else None
         if value is None:
@@ -1258,10 +1258,10 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
         attrs: dict[str, Any] = {
             "circuit_index": self._circuit_index,
         }
-        circuit_type = circuit.get("circuitType")
+        circuit_type = circuit.get("circuit_type")
         if circuit_type is not None and str(circuit_type).strip() != "":
             attrs["circuit_type"] = str(circuit_type)
-        has_mixer = circuit.get("hasMixer")
+        has_mixer = circuit.get("has_mixer")
         if isinstance(has_mixer, bool):
             attrs["has_mixer"] = has_mixer
         return attrs
@@ -1376,7 +1376,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
 
     def _device(self) -> dict[str, Any] | None:
         payload = self.coordinator.data or {}
-        for device in payload.get("radioDevices", []) or []:
+        for device in payload.get("radio_devices", []) or []:
             if not isinstance(device, dict):
                 continue
             slot = _radio_slot(device)
@@ -1393,7 +1393,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         device = self._device()
         if device is None:
             return False
-        stale = _parse_optional_int(device.get("staleCycles")) or 0
+        stale = _parse_optional_int(device.get("stale_cycles")) or 0
         return stale < _RADIO_STALE_GRACE_CYCLES
 
     @property
@@ -1409,7 +1409,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
     @property
     def icon(self) -> str | None:
         """Dynamic icon for signal quality (ADR-026); static for others."""
-        if self._key == "receptionStrength":
+        if self._key == "reception_strength":
             value = self.native_value
             if value is None:
                 return "mdi:signal-cellular-outline"
@@ -1572,7 +1572,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
         self._parent_device_id = parent_device_id
         self._attr_name = "Temperature"
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-temperature"
-        self._attr_entity_registry_enabled_default = self._cylinder().get("temperatureC") is not None
+        self._attr_entity_registry_enabled_default = self._cylinder().get("temperature_c") is not None
 
     def _cylinder(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1604,7 +1604,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        value = self._cylinder().get("temperatureC")
+        value = self._cylinder().get("temperature_c")
         if value is None:
             return None
         try:
@@ -1711,7 +1711,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._target_device_id = target_device_id
         self._attr_name = "Valve Position"
-        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-valvePositionPct"
+        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-valve_position_pct"
 
     def _zone(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1736,7 +1736,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> Any:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        value = state.get("valvePositionPct") if isinstance(state, dict) else None
+        value = state.get("valve_position_pct") if isinstance(state, dict) else None
         if value is None:
             return None
         try:
@@ -1813,11 +1813,11 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
             for zone in self.coordinator.data.get("zones", []) or []:
                 if zone.get("id") == zone_id:
                     state = zone.get("state") or {}
-                    return state.get("heatingDemandPct")
+                    return state.get("heating_demand_pct")
             return None
         dhw = self.coordinator.data.get("dhw") or {}
         state = dhw.get("state") or {}
-        return state.get("heatingDemandPct")
+        return state.get("heating_demand_pct")
 
 
 class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
@@ -1856,7 +1856,7 @@ class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
         payload = self.coordinator.data or {}
         dhw = payload.get("dhw") or {}
         state = dhw.get("state") if isinstance(dhw.get("state"), dict) else {}
-        value = state.get("specialFunction")
+        value = state.get("special_function")
         if value is None:
             return None
         if isinstance(value, (bool, int, float, str)):
@@ -1903,7 +1903,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
 
     def _series(self) -> dict[str, Any] | None:
         payload = self.coordinator.data or {}
-        totals = payload.get("energyTotals")
+        totals = payload.get("energy_totals")
         if not isinstance(totals, dict):
             return None
         channel = totals.get(self._source)
@@ -1993,7 +1993,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
-        self._attr_unique_id = f"{entry_id}-boiler-sensor-hoursTillService"
+        self._attr_unique_id = f"{entry_id}-boiler-sensor-hours_till_service"
         self._attr_name = "Hours Till Service"
 
     @property
@@ -2010,9 +2010,9 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> int | None:
         payload = self.coordinator.data or {}
-        boiler_status = payload.get("boilerStatus") if isinstance(payload, dict) else None
+        boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
-        value = config.get("hoursTillService")
+        value = config.get("hours_till_service")
         if value is None:
             return None
         try:

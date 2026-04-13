@@ -28,8 +28,8 @@ _INSTANCE_GUID_RE = re.compile(
 
 QUERY_GATEWAY_IDENTITY = """
 query GatewayIdentity {
-  gatewayIdentity {
-    instanceGuid
+  gateway_identity {
+    instance_guid
   }
 }
 """
@@ -168,10 +168,10 @@ async def verify_gateway_identity(
 
         if not isinstance(payload, dict):
             raise GatewayIdentityVerificationError("invalid_response")
-        identity = payload.get("gatewayIdentity")
+        identity = payload.get("gateway_identity")
         if not isinstance(identity, dict):
             raise GatewayIdentityVerificationError("invalid_response")
-        instance_guid = normalize_instance_guid(identity.get("instanceGuid"))
+        instance_guid = normalize_instance_guid(identity.get("instance_guid"))
         if instance_guid is None:
             raise GatewayIdentityVerificationError("missing_instance_guid")
         if expected_guid is not None and instance_guid != expected_guid:

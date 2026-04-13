@@ -45,6 +45,125 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# --- B524 namespace: camelCase -> snake_case unique_id migration (C2) ---
+# Sorted by key length descending to prevent substring collision during replace.
+_SNAKE_CASE_UID_RENAME_MAP: list[tuple[str, str]] = [
+    ("hwcCylinderTemperatureBottom", "hwc_cylinder_temperature_bottom"),
+    ("hwcCylinderTemperatureTop", "hwc_cylinder_temperature_top"),
+    ("centralHeatingPumpActive", "central_heating_pump_active"),
+    ("diverterValvePositionPct", "diverter_valve_position_pct"),
+    ("deactivationsTemplimiter", "deactivations_templimiter"),
+    ("outdoorTemperatureAvg24h", "outdoor_temperature_avg24h"),
+    ("dhwStorageTemperatureC", "dhw_storage_temperature_c"),
+    ("circulationPumpActive", "circulation_pump_active"),
+    ("systemFlowTemperature", "system_flow_temperature"),
+    ("collectorTemperatureC", "collector_temperature_c"),
+    ("adaptiveHeatingCurve", "adaptive_heating_curve"),
+    ("centralHeatingStarts", "central_heating_starts"),
+    ("remoteControlAddress", "remote_control_address"),
+    ("ionisationVoltageUa", "ionisation_voltage_ua"),
+    ("centralHeatingHours", "central_heating_hours"),
+    ("systemWaterPressure", "system_water_pressure"),
+    ("externalPumpActive", "external_pump_active"),
+    ("returnTemperatureC", "return_temperature_c"),
+    ("storageLoadPumpPct", "storage_load_pump_pct"),
+    ("outdoorTemperature", "outdoor_temperature"),
+    ("deviceClassAddress", "device_class_address"),
+    ("hardwareIdentifier", "hardware_identifier"),
+    ("dhwBivalencePointC", "dhw_bivalence_point_c"),
+    ("maxRoomHumidityPct", "max_room_humidity_pct"),
+    ("receptionStrength", "reception_strength"),
+    ("chargeHysteresisC", "charge_hysteresis_c"),
+    ("hcBivalencePointC", "hc_bivalence_point_c"),
+    ("installerMenuCode", "installer_menu_code"),
+    ("updatesAvailable", "updates_available"),
+    ("initiatorAddress", "initiator_address"),
+    ("flowTemperatureC", "flow_temperature_c"),
+    ("deactivationsIFC", "deactivations_ifc"),
+    ("mixerPositionPct", "mixer_position_pct"),
+    ("roomTemperatureC", "room_temperature_c"),
+    ("valvePositionPct", "valve_position_pct"),
+    ("hoursTillService", "hours_till_service"),
+    ("hcEmergencyTempC", "hc_emergency_temp_c"),
+    ("firmwareVersion", "firmware_version"),
+    ("dhwTemperatureC", "dhw_temperature_c"),
+    ("roomHumidityPct", "room_humidity_pct"),
+    ("supplyVoltageMv", "supply_voltage_mv"),
+    ("busVoltageMaxDv", "bus_voltage_max_dv"),
+    ("busVoltageMinDv", "bus_voltage_min_dv"),
+    ("hwcMaxFlowTempC", "hwc_max_flow_temp_c"),
+    ("maintenanceDate", "maintenance_date"),
+    ("gasValveActive", "gas_valve_active"),
+    ("maintenanceDue", "maintenance_due"),
+    ("zoneAssignment", "zone_assignment"),
+    ("flowsetHwcMaxC", "flowset_hwc_max_c"),
+    ("installerPhone", "installer_phone"),
+    ("modulationPct", "modulation_pct"),
+    ("flowSetpointC", "flow_setpoint_c"),
+    ("calcFlowTempC", "calc_flow_temp_c"),
+    ("chargeOffsetC", "charge_offset_c"),
+    ("flowsetHcMaxC", "flowset_hc_max_c"),
+    ("partloadHwcKW", "partload_hwc_kw"),
+    ("installerName", "installer_name"),
+    ("solarEnabled", "solar_enabled"),
+    ("functionMode", "function_mode"),
+    ("circuitState", "circuit_state"),
+    ("systemScheme", "system_scheme"),
+    ("currentYield", "current_yield"),
+    ("maxSetpointC", "max_setpoint_c"),
+    ("temperatureC", "temperature_c"),
+    ("restartCount", "restart_count"),
+    ("heatingCurve", "heating_curve"),
+    ("flowTempMaxC", "flow_temp_max_c"),
+    ("flowTempMinC", "flow_temp_min_c"),
+    ("summerLimitC", "summer_limit_c"),
+    ("partloadHcKW", "partload_hc_kw"),
+    ("flameActive", "flame_active"),
+    ("fanSpeedRpm", "fan_speed_rpm"),
+    ("wifiRssiDbm", "wifi_rssi_dbm"),
+    ("phoneNumber", "phone_number"),
+    ("pumpActive", "pump_active"),
+    ("pumpStarts", "pump_starts"),
+    ("resetCause", "reset_cause"),
+    ("frostProtC", "frost_prot_c"),
+    ("pumpHours", "pump_hours"),
+    ("dhwStarts", "dhw_starts"),
+    ("dhwHours", "dhw_hours"),
+    ("fanHours", "fan_hours"),
+    ("dewPoint", "dew_point"),
+]
+
+
+def _migrate_unique_ids_to_snake_case(hass: object, entry: object) -> int:
+    """Migrate camelCase unique_ids to snake_case (B524 namespace contract).
+
+    Returns the number of entities migrated.
+    """
+    import homeassistant.helpers.entity_registry as er
+
+    registry = er.async_get(hass)
+    migrated = 0
+    for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        old_uid = entity_entry.unique_id
+        new_uid = old_uid
+        for old_key, new_key in _SNAKE_CASE_UID_RENAME_MAP:
+            new_uid = new_uid.replace(old_key, new_key)
+        if new_uid != old_uid:
+            try:
+                registry.async_update_entity(
+                    entity_entry.entity_id, new_unique_id=new_uid
+                )
+                migrated += 1
+            except Exception:
+                _LOGGER.warning(
+                    "Failed to migrate unique_id %s -> %s for %s",
+                    old_uid,
+                    new_uid,
+                    entity_entry.entity_id,
+                )
+    return migrated
+
+
 _HEX4_RE = re.compile(r"^[0-9a-fA-F]{4}$")
 _KNOWN_BUS_DISPLAY_NAMES: dict[str, str] = {
     "BASV": "sensoCOMFORT RF",
@@ -102,16 +221,16 @@ def _normalized_ebus_code(device_id: object | None) -> str:
 
 
 def _canonical_bus_display_name(device: dict) -> str | None:
-    device_id = _normalized_ebus_code(device.get("deviceId"))
+    device_id = _normalized_ebus_code(device.get("device_id"))
     known = _KNOWN_BUS_DISPLAY_NAMES.get(device_id)
     if known:
         return known
-    return _clean_label(device.get("displayName")) or _clean_label(device.get("productFamily"))
+    return _clean_label(device.get("display_name")) or _clean_label(device.get("product_family"))
 
 
 def _canonical_bus_model_name(device: dict) -> str:
-    product_model = _clean_label(device.get("productModel"))
-    device_id = _clean_label(device.get("deviceId")) or "unknown"
+    product_model = _clean_label(device.get("product_model"))
+    device_id = _clean_label(device.get("device_id")) or "unknown"
     ebus_code = _normalized_ebus_code(device_id)
     base_model = product_model or _KNOWN_BUS_MODELS.get(ebus_code) or str(device_id)
     if "(eBUS:" in base_model:
@@ -122,7 +241,7 @@ def _canonical_bus_model_name(device: dict) -> str:
 def _stable_bus_identity_model(device: dict) -> str:
     from .device_ids import stable_bus_identity_model
 
-    return stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
+    return stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
 
 
 def _parse_bus_address(value: object | None) -> int | None:
@@ -378,6 +497,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
+
+    # Phase C2: migrate camelCase unique_ids to snake_case before platform setup.
+    uid_migrated = _migrate_unique_ids_to_snake_case(hass, entry)
+    if uid_migrated:
+        _LOGGER.info(
+            "Migrated %d entity unique_ids from camelCase to snake_case for entry %s",
+            uid_migrated,
+            entry.entry_id,
+        )
+
     active_entry_ids = {
         config_entry.entry_id for config_entry in hass.config_entries.async_entries(DOMAIN)
     }
@@ -524,11 +653,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await adapter_info_coordinator.async_config_entry_first_refresh()
 
     adapter_hw = adapter_info_coordinator.data
-    if isinstance(adapter_hw, dict) and adapter_hw.get("firmwareVersion"):
-        hw_id = adapter_hw.get("hardwareID") or None
+    if isinstance(adapter_hw, dict) and adapter_hw.get("firmware_version"):
+        hw_id = adapter_hw.get("hardware_id") or None
         device_registry.async_update_device(
             adapter_device_entry.id,
-            sw_version=adapter_hw["firmwareVersion"],
+            sw_version=adapter_hw["firmware_version"],
             hw_version=hw_id,
             serial_number=hw_id,
         )
@@ -548,20 +677,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
-        model = stable_bus_identity_model(device.get("deviceId"), device.get("productModel"))
+        model = stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
         return build_bus_device_key(
             model=model,
             address=address,
-            serial_number=_clean_label(device.get("serialNumber")),
-            mac_address=_clean_label(device.get("macAddress")),
-            hardware_version=_clean_label(device.get("hardwareVersion")),
-            software_version=_clean_label(device.get("softwareVersion")),
+            serial_number=_clean_label(device.get("serial_number")),
+            mac_address=_clean_label(device.get("mac_address")),
+            hardware_version=_clean_label(device.get("hardware_version")),
+            software_version=_clean_label(device.get("software_version")),
         )
 
     def is_regulator_device(device: dict) -> bool:
-        device_id = str(device.get("deviceId") or "").upper()
-        display_name = str(device.get("displayName") or "").upper()
-        product_family = str(device.get("productFamily") or "").upper()
+        device_id = str(device.get("device_id") or "").upper()
+        display_name = str(device.get("display_name") or "").upper()
+        product_family = str(device.get("product_family") or "").upper()
         return bool(
             device_id.startswith("BASV")
             or device_id.startswith("VRC")
@@ -590,10 +719,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return None
 
     def radio_model_name(device: dict) -> str:
-        model = _clean_label(device.get("deviceModel"))
+        model = _clean_label(device.get("device_model"))
         if model:
             return model
-        class_address = parse_optional_int(device.get("deviceClassAddress"))
+        class_address = parse_optional_int(device.get("device_class_address"))
         if class_address == 0x15:
             return "VRC720f/2"
         if class_address == 0x35:
@@ -646,11 +775,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     vr71_device: tuple[str, str] | None = None
     for device in devices:
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
-        device_id = device.get("deviceId", "unknown")
-        serial_number = device.get("serialNumber")
+        device_id = device.get("device_id", "unknown")
+        serial_number = device.get("serial_number")
         manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
-        sw_version = device.get("softwareVersion")
-        hw_version = device.get("hardwareVersion")
+        sw_version = device.get("software_version")
+        hw_version = device.get("hardware_version")
         display_name = _canonical_bus_display_name(device)
 
         if address is None:
@@ -731,7 +860,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 break
 
     radio_payload = radio_coordinator.data or {}
-    radio_devices_payload = radio_payload.get("radioDevices")
+    radio_devices_payload = radio_payload.get("radio_devices")
     if not isinstance(radio_devices_payload, list):
         radio_devices_payload = []
 
@@ -746,7 +875,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         group = parse_optional_int(device.get("group"))
         if group != _B524_FUNCTION_MODULE_GROUP:
             continue
-        class_addr = parse_optional_int(device.get("deviceClassAddress"))
+        class_addr = parse_optional_int(device.get("device_class_address"))
         if class_addr is None:
             continue
         bus_device_id = bus_address_device_ids.get(class_addr)
@@ -755,7 +884,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inst = parse_optional_int(device.get("instance"))
         if inst is None:
             continue
-        bus_key = str(device.get("radioBusKey") or "").strip()
+        bus_key = str(device.get("radio_bus_key") or "").strip()
         if not bus_key:
             bus_key = build_radio_bus_key(group, inst)
         b524_merge_targets[bus_key] = bus_device_id
@@ -773,7 +902,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         instance = parse_optional_int(device.get("instance"))
         if group is None or instance is None:
             continue
-        bus_key = str(device.get("radioBusKey") or "").strip()
+        bus_key = str(device.get("radio_bus_key") or "").strip()
         if not bus_key:
             bus_key = build_radio_bus_key(group, instance)
         known_radio_bus_keys.add(bus_key)
@@ -791,10 +920,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         if radio_parent is not None:
             device_kwargs["via_device"] = radio_parent
-        sw_version = radio_firmware_display(device.get("firmwareVersion"))
+        sw_version = radio_firmware_display(device.get("firmware_version"))
         if sw_version:
             device_kwargs["sw_version"] = sw_version
-        hardware_identifier = parse_optional_int(device.get("hardwareIdentifier"))
+        hardware_identifier = parse_optional_int(device.get("hardware_identifier"))
         if hardware_identifier is not None and hardware_identifier >= 0:
             device_kwargs["hw_version"] = f"0x{hardware_identifier:04X}"
         device_registry.async_get_or_create(**device_kwargs)
@@ -809,14 +938,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if index is None:
             continue
         known_circuit_indexes.add(index)
-        circuit_type_name = circuit_type_display_name(circuit.get("circuitType"))
+        circuit_type_name = circuit_type_display_name(circuit.get("circuit_type"))
         managing_device = managing_device_identifier(
             group=0x02,
             instance=index,
             regulator_device_id=regulator_device,
             vr71_device_id=vr71_device,
             adapter_device_id=adapter_device_id,
-            managing_device=circuit.get("managingDevice"),
+            managing_device=circuit.get("managing_device"),
         )
         circuit_device_id = circuit_identifier(entry.entry_id, index)
         device_kwargs: dict[str, object] = {
@@ -831,7 +960,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_registry.async_get_or_create(**device_kwargs)
 
     fm5_payload = fm5_coordinator.data or {}
-    known_fm5_mode = str(fm5_payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    known_fm5_mode = str(fm5_payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
     known_cylinder_indexes: set[int] = set()
     for cylinder in fm5_payload.get("cylinders", []) or []:
         if not isinstance(cylinder, dict):
@@ -841,7 +970,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             known_cylinder_indexes.add(index)
 
     daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
-    daemon_source_addr = _parse_bus_address(daemon_data.get("initiatorAddress"))
+    daemon_source_addr = _parse_bus_address(daemon_data.get("initiator_address"))
 
     semantic = semantic_coordinator.data or {}
     semantic_zones = [
@@ -875,14 +1004,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return payload if isinstance(payload, dict) else {}
 
     def _current_fm5_mode() -> str:
-        return str(_current_fm5_payload().get("fm5SemanticMode") or "ABSENT").strip().upper()
+        return str(_current_fm5_payload().get("fm5_semantic_mode") or "ABSENT").strip().upper()
 
     def _current_radio_slots_with_live_values() -> dict[tuple[int, int], set[str]]:
         payload = radio_coordinator.data if radio_coordinator else None
         if not isinstance(payload, dict):
             return {}
         out: dict[tuple[int, int], set[str]] = {}
-        for radio in payload.get("radioDevices", []) or []:
+        for radio in payload.get("radio_devices", []) or []:
             if not isinstance(radio, dict):
                 continue
             group = parse_optional_int(radio.get("group"))
@@ -938,7 +1067,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             config_key = cylinder_match.group("config_key")
             if config_key:
                 return config_key in live_keys
-            return "temperatureC" in live_keys
+            return "temperature_c" in live_keys
         return False
 
     # ADR-027: build set of merged B524 slot prefixes for entity cleanup.
@@ -1237,10 +1366,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def handle_radio_update() -> None:
         payload = radio_coordinator.data or {}
         current_keys: set[str] = set()
-        for radio in payload.get("radioDevices", []) or []:
+        for radio in payload.get("radio_devices", []) or []:
             if not isinstance(radio, dict):
                 continue
-            key = str(radio.get("radioBusKey") or "").strip()
+            key = str(radio.get("radio_bus_key") or "").strip()
             if key:
                 current_keys.add(key)
                 continue
@@ -1262,7 +1391,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def handle_fm5_update() -> None:
         payload = fm5_coordinator.data or {}
-        mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+        mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
         current_indexes: set[int] = set()
         for cylinder in payload.get("cylinders", []) or []:
             if not isinstance(cylinder, dict):

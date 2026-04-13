@@ -31,17 +31,17 @@ def test_clean_label_returns_none_for_empty_text() -> None:
 
 
 def test_canonical_bus_display_name_maps_basv_and_vr71() -> None:
-    assert _canonical_bus_display_name({"deviceId": "BASV2"}) == "sensoCOMFORT RF"
-    assert _canonical_bus_display_name({"deviceId": "VR_71"}) == "FM5 Control Centre"
-    assert _canonical_bus_display_name({"deviceId": "BAI00"}) == "ecoTEC plus"
-    assert _canonical_bus_display_name({"deviceId": "NETX3"}) == "myVaillant Connect"
+    assert _canonical_bus_display_name({"device_id": "BASV2"}) == "sensoCOMFORT RF"
+    assert _canonical_bus_display_name({"device_id": "VR_71"}) == "FM5 Control Centre"
+    assert _canonical_bus_display_name({"device_id": "BAI00"}) == "ecoTEC plus"
+    assert _canonical_bus_display_name({"device_id": "NETX3"}) == "myVaillant Connect"
 
 
 def test_canonical_bus_model_name_includes_ebus_code() -> None:
-    basv = _canonical_bus_model_name({"deviceId": "BASV2", "productModel": "VRC 720f/2"})
-    vr71 = _canonical_bus_model_name({"deviceId": "VR_71", "productModel": "VR 71"})
-    bai = _canonical_bus_model_name({"deviceId": "BAI00"})
-    netx3 = _canonical_bus_model_name({"deviceId": "NETX3"})
+    basv = _canonical_bus_model_name({"device_id": "BASV2", "product_model": "VRC 720f/2"})
+    vr71 = _canonical_bus_model_name({"device_id": "VR_71", "product_model": "VR 71"})
+    bai = _canonical_bus_model_name({"device_id": "BAI00"})
+    netx3 = _canonical_bus_model_name({"device_id": "NETX3"})
     assert basv == "VRC 720f/2 (eBUS: BASV)"
     assert vr71 == "VR 71 (eBUS: VR_71)"
     assert bai == "VUW (eBUS: BAI00)"
@@ -49,8 +49,8 @@ def test_canonical_bus_model_name_includes_ebus_code() -> None:
 
 
 def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_payloads() -> None:
-    enriched = _stable_bus_identity_model({"deviceId": "BAI00", "productModel": "VUW 32CS/1-5 (N-INT2)"})
-    sparse = _stable_bus_identity_model({"deviceId": "BAI00"})
+    enriched = _stable_bus_identity_model({"device_id": "BAI00", "product_model": "VUW 32CS/1-5 (N-INT2)"})
+    sparse = _stable_bus_identity_model({"device_id": "BAI00"})
     assert enriched == "VUW"
     assert sparse == "VUW"
 

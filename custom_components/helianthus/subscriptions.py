@@ -14,48 +14,48 @@ _LOGGER = logging.getLogger(__name__)
 SUBSCRIPTIONS = {
     "zones": """
     subscription {
-      zoneUpdate {
+      zone_update {
         id
         name
         state {
-          currentTempC
-          currentHumidityPct
-          hvacAction
-          specialFunction
-          heatingDemandPct
-          valvePositionPct
+          current_temp_c
+          current_humidity_pct
+          hvac_action
+          special_function
+          heating_demand_pct
+          valve_position_pct
         }
         config {
-          operatingMode
+          operating_mode
           preset
-          targetTempC
-          allowedModes
-          circuitType
-          associatedCircuit
-          roomTemperatureZoneMapping
+          target_temp_c
+          allowed_modes
+          circuit_type
+          associated_circuit
+          room_temperature_zone_mapping
         }
       }
     }
     """,
     "dhw": """
     subscription {
-      dhwUpdate {
+      dhw_update {
         state {
-          currentTempC
-          specialFunction
-          heatingDemandPct
+          current_temp_c
+          special_function
+          heating_demand_pct
         }
         config {
-          operatingMode
+          operating_mode
           preset
-          targetTempC
+          target_temp_c
         }
       }
     }
     """,
     "energy": """
     subscription {
-      energyUpdate {
+      energy_update {
         gas { dhw { today yearly } climate { today yearly } }
         electric { dhw { today yearly } climate { today yearly } }
         solar { dhw { today yearly } climate { today yearly } }
@@ -64,35 +64,35 @@ SUBSCRIPTIONS = {
     """,
     "boiler": """
     subscription {
-      boilerStatusUpdate {
+      boiler_status_update {
         state {
-          flowTemperatureC
-          returnTemperatureC
-          centralHeatingPumpActive
+          flow_temperature_c
+          return_temperature_c
+          central_heating_pump_active
         }
         diagnostics {
-          heatingStatusRaw
+          heating_status_raw
         }
       }
     }
     """,
     "radio_devices": """
     subscription {
-      radioDevicesUpdate {
+      radio_devices_update {
         group
         instance
-        slotMode
-        deviceConnected
-        deviceClassAddress
-        deviceModel
-        firmwareVersion
-        hardwareIdentifier
-        remoteControlAddress
-        devicePaired
-        receptionStrength
-        zoneAssignment
-        roomTemperatureC
-        roomHumidityPct
+        slot_mode
+        device_connected
+        device_class_address
+        device_model
+        firmware_version
+        hardware_identifier
+        remote_control_address
+        device_paired
+        reception_strength
+        zone_assignment
+        room_temperature_c
+        room_humidity_pct
       }
     }
     """,
@@ -241,8 +241,8 @@ async def _handle_message(
     if not isinstance(data, dict):
         return
 
-    if "zoneUpdate" in data:
-        zone = data.get("zoneUpdate")
+    if "zone_update" in data:
+        zone = data.get("zone_update")
         if not isinstance(zone, dict):
             zone = {}
         if semantic_coordinator and isinstance(semantic_coordinator.data, dict):
@@ -256,8 +256,8 @@ async def _handle_message(
                     }
                 )
 
-    if "dhwUpdate" in data:
-        dhw = data.get("dhwUpdate")
+    if "dhw_update" in data:
+        dhw = data.get("dhw_update")
         if semantic_coordinator and isinstance(semantic_coordinator.data, dict) and (
             dhw is None or isinstance(dhw, dict)
         ):
@@ -270,22 +270,22 @@ async def _handle_message(
                 }
             )
 
-    if "energyUpdate" in data and energy_coordinator:
-        energy = data.get("energyUpdate")
+    if "energy_update" in data and energy_coordinator:
+        energy = data.get("energy_update")
         if isinstance(energy, dict):
-            energy_coordinator.async_set_updated_data({"energyTotals": energy})
+            energy_coordinator.async_set_updated_data({"energy_totals": energy})
 
-    if "boilerStatusUpdate" in data and boiler_coordinator:
-        boiler = data.get("boilerStatusUpdate")
+    if "boiler_status_update" in data and boiler_coordinator:
+        boiler = data.get("boiler_status_update")
         if isinstance(boiler, dict):
             current = boiler_coordinator.data if isinstance(boiler_coordinator.data, dict) else {}
-            boiler_coordinator.async_set_updated_data(_merge_dicts(current, {"boilerStatus": boiler}))
+            boiler_coordinator.async_set_updated_data(_merge_dicts(current, {"boiler_status": boiler}))
 
-    if "radioDevicesUpdate" in data and radio_coordinator:
-        radio_devices = data.get("radioDevicesUpdate")
+    if "radio_devices_update" in data and radio_coordinator:
+        radio_devices = data.get("radio_devices_update")
         if hasattr(radio_coordinator, "apply_radio_update"):
             radio_coordinator.apply_radio_update(radio_devices)
         elif isinstance(radio_devices, list):
             radio_coordinator.async_set_updated_data(
-                {"radioDevices": radio_devices, "radioZoneCandidates": {}}
+                {"radio_devices": radio_devices, "radio_zone_candidates": {}}
             )

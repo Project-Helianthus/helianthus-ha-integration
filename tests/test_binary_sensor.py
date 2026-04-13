@@ -109,13 +109,13 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
         "semantic_coordinator": _FakeCoordinator({"zones": [], "dhw": None}),
         "boiler_coordinator": _FakeCoordinator(
             {
-                "boilerStatus": {
+                "boiler_status": {
                     "state": {
-                        "flameActive": True,
-                        "gasValveActive": False,
-                        "centralHeatingPumpActive": True,
-                        "externalPumpActive": False,
-                        "circulationPumpActive": True,
+                        "flame_active": True,
+                        "gas_valve_active": False,
+                        "central_heating_pump_active": True,
+                        "external_pump_active": False,
+                        "circulation_pump_active": True,
                     }
                 }
             }
@@ -144,11 +144,11 @@ def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> N
     ]
 
     assert {entity._attr_unique_id for entity in boiler_entities} == {
-        "entry-1-boiler-binary-flameActive",
-        "entry-1-boiler-binary-gasValveActive",
-        "entry-1-boiler-binary-centralHeatingPumpActive",
-        "entry-1-boiler-binary-externalPumpActive",
-        "entry-1-boiler-binary-circulationPumpActive",
+        "entry-1-boiler-binary-flame_active",
+        "entry-1-boiler-binary-gas_valve_active",
+        "entry-1-boiler-binary-central_heating_pump_active",
+        "entry-1-boiler-binary-external_pump_active",
+        "entry-1-boiler-binary-circulation_pump_active",
     }
     assert {entity._attr_name for entity in boiler_entities} == {
         "Burner Flame Active",
@@ -161,8 +161,8 @@ def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> N
         assert entity._attr_device_class == binary_sensor_platform.BinarySensorDeviceClass.RUNNING
         assert entity.device_info["identifiers"] == {boiler_device_id}
 
-    flame = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("flameActive"))
-    gas_valve = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("gasValveActive"))
+    flame = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("flame_active"))
+    gas_valve = next(entity for entity in boiler_entities if entity._attr_unique_id.endswith("gas_valve_active"))
     assert flame.is_on is True
     assert gas_valve.is_on is False
 
@@ -191,8 +191,8 @@ def _build_zone_payload(valve_position_pct):
                 {
                     "id": "zone-1",
                     "name": "Living Room",
-                    "state": {"valvePositionPct": valve_position_pct},
-                    "config": {"roomTemperatureZoneMapping": None},
+                    "state": {"valve_position_pct": valve_position_pct},
+                    "config": {"room_temperature_zone_mapping": None},
                 },
             ],
             "dhw": None,

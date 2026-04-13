@@ -133,22 +133,22 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
         "energy_coordinator": None,
         "boiler_coordinator": _FakeCoordinator(
             {
-                "boilerStatus": {
+                "boiler_status": {
                     "state": {
-                        "flowTemperatureC": 63.1,
-                        "returnTemperatureC": 51.0,
-                        "dhwTemperatureC": 49.5,
-                        "dhwStorageTemperatureC": 46.2,
+                        "flow_temperature_c": 63.1,
+                        "return_temperature_c": 51.0,
+                        "dhw_temperature_c": 49.5,
+                        "dhw_storage_temperature_c": 46.2,
                     },
                     "diagnostics": {
-                        "centralHeatingHours": 13150.0,
-                        "dhwHours": 116.0,
-                        "centralHeatingStarts": 64,
-                        "dhwStarts": 50,
-                        "pumpHours": 134.0,
-                        "fanHours": 108.0,
-                        "deactivationsIFC": 52,
-                        "deactivationsTemplimiter": 0,
+                        "central_heating_hours": 13150.0,
+                        "dhw_hours": 116.0,
+                        "central_heating_starts": 64,
+                        "dhw_starts": 50,
+                        "pump_hours": 134.0,
+                        "fan_hours": 108.0,
+                        "deactivations_ifc": 52,
+                        "deactivations_templimiter": 0,
                     }
                 }
             }
@@ -181,10 +181,10 @@ def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only
 
     assert len(boiler_entities) == 4
     assert {entity._attr_unique_id for entity in boiler_entities} == {
-        "entry-1-boiler-flowTemperatureC",
-        "entry-1-boiler-returnTemperatureC",
-        "entry-1-boiler-dhwTemperatureC",
-        "entry-1-boiler-dhwStorageTemperatureC",
+        "entry-1-boiler-flow_temperature_c",
+        "entry-1-boiler-return_temperature_c",
+        "entry-1-boiler-dhw_temperature_c",
+        "entry-1-boiler-dhw_storage_temperature_c",
     }
     assert {entity._attr_name for entity in boiler_entities} == {
         "Flow Temperature",
@@ -245,44 +245,44 @@ def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
 
     assert len(diag_entities) == 8
     assert {entity._attr_unique_id for entity in diag_entities} == {
-        "entry-1-boiler-diag-centralHeatingHours",
-        "entry-1-boiler-diag-dhwHours",
-        "entry-1-boiler-diag-pumpHours",
-        "entry-1-boiler-diag-fanHours",
-        "entry-1-boiler-diag-centralHeatingStarts",
-        "entry-1-boiler-diag-dhwStarts",
-        "entry-1-boiler-diag-deactivationsIFC",
-        "entry-1-boiler-diag-deactivationsTemplimiter",
+        "entry-1-boiler-diag-central_heating_hours",
+        "entry-1-boiler-diag-dhw_hours",
+        "entry-1-boiler-diag-pump_hours",
+        "entry-1-boiler-diag-fan_hours",
+        "entry-1-boiler-diag-central_heating_starts",
+        "entry-1-boiler-diag-dhw_starts",
+        "entry-1-boiler-diag-deactivations_ifc",
+        "entry-1-boiler-diag-deactivations_templimiter",
     }
     values = {entity._attr_unique_id: entity.native_value for entity in diag_entities}
-    assert values["entry-1-boiler-diag-centralHeatingHours"] == 13150.0
-    assert values["entry-1-boiler-diag-dhwHours"] == 116.0
-    assert values["entry-1-boiler-diag-centralHeatingStarts"] == 64
-    assert values["entry-1-boiler-diag-dhwStarts"] == 50
-    assert values["entry-1-boiler-diag-pumpHours"] == 134.0
-    assert values["entry-1-boiler-diag-fanHours"] == 108.0
-    assert values["entry-1-boiler-diag-deactivationsIFC"] == 52
-    assert values["entry-1-boiler-diag-deactivationsTemplimiter"] == 0
+    assert values["entry-1-boiler-diag-central_heating_hours"] == 13150.0
+    assert values["entry-1-boiler-diag-dhw_hours"] == 116.0
+    assert values["entry-1-boiler-diag-central_heating_starts"] == 64
+    assert values["entry-1-boiler-diag-dhw_starts"] == 50
+    assert values["entry-1-boiler-diag-pump_hours"] == 134.0
+    assert values["entry-1-boiler-diag-fan_hours"] == 108.0
+    assert values["entry-1-boiler-diag-deactivations_ifc"] == 52
+    assert values["entry-1-boiler-diag-deactivations_templimiter"] == 0
 
     for entity in diag_entities:
         assert entity.device_info["identifiers"] == {boiler_device_id}
 
     # Verify metadata on duration counter
-    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingHours")
+    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_hours")
     assert hours_entity._attr_device_class == "duration"
     assert hours_entity._attr_native_unit_of_measurement == "h"
     assert hours_entity._attr_state_class == "total_increasing"
     assert hours_entity._attr_entity_category == "diagnostic"
 
     # Verify metadata on starts counter
-    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-centralHeatingStarts")
+    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_starts")
     assert not hasattr(starts_entity, "_attr_device_class") or starts_entity._attr_device_class is None
     assert not hasattr(starts_entity, "_attr_native_unit_of_measurement")
     assert starts_entity._attr_state_class == "total_increasing"
     assert starts_entity._attr_entity_category == "diagnostic"
 
     # Verify metadata on deactivation counter
-    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-deactivationsIFC")
+    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-deactivations_ifc")
     assert not hasattr(deact_entity, "_attr_device_class") or deact_entity._attr_device_class is None
     assert not hasattr(deact_entity, "_attr_state_class") or deact_entity._attr_state_class is None
     assert deact_entity._attr_entity_category == "diagnostic"
@@ -306,7 +306,7 @@ def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:
 
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:
     entity = sensor_platform.HelianthusEnergySensor(
-        coordinator=_FakeCoordinator({"energyTotals": None}),
+        coordinator=_FakeCoordinator({"energy_totals": None}),
         entry_id="entry-1",
         via_device=("helianthus", "entry-1-bus-BASV2-15"),
         manufacturer="Vaillant",
@@ -321,7 +321,7 @@ def test_energy_sensor_uses_last_valid_series_without_zero_fallback() -> None:
     entity = sensor_platform.HelianthusEnergySensor(
         coordinator=_FakeCoordinator(
             {
-                "energyTotals": {
+                "energy_totals": {
                     "gas": {
                         "dhw": {"today": 3.5, "yearly": [120.0, 240.0]},
                         "climate": {"today": 0.0, "yearly": [0.0, 0.0]},
@@ -349,7 +349,7 @@ def test_energy_sensor_uses_last_valid_series_without_zero_fallback() -> None:
 
 def test_energy_sensor_has_total_increasing_state_class() -> None:
     entity = sensor_platform.HelianthusEnergySensor(
-        coordinator=_FakeCoordinator({"energyTotals": None}),
+        coordinator=_FakeCoordinator({"energy_totals": None}),
         entry_id="entry-1",
         via_device=("helianthus", "entry-1-bus-BASV2-15"),
         manufacturer="Vaillant",

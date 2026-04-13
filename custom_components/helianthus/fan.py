@@ -41,7 +41,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuitType") or "").strip().lower()
+    token = str(circuit.get("circuit_type") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
     return f"Circuit {index + 1} ({label})"
 
@@ -49,7 +49,7 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
 def _fm5_mode(payload: dict[str, Any] | None) -> str:
     if not isinstance(payload, dict):
         return "ABSENT"
-    mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+    mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
     if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
         return "ABSENT"
     return mode
@@ -79,7 +79,7 @@ class HelianthusReadOnlyFan(CoordinatorEntity, FanEntity):
 def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
-    boiler_status = payload.get("boilerStatus")
+    boiler_status = payload.get("boiler_status")
     if not isinstance(boiler_status, dict):
         return {}
     state = boiler_status.get("state")
@@ -142,14 +142,14 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
 
     @property
     def is_on(self) -> bool | None:
-        value = self._state().get("flameActive")
+        value = self._state().get("flame_active")
         if isinstance(value, bool):
             return value
         return None
 
     @property
     def percentage(self) -> int | None:
-        return _coerce_percentage(self._state().get("modulationPct"))
+        return _coerce_percentage(self._state().get("modulation_pct"))
 
     @property
     def speed_count(self) -> int:
@@ -160,9 +160,9 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
         state = self._state()
         return {
             "helianthus_role": "modulating_burner",
-            "gas_valve_active": state.get("gasValveActive"),
-            "fan_speed_rpm": state.get("fanSpeedRpm"),
-            "ionisation_ua": state.get("ionisationVoltageUa"),
+            "gas_valve_active": state.get("gas_valve_active"),
+            "fan_speed_rpm": state.get("fan_speed_rpm"),
+            "ionisation_ua": state.get("ionisation_voltage_ua"),
         }
 
 
@@ -296,7 +296,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
     def is_on(self) -> bool | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        value = state.get("pumpActive")
+        value = state.get("pump_active")
         if isinstance(value, bool):
             return value
         return None
@@ -359,7 +359,7 @@ class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
         solar = payload.get("solar") if isinstance(payload, dict) else None
         if not isinstance(solar, dict):
             return None
-        value = solar.get("pumpActive")
+        value = solar.get("pump_active")
         if isinstance(value, bool):
             return value
         return None

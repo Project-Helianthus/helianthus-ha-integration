@@ -202,23 +202,23 @@ def _payload(mode: str) -> dict:
         "radio_coordinator": None,
         "fm5_coordinator": _FakeCoordinator(
             {
-                "fm5SemanticMode": mode,
+                "fm5_semantic_mode": mode,
                 "solar": {
-                    "collectorTemperatureC": 72.0,
-                    "returnTemperatureC": 41.0,
-                    "pumpActive": True,
-                    "currentYield": 1.2,
-                    "pumpHours": 123.0,
-                    "solarEnabled": True,
-                    "functionMode": False,
+                    "collector_temperature_c": 72.0,
+                    "return_temperature_c": 41.0,
+                    "pump_active": True,
+                    "current_yield": 1.2,
+                    "pump_hours": 123.0,
+                    "solar_enabled": True,
+                    "function_mode": False,
                 },
                 "cylinders": [
                     {
                         "index": 0,
-                        "temperatureC": 49.0,
-                        "maxSetpointC": 62.0,
-                        "chargeHysteresisC": 6.0,
-                        "chargeOffsetC": 3.0,
+                        "temperature_c": 49.0,
+                        "max_setpoint_c": 62.0,
+                        "charge_hysteresis_c": 6.0,
+                        "charge_offset_c": 3.0,
                     }
                 ],
             }

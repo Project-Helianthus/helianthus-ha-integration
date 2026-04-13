@@ -43,7 +43,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuitType") or "").strip().lower()
+    token = str(circuit.get("circuit_type") or "").strip().lower()
     label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
     return f"Circuit {index + 1} ({label})"
 
@@ -121,7 +121,7 @@ def _coerce_position(value: object | None) -> int | None:
 def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
-    boiler_status = payload.get("boilerStatus")
+    boiler_status = payload.get("boiler_status")
     if not isinstance(boiler_status, dict):
         return {}
     state = boiler_status.get("state")
@@ -166,7 +166,7 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
 
     @property
     def current_valve_position(self) -> int | None:
-        return _coerce_position(_boiler_state(self.coordinator.data).get("diverterValvePositionPct"))
+        return _coerce_position(_boiler_state(self.coordinator.data).get("diverter_valve_position_pct"))
 
     @property
     def is_closed(self) -> bool | None:
@@ -234,7 +234,7 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     def current_valve_position(self) -> int | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        return _coerce_position(state.get("mixerPositionPct"))
+        return _coerce_position(state.get("mixer_position_pct"))
 
 
 class HelianthusZoneValve(HelianthusReadOnlyValve):
@@ -284,4 +284,4 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
     def current_valve_position(self) -> int | None:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        return _coerce_position(state.get("valvePositionPct"))
+        return _coerce_position(state.get("valve_position_pct"))

@@ -146,25 +146,25 @@ def _make_entity(
     qv_active: bool = False,
 ) -> tuple[HelianthusZoneClimate, _FakeClient, _FakeCoordinator]:
     config = {
-        "operatingMode": "auto",
+        "operating_mode": "auto",
         "preset": preset,
-        "targetTempC": target_temp,
-        "allowedModes": ["off", "auto", "heat"],
-        "circuitType": "heating",
-        "associatedCircuit": 0,
-        "roomTemperatureZoneMapping": 1,
-        "quickVeto": qv_active,
+        "target_temp_c": target_temp,
+        "allowed_modes": ["off", "auto", "heat"],
+        "circuit_type": "heating",
+        "associated_circuit": 0,
+        "room_temperature_zone_mapping": 1,
+        "quick_veto": qv_active,
     }
     if qv_setpoint is not None:
-        config["quickVetoSetpoint"] = qv_setpoint
+        config["quick_veto_setpoint"] = qv_setpoint
     if qv_duration is not None:
-        config["quickVetoDuration"] = qv_duration
+        config["quick_veto_duration"] = qv_duration
     zone_data = {
         "zones": [
             {
                 "id": "zone-1",
                 "name": "Living Room",
-                "state": {"currentTempC": 20.0},
+                "state": {"current_temp_c": 20.0},
                 "config": config,
             }
         ],

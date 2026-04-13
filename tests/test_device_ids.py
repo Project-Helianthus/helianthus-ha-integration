@@ -110,7 +110,7 @@ def test_managing_device_identifier_routes_to_regulator_from_explicit_role() -> 
             regulator_device_id=regulator,
             vr71_device_id=vr71,
             adapter_device_id=adapter,
-            managing_device={"role": "REGULATOR", "deviceId": "BASV2", "address": 0x15},
+            managing_device={"role": "REGULATOR", "device_id": "BASV2", "address": 0x15},
         )
         == regulator
     )
@@ -128,7 +128,7 @@ def test_managing_device_identifier_routes_to_vr71_from_explicit_function_module
             regulator_device_id=regulator,
             vr71_device_id=vr71,
             adapter_device_id=adapter,
-            managing_device={"role": "FUNCTION_MODULE", "deviceId": "VR_71", "address": 0x26},
+            managing_device={"role": "FUNCTION_MODULE", "device_id": "VR_71", "address": 0x26},
         )
         == vr71
     )

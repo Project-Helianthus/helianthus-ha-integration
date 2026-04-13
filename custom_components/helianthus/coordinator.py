@@ -20,15 +20,15 @@ query Devices {
     address
     addresses
     manufacturer
-    deviceId
-    displayName
-    productFamily
-    productModel
-    partNumber
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    display_name
+    product_family
+    product_model
+    part_number
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -39,14 +39,14 @@ query Devices {
     address
     addresses
     manufacturer
-    deviceId
-    displayName
-    productFamily
-    productModel
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    display_name
+    product_family
+    product_model
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -56,15 +56,15 @@ query Devices {
   devices {
     address
     manufacturer
-    deviceId
-    displayName
-    productFamily
-    productModel
-    partNumber
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    display_name
+    product_family
+    product_model
+    part_number
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -74,14 +74,14 @@ query Devices {
   devices {
     address
     manufacturer
-    deviceId
-    displayName
-    productFamily
-    productModel
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    display_name
+    product_family
+    product_model
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -92,11 +92,11 @@ query Devices {
     address
     addresses
     manufacturer
-    deviceId
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -106,11 +106,11 @@ query Devices {
   devices {
     address
     manufacturer
-    deviceId
-    serialNumber
-    macAddress
-    softwareVersion
-    hardwareVersion
+    device_id
+    serial_number
+    mac_address
+    software_version
+    hardware_version
   }
 }
 """
@@ -121,9 +121,9 @@ query Devices {
     address
     addresses
     manufacturer
-    deviceId
-    softwareVersion
-    hardwareVersion
+    device_id
+    software_version
+    hardware_version
   }
 }
 """
@@ -133,40 +133,40 @@ query Devices {
   devices {
     address
     manufacturer
-    deviceId
-    softwareVersion
-    hardwareVersion
+    device_id
+    software_version
+    hardware_version
   }
 }
 """
 
 QUERY_STATUS = """
 query Status {
-  daemonStatus {
+  daemon_status {
     status
-    firmwareVersion
-    updatesAvailable
-    initiatorAddress
+    firmware_version
+    updates_available
+    initiator_address
   }
-  adapterStatus {
+  adapter_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
 }
 """
 
 QUERY_STATUS_LEGACY = """
 query Status {
-  daemonStatus {
+  daemon_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
-  adapterStatus {
+  adapter_status {
     status
-    firmwareVersion
-    updatesAvailable
+    firmware_version
+    updates_available
   }
 }
 """
@@ -177,44 +177,44 @@ query Semantic {
     id
     name
     state {
-      currentTempC
-      currentHumidityPct
-      hvacAction
-      specialFunction
-      heatingDemandPct
-      valvePositionPct
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      allowedModes
-      circuitType
-      associatedCircuit
-      roomTemperatureZoneMapping
-      quickVeto
-      quickVetoSetpoint
-      quickVetoDuration
-      quickVetoExpiry
-      holidayStartDate
-      holidayEndDate
-      holidaySetpoint
-      holidayStartTime
-      holidayEndTime
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
+      room_temperature_zone_mapping
+      quick_veto
+      quick_veto_setpoint
+      quick_veto_duration
+      quick_veto_expiry
+      holiday_start_date
+      holiday_end_date
+      holiday_setpoint
+      holiday_start_time
+      holiday_end_time
     }
   }
   dhw {
     state {
-      currentTempC
-      specialFunction
-      heatingDemandPct
+      current_temp_c
+      special_function
+      heating_demand_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      holidayStartDate
-      holidayEndDate
+      target_temp_c
+      holiday_start_date
+      holiday_end_date
     }
   }
 }
@@ -226,37 +226,37 @@ query Semantic {
     id
     name
     state {
-      currentTempC
-      currentHumidityPct
-      hvacAction
-      specialFunction
-      heatingDemandPct
-      valvePositionPct
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      allowedModes
-      circuitType
-      associatedCircuit
-      roomTemperatureZoneMapping
-      quickVeto
-      quickVetoSetpoint
-      quickVetoDuration
-      quickVetoExpiry
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
+      room_temperature_zone_mapping
+      quick_veto
+      quick_veto_setpoint
+      quick_veto_duration
+      quick_veto_expiry
     }
   }
   dhw {
     state {
-      currentTempC
-      specialFunction
-      heatingDemandPct
+      current_temp_c
+      special_function
+      heating_demand_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
+      target_temp_c
     }
   }
 }
@@ -268,33 +268,33 @@ query Semantic {
     id
     name
     state {
-      currentTempC
-      currentHumidityPct
-      hvacAction
-      specialFunction
-      heatingDemandPct
-      valvePositionPct
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      allowedModes
-      circuitType
-      associatedCircuit
-      roomTemperatureZoneMapping
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
+      room_temperature_zone_mapping
     }
   }
   dhw {
     state {
-      currentTempC
-      specialFunction
-      heatingDemandPct
+      current_temp_c
+      special_function
+      heating_demand_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
+      target_temp_c
     }
   }
 }
@@ -306,72 +306,72 @@ query Semantic {
     id
     name
     state {
-      currentTempC
-      currentHumidityPct
-      hvacAction
-      specialFunction
-      heatingDemandPct
-      valvePositionPct
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
-      allowedModes
-      circuitType
-      associatedCircuit
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
     }
   }
   dhw {
     state {
-      currentTempC
-      specialFunction
-      heatingDemandPct
+      current_temp_c
+      special_function
+      heating_demand_pct
     }
     config {
-      operatingMode
+      operating_mode
       preset
-      targetTempC
+      target_temp_c
     }
   }
 }
 """
 
-_HOLIDAY_FIELDS = ["holidayStartDate", "holidayEndDate", "holidaySetpoint", "holidayStartTime", "holidayEndTime"]
-_QV_FIELDS = ["quickVeto", "quickVetoSetpoint", "quickVetoDuration", "quickVetoExpiry"]
-_SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["roomTemperatureZoneMapping"]
+_HOLIDAY_FIELDS = ["holiday_start_date", "holiday_end_date", "holiday_setpoint", "holiday_start_time", "holiday_end_time"]
+_QV_FIELDS = ["quick_veto", "quick_veto_setpoint", "quick_veto_duration", "quick_veto_expiry"]
+_SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
 
 QUERY_CIRCUITS = """
 query Circuits {
   circuits {
     index
-    circuitType
-    hasMixer
-    managingDevice {
+    circuit_type
+    has_mixer
+    managing_device {
       role
-      deviceId
+      device_id
       address
     }
     state {
-      pumpActive
-      mixerPositionPct
-      flowTemperatureC
-      flowSetpointC
-      calcFlowTempC
-      circuitState
+      pump_active
+      mixer_position_pct
+      flow_temperature_c
+      flow_setpoint_c
+      calc_flow_temp_c
+      circuit_state
       humidity
-      dewPoint
-      pumpHours
-      pumpStarts
+      dew_point
+      pump_hours
+      pump_starts
     }
     config {
-      heatingCurve
-      flowTempMaxC
-      flowTempMinC
-      summerLimitC
-      frostProtC
-      roomTempControl
-      coolingEnabled
+      heating_curve
+      flow_temp_max_c
+      flow_temp_min_c
+      summer_limit_c
+      frost_prot_c
+      room_temp_control
+      cooling_enabled
     }
   }
 }
@@ -379,43 +379,43 @@ query Circuits {
 
 QUERY_RADIO_DEVICES = """
 query RadioDevices {
-  radioDevices {
+  radio_devices {
     group
     instance
-    slotMode
-    deviceConnected
-    deviceClassAddress
-    deviceModel
-    firmwareVersion
-    hardwareIdentifier
-    remoteControlAddress
-    devicePaired
-    receptionStrength
-    zoneAssignment
-    roomTemperatureC
-    roomHumidityPct
+    slot_mode
+    device_connected
+    device_class_address
+    device_model
+    firmware_version
+    hardware_identifier
+    remote_control_address
+    device_paired
+    reception_strength
+    zone_assignment
+    room_temperature_c
+    room_humidity_pct
   }
 }
 """
 
 QUERY_FM5 = """
 query FM5Semantic {
-  fm5SemanticMode
+  fm5_semantic_mode
   solar {
-    collectorTemperatureC
-    returnTemperatureC
-    pumpActive
-    currentYield
-    pumpHours
-    solarEnabled
-    functionMode
+    collector_temperature_c
+    return_temperature_c
+    pump_active
+    current_yield
+    pump_hours
+    solar_enabled
+    function_mode
   }
   cylinders {
     index
-    temperatureC
-    maxSetpointC
-    chargeHysteresisC
-    chargeOffsetC
+    temperature_c
+    max_setpoint_c
+    charge_hysteresis_c
+    charge_offset_c
   }
 }
 """
@@ -424,25 +424,25 @@ QUERY_SYSTEM = """
 query System {
   system {
     state {
-      systemWaterPressure
-      systemFlowTemperature
-      outdoorTemperature
-      outdoorTemperatureAvg24h
-      maintenanceDue
-      hwcCylinderTemperatureTop
-      hwcCylinderTemperatureBottom
+      system_water_pressure
+      system_flow_temperature
+      outdoor_temperature
+      outdoor_temperature_avg24h
+      maintenance_due
+      hwc_cylinder_temperature_top
+      hwc_cylinder_temperature_bottom
     }
     config {
-      adaptiveHeatingCurve
-      heatingCircuitBivalencePoint
-      dhwBivalencePoint
-      hcEmergencyTemperature
-      hwcMaxFlowTempDesired
-      maxRoomHumidity
+      adaptive_heating_curve
+      heating_circuit_bivalence_point
+      dhw_bivalence_point
+      hc_emergency_temperature
+      hwc_max_flow_temp_desired
+      max_room_humidity
     }
     properties {
-      systemScheme
-      moduleConfigurationVR71
+      system_scheme
+      module_configuration_vr71
     }
   }
 }
@@ -450,7 +450,7 @@ query System {
 
 QUERY_ENERGY = """
 query Energy {
-  energyTotals {
+  energy_totals {
     gas { dhw { today yearly monthly } climate { today yearly monthly } }
     electric { dhw { today yearly monthly } climate { today yearly monthly } }
     solar { dhw { today yearly monthly } climate { today yearly monthly } }
@@ -460,7 +460,7 @@ query Energy {
 
 QUERY_ENERGY_LEGACY = """
 query Energy {
-  energyTotals {
+  energy_totals {
     gas { dhw { today yearly } climate { today yearly } }
     electric { dhw { today yearly } climate { today yearly } }
     solar { dhw { today yearly } climate { today yearly } }
@@ -470,37 +470,37 @@ query Energy {
 
 QUERY_BOILER = """
 query BoilerStatus {
-  boilerStatus {
+  boiler_status {
     state {
-      flowTemperatureC
-      returnTemperatureC
-      centralHeatingPumpActive
-      flameActive
-      modulationPct
-      gasValveActive
-      fanSpeedRpm
-      ionisationVoltageUa
-      externalPumpActive
-      circulationPumpActive
-      storageLoadPumpPct
-      diverterValvePositionPct
+      flow_temperature_c
+      return_temperature_c
+      central_heating_pump_active
+      flame_active
+      modulation_pct
+      gas_valve_active
+      fan_speed_rpm
+      ionisation_voltage_ua
+      external_pump_active
+      circulation_pump_active
+      storage_load_pump_pct
+      diverter_valve_position_pct
     }
     config {
-      flowsetHcMaxC
-      flowsetHwcMaxC
-      partloadHcKW
-      partloadHwcKW
+      flowset_hc_max_c
+      flowset_hwc_max_c
+      partload_hc_kw
+      partload_hwc_kw
     }
     diagnostics {
-      heatingStatusRaw
-      centralHeatingHours
-      dhwHours
-      centralHeatingStarts
-      dhwStarts
-      pumpHours
-      fanHours
-      deactivationsIFC
-      deactivationsTemplimiter
+      heating_status_raw
+      central_heating_hours
+      dhw_hours
+      central_heating_starts
+      dhw_starts
+      pump_hours
+      fan_hours
+      deactivations_ifc
+      deactivations_templimiter
     }
   }
 }
@@ -554,7 +554,7 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             except GraphQLClientError as exc:
                 raise UpdateFailed(str(exc)) from exc
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+                if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
                     return await fetch_base_devices()
                 raise UpdateFailed(str(exc)) from exc
 
@@ -567,20 +567,20 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             except GraphQLClientError as exc:
                 raise UpdateFailed(str(exc)) from exc
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel"]):
+                if _is_missing_field_error(exc.errors, ["display_name", "product_family", "product_model"]):
                     return await fetch_v2_devices()
-                if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+                if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
                     return await fetch_base_devices()
                 raise UpdateFailed(str(exc)) from exc
 
         try:
             return await fetch_with_addresses(QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_ADDRESSES)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["partNumber"]):
+            if _is_missing_field_error(exc.errors, ["part_number"]):
                 return await fetch_v3_no_part_devices()
-            if _is_missing_field_error(exc.errors, ["displayName", "productFamily", "productModel"]):
+            if _is_missing_field_error(exc.errors, ["display_name", "product_family", "product_model"]):
                 return await fetch_v2_devices()
-            if _is_missing_field_error(exc.errors, ["serialNumber", "macAddress"]):
+            if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
                 return await fetch_base_devices()
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
@@ -603,7 +603,7 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
         try:
             payload = await self._client.execute(QUERY_STATUS)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["initiatorAddress"]):
+            if _is_missing_field_error(exc.errors, ["initiator_address"]):
                 try:
                     payload = await self._client.execute(QUERY_STATUS_LEGACY)
                 except GraphQLClientError as nested:
@@ -618,8 +618,8 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
         if not isinstance(payload, dict):
             return {"daemon": {}, "adapter": {}}
         return {
-            "daemon": payload.get("daemonStatus", {}) or {},
-            "adapter": payload.get("adapterStatus", {}) or {},
+            "daemon": payload.get("daemon_status", {}) or {},
+            "adapter": payload.get("adapter_status", {}) or {},
         }
 
 
@@ -680,27 +680,27 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 [
                     "circuits",
                     "index",
-                    "circuitType",
-                    "hasMixer",
+                    "circuit_type",
+                    "has_mixer",
                     "state",
                     "config",
-                    "pumpActive",
-                    "mixerPositionPct",
-                    "flowTemperatureC",
-                    "flowSetpointC",
-                    "calcFlowTempC",
-                    "circuitState",
+                    "pump_active",
+                    "mixer_position_pct",
+                    "flow_temperature_c",
+                    "flow_setpoint_c",
+                    "calc_flow_temp_c",
+                    "circuit_state",
                     "humidity",
-                    "dewPoint",
-                    "pumpHours",
-                    "pumpStarts",
-                    "heatingCurve",
-                    "flowTempMaxC",
-                    "flowTempMinC",
-                    "summerLimitC",
-                    "frostProtC",
-                    "roomTempControl",
-                    "coolingEnabled",
+                    "dew_point",
+                    "pump_hours",
+                    "pump_starts",
+                    "heating_curve",
+                    "flow_temp_max_c",
+                    "flow_temp_min_c",
+                    "summer_limit_c",
+                    "frost_prot_c",
+                    "room_temp_control",
+                    "cooling_enabled",
                 ],
             ):
                 return {"circuits": []}
@@ -737,23 +737,23 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._stale_cycles: dict[tuple[int, int], int] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
-        empty = {"radioDevices": [], "radioZoneCandidates": {}}
+        empty = {"radio_devices": [], "radio_zone_candidates": {}}
         missing_fields = [
-            "radioDevices",
+            "radio_devices",
             "group",
             "instance",
-            "slotMode",
-            "deviceConnected",
-            "deviceClassAddress",
-            "deviceModel",
-            "firmwareVersion",
-            "hardwareIdentifier",
-            "remoteControlAddress",
-            "devicePaired",
-            "receptionStrength",
-            "zoneAssignment",
-            "roomTemperatureC",
-            "roomHumidityPct",
+            "slot_mode",
+            "device_connected",
+            "device_class_address",
+            "device_model",
+            "firmware_version",
+            "hardware_identifier",
+            "remote_control_address",
+            "device_paired",
+            "reception_strength",
+            "zone_assignment",
+            "room_temperature_c",
+            "room_humidity_pct",
         ]
         try:
             payload = await self._client.execute(QUERY_RADIO_DEVICES)
@@ -770,7 +770,7 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_by_slot = {}
             self._stale_cycles = {}
             return empty
-        devices = payload.get("radioDevices")
+        devices = payload.get("radio_devices")
         if not isinstance(devices, list):
             self._last_by_slot = {}
             self._stale_cycles = {}
@@ -800,8 +800,8 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         next_stale_cycles: dict[tuple[int, int], int] = {}
         for slot, device in active_by_slot.items():
             current = dict(device)
-            current["staleCycles"] = 0
-            current["radioBusKey"] = _radio_bus_key(slot[0], slot[1])
+            current["stale_cycles"] = 0
+            current["radio_bus_key"] = _radio_bus_key(slot[0], slot[1])
             combined[slot] = current
             next_stale_cycles[slot] = 0
 
@@ -816,9 +816,9 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(observed, dict):
                 carried.update(observed)
             if observed is None or not _is_active_radio_device(observed):
-                carried["deviceConnected"] = False
-            carried["staleCycles"] = stale
-            carried["radioBusKey"] = _radio_bus_key(slot[0], slot[1])
+                carried["device_connected"] = False
+            carried["stale_cycles"] = stale
+            carried["radio_bus_key"] = _radio_bus_key(slot[0], slot[1])
             combined[slot] = carried
             next_stale_cycles[slot] = stale
 
@@ -830,14 +830,14 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             slot: {
                 key: value
                 for key, value in combined[slot].items()
-                if key not in {"staleCycles"}
+                if key not in {"stale_cycles"}
             }
             for slot in sorted_slots
         }
         self._stale_cycles = dict(next_stale_cycles)
         return {
-            "radioDevices": radio_devices,
-            "radioZoneCandidates": candidates,
+            "radio_devices": radio_devices,
+            "radio_zone_candidates": candidates,
         }
 
 
@@ -855,26 +855,26 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         empty = {
-            "fm5SemanticMode": "ABSENT",
+            "fm5_semantic_mode": "ABSENT",
             "solar": None,
             "cylinders": [],
         }
         missing_fields = [
-            "fm5SemanticMode",
+            "fm5_semantic_mode",
             "solar",
             "cylinders",
-            "collectorTemperatureC",
-            "returnTemperatureC",
-            "pumpActive",
-            "currentYield",
-            "pumpHours",
-            "solarEnabled",
-            "functionMode",
+            "collector_temperature_c",
+            "return_temperature_c",
+            "pump_active",
+            "current_yield",
+            "pump_hours",
+            "solar_enabled",
+            "function_mode",
             "index",
-            "temperatureC",
-            "maxSetpointC",
-            "chargeHysteresisC",
-            "chargeOffsetC",
+            "temperature_c",
+            "max_setpoint_c",
+            "charge_hysteresis_c",
+            "charge_offset_c",
         ]
         try:
             payload = await self._client.execute(QUERY_FM5)
@@ -888,13 +888,13 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(payload, dict):
             return empty
 
-        mode = str(payload.get("fm5SemanticMode") or "ABSENT").strip().upper()
+        mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
         if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
             mode = "ABSENT"
 
         if mode != "INTERPRETED":
             return {
-                "fm5SemanticMode": mode,
+                "fm5_semantic_mode": mode,
                 "solar": None,
                 "cylinders": [],
             }
@@ -917,7 +917,7 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         normalized_cylinders.sort(key=lambda item: int(item.get("index") or 0))
 
         return {
-            "fm5SemanticMode": mode,
+            "fm5_semantic_mode": mode,
             "solar": solar,
             "cylinders": normalized_cylinders,
         }
@@ -927,9 +927,9 @@ QUERY_SYSTEM_INSTALLER = """
 query SystemInstaller {
   system {
     config {
-      maintenanceDate
-      installerName
-      installerPhone
+      maintenance_date
+      installer_name
+      installer_phone
     }
   }
 }
@@ -939,7 +939,7 @@ QUERY_SYSTEM_SENSITIVE = """
 query SystemSensitive {
   system {
     config {
-      installerMenuCode
+      installer_menu_code
     }
   }
 }
@@ -975,21 +975,21 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "state",
             "config",
             "properties",
-            "systemWaterPressure",
-            "systemFlowTemperature",
-            "outdoorTemperature",
-            "outdoorTemperatureAvg24h",
-            "maintenanceDue",
-            "hwcCylinderTemperatureTop",
-            "hwcCylinderTemperatureBottom",
-            "adaptiveHeatingCurve",
-            "heatingCircuitBivalencePoint",
-            "dhwBivalencePoint",
-            "hcEmergencyTemperature",
-            "hwcMaxFlowTempDesired",
-            "maxRoomHumidity",
-            "systemScheme",
-            "moduleConfigurationVR71",
+            "system_water_pressure",
+            "system_flow_temperature",
+            "outdoor_temperature",
+            "outdoor_temperature_avg24h",
+            "maintenance_due",
+            "hwc_cylinder_temperature_top",
+            "hwc_cylinder_temperature_bottom",
+            "adaptive_heating_curve",
+            "heating_circuit_bivalence_point",
+            "dhw_bivalence_point",
+            "hc_emergency_temperature",
+            "hwc_max_flow_temp_desired",
+            "max_room_humidity",
+            "system_scheme",
+            "module_configuration_vr71",
         ]
 
         try:
@@ -1028,7 +1028,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._system_installer_available is None:
                     self._system_installer_available = True
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["maintenanceDate", "installerName", "installerPhone"]):
+                if _is_missing_field_error(exc.errors, ["maintenance_date", "installer_name", "installer_phone"]):
                     self._system_installer_available = False
             except GraphQLClientError:
                 pass  # transient — retry next cycle
@@ -1044,7 +1044,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._system_sensitive_available is None:
                     self._system_sensitive_available = True
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["installerMenuCode"]):
+                if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
                     self._system_sensitive_available = False
             except GraphQLClientError:
                 pass  # transient — retry next cycle
@@ -1076,7 +1076,7 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 self._monthly_supported = False
                 return await self._async_update_data()
-            if _is_missing_field_error(exc.errors, ["energyTotals"]):
+            if _is_missing_field_error(exc.errors, ["energy_totals"]):
                 return self._hold_last_valid_energy_totals()
             return self._hold_last_valid_energy_totals()
         except GraphQLClientError:
@@ -1087,21 +1087,21 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self._hold_last_valid_energy_totals()
 
         self._last_valid_energy_totals = deepcopy(totals)
-        return {"energyTotals": deepcopy(totals)}
+        return {"energy_totals": deepcopy(totals)}
 
     def _hold_last_valid_energy_totals(self) -> dict[str, Any]:
         totals = getattr(self, "_last_valid_energy_totals", None)
         if isinstance(totals, dict):
-            return {"energyTotals": deepcopy(totals)}
-        return {"energyTotals": None}
+            return {"energy_totals": deepcopy(totals)}
+        return {"energy_totals": None}
 
 
 QUERY_BOILER_INSTALLER = """
 query BoilerInstaller {
-  boilerStatus {
+  boiler_status {
     config {
-      phoneNumber
-      hoursTillService
+      phone_number
+      hours_till_service
     }
   }
 }
@@ -1109,9 +1109,9 @@ query BoilerInstaller {
 
 QUERY_BOILER_SENSITIVE = """
 query BoilerSensitive {
-  boilerStatus {
+  boiler_status {
     config {
-      installerMenuCode
+      installer_menu_code
     }
   }
 }
@@ -1152,47 +1152,47 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if _is_missing_field_error(
                 exc.errors,
                 [
-                    "boilerStatus",
-                    "flowTemperatureC",
-                    "returnTemperatureC",
-                    "centralHeatingPumpActive",
-                    "flameActive",
-                    "modulationPct",
-                    "gasValveActive",
-                    "fanSpeedRpm",
-                    "ionisationVoltageUa",
-                    "externalPumpActive",
-                    "circulationPumpActive",
-                    "storageLoadPumpPct",
-                    "diverterValvePositionPct",
-                    "flowsetHcMaxC",
-                    "flowsetHwcMaxC",
-                    "partloadHcKW",
-                    "partloadHwcKW",
-                    "heatingStatusRaw",
-                    "centralHeatingHours",
-                    "dhwHours",
-                    "centralHeatingStarts",
-                    "dhwStarts",
-                    "pumpHours",
-                    "fanHours",
-                    "deactivationsIFC",
-                    "deactivationsTemplimiter",
+                    "boiler_status",
+                    "flow_temperature_c",
+                    "return_temperature_c",
+                    "central_heating_pump_active",
+                    "flame_active",
+                    "modulation_pct",
+                    "gas_valve_active",
+                    "fan_speed_rpm",
+                    "ionisation_voltage_ua",
+                    "external_pump_active",
+                    "circulation_pump_active",
+                    "storage_load_pump_pct",
+                    "diverter_valve_position_pct",
+                    "flowset_hc_max_c",
+                    "flowset_hwc_max_c",
+                    "partload_hc_kw",
+                    "partload_hwc_kw",
+                    "heating_status_raw",
+                    "central_heating_hours",
+                    "dhw_hours",
+                    "central_heating_starts",
+                    "dhw_starts",
+                    "pump_hours",
+                    "fan_hours",
+                    "deactivations_ifc",
+                    "deactivations_templimiter",
                 ],
             ):
                 self.boiler_supported = False
-                return {"boilerStatus": None}
+                return {"boiler_status": None}
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
         if not isinstance(payload, dict):
             self.boiler_supported = False
-            return {"boilerStatus": None}
+            return {"boiler_status": None}
         self.boiler_supported = True
-        result = {"boilerStatus": payload.get("boilerStatus")}
+        result = {"boiler_status": payload.get("boiler_status")}
 
-        boiler_status = result.get("boilerStatus")
+        boiler_status = result.get("boiler_status")
         if not isinstance(boiler_status, dict):
             return result
         config = boiler_status.get("config")
@@ -1204,14 +1204,14 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._boiler_installer_available is not False:
             try:
                 inst_payload = await self._client.execute(QUERY_BOILER_INSTALLER)
-                inst_boiler = inst_payload.get("boilerStatus", {}) if isinstance(inst_payload, dict) else {}
+                inst_boiler = inst_payload.get("boiler_status", {}) if isinstance(inst_payload, dict) else {}
                 inst_cfg = inst_boiler.get("config", {}) if isinstance(inst_boiler, dict) else {}
                 if isinstance(inst_cfg, dict):
                     config.update(inst_cfg)
                 if self._boiler_installer_available is None:
                     self._boiler_installer_available = True
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["phoneNumber", "hoursTillService"]):
+                if _is_missing_field_error(exc.errors, ["phone_number", "hours_till_service"]):
                     self._boiler_installer_available = False
             except GraphQLClientError:
                 pass
@@ -1220,14 +1220,14 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._boiler_sensitive_available is not False:
             try:
                 sens_payload = await self._client.execute(QUERY_BOILER_SENSITIVE)
-                sens_boiler = sens_payload.get("boilerStatus", {}) if isinstance(sens_payload, dict) else {}
+                sens_boiler = sens_payload.get("boiler_status", {}) if isinstance(sens_payload, dict) else {}
                 sens_cfg = sens_boiler.get("config", {}) if isinstance(sens_boiler, dict) else {}
                 if isinstance(sens_cfg, dict):
                     config.update(sens_cfg)
                 if self._boiler_sensitive_available is None:
                     self._boiler_sensitive_available = True
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["installerMenuCode"]):
+                if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
                     self._boiler_sensitive_available = False
             except GraphQLClientError:
                 pass
@@ -1242,23 +1242,23 @@ query Schedules {
       zone
       hc
       config {
-        maxSlots
-        timeResolution
-        minDuration
-        hasTemperature
-        tempSlots
-        minTempC
-        maxTempC
+        max_slots
+        time_resolution
+        min_duration
+        has_temperature
+        temp_slots
+        min_temp_c
+        max_temp_c
       }
-      slotsUsed
+      slots_used
       days {
         weekday
         slots {
-          startHour
-          startMinute
-          endHour
-          endMinute
-          temperatureC
+          start_hour
+          start_minute
+          end_hour
+          end_minute
+          temperature_c
         }
       }
     }
@@ -1338,57 +1338,57 @@ def _normalize_radio_device(raw: dict[str, Any]) -> dict[str, Any] | None:
     normalized: dict[str, Any] = {
         "group": group,
         "instance": instance,
-        "slotMode": str(raw.get("slotMode") or "").strip() or "active",
+        "slot_mode": str(raw.get("slot_mode") or "").strip() or "active",
     }
 
-    connected = raw.get("deviceConnected")
+    connected = raw.get("device_connected")
     if isinstance(connected, bool):
-        normalized["deviceConnected"] = connected
-    class_address = _parse_optional_int(raw.get("deviceClassAddress"))
+        normalized["device_connected"] = connected
+    class_address = _parse_optional_int(raw.get("device_class_address"))
     if class_address is not None and 0 <= class_address <= 0xFF:
-        normalized["deviceClassAddress"] = class_address
+        normalized["device_class_address"] = class_address
 
-    device_model = str(raw.get("deviceModel") or "").strip()
+    device_model = str(raw.get("device_model") or "").strip()
     if device_model:
-        normalized["deviceModel"] = device_model
-    firmware = str(raw.get("firmwareVersion") or "").strip()
+        normalized["device_model"] = device_model
+    firmware = str(raw.get("firmware_version") or "").strip()
     if firmware:
-        normalized["firmwareVersion"] = firmware
+        normalized["firmware_version"] = firmware
 
-    hardware_identifier = _parse_optional_int(raw.get("hardwareIdentifier"))
+    hardware_identifier = _parse_optional_int(raw.get("hardware_identifier"))
     if hardware_identifier is not None and hardware_identifier >= 0:
-        normalized["hardwareIdentifier"] = hardware_identifier
-    remote_control_address = _parse_optional_int(raw.get("remoteControlAddress"))
+        normalized["hardware_identifier"] = hardware_identifier
+    remote_control_address = _parse_optional_int(raw.get("remote_control_address"))
     if remote_control_address is not None and remote_control_address >= 0:
-        normalized["remoteControlAddress"] = remote_control_address
-    paired = raw.get("devicePaired")
+        normalized["remote_control_address"] = remote_control_address
+    paired = raw.get("device_paired")
     if isinstance(paired, bool):
-        normalized["devicePaired"] = paired
-    reception_strength = _parse_optional_int(raw.get("receptionStrength"))
+        normalized["device_paired"] = paired
+    reception_strength = _parse_optional_int(raw.get("reception_strength"))
     if reception_strength is not None:
-        normalized["receptionStrength"] = reception_strength
-    zone_assignment = _parse_optional_int(raw.get("zoneAssignment"))
+        normalized["reception_strength"] = reception_strength
+    zone_assignment = _parse_optional_int(raw.get("zone_assignment"))
     if zone_assignment is not None and zone_assignment >= 0:
-        normalized["zoneAssignment"] = zone_assignment
-    room_temperature = _parse_optional_float(raw.get("roomTemperatureC"))
+        normalized["zone_assignment"] = zone_assignment
+    room_temperature = _parse_optional_float(raw.get("room_temperature_c"))
     if room_temperature is not None:
-        normalized["roomTemperatureC"] = room_temperature
-    room_humidity = _parse_optional_float(raw.get("roomHumidityPct"))
+        normalized["room_temperature_c"] = room_temperature
+    room_humidity = _parse_optional_float(raw.get("room_humidity_pct"))
     if room_humidity is not None:
-        normalized["roomHumidityPct"] = room_humidity
+        normalized["room_humidity_pct"] = room_humidity
 
     return normalized
 
 
 def _has_radio_identity_evidence(device: dict[str, Any]) -> bool:
-    class_address = _parse_optional_int(device.get("deviceClassAddress"))
+    class_address = _parse_optional_int(device.get("device_class_address"))
     if class_address == 0x26:
         return True
-    if str(device.get("deviceModel") or "").strip():
+    if str(device.get("device_model") or "").strip():
         return True
-    if str(device.get("firmwareVersion") or "").strip():
+    if str(device.get("firmware_version") or "").strip():
         return True
-    if _parse_optional_int(device.get("hardwareIdentifier")) is not None:
+    if _parse_optional_int(device.get("hardware_identifier")) is not None:
         return True
     return False
 
@@ -1397,7 +1397,7 @@ def _is_active_radio_device(device: dict[str, Any]) -> bool:
     group = _parse_optional_int(device.get("group"))
     if group is None:
         return False
-    connected = device.get("deviceConnected") is True
+    connected = device.get("device_connected") is True
     if group in (_RADIO_GROUP_ZONE_VRC, _RADIO_GROUP_ZONE_VR92):
         return connected
     if group == _RADIO_GROUP_INVENTORY:
@@ -1420,9 +1420,9 @@ def _build_radio_zone_candidates(
             continue
         if instance is None:
             continue
-        if device.get("deviceConnected") is not True:
+        if device.get("device_connected") is not True:
             continue
-        zone_assignment = _parse_optional_int(device.get("zoneAssignment"))
+        zone_assignment = _parse_optional_int(device.get("zone_assignment"))
         if zone_assignment is None or zone_assignment <= 0:
             continue
         zone_instance = zone_assignment - 1
@@ -1430,7 +1430,7 @@ def _build_radio_zone_candidates(
             {
                 "group": group,
                 "instance": instance,
-                "remote_control_address": _parse_optional_int(device.get("remoteControlAddress")),
+                "remote_control_address": _parse_optional_int(device.get("remote_control_address")),
                 "radio_bus_key": _radio_bus_key(group, instance),
             }
         )
@@ -1470,7 +1470,7 @@ def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
 def _normalize_energy_totals_payload(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
-    totals = payload.get("energyTotals")
+    totals = payload.get("energy_totals")
     if not isinstance(totals, dict):
         return None
 
@@ -1489,65 +1489,65 @@ def _normalize_energy_totals_payload(payload: Any) -> dict[str, Any] | None:
 
 QUERY_ADAPTER_HARDWARE_INFO = """
 query AdapterHardwareInfo {
-  adapterHardwareInfo {
-    firmwareVersion
-    firmwareChecksum
-    bootloaderVersion
-    bootloaderChecksum
-    hardwareID
-    hardwareConfig
+  adapter_hardware_info {
+    firmware_version
+    firmware_checksum
+    bootloader_version
+    bootloader_checksum
+    hardware_id
+    hardware_config
     features
     jumpers
-    jumperFlags
-    isWifi
-    isEthernet
-    temperatureC
-    supplyVoltageMv
-    busVoltageMaxDv
-    busVoltageMinDv
-    resetCause
-    resetCauseCode
-    restartCount
-    wifiRssiDbm
-    lastIdentityQuery
-    lastTelemetryQuery
-    versionResponseLen
-    infoSupported
+    jumper_flags
+    is_wifi
+    is_ethernet
+    temperature_c
+    supply_voltage_mv
+    bus_voltage_max_dv
+    bus_voltage_min_dv
+    reset_cause
+    reset_cause_code
+    restart_count
+    wifi_rssi_dbm
+    last_identity_query
+    last_telemetry_query
+    version_response_len
+    info_supported
   }
 }
 """
 
 QUERY_ADAPTER_HARDWARE_INFO_MINIMAL = """
 query AdapterHardwareInfo {
-  adapterHardwareInfo {
-    firmwareVersion
-    isWifi
-    isEthernet
-    infoSupported
-    versionResponseLen
+  adapter_hardware_info {
+    firmware_version
+    is_wifi
+    is_ethernet
+    info_supported
+    version_response_len
   }
 }
 """
 
 _ADAPTER_HARDWARE_INFO_DETAILED_ONLY_FIELDS = [
-    "firmwareChecksum",
-    "bootloaderVersion",
-    "bootloaderChecksum",
-    "hardwareID",
-    "hardwareConfig",
+    "firmware_checksum",
+    "bootloader_version",
+    "bootloader_checksum",
+    "hardware_id",
+    "hardware_config",
     "features",
     "jumpers",
-    "jumperFlags",
-    "temperatureC",
-    "supplyVoltageMv",
-    "busVoltageMaxDv",
-    "busVoltageMinDv",
-    "resetCause",
-    "resetCauseCode",
-    "restartCount",
-    "wifiRssiDbm",
-    "lastIdentityQuery",
-    "lastTelemetryQuery",
+    "jumper_flags",
+    "temperature_c",
+    "supply_voltage_mv",
+    "bus_voltage_max_dv",
+    "bus_voltage_min_dv",
+    "reset_cause",
+    "reset_cause_code",
+    "restart_count",
+    "wifi_rssi_dbm",
+    "last_identity_query",
+    "last_telemetry_query",
 ]
 
 _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S = 300.0
@@ -1582,7 +1582,7 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
         try:
             payload = await self._client.execute(query)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["adapterHardwareInfo"]):
+            if _is_missing_field_error(exc.errors, ["adapter_hardware_info"]):
                 self._schedule_hardware_info_reprobe(now)
                 return None
             if query == QUERY_ADAPTER_HARDWARE_INFO:
@@ -1594,7 +1594,7 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
                 try:
                     payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
                 except GraphQLResponseError as minimal_exc:
-                    if _is_missing_field_error(minimal_exc.errors, ["adapterHardwareInfo"]):
+                    if _is_missing_field_error(minimal_exc.errors, ["adapter_hardware_info"]):
                         self._schedule_hardware_info_reprobe(now)
                     return None
                 except GraphQLClientError:
@@ -1608,7 +1608,7 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
         if not isinstance(payload, dict):
             return None
 
-        info = payload.get("adapterHardwareInfo")
+        info = payload.get("adapter_hardware_info")
         if not isinstance(info, dict):
             return None
 

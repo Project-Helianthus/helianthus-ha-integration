@@ -209,7 +209,7 @@ class _FakeClient:
 
     async def mutation(self, query: str, variables: dict):  # noqa: ANN201
         self.calls.append({"query": query, "variables": variables})
-        return {"setCircuitConfig": {"success": True, "error": None}}
+        return {"set_circuit_config": {"success": True, "error": None}}
 
 
 class _FakeEntry:
@@ -226,52 +226,52 @@ def _circuits() -> list[dict]:
     return [
         {
             "index": 0,
-            "circuitType": "heating",
-            "hasMixer": True,
+            "circuit_type": "heating",
+            "has_mixer": True,
             "state": {
-                "pumpActive": True,
-                "mixerPositionPct": 37.8,
-                "flowTemperatureC": 42.5,
-                "flowSetpointC": 45.0,
-                "calcFlowTempC": 44.0,
-                "circuitState": "heating",
+                "pump_active": True,
+                "mixer_position_pct": 37.8,
+                "flow_temperature_c": 42.5,
+                "flow_setpoint_c": 45.0,
+                "calc_flow_temp_c": 44.0,
+                "circuit_state": "heating",
                 "humidity": 49.2,
-                "dewPoint": 11.1,
-                "pumpHours": 120.0,
-                "pumpStarts": 55,
+                "dew_point": 11.1,
+                "pump_hours": 120.0,
+                "pump_starts": 55,
             },
             "config": {
-                "heatingCurve": 1.3,
-                "flowTempMaxC": 70.0,
-                "flowTempMinC": 20.0,
-                "summerLimitC": 22.0,
-                "frostProtC": -5.0,
-                "roomTempControl": "modulating",
+                "heating_curve": 1.3,
+                "flow_temp_max_c": 70.0,
+                "flow_temp_min_c": 20.0,
+                "summer_limit_c": 22.0,
+                "frost_prot_c": -5.0,
+                "room_temp_control": "modulating",
             },
         },
         {
             "index": 1,
-            "circuitType": "fixed_value",
-            "hasMixer": False,
+            "circuit_type": "fixed_value",
+            "has_mixer": False,
             "state": {
-                "pumpActive": False,
-                "mixerPositionPct": None,
-                "flowTemperatureC": 31.0,
-                "flowSetpointC": 33.0,
-                "calcFlowTempC": 32.5,
-                "circuitState": "standby",
+                "pump_active": False,
+                "mixer_position_pct": None,
+                "flow_temperature_c": 31.0,
+                "flow_setpoint_c": 33.0,
+                "calc_flow_temp_c": 32.5,
+                "circuit_state": "standby",
                 "humidity": None,
-                "dewPoint": None,
-                "pumpHours": 10.0,
-                "pumpStarts": 3,
+                "dew_point": None,
+                "pump_hours": 10.0,
+                "pump_starts": 3,
             },
             "config": {
-                "heatingCurve": 1.0,
-                "flowTempMaxC": 55.0,
-                "flowTempMinC": 15.0,
-                "summerLimitC": 24.0,
-                "frostProtC": -3.0,
-                "roomTempControl": "off",
+                "heating_curve": 1.0,
+                "flow_temp_max_c": 55.0,
+                "flow_temp_min_c": 15.0,
+                "summer_limit_c": 24.0,
+                "frost_prot_c": -3.0,
+                "room_temp_control": "off",
             },
         },
     ]
@@ -333,11 +333,11 @@ def test_circuit_binary_sensor_platform_adds_one_pump_per_circuit() -> None:
     ]
     assert len(pump_entities) == 2
     assert {entity._attr_unique_id for entity in pump_entities} == {
-        "entry-1-circuit-0-binary-pumpActive",
-        "entry-1-circuit-1-binary-pumpActive",
+        "entry-1-circuit-0-binary-pump_active",
+        "entry-1-circuit-1-binary-pump_active",
     }
-    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("0-binary-pumpActive"))
-    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("1-binary-pumpActive"))
+    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("0-binary-pump_active"))
+    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("1-binary-pump_active"))
     assert first.is_on is True
     assert second.is_on is False
 
@@ -360,7 +360,7 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     state_sensor = next(
         entity
         for entity in circuit_entities
-        if entity._attr_unique_id == "entry-1-circuit-0-sensor-circuitState"
+        if entity._attr_unique_id == "entry-1-circuit-0-sensor-circuit_state"
     )
     attrs = state_sensor.extra_state_attributes
     assert attrs["circuit_index"] == 0
@@ -384,7 +384,7 @@ def test_circuit_number_select_entities_call_circuit_config_mutation_without_coo
     heating_curve = next(
         entity
         for entity in number_entities
-        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "heatingCurve"
+        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "heating_curve"
     )
     room_temp_control = next(
         entity
@@ -397,6 +397,6 @@ def test_circuit_number_select_entities_call_circuit_config_mutation_without_coo
     asyncio.run(room_temp_control.async_select_option("thermostat"))
 
     fields_written = [call["variables"]["field"] for call in client.calls]
-    assert fields_written == ["heatingCurve", "roomTempControl"]
+    assert fields_written == ["heating_curve", "room_temp_control"]
     assert switch_entities == []
     assert circuit_coordinator.refresh_requests == 2
