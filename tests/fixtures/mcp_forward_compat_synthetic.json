@@ -1,0 +1,54 @@
+{
+  "_comment": "Synthetic MCP envelope for M5b_HA_NOOP_COMPAT forward-compat checkpoint. Mirrors the gateway golden shape (helianthus-ebusgateway/mcp/ebus_standard/testdata/*.golden.json) with unknown-value perturbations per M4B 11-m4b-semantic-lock.md section 7.3 and M4b2 decisions/m4b2-responder-go-no-go.md section 4.2. This fixture is a tombstone: the HA integration MUST treat it as a no-op and surface NO new entities.",
+  "meta": {
+    "contract": { "name": "helianthus-ebus-mcp", "major": 1, "minor": 1 },
+    "data_timestamp": "2026-04-19T00:00:00Z",
+    "data_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "foo_future_key": "forward-compat unknown meta.* key per M4B section 7.3",
+    "consistency": { "mode": "future_consistency_mode" },
+    "capabilities": {
+      "responder": {
+        "version": "v1",
+        "active": {
+          "transport": "ENH",
+          "scope": "partial",
+          "surfaces": ["FF_03", "FF_04", "FF_05", "FF_06"],
+          "refusal": null
+        },
+        "transports": [
+          { "transport": "ENH",       "state": "supported", "scope": "partial", "surfaces": ["FF_03","FF_04","FF_05","FF_06"], "reason": null },
+          { "transport": "ENS",       "state": "supported", "scope": "partial", "surfaces": ["FF_03","FF_04","FF_05","FF_06"], "reason": null },
+          { "transport": "ebusd-tcp", "state": "blocked",   "scope": "none",    "surfaces": [],                                "reason": "command_bridge_no_companion_listen" }
+        ]
+      }
+    }
+  },
+  "commands": {
+    "list": [
+      {
+        "selector": "ff_03_regulator_mode",
+        "pb": 255,
+        "sb": 3,
+        "safety_class": "future_class_xyz",
+        "direction": "get"
+      }
+    ]
+  },
+  "decode": {
+    "data": {
+      "validity": "future_validity",
+      "fields": [
+        {
+          "name": "flow_temperature_c",
+          "value": 42.5,
+          "unit": "degC",
+          "future_field": "forward-compat unknown DecodedField extra key"
+        }
+      ]
+    }
+  },
+  "error": {
+    "code": "FUTURE_ERROR",
+    "message": "synthetic forward-compat unknown error code"
+  }
+}
