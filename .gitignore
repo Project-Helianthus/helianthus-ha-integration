@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Claude Code orchestrator-session artifacts (per-session tool/skills config, not repo-tracked)
+.claude/
