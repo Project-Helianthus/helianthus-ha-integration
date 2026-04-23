@@ -964,6 +964,34 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     async_add_entities(sensors)
 
+    # M4_HA (execution-plans#19): Vaillant B503 diagnostic sensor.
+    # Entity lifecycle follows plan AD11 (3-poll NOT_SUPPORTED hysteresis)
+    # and AD15 (state=None on healthy, state=unavailable on transient reasons,
+    # entity absent on persistent NOT_SUPPORTED). Production wiring is
+    # gated on the M5 BENCH-REPLACE live-bus ratification for the MCP
+    # stub dispatcher — until then, the capability probe resolves to
+    # UNKNOWN and the sensor renders as unavailable rather than serving
+    # stub data.
+    try:
+        from .vaillant_b503 import async_setup_b503
+
+        b503_client = data.get("graphql_client")
+        b503_device_id = boiler_device_id or regulator_device_id
+        if b503_client is not None and b503_device_id is not None:
+            await async_setup_b503(
+                hass,
+                entry,
+                async_add_entities,
+                client=b503_client,
+                device_id=b503_device_id,
+                scan_interval=30,
+            )
+    except Exception:  # noqa: BLE001
+        # B503 sensor is optional diagnostic; any wiring failure must not
+        # block the rest of the integration from loading.
+        _b503_logger = __import__("logging").getLogger(__name__)
+        _b503_logger.exception("Vaillant B503 sensor wiring failed; continuing without it")
+
 
 class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
     """eBUS address sensor for a physical bus device."""
