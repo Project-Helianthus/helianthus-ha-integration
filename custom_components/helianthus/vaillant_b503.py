@@ -197,6 +197,54 @@ class VaillantB503Coordinator:
         return [None, None, None, None, None]
 
 
+async def async_setup_b503(
+    hass: Any,
+    entry: Any,
+    async_add_entities: Any,
+    client: Any,
+    device_id: tuple,
+    scan_interval: int = 30,
+) -> None:
+    """Production wiring for the B503 diagnostic sensor.
+
+    Call from sensor.py async_setup_entry. Uses a DataUpdateCoordinator
+    subclass that delegates to VaillantB503Coordinator.async_refresh_once.
+
+    Honors plan AD11 hysteresis via should_create_entity() — if the cold-
+    start poll returns NOT_SUPPORTED the entity is simply not added.
+    """
+    from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+    inner = VaillantB503Coordinator(hass, client, scan_interval=scan_interval)
+
+    class _B503DUC(DataUpdateCoordinator):
+        def __init__(self) -> None:
+            super().__init__(
+                hass,
+                _LOGGER,
+                name="helianthus_vaillant_b503",
+                update_interval=inner.update_interval,
+            )
+
+        async def _async_update_data(self) -> dict[str, Any] | None:
+            await inner.async_refresh_once()
+            return inner.data
+
+    duc = _B503DUC()
+    # Expose the hysteresis controller so the entity can consult it.
+    duc.b503_inner = inner  # type: ignore[attr-defined]
+
+    await duc.async_config_entry_first_refresh()
+
+    if not inner.should_create_entity():
+        # Cold-start NOT_SUPPORTED → entity absent (plan AD11).
+        return
+
+    async_add_entities(
+        [BoilerActiveErrorSensor(duc, entry.entry_id, device_id)]
+    )
+
+
 def _extract_reason(payload: Any) -> str:
     if not isinstance(payload, dict):
         return "UNKNOWN"
