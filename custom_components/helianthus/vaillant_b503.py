@@ -217,6 +217,12 @@ async def async_setup_b503(
 
     inner = VaillantB503Coordinator(hass, client, scan_interval=scan_interval)
 
+    # The DUC delegates state-read methods to the inner coordinator so
+    # BoilerActiveErrorSensor can call current_reason()/current_first_active()/
+    # current_slots() on its coordinator (whether constructed with the DUC in
+    # production or VaillantB503Coordinator directly in tests). Without
+    # these delegations, HA raises AttributeError on the first state
+    # evaluation because DataUpdateCoordinator has no such methods.
     class _B503DUC(DataUpdateCoordinator):
         def __init__(self) -> None:
             super().__init__(
@@ -225,14 +231,44 @@ async def async_setup_b503(
                 name="helianthus_vaillant_b503",
                 update_interval=inner.update_interval,
             )
+            self.b503_inner = inner
+            # Production-teardown hook: set by async_setup_b503 after the
+            # entity is added so runtime NOT_SUPPORTED hysteresis can
+            # remove the entity.
+            self._b503_entity = None  # type: Any
 
         async def _async_update_data(self) -> dict[str, Any] | None:
             await inner.async_refresh_once()
+            # AD11 runtime teardown: if the hysteresis streak destroyed
+            # the entity, fire an async removal. Initial-setup uses
+            # should_create_entity() to skip add; this path handles the
+            # runtime flip to NOT_SUPPORTED after the entity already
+            # exists.
+            if (
+                inner._entity_destroyed  # noqa: SLF001
+                and self._b503_entity is not None
+            ):
+                entity = self._b503_entity
+                self._b503_entity = None
+                try:
+                    await entity.async_remove(force_remove=True)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("B503 entity async_remove failed", exc_info=True)
             return inner.data
 
+        # --- state-read delegations to inner coordinator (so a sensor
+        #     constructed against this DUC can read VaillantB503Coordinator-
+        #     shaped methods directly) ---
+        def current_reason(self) -> str:
+            return inner.current_reason()
+
+        def current_first_active(self) -> int | None:
+            return inner.current_first_active()
+
+        def current_slots(self) -> list[int | None]:
+            return inner.current_slots()
+
     duc = _B503DUC()
-    # Expose the hysteresis controller so the entity can consult it.
-    duc.b503_inner = inner  # type: ignore[attr-defined]
 
     await duc.async_config_entry_first_refresh()
 
@@ -240,9 +276,9 @@ async def async_setup_b503(
         # Cold-start NOT_SUPPORTED → entity absent (plan AD11).
         return
 
-    async_add_entities(
-        [BoilerActiveErrorSensor(duc, entry.entry_id, device_id)]
-    )
+    entity = BoilerActiveErrorSensor(duc, entry.entry_id, device_id)
+    duc._b503_entity = entity  # noqa: SLF001 — teardown hook for AD11 runtime flip
+    async_add_entities([entity])
 
 
 def _extract_reason(payload: Any) -> str:
