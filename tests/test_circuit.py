@@ -7,6 +7,8 @@ import sys
 import types
 from enum import IntFlag
 
+import pytest
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -55,6 +57,7 @@ def _ensure_homeassistant_stubs() -> None:
     if not hasattr(binary_sensor_module, "BinarySensorDeviceClass"):
         class _BinarySensorDeviceClass:
             RUNNING = "running"
+            OPENING = "opening"
 
         binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
@@ -198,6 +201,7 @@ class _FakeCoordinator:
     def __init__(self, data) -> None:  # noqa: ANN001
         self.data = data
         self.refresh_requests = 0
+        self.last_update_success = True
 
     async def async_request_refresh(self) -> None:
         self.refresh_requests += 1
@@ -282,7 +286,7 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
     client = _FakeClient()
     payload = {
         "device_coordinator": _FakeCoordinator([]),
-        "status_coordinator": _FakeCoordinator({"daemon": {}, "adapter": {}}),
+        "status_coordinator": _FakeCoordinator({"admission": {"trusted": True}}),
         "semantic_coordinator": _FakeCoordinator({"zones": [], "dhw": None}),
         "energy_coordinator": None,
         "circuit_coordinator": circuit_coordinator,
@@ -400,3 +404,44 @@ def test_circuit_number_select_entities_call_circuit_config_mutation_without_coo
     assert fields_written == ["heating_curve", "room_temp_control"]
     assert switch_entities == []
     assert circuit_coordinator.refresh_requests == 2
+
+
+def test_circuit_writable_entities_fail_closed_when_admission_untrusted() -> None:
+    payload, circuit_coordinator, client = _build_payload()
+    payload["status_coordinator"].data["admission"]["trusted"] = False
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+
+    number_entities: list = []
+    select_entities: list = []
+    asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
+    asyncio.run(select_platform.async_setup_entry(hass, entry, select_entities.extend))
+
+    heating_curve = next(
+        entity
+        for entity in number_entities
+        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "heating_curve"
+    )
+    room_temp_control = next(
+        entity
+        for entity in select_entities
+        if isinstance(entity, select_platform.HelianthusCircuitRoomTempControlSelect)
+    )
+    cooling_enabled = switch_platform.HelianthusCircuitCoolingEnabledSwitch(
+        coordinator=circuit_coordinator,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+        client=client,
+        circuit_index=0,
+        initial_name="Circuit 1",
+        status_coordinator=payload["status_coordinator"],
+    )
+
+    with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(heating_curve.async_set_native_value(1.7))
+    with pytest.raises(select_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(room_temp_control.async_select_option("thermostat"))
+    with pytest.raises(switch_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(cooling_enabled.async_turn_on())
+
+    assert client.calls == []

@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
@@ -39,6 +40,7 @@ async def async_setup_entry(
     manufacturer = data.get("manufacturer", "Vaillant")
     entry_id = entry.entry_id
     client = data.get("graphql_client")
+    status_coordinator = data.get("status_coordinator")
     regulator_device_id = data.get("regulator_device_id")
 
     entities: list[DateEntity] = []
@@ -50,11 +52,27 @@ async def async_setup_entry(
                 entry_id=entry_id,
                 manufacturer=manufacturer,
                 client=client,
+                status_coordinator=status_coordinator,
                 device_id=regulator_device_id,
             )
         )
 
     async_add_entities(entities)
+    if entities and hasattr(status_coordinator, "async_add_listener"):
+        def _handle_admission_update() -> None:
+            for entity in entities:
+                if hasattr(entity, "async_write_ha_state"):
+                    entity.async_write_ha_state()
+
+        unsub = status_coordinator.async_add_listener(_handle_admission_update)
+        data.setdefault("unsub_listeners", []).append(unsub)
+
+
+def _assert_admission_trusted(status_coordinator: object | None) -> None:
+    try:
+        assert_admission_trusted(status_admission_trusted(status_coordinator))
+    except RuntimeError as exc:
+        raise HomeAssistantError(str(exc)) from exc
 
 
 class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
@@ -64,10 +82,20 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:calendar-clock"
 
-    def __init__(self, *, coordinator, entry_id, manufacturer, client, device_id) -> None:
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id,
+        manufacturer,
+        client,
+        device_id,
+        status_coordinator: object | None = None,
+    ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._attr_unique_id = f"{entry_id}-system-date-maintenance_date"
         self._attr_name = "Maintenance Date"
@@ -78,7 +106,12 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and getattr(self.coordinator, "system_installer_available", True)
+        base_available = getattr(super(), "available", True)
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and getattr(self.coordinator, "system_installer_available", True)
+        )
 
     @property
     def native_value(self) -> datetime.date | None:
@@ -98,6 +131,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
             raise HomeAssistantError("Sentinel date 2015-01-01 is not allowed")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {"field": "maintenance_date", "value": iso}
         try:

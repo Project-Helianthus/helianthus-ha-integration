@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .device_ids import build_radio_bus_key, radio_device_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -136,7 +137,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_bus_address = data.get("regulator_bus_address")
-    source_address = data.get("daemon_source_address")
+    status_coordinator = data.get("status_coordinator")
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities = []
@@ -163,13 +164,22 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 manufacturer,
                 client,
                 regulator_bus_address,
-                source_address,
+                status_coordinator,
                 zone_id,
                 zone.get("name"),
                 is_dedicated_device=is_dedicated_device,
             )
         )
-    async_add_entities([entity for entity in entities if entity.zone_id])
+    entities = [entity for entity in entities if entity.zone_id]
+    async_add_entities(entities)
+    if entities and hasattr(status_coordinator, "async_add_listener"):
+        def _handle_admission_update() -> None:
+            for entity in entities:
+                if hasattr(entity, "async_write_ha_state"):
+                    entity.async_write_ha_state()
+
+        unsub = status_coordinator.async_add_listener(_handle_admission_update)
+        data.setdefault("unsub_listeners", []).append(unsub)
 
 
 class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
@@ -190,7 +200,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         manufacturer: str,
         client: GraphQLClient | None,
         regulator_bus_address: int | None,
-        source_address: int | None,
+        status_coordinator: object | None,
         zone_id: str | None,
         name: str | None,
         *,
@@ -203,7 +213,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         self._manufacturer = manufacturer
         self._client = client
         self._regulator_bus_address = regulator_bus_address
-        self._source_address = source_address
+        self._status_coordinator = status_coordinator
         self._zone_id = _normalize_zone_id(zone_id)
         self._zone_instance = _zone_instance(self._zone_id)
         self._zone_name = name or _zone_default_name(self._zone_id)
@@ -235,6 +245,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         if zone_name is not None and str(zone_name).strip():
             return f"{str(zone_name).strip()} Thermostat"
         return self._attr_name
+
+    @property
+    def available(self) -> bool:
+        base_available = getattr(super(), "available", True)
+        return bool(base_available) and status_admission_trusted(self._status_coordinator)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -536,12 +551,14 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             raise HomeAssistantError("Regulator address is unavailable")
         if self._zone_instance is None:
             raise HomeAssistantError(f"Invalid zone id: {self._zone_id}")
+        try:
+            assert_admission_trusted(status_admission_trusted(self._status_coordinator))
+        except RuntimeError as exc:
+            raise HomeAssistantError(str(exc)) from exc
 
-        source = self._source_address if self._source_address is not None else 0x31
         variables = {
             "address": int(self._regulator_bus_address),
             "params": {
-                "source": int(source),
                 "opcode": 0x02,
                 "group": _ZONE_GROUP,
                 "instance": int(self._zone_instance),

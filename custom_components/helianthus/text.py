@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
@@ -87,6 +88,7 @@ async def async_setup_entry(
     manufacturer = data.get("manufacturer", "Vaillant")
     entry_id = entry.entry_id
     client = data.get("graphql_client")
+    status_coordinator = data.get("status_coordinator")
     regulator_device_id = data.get("regulator_device_id")
     boiler_device_id = data.get("boiler_device_id")
 
@@ -100,6 +102,7 @@ async def async_setup_entry(
                     entry_id=entry_id,
                     manufacturer=manufacturer,
                     client=client,
+                    status_coordinator=status_coordinator,
                     device_id=regulator_device_id,
                     field=field,
                 )
@@ -110,6 +113,7 @@ async def async_setup_entry(
                 entry_id=entry_id,
                 manufacturer=manufacturer,
                 client=client,
+                status_coordinator=status_coordinator,
                 device_id=regulator_device_id,
                 field=_SYSTEM_MENU_CODE_FIELD,
                 mutation=_SET_SYSTEM_CONFIG_MUTATION,
@@ -125,6 +129,7 @@ async def async_setup_entry(
                     entry_id=entry_id,
                     manufacturer=manufacturer,
                     client=client,
+                    status_coordinator=status_coordinator,
                     device_id=boiler_device_id,
                     field=field,
                 )
@@ -135,6 +140,7 @@ async def async_setup_entry(
                 entry_id=entry_id,
                 manufacturer=manufacturer,
                 client=client,
+                status_coordinator=status_coordinator,
                 device_id=boiler_device_id,
                 field=_BOILER_MENU_CODE_FIELD,
                 mutation=_SET_BOILER_CONFIG_MUTATION,
@@ -143,6 +149,21 @@ async def async_setup_entry(
         )
 
     async_add_entities(entities)
+    if entities and hasattr(status_coordinator, "async_add_listener"):
+        def _handle_admission_update() -> None:
+            for entity in entities:
+                if hasattr(entity, "async_write_ha_state"):
+                    entity.async_write_ha_state()
+
+        unsub = status_coordinator.async_add_listener(_handle_admission_update)
+        data.setdefault("unsub_listeners", []).append(unsub)
+
+
+def _assert_admission_trusted(status_coordinator: object | None) -> None:
+    try:
+        assert_admission_trusted(status_admission_trusted(status_coordinator))
+    except RuntimeError as exc:
+        raise HomeAssistantError(str(exc)) from exc
 
 
 class HelianthusSystemText(CoordinatorEntity, TextEntity):
@@ -152,10 +173,21 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = TextMode.TEXT
 
-    def __init__(self, *, coordinator, entry_id, manufacturer, client, device_id, field: InstallerTextField) -> None:
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id,
+        manufacturer,
+        client,
+        device_id,
+        field: InstallerTextField,
+        status_coordinator: object | None = None,
+    ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-system-text-{field.key}"
@@ -169,7 +201,12 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and getattr(self.coordinator, "system_installer_available", True)
+        base_available = getattr(super(), "available", True)
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and getattr(self.coordinator, "system_installer_available", True)
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -192,6 +229,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
             raise HomeAssistantError(f"Value length {len(value)} exceeds max {self._field.max_length}")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {"field": self._field.key, "value": value}
         try:
@@ -215,10 +253,21 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = TextMode.TEXT
 
-    def __init__(self, *, coordinator, entry_id, manufacturer, client, device_id, field: InstallerTextField) -> None:
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id,
+        manufacturer,
+        client,
+        device_id,
+        field: InstallerTextField,
+        status_coordinator: object | None = None,
+    ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-boiler-text-{field.key}"
@@ -232,7 +281,12 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and getattr(self.coordinator, "boiler_installer_available", True)
+        base_available = getattr(super(), "available", True)
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and getattr(self.coordinator, "boiler_installer_available", True)
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -255,6 +309,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
             raise HomeAssistantError(f"Digit count {len(value_clean)} exceeds max {self._field.max_length}")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {"field": self._field.key, "value": value_clean}
         try:
@@ -292,10 +347,12 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
         field: InstallerMenuCodeField,
         mutation: str,
         mutation_key: str,
+        status_coordinator: object | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._field = field
         self._mutation = mutation
@@ -310,10 +367,19 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
 
     @property
     def available(self) -> bool:
+        base_available = getattr(super(), "available", True)
         source = self._field.source
         if source == "system":
-            return super().available and getattr(self.coordinator, "system_sensitive_available", True)
-        return super().available and getattr(self.coordinator, "boiler_sensitive_available", True)
+            return (
+                bool(base_available)
+                and status_admission_trusted(self._status_coordinator)
+                and getattr(self.coordinator, "system_sensitive_available", True)
+            )
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and getattr(self.coordinator, "boiler_sensitive_available", True)
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -343,6 +409,7 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
             )
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {"field": self._field.key, "value": str(numeric)}
         try:

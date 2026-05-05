@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .device_ids import dhw_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -48,21 +49,25 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
     regulator_bus_address = data.get("regulator_bus_address")
-    source_address = data.get("daemon_source_address")
+    status_coordinator = data.get("status_coordinator")
 
-    async_add_entities(
-        [
-            HelianthusDhwWaterHeater(
-                entry.entry_id,
-                coordinator,
-                via_device,
-                manufacturer,
-                client,
-                regulator_bus_address,
-                source_address,
-            )
-        ]
+    entity = HelianthusDhwWaterHeater(
+        entry.entry_id,
+        coordinator,
+        via_device,
+        manufacturer,
+        client,
+        regulator_bus_address,
+        status_coordinator,
     )
+    async_add_entities([entity])
+    if hasattr(status_coordinator, "async_add_listener"):
+        def _handle_admission_update() -> None:
+            if hasattr(entity, "async_write_ha_state"):
+                entity.async_write_ha_state()
+
+        unsub = status_coordinator.async_add_listener(_handle_admission_update)
+        data.setdefault("unsub_listeners", []).append(unsub)
 
 
 class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
@@ -83,7 +88,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         manufacturer: str,
         client: GraphQLClient | None,
         regulator_bus_address: int | None,
-        source_address: int | None,
+        status_coordinator: object | None,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
@@ -91,7 +96,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         self._manufacturer = manufacturer
         self._client = client
         self._regulator_bus_address = regulator_bus_address
-        self._source_address = source_address
+        self._status_coordinator = status_coordinator
         self._attr_name = None
         self._attr_unique_id = f"{entry_id}-dhw"
 
@@ -108,7 +113,12 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and bool(self._dhw())
+        base_available = getattr(super(), "available", True)
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and bool(self._dhw())
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -199,12 +209,14 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             raise HomeAssistantError("GraphQL client is unavailable")
         if self._regulator_bus_address is None:
             raise HomeAssistantError("Regulator address is unavailable")
+        try:
+            assert_admission_trusted(status_admission_trusted(self._status_coordinator))
+        except RuntimeError as exc:
+            raise HomeAssistantError(str(exc)) from exc
 
-        source = self._source_address if self._source_address is not None else 0x31
         variables = {
             "address": int(self._regulator_bus_address),
             "params": {
-                "source": int(source),
                 "opcode": 0x02,
                 "group": _DHW_GROUP,
                 "instance": int(_DHW_INSTANCE),

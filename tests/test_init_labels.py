@@ -257,7 +257,8 @@ def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
 def test_parse_bus_address_handles_hex_and_int() -> None:
     assert _parse_bus_address("0x1f") == 0x1F
     assert _parse_bus_address("15") == 15
-    assert _parse_bus_address(0x31) == 0x31
+    parsed = 0x30 + 1
+    assert _parse_bus_address(parsed) == parsed
     assert _parse_bus_address("bogus") is None
     assert _parse_bus_address(999) is None
 

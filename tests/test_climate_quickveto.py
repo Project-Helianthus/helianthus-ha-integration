@@ -7,6 +7,7 @@ import struct
 import sys
 import types
 
+import pytest
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -109,6 +110,7 @@ def _ensure_homeassistant_stubs() -> None:
 
 _ensure_homeassistant_stubs()
 
+from custom_components.helianthus import climate as climate_platform
 from custom_components.helianthus.climate import (
     HelianthusZoneClimate,
     _ZONE_MODE_ADDR,
@@ -117,6 +119,8 @@ from custom_components.helianthus.climate import (
     _ZONE_TARGET_TEMP_ADDR,
     _ZONE_TARGET_TEMP_DESIRED_ADDR,
 )
+from custom_components.helianthus.const import DOMAIN
+from homeassistant.exceptions import HomeAssistantError
 
 
 class _FakeCoordinator:
@@ -126,6 +130,25 @@ class _FakeCoordinator:
 
     async def async_request_refresh(self) -> None:
         self.refresh_requests += 1
+
+
+class _FakeStatusCoordinator:
+    def __init__(self, trusted: bool = True) -> None:
+        self.data = {"admission": {"trusted": trusted}}
+        self.listeners: list = []
+
+    def async_add_listener(self, listener):  # noqa: ANN001, ANN201
+        self.listeners.append(listener)
+        return lambda: self.listeners.remove(listener)
+
+
+class _FakeHass:
+    def __init__(self, payload: dict) -> None:
+        self.data = {DOMAIN: {"entry-1": payload}}
+
+
+class _FakeEntry:
+    entry_id = "entry-1"
 
 
 class _FakeClient:
@@ -180,7 +203,7 @@ def _make_entity(
         "Vaillant",
         client,
         21,
-        113,
+        _FakeStatusCoordinator(True),
         "zone-1",
         "Living Room",
     )
@@ -193,6 +216,74 @@ def _extract_addr(call: dict) -> int:
 
 def _extract_data(call: dict) -> list[int]:
     return call["variables"]["params"]["data"]
+
+
+def test_climate_write_omits_source_parameter() -> None:
+    entity, client, _coord = _make_entity(preset="manual")
+
+    asyncio.run(entity.async_set_temperature(temperature=22.0))
+
+    assert "source" not in client.calls[0]["variables"]["params"]
+
+
+def test_climate_write_fails_closed_when_admission_untrusted() -> None:
+    entity, client, _coord = _make_entity(preset="manual")
+    entity._status_coordinator.data["admission"]["trusted"] = False
+
+    with pytest.raises(HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(entity.async_set_temperature(temperature=22.0))
+
+    assert client.calls == []
+
+
+def test_climate_write_uses_live_admission_transition() -> None:
+    entity, client, _coord = _make_entity(preset="manual")
+    assert entity.available is True
+
+    entity._status_coordinator.data["admission"]["trusted"] = False
+
+    assert entity.available is False
+    with pytest.raises(HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(entity.async_set_temperature(temperature=22.0))
+    assert client.calls == []
+
+
+def test_climate_setup_refreshes_state_on_admission_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    writes = []
+    monkeypatch.setattr(
+        climate_platform.HelianthusZoneClimate,
+        "async_write_ha_state",
+        lambda self: writes.append(self.zone_id),
+        raising=False,
+    )
+    status = _FakeStatusCoordinator(True)
+    payload = {
+        "semantic_coordinator": _FakeCoordinator(
+            {
+                "zones": [
+                    {"id": "zone-1", "name": "Living", "state": {}, "config": {}}
+                ],
+                "dhw": None,
+            }
+        ),
+        "radio_coordinator": _FakeCoordinator({}),
+        "status_coordinator": status,
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "zone_parent_device_ids": {"zone-1": ("helianthus", "entry-1-bus-BASV-15")},
+        "adapter_device_id": ("helianthus", "adapter-entry-1"),
+        "regulator_manufacturer": "Vaillant",
+        "graphql_client": None,
+        "regulator_bus_address": 0x15,
+        "unsub_listeners": [],
+    }
+    entities = []
+
+    asyncio.run(climate_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend))
+    status.listeners[0]()
+
+    assert writes == ["zone-1"]
+    assert len(status.listeners) == 1
+    assert len(payload["unsub_listeners"]) == 1
 
 
 def test_quickveto_preset_writes_temp_then_duration() -> None:

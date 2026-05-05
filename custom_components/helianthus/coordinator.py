@@ -11,6 +11,11 @@ from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .admission import (
+    daemon_status_with_admission,
+    schema_incompatible_admission,
+    source_selection_from_status_payload,
+)
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
@@ -180,11 +185,101 @@ query Devices {
 
 QUERY_STATUS = """
 query Status {
+  busSummary {
+    status {
+      bus_admission {
+        source_selection {
+          state
+          mode
+          outcome
+          reason
+          selected_source
+          failed_source
+          companion_target
+          active_probe {
+            target
+            opcode
+            status
+          }
+          retryable
+          next_action
+          last_successful_source
+          automatic_retry_scheduled
+          rejected_candidates {
+            source
+            reason
+            occupancy_state
+            evidence_provenance
+          }
+        }
+      }
+    }
+  }
   daemon_status {
     status
     firmware_version
     updates_available
     initiator_address
+  }
+  adapter_status {
+    status
+    firmware_version
+    updates_available
+  }
+}
+"""
+
+QUERY_STATUS_NO_INITIATOR = """
+query Status {
+  busSummary {
+    status {
+      bus_admission {
+        source_selection {
+          state
+          mode
+          outcome
+          reason
+          selected_source
+          failed_source
+          companion_target
+          active_probe {
+            target
+            opcode
+            status
+          }
+          retryable
+          next_action
+          last_successful_source
+          automatic_retry_scheduled
+          rejected_candidates {
+            source
+            reason
+            occupancy_state
+            evidence_provenance
+          }
+        }
+      }
+    }
+  }
+  daemon_status {
+    status
+    firmware_version
+    updates_available
+  }
+  adapter_status {
+    status
+    firmware_version
+    updates_available
+  }
+}
+"""
+
+QUERY_STATUS_MINIMAL = """
+query Status {
+  daemon_status {
+    status
+    firmware_version
+    updates_available
   }
   adapter_status {
     status
@@ -378,6 +473,30 @@ query Semantic {
 _HOLIDAY_FIELDS = ["holiday_start_date", "holiday_end_date", "holiday_setpoint", "holiday_start_time", "holiday_end_time"]
 _QV_FIELDS = ["quick_veto", "quick_veto_setpoint", "quick_veto_duration", "quick_veto_expiry"]
 _SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
+_STATUS_SCHEMA_FIELDS = [
+    "busSummary",
+    "status",
+    "bus_admission",
+    "source_selection",
+    "state",
+    "mode",
+    "outcome",
+    "reason",
+    "selected_source",
+    "failed_source",
+    "companion_target",
+    "active_probe",
+    "target",
+    "opcode",
+    "retryable",
+    "next_action",
+    "last_successful_source",
+    "automatic_retry_scheduled",
+    "rejected_candidates",
+    "source",
+    "occupancy_state",
+    "evidence_provenance",
+]
 
 QUERY_CIRCUITS = """
 query Circuits {
@@ -638,15 +757,38 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
         self._client = client
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
+        force_schema_incompatible = False
         try:
             payload = await self._client.execute(QUERY_STATUS)
         except GraphQLResponseError as exc:
             if _is_missing_field_error(exc.errors, ["initiator_address"]):
                 try:
-                    payload = await self._client.execute(QUERY_STATUS_LEGACY)
+                    payload = await self._client.execute(QUERY_STATUS_NO_INITIATOR)
+                except GraphQLResponseError as nested:
+                    if not _is_missing_field_error(
+                        nested.errors,
+                        _STATUS_SCHEMA_FIELDS,
+                    ):
+                        raise UpdateFailed(str(nested)) from nested
+                    try:
+                        payload = await self._client.execute(QUERY_STATUS_MINIMAL)
+                        force_schema_incompatible = True
+                    except GraphQLResponseError as legacy:
+                        raise UpdateFailed(str(legacy)) from legacy
+                    except GraphQLClientError as legacy:
+                        raise UpdateFailed(str(legacy)) from legacy
                 except GraphQLClientError as nested:
                     raise UpdateFailed(str(nested)) from nested
+            elif _is_missing_field_error(
+                exc.errors,
+                _STATUS_SCHEMA_FIELDS,
+            ):
+                try:
+                    payload = await self._client.execute(QUERY_STATUS_MINIMAL)
+                    force_schema_incompatible = True
                 except GraphQLResponseError as nested:
+                    raise UpdateFailed(str(nested)) from nested
+                except GraphQLClientError as nested:
                     raise UpdateFailed(str(nested)) from nested
             else:
                 raise UpdateFailed(str(exc)) from exc
@@ -654,10 +796,24 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
             raise UpdateFailed(str(exc)) from exc
 
         if not isinstance(payload, dict):
-            return {"daemon": {}, "adapter": {}}
+            admission = schema_incompatible_admission()
+            return {
+                "daemon": daemon_status_with_admission({}, admission),
+                "adapter": {},
+                "admission": admission,
+                "raw_admission": admission,
+            }
+        raw_admission = (
+            schema_incompatible_admission()
+            if force_schema_incompatible
+            else source_selection_from_status_payload(payload)
+        )
+        daemon = daemon_status_with_admission(payload.get("daemon_status", {}) or {}, raw_admission)
         return {
-            "daemon": payload.get("daemon_status", {}) or {},
+            "daemon": daemon,
             "adapter": payload.get("adapter_status", {}) or {},
+            "admission": raw_admission,
+            "raw_admission": raw_admission,
         }
 
 

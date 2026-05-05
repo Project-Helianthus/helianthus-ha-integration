@@ -10,6 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .device_ids import circuit_identifier, solar_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -64,6 +65,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     async_add_entities([])
 
 
+def _assert_admission_trusted(status_coordinator: object | None) -> None:
+    try:
+        assert_admission_trusted(status_admission_trusted(status_coordinator))
+    except RuntimeError as exc:
+        raise HomeAssistantError(str(exc)) from exc
+
+
 class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     """Writable switch for circuit cooling mode."""
 
@@ -80,11 +88,13 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         client: GraphQLClient | None,
         circuit_index: int,
         initial_name: str,
+        status_coordinator: object | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-cooling-enabled"
@@ -120,6 +130,11 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         )
 
     @property
+    def available(self) -> bool:
+        base_available = getattr(super(), "available", True)
+        return bool(base_available) and status_admission_trusted(self._status_coordinator)
+
+    @property
     def is_on(self) -> bool | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
@@ -131,6 +146,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     async def _write(self, enabled: bool) -> None:
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {
             "index": int(self._circuit_index),

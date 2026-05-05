@@ -7,6 +7,11 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from .admission import (
+    REPAIR_EMPTY_INVENTORY_UNTRUSTED,
+    status_admission_trusted,
+    update_effective_admission,
+)
 from .const import (
     CONF_DHW_SCHEDULE_HELPER,
     CONF_INSTANCE_GUID,
@@ -969,8 +974,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if index is not None and index >= 0:
             known_cylinder_indexes.add(index)
 
-    daemon_data = status_coordinator.data.get("daemon", {}) if status_coordinator.data else {}
-    daemon_source_addr = _parse_bus_address(daemon_data.get("initiator_address"))
+    admission = update_effective_admission(status_coordinator, devices)
+
+    cleanup_counts = hass.data.setdefault(DOMAIN, {}).setdefault("_admission_cleanup_counts", {})
+    cleanup_allowed = False
+    cleanup_ran = False
+
+    def record_cleanup_evidence(current_devices: list[dict]) -> bool:
+        nonlocal cleanup_allowed
+        update_effective_admission(status_coordinator, current_devices)
+        if status_admission_trusted(status_coordinator) and current_devices:
+            cleanup_counts[entry.entry_id] = int(cleanup_counts.get(entry.entry_id) or 0) + 1
+        else:
+            cleanup_counts[entry.entry_id] = 0
+        cleanup_allowed = cleanup_counts.get(entry.entry_id, 0) >= 2
+        return cleanup_allowed
+
+    record_cleanup_evidence(devices)
 
     semantic = semantic_coordinator.data or {}
     semantic_zones = [
@@ -1210,7 +1230,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             schedule_reload("sparse entities became live")
 
-    cleanup_obsolete_entity_registry_entries()
+    def run_trusted_cleanup(reason: str) -> None:
+        nonlocal cleanup_ran
+        if cleanup_ran:
+            return
+        if not cleanup_allowed:
+            _LOGGER.info(
+                "Helianthus cleanup skipped for entry %s until admission and inventory are trusted (%s)",
+                entry.entry_id,
+                admission.get("repair_code") or REPAIR_EMPTY_INVENTORY_UNTRUSTED,
+            )
+            return
+        cleanup_obsolete_entity_registry_entries()
+        auto_enable_sparse_entities(reason)
+        cleanup_obsolete_devices(reason)
+        cleanup_ran = True
 
     def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
         payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
@@ -1262,6 +1296,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ).strip()
 
     async def apply_zone_schedule(zone_id: str) -> None:
+        if not status_admission_trusted(status_coordinator):
+            _LOGGER.warning("Zone schedule helper ignored: source admission is not trusted")
+            return
         if regulator_bus_address is None:
             _LOGGER.warning("Zone schedule helper ignored: regulator address missing")
             return
@@ -1269,11 +1306,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if instance is None:
             _LOGGER.warning("Zone schedule helper ignored: invalid zone id %s", zone_id)
             return
-        source = daemon_source_addr if daemon_source_addr is not None else 0x31
         variables = {
             "address": int(regulator_bus_address),
             "params": {
-                "source": int(source),
                 "opcode": 0x02,
                 "group": 0x03,
                 "instance": int(instance),
@@ -1292,14 +1327,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, exc)
 
     async def apply_dhw_schedule() -> None:
+        if not status_admission_trusted(status_coordinator):
+            _LOGGER.warning("DHW schedule helper ignored: source admission is not trusted")
+            return
         if regulator_bus_address is None:
             _LOGGER.warning("DHW schedule helper ignored: regulator address missing")
             return
-        source = daemon_source_addr if daemon_source_addr is not None else 0x31
         variables = {
             "address": int(regulator_bus_address),
             "params": {
-                "source": int(source),
                 "opcode": 0x02,
                 "group": 0x01,
                 "instance": 0x00,
@@ -1317,20 +1353,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as exc:  # pragma: no cover - defensive runtime guard
             _LOGGER.warning("DHW schedule helper write failed: %s", exc)
 
-    def handle_device_update() -> None:
-        current = device_coordinator.data or []
-        if not current:
-            return
+    def current_bus_device_ids(current: list[dict]) -> set[str]:
         current_ids: set[str] = set()
         for dev in current:
             bus_key = resolved_bus_device_key(dev)
             if bus_key:
                 current_ids.add(bus_key)
+        return current_ids
+
+    def handle_device_update() -> None:
+        current = device_coordinator.data or []
+        record_cleanup_evidence(current)
+        if not current:
+            return
+        current_ids = current_bus_device_ids(current)
         if not current_ids:
             return
         if current_ids.issubset(known_bus_devices):
+            if cleanup_allowed:
+                run_trusted_cleanup("trusted non-empty inventory refresh")
             return
         schedule_reload("new bus devices discovered")
+
+    def handle_status_update() -> None:
+        current = device_coordinator.data or []
+        record_cleanup_evidence(current)
+        current_ids = current_bus_device_ids(current)
+        if current_ids and not current_ids.issubset(known_bus_devices):
+            schedule_reload("new bus devices discovered")
+            return
+        if cleanup_allowed and current_ids:
+            run_trusted_cleanup("trusted admission status refresh")
 
     def handle_semantic_update() -> None:
         payload = semantic_coordinator.data or {}
@@ -1409,6 +1462,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         auto_enable_sparse_entities("fm5 update")
 
     unsub_listeners: list[Callable[[], None]] = []
+    unsub_listeners.append(status_coordinator.async_add_listener(handle_status_update))
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
     unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
     unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
@@ -1493,7 +1547,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "vr71_device_id": vr71_device,
         "regulator_manufacturer": regulator_manufacturer,
         "regulator_bus_address": regulator_bus_address,
-        "daemon_source_address": daemon_source_addr,
+        "admission_repair_code": admission.get("repair_code"),
+        "source_selection": admission.get("source_selection"),
         "boiler_physical_device_id": boiler_physical_device_id,
         "boiler_via_device_id": boiler_via_device_id,
         "boiler_burner_device_id": boiler_burner_device_id,
@@ -1507,9 +1562,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Run stale cleanup again after platform setup so registry-backed entities
     # created by prior installs are removed from the fully materialized registry.
-    cleanup_obsolete_entity_registry_entries()
-    auto_enable_sparse_entities("post-platform setup")
-    cleanup_obsolete_devices("post-platform setup")
+    run_trusted_cleanup("post-platform setup")
 
     return True
 
@@ -1519,6 +1572,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok and DOMAIN in hass.data:
         data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        cleanup_counts = hass.data[DOMAIN].get("_admission_cleanup_counts")
+        if isinstance(cleanup_counts, dict):
+            cleanup_counts.pop(entry.entry_id, None)
         task = None if data is None else data.get("subscription_task")
         if task:
             task.cancel()

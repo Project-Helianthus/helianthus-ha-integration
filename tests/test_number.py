@@ -6,6 +6,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -87,6 +89,7 @@ class _FakeCoordinator:
     def __init__(self, data) -> None:  # noqa: ANN001
         self.data = data
         self.refresh_requests = 0
+        self.last_update_success = True
 
     async def async_request_refresh(self) -> None:
         self.refresh_requests += 1
@@ -130,6 +133,7 @@ def _payload(*, boiler_device_id: tuple[str, str] | None):
         "system_coordinator": None,
         "fm5_coordinator": None,
         "boiler_coordinator": boiler_coordinator,
+        "status_coordinator": _FakeCoordinator({"admission": {"trusted": True}}),
         "boiler_device_id": boiler_device_id,
         "graphql_client": client,
         "regulator_manufacturer": "Vaillant",
@@ -196,3 +200,27 @@ def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     ]
     assert [call["variables"]["value"] for call in client.calls] == ["68.0", "21.5"]
     assert boiler_coordinator.refresh_requests == 2
+
+
+def test_boiler_number_write_fails_closed_when_admission_untrusted() -> None:
+    payload, _boiler_coordinator, client = _payload(
+        boiler_device_id=("helianthus", "entry-1-bus-BAI00-08")
+    )
+    payload["status_coordinator"].data["admission"]["trusted"] = False
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
+
+    ch_max = next(
+        entity
+        for entity in entities
+        if isinstance(entity, number_platform.HelianthusBoilerNumber)
+        and entity._field.key == "flowset_hc_max_c"
+    )
+
+    with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(ch_max.async_set_native_value(68.0))
+
+    assert client.calls == []

@@ -304,6 +304,33 @@ def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:
     assert diag_entities == []
 
 
+def test_status_sensor_reads_live_coordinator_status() -> None:
+    coordinator = _FakeCoordinator(
+        {
+            "daemon": {
+                "admission_trusted": True,
+                "admission_repair_code": None,
+            }
+        }
+    )
+    entity = sensor_platform.HelianthusStatusSensor(
+        coordinator,
+        "Daemon",
+        coordinator.data["daemon"],
+        ("helianthus", "daemon-entry-1"),
+        sensor_platform.InventoryField("admission_trusted", "Admission Trusted"),
+    )
+
+    assert entity.native_value is True
+
+    coordinator.data["daemon"] = {
+        "admission_trusted": False,
+        "admission_repair_code": "admission_degraded",
+    }
+
+    assert entity.native_value is False
+
+
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:
     entity = sensor_platform.HelianthusEnergySensor(
         coordinator=_FakeCoordinator({"energy_totals": None}),

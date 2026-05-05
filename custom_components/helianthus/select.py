@@ -10,6 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .device_ids import circuit_identifier
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -55,6 +56,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = data.get("circuit_coordinator")
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
     client = data.get("graphql_client")
+    status_coordinator = data.get("status_coordinator")
     if coordinator is None or not coordinator.data:
         async_add_entities([])
         return
@@ -72,11 +74,27 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 entry_id=entry.entry_id,
                 manufacturer=manufacturer,
                 client=client,
+                status_coordinator=status_coordinator,
                 circuit_index=index,
                 initial_name=_circuit_name(circuit, index),
             )
         )
     async_add_entities(entities)
+    if entities and hasattr(status_coordinator, "async_add_listener"):
+        def _handle_admission_update() -> None:
+            for entity in entities:
+                if hasattr(entity, "async_write_ha_state"):
+                    entity.async_write_ha_state()
+
+        unsub = status_coordinator.async_add_listener(_handle_admission_update)
+        data.setdefault("unsub_listeners", []).append(unsub)
+
+
+def _assert_admission_trusted(status_coordinator: object | None) -> None:
+    try:
+        assert_admission_trusted(status_admission_trusted(status_coordinator))
+    except RuntimeError as exc:
+        raise HomeAssistantError(str(exc)) from exc
 
 
 class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
@@ -96,11 +114,13 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         client: GraphQLClient | None,
         circuit_index: int,
         initial_name: str,
+        status_coordinator: object | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._manufacturer = manufacturer
         self._client = client
+        self._status_coordinator = status_coordinator
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-room-temp-control"
@@ -136,6 +156,11 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         )
 
     @property
+    def available(self) -> bool:
+        base_available = getattr(super(), "available", True)
+        return bool(base_available) and status_admission_trusted(self._status_coordinator)
+
+    @property
     def current_option(self) -> str | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
@@ -150,6 +175,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
             raise HomeAssistantError(f"Unsupported roomTempControl option: {option}")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
+        _assert_admission_trusted(self._status_coordinator)
 
         variables = {
             "index": int(self._circuit_index),

@@ -6,6 +6,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -56,6 +58,7 @@ def _ensure_homeassistant_stubs() -> None:
         class _BinarySensorDeviceClass:
             RUNNING = "running"
             PROBLEM = "problem"
+            OPENING = "opening"
 
         binary_sensor_module.BinarySensorDeviceClass = _BinarySensorDeviceClass
 
@@ -68,6 +71,48 @@ def _ensure_homeassistant_stubs() -> None:
             pass
 
         number_module.NumberEntity = _NumberEntity
+
+    date_module = sys.modules.setdefault(
+        "homeassistant.components.date",
+        types.ModuleType("homeassistant.components.date"),
+    )
+    if not hasattr(date_module, "DateEntity"):
+        class _DateEntity:
+            pass
+
+        date_module.DateEntity = _DateEntity
+
+    text_module = sys.modules.setdefault(
+        "homeassistant.components.text",
+        types.ModuleType("homeassistant.components.text"),
+    )
+    if not hasattr(text_module, "TextEntity"):
+        class _TextEntity:
+            pass
+
+        text_module.TextEntity = _TextEntity
+    if not hasattr(text_module, "TextMode"):
+        class _TextMode:
+            TEXT = "text"
+
+        text_module.TextMode = _TextMode
+
+    config_entries_module = sys.modules.setdefault(
+        "homeassistant.config_entries",
+        types.ModuleType("homeassistant.config_entries"),
+    )
+    if not hasattr(config_entries_module, "ConfigEntry"):
+        class _ConfigEntry:
+            pass
+
+        config_entries_module.ConfigEntry = _ConfigEntry
+
+    core_module = sys.modules.setdefault("homeassistant.core", types.ModuleType("homeassistant.core"))
+    if not hasattr(core_module, "HomeAssistant"):
+        class _HomeAssistant:
+            pass
+
+        core_module.HomeAssistant = _HomeAssistant
 
     const_module = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
     if not hasattr(const_module, "EntityCategory"):
@@ -110,6 +155,13 @@ def _ensure_homeassistant_stubs() -> None:
 
         device_registry_module.DeviceInfo = _DeviceInfo
 
+    entity_platform_module = sys.modules.setdefault(
+        "homeassistant.helpers.entity_platform",
+        types.ModuleType("homeassistant.helpers.entity_platform"),
+    )
+    if not hasattr(entity_platform_module, "AddEntitiesCallback"):
+        entity_platform_module.AddEntitiesCallback = object
+
     update_coordinator_module = sys.modules.setdefault(
         "homeassistant.helpers.update_coordinator",
         types.ModuleType("homeassistant.helpers.update_coordinator"),
@@ -141,8 +193,10 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import binary_sensor as binary_sensor_platform
+from custom_components.helianthus import date as date_platform
 from custom_components.helianthus import number as number_platform
 from custom_components.helianthus import sensor as sensor_platform
+from custom_components.helianthus import text as text_platform
 from custom_components.helianthus.const import DOMAIN
 
 
@@ -150,6 +204,7 @@ class _FakeCoordinator:
     def __init__(self, data) -> None:  # noqa: ANN001
         self.data = data
         self.refresh_requests = 0
+        self.last_update_success = True
 
     async def async_request_refresh(self) -> None:
         self.refresh_requests += 1
@@ -193,6 +248,10 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
                 "hc_emergency_temperature": 55.0,
                 "hwc_max_flow_temp_desired": 62.0,
                 "max_room_humidity": 65,
+                "maintenance_date": "2026-05-05",
+                "installer_name": "Installer",
+                "installer_phone": "+401234",
+                "installer_menu_code": 12,
             },
             "properties": {
                 "system_scheme": 3,
@@ -203,7 +262,7 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
     client = _FakeClient()
     payload = {
         "device_coordinator": _FakeCoordinator([]),
-        "status_coordinator": _FakeCoordinator({"daemon": {}, "adapter": {}}),
+        "status_coordinator": _FakeCoordinator({"admission": {"trusted": True}}),
         "semantic_coordinator": _FakeCoordinator({"zones": [], "dhw": None}),
         "energy_coordinator": None,
         "circuit_coordinator": None,
@@ -317,3 +376,71 @@ def test_system_number_entities_write_set_system_config_mutation() -> None:
     assert [call["variables"]["value"] for call in client.calls] == ["-1.0", "70"]
     assert system_coordinator.refresh_requests == 2
     assert hc_bivalence.device_info["identifiers"] == {payload["regulator_device_id"]}
+
+
+def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None:
+    payload, _system_coordinator, client = _build_payload()
+    payload["status_coordinator"].data["admission"]["trusted"] = False
+    payload["boiler_coordinator"] = _FakeCoordinator(
+        {"boiler_status": {"config": {"phone_number": "401234", "installer_menu_code": 12}}}
+    )
+    payload["boiler_device_id"] = ("helianthus", "entry-1-bus-BAI00-08")
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+
+    number_entities: list = []
+    date_entities: list = []
+    text_entities: list = []
+    asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
+    asyncio.run(date_platform.async_setup_entry(hass, entry, date_entities.extend))
+    asyncio.run(text_platform.async_setup_entry(hass, entry, text_entities.extend))
+
+    hc_bivalence = next(
+        entity
+        for entity in number_entities
+        if isinstance(entity, number_platform.HelianthusSystemNumber)
+        and entity._field.mutation_field == "hc_bivalence_point_c"
+    )
+    maintenance_date = next(
+        entity
+        for entity in date_entities
+        if isinstance(entity, date_platform.HelianthusMaintenanceDate)
+    )
+    installer_name = next(
+        entity
+        for entity in text_entities
+        if isinstance(entity, text_platform.HelianthusSystemText)
+        and entity._field.key == "installer_name"
+    )
+    menu_code = next(
+        entity
+        for entity in text_entities
+        if isinstance(entity, text_platform.HelianthusInstallerMenuCodeText)
+        and entity._field.source == "system"
+    )
+    boiler_phone = next(
+        entity
+        for entity in text_entities
+        if isinstance(entity, text_platform.HelianthusBoilerText)
+    )
+    boiler_menu_code = next(
+        entity
+        for entity in text_entities
+        if isinstance(entity, text_platform.HelianthusInstallerMenuCodeText)
+        and entity._field.source == "boiler"
+    )
+
+    with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(hc_bivalence.async_set_native_value(-1.0))
+    with pytest.raises(date_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(maintenance_date.async_set_value(date_platform.datetime.date(2026, 5, 6)))
+    with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(installer_name.async_set_value("NewName"))
+    with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(menu_code.async_set_value("123"))
+    with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(boiler_phone.async_set_value("401234"))
+    with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(boiler_menu_code.async_set_value("123"))
+
+    assert client.calls == []
