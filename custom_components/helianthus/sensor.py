@@ -74,7 +74,12 @@ STATUS_FIELDS = [
 ]
 
 DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
-    InventoryField("initiator_address", "eBUS Initiator Address", icon="mdi:chip")
+    InventoryField("initiator_address", "eBUS Initiator Address", icon="mdi:chip"),
+    InventoryField("admission_trusted", "Admission Trusted", icon="mdi:shield-check-outline"),
+    InventoryField("admission_repair_code", "Admission Repair Code", icon="mdi:alert-circle-outline"),
+    InventoryField("source_selection_state", "Source Selection State", icon="mdi:source-branch"),
+    InventoryField("source_selection_reason", "Source Selection Reason", icon="mdi:message-alert-outline"),
+    InventoryField("source_selection_selected_source", "Selected Source", icon="mdi:chip"),
 ]
 
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
@@ -1036,7 +1041,8 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         field: InventoryField,
     ) -> None:
         super().__init__(coordinator)
-        self._status = status
+        self._target_key = str(target_name or "").strip().lower()
+        self._fallback_status = status
         self._field = field
         self._identifier = identifier or (DOMAIN, f"unknown-{target_name.lower()}")
         self._attr_name = field.name
@@ -1050,7 +1056,11 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        return self._status.get(self._field.key)
+        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+        status = data.get(self._target_key)
+        if not isinstance(status, dict):
+            status = self._fallback_status
+        return status.get(self._field.key)
 
 
 class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):

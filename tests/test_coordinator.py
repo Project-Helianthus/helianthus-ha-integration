@@ -54,6 +54,8 @@ from custom_components.helianthus.coordinator import (
     QUERY_SEMANTIC_NO_QV,
     QUERY_SEMANTIC_LEGACY,
     QUERY_STATUS,
+    QUERY_STATUS_NO_INITIATOR,
+    QUERY_STATUS_MINIMAL,
     QUERY_STATUS_LEGACY,
     QUERY_SYSTEM,
     UpdateFailed,
@@ -283,6 +285,19 @@ def test_status_query_uses_initiator_field_when_available() -> None:
     client = _ScriptedClient(
         [
             {
+                "busSummary": {
+                    "status": {
+                        "bus_admission": {
+                            "source_selection": {
+                                "state": "active",
+                                "outcome": "active_probe_passed",
+                                "selected_source": 0xF7,
+                                "retryable": False,
+                                "automatic_retry_scheduled": False,
+                            }
+                        }
+                    }
+                },
                 "daemon_status": {
                     "status": "running",
                     "firmware_version": "0.3.10",
@@ -302,6 +317,11 @@ def test_status_query_uses_initiator_field_when_available() -> None:
     data = asyncio.run(coordinator._async_update_data())
 
     assert data["daemon"]["initiator_address"] == "0xF7"
+    assert data["admission"]["trusted"] is True
+    assert data["admission"]["selected_source"] == 0xF7
+    assert data["raw_admission"]["trusted"] is True
+    assert data["daemon"]["admission_trusted"] is True
+    assert data["daemon"]["source_selection_selected_source"] == "0xF7"
     assert client.calls == [QUERY_STATUS]
 
 
@@ -331,7 +351,128 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
 
     assert data["daemon"]["status"] == "running"
     assert "initiator_address" not in data["daemon"]
-    assert client.calls == [QUERY_STATUS, QUERY_STATUS_LEGACY]
+    assert data["admission"]["trusted"] is False
+    assert data["admission"]["repair_code"] == "schema_incompatible"
+    assert client.calls == [QUERY_STATUS, QUERY_STATUS_NO_INITIATOR]
+
+
+def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "initiator_address" on type "ServiceStatus".'}]
+            ),
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "busSummary" on type "Query".'}]
+            ),
+            {
+                "daemon_status": {
+                    "status": "running",
+                    "firmware_version": "0.3.10",
+                    "updates_available": False,
+                },
+                "adapter_status": {
+                    "status": "ok",
+                    "firmware_version": "3.0",
+                    "updates_available": False,
+                },
+            },
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["daemon"]["status"] == "running"
+    assert data["admission"]["trusted"] is False
+    assert data["admission"]["repair_code"] == "schema_incompatible"
+    assert client.calls == [QUERY_STATUS, QUERY_STATUS_NO_INITIATOR, QUERY_STATUS_MINIMAL]
+
+
+def test_status_query_partial_source_selection_schema_fails_closed() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "failed_source" on type "BusAdmissionSourceSelection".'}]
+            ),
+            {
+                "daemon_status": {
+                    "status": "running",
+                    "firmware_version": "0.3.10",
+                    "updates_available": False,
+                },
+                "adapter_status": {
+                    "status": "ok",
+                    "firmware_version": "3.0",
+                    "updates_available": False,
+                },
+            },
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["daemon"]["status"] == "running"
+    assert data["admission"]["trusted"] is False
+    assert data["admission"]["repair_code"] == "schema_incompatible"
+    assert data["daemon"]["admission_trusted"] is False
+    assert client.calls == [QUERY_STATUS, QUERY_STATUS_MINIMAL]
+
+
+def test_status_query_missing_bus_summary_status_field_fails_closed() -> None:
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "status" on type "BusSummary".'}]
+            ),
+            {
+                "daemon_status": {"status": "running"},
+                "adapter_status": {"status": "ok"},
+            },
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["daemon"]["status"] == "running"
+    assert data["admission"]["trusted"] is False
+    assert data["admission"]["repair_code"] == "schema_incompatible"
+    assert client.calls == [QUERY_STATUS, QUERY_STATUS_MINIMAL]
+
+
+def test_status_query_marks_degraded_admission_untrusted() -> None:
+    client = _ScriptedClient(
+        [
+            {
+                "busSummary": {
+                    "status": {
+                        "bus_admission": {
+                            "source_selection": {
+                                "state": "degraded",
+                                "outcome": "all_candidates_failed",
+                                "reason": "all_candidates_failed",
+                                "selected_source": None,
+                                "retryable": True,
+                                "automatic_retry_scheduled": False,
+                            }
+                        }
+                    }
+                },
+                "daemon_status": {"status": "running"},
+                "adapter_status": {"status": "ok"},
+            }
+        ]
+    )
+    coordinator = _build_status_coordinator(client)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data["admission"]["trusted"] is False
+    assert data["admission"]["repair_code"] == "admission_degraded"
+    assert data["admission"]["reason"] == "all_candidates_failed"
+    assert client.calls == [QUERY_STATUS]
 
 
 def test_adapter_info_query_missing_root_field_reprobes_after_backoff(

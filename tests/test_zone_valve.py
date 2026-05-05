@@ -259,7 +259,7 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "daemon_source_address": 0x31,
+        "admission_trusted": True,
     }
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -328,7 +328,7 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "daemon_source_address": 0x31,
+        "admission_trusted": True,
     }
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
@@ -523,7 +523,7 @@ def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "daemon_source_address": 0x31,
+        "admission_trusted": True,
     }
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
