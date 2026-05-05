@@ -87,7 +87,7 @@ def _params_value(node: ast.Dict) -> ast.AST:
     raise AssertionError("write variable dict has no params key")
 
 
-def test_status_queries_consume_only_snake_case_source_selection_admission() -> None:
+def test_source_selection_schema_no_legacy_admission_fields() -> None:
     for query_name in ("QUERY_STATUS", "QUERY_STATUS_NO_INITIATOR"):
         query = _constant_string_assignment(COORDINATOR, query_name)
         assert "bus_admission" in query
@@ -111,7 +111,7 @@ def test_integration_code_has_no_legacy_admission_field_dependency() -> None:
     assert offenders == []
 
 
-def test_write_mutation_payloads_have_no_source_or_fixed_source_fallback() -> None:
+def test_writes_use_admitted_source_without_fallback() -> None:
     checked: list[str] = []
     offenders: list[str] = []
 
