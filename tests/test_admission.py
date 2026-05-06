@@ -1,5 +1,7 @@
 """Tests for source-selection admission normalization."""
 
+import pytest
+
 from custom_components.helianthus.admission import (
     REPAIR_EMPTY_INVENTORY_UNTRUSTED,
     apply_empty_inventory_guard,
@@ -39,6 +41,55 @@ def test_source_selection_from_status_payload_marks_missing_schema_incompatible(
 
     assert admission["trusted"] is False
     assert admission["repair_code"] == "schema_incompatible"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "busSummary": {
+                "status": {
+                    "busAdmission": {
+                        "sourceSelection": {
+                            "state": "active",
+                            "outcome": "active_probe_passed",
+                            "selectedSource": int("31", 16),
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "busSummary": {
+                "status": {
+                    "bus_admission": {
+                        "sourceSelection": {
+                            "state": "active",
+                            "outcome": "active_probe_passed",
+                            "selectedSource": int("71", 16),
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "busSummary": {
+                "status": {
+                    "admission": {
+                        "trusted": True,
+                        "selectedSource": int("31", 16),
+                    }
+                }
+            }
+        },
+    ],
+)
+def test_legacy_admission_shapes_fail_closed(payload: dict) -> None:
+    admission = source_selection_from_status_payload(payload)
+
+    assert admission["trusted"] is False
+    assert admission["repair_code"] == "schema_incompatible"
+    assert admission["selected_source"] is None
 
 
 def test_empty_inventory_guard_marks_active_admission_untrusted() -> None:
