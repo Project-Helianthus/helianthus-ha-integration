@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_ROOT = REPO_ROOT / "custom_components" / "helianthus"
@@ -23,6 +24,12 @@ LEGACY_ADMISSION_TOKENS = (
 
 FIXED_WRITE_SOURCE_VALUES = {int("31", 16), int("71", 16)}
 FIXED_WRITE_SOURCE_STRINGS = {"31", "71", "0x31", "0x71"}
+
+
+class WriteVariables(NamedTuple):
+    path: Path
+    node: ast.Dict
+    scope: ast.AST
 
 
 def _python_sources() -> list[Path]:
@@ -69,14 +76,32 @@ def _contains_fixed_source_literal(node: ast.AST) -> bool:
     return False
 
 
-def _write_variable_dicts(path: Path) -> list[ast.Dict]:
+def _parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    return parents
+
+
+def _nearest_scope(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.AST:
+    current = node
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Module):
+            return current
+    return current
+
+
+def _write_variable_dicts(path: Path) -> list[WriteVariables]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    writes: list[ast.Dict] = []
+    parents = _parent_map(tree)
+    writes: list[WriteVariables] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict):
             continue
         if any(_string_key(key) == "params" for key in node.keys):
-            writes.append(node)
+            writes.append(WriteVariables(path=path, node=node, scope=_nearest_scope(node, parents)))
     return writes
 
 
@@ -85,6 +110,50 @@ def _params_value(node: ast.Dict) -> ast.AST:
         if _string_key(key) == "params":
             return value
     raise AssertionError("write variable dict has no params key")
+
+
+def _assigned_name_value(scope: ast.AST, name: str, before_lineno: int) -> ast.AST | None:
+    assigned: ast.AST | None = None
+    for child in ast.walk(scope):
+        if not isinstance(child, ast.Assign):
+            continue
+        if child.lineno >= before_lineno:
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in child.targets):
+            continue
+        assigned = child.value
+    return assigned
+
+
+def _resolve_name_once(scope: ast.AST, node: ast.AST) -> ast.AST:
+    if not isinstance(node, ast.Name):
+        return node
+    return _assigned_name_value(scope, node.id, node.lineno) or node
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _write_source_offenders(paths: list[Path]) -> tuple[list[str], list[str]]:
+    checked: list[str] = []
+    offenders: list[str] = []
+
+    for path in paths:
+        for write in _write_variable_dicts(path):
+            node = write.node
+            display = _display_path(path)
+            checked.append(f"{display}:{node.lineno}")
+            params = _resolve_name_once(write.scope, _params_value(node))
+            if _contains_source_key(params):
+                offenders.append(f"{display}:{node.lineno}: params.source")
+            if _contains_fixed_source_literal(node) or _contains_fixed_source_literal(params):
+                offenders.append(f"{display}:{node.lineno}: fixed source literal")
+
+    return checked, offenders
 
 
 def test_source_selection_schema_no_legacy_admission_fields() -> None:
@@ -112,17 +181,24 @@ def test_integration_code_has_no_legacy_admission_field_dependency() -> None:
 
 
 def test_writes_use_admitted_source_without_fallback() -> None:
-    checked: list[str] = []
-    offenders: list[str] = []
-
-    for path in _python_sources():
-        for node in _write_variable_dicts(path):
-            checked.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
-            params = _params_value(node)
-            if _contains_source_key(params):
-                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: params.source")
-            if _contains_fixed_source_literal(node):
-                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: fixed source literal")
+    checked, offenders = _write_source_offenders(_python_sources())
 
     assert checked
     assert offenders == []
+
+
+def test_write_gate_follows_indirect_params_assignment(tmp_path: Path) -> None:
+    module = tmp_path / "indirect_payload.py"
+    module.write_text(
+        """
+async def write(client, admitted_source):
+    params = {"source": admitted_source}
+    variables = {"address": 8, "params": params}
+    await client.mutation("mutation", variables)
+""",
+        encoding="utf-8",
+    )
+
+    _, offenders = _write_source_offenders([module])
+
+    assert offenders == [f"{module}:4: params.source"]
