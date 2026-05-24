@@ -12,12 +12,14 @@ from custom_components.helianthus.device_ids import (
     daemon_identifier,
     dhw_identifier,
     energy_identifier,
+    exportable_radio_bus_keys,
     has_bus_identity_evidence,
     managing_device_identifier,
     radio_device_identifier,
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
     resolve_bus_address,
+    should_export_radio_device,
     solar_identifier,
     zone_identifier,
 )
@@ -65,6 +67,48 @@ def test_has_bus_identity_evidence_rejects_address_only_payload() -> None:
 def test_has_bus_identity_evidence_accepts_device_identity_payload() -> None:
     assert has_bus_identity_evidence({"address": 0x15, "device_id": "BASV2"})
     assert has_bus_identity_evidence({"address": 0x08, "serial_number": "ABC123"})
+
+
+def test_should_export_radio_device_rejects_identityless_inventory_slot() -> None:
+    assert not should_export_radio_device(
+        {
+            "group": 0x0C,
+            "instance": 0,
+            "device_connected": True,
+            "device_class_address": 0,
+            "device_model": "Unknown (0x00)",
+            "hardware_identifier": 0,
+        }
+    )
+
+
+def test_should_export_radio_device_accepts_known_radio_identities() -> None:
+    assert should_export_radio_device({"group": 0x09, "device_connected": True})
+    assert should_export_radio_device({"group": 0x0C, "device_class_address": 0x26})
+    assert should_export_radio_device({"group": 0x0C, "hardware_identifier": 1})
+
+
+def test_exportable_radio_bus_keys_ignores_identityless_inventory_slots() -> None:
+    assert exportable_radio_bus_keys(
+        [
+            {
+                "group": 0x0C,
+                "instance": 0,
+                "radio_bus_key": "g0c-i00",
+                "device_connected": True,
+                "device_class_address": 0,
+                "device_model": "Unknown (0x00)",
+                "hardware_identifier": 0,
+            },
+            {
+                "group": 0x09,
+                "instance": 1,
+                "radio_bus_key": "g09-i01",
+                "device_connected": True,
+                "device_class_address": 0x15,
+            },
+        ]
+    ) == {"g09-i01"}
 
 
 def test_alias_faces_share_fallback_key_when_alias_addresses_match() -> None:

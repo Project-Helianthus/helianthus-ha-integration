@@ -22,6 +22,7 @@ from .device_ids import (
     has_bus_identity_evidence,
     radio_device_identifier,
     resolve_bus_address,
+    should_export_radio_device,
     solar_identifier,
     stable_bus_identity_model,
 )
@@ -537,16 +538,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     daemon_status = status_entries.get("daemon", {})
     adapter_status = status_entries.get("adapter", {})
 
-    sensors.extend(
-        HelianthusStatusSensor(
-            status_coordinator,
-            "Daemon",
-            daemon_status,
-            data.get("daemon_device_id"),
-            field,
+    for field in DAEMON_STATUS_FIELDS:
+        if field.optional and daemon_status.get(field.key) is None:
+            continue
+        sensors.append(
+            HelianthusStatusSensor(
+                status_coordinator,
+                "Daemon",
+                daemon_status,
+                data.get("daemon_device_id"),
+                field,
+            )
         )
-        for field in DAEMON_STATUS_FIELDS
-    )
     sensors.extend(
         HelianthusStatusSensor(
             status_coordinator,
@@ -638,6 +641,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         radio_devices = radio_coordinator.data.get("radio_devices", []) or []
         for radio in radio_devices:
             if not isinstance(radio, dict):
+                continue
+            if not should_export_radio_device(radio):
                 continue
             slot = _radio_slot(radio)
             bus_key = _radio_bus_key(radio)

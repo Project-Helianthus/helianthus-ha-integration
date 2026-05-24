@@ -591,12 +591,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bus_identifier,
         circuit_identifier,
         daemon_identifier,
+        exportable_radio_bus_keys,
         has_bus_identity_evidence,
         managing_device_identifier,
         radio_device_identifier,
+        radio_bus_key_from_device,
         resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
+        should_export_radio_device,
         stable_bus_identity_model,
         zone_identifier,
     )
@@ -1040,6 +1043,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     radio_devices_payload = radio_payload.get("radio_devices")
     if not isinstance(radio_devices_payload, list):
         radio_devices_payload = []
+    radio_devices_payload = [
+        device
+        for device in radio_devices_payload
+        if isinstance(device, dict) and should_export_radio_device(device)
+    ]
 
     # ADR-027: Merge B524 function-module enrichment into physical bus devices.
     # Group 0x0C entries whose deviceClassAddress matches a known bus address
@@ -1047,8 +1055,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _B524_FUNCTION_MODULE_GROUP = 0x0C
     b524_merge_targets: dict[str, tuple[str, str]] = {}
     for device in radio_devices_payload:
-        if not isinstance(device, dict):
-            continue
         group = parse_optional_int(device.get("group"))
         if group != _B524_FUNCTION_MODULE_GROUP:
             continue
@@ -1058,12 +1064,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bus_device_id = bus_address_device_ids.get(class_addr)
         if bus_device_id is None:
             continue
-        inst = parse_optional_int(device.get("instance"))
-        if inst is None:
+        bus_key = radio_bus_key_from_device(device)
+        if bus_key is None:
             continue
-        bus_key = str(device.get("radio_bus_key") or "").strip()
-        if not bus_key:
-            bus_key = build_radio_bus_key(group, inst)
         b524_merge_targets[bus_key] = bus_device_id
         _LOGGER.debug(
             "B524 merge: radio slot %s (group=0x%02X, class_addr=%d) -> bus device %s",
@@ -1073,15 +1076,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     known_radio_bus_keys: set[str] = set()
     radio_parent = regulator_device or adapter_device_id
     for device in radio_devices_payload:
-        if not isinstance(device, dict):
-            continue
         group = parse_optional_int(device.get("group"))
         instance = parse_optional_int(device.get("instance"))
         if group is None or instance is None:
             continue
-        bus_key = str(device.get("radio_bus_key") or "").strip()
-        if not bus_key:
-            bus_key = build_radio_bus_key(group, instance)
+        bus_key = radio_bus_key_from_device(device)
+        if bus_key is None:
+            continue
         known_radio_bus_keys.add(bus_key)
         # ADR-027: skip HA device creation for merged B524 function module slots.
         if bus_key in b524_merge_targets:
@@ -1456,6 +1457,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             remove_entry = False
             if entity_entry.domain in {"fan", "valve", "switch"}:
                 remove_entry = True
+            elif unique_id in status_sparse_unique_ids and not _is_sparse_entity_live(unique_id):
+                remove_entry = True
             elif _stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
                 remove_entry = True
             elif entity_entry.domain == "number" and re.match(
@@ -1560,6 +1563,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "INTEGRATION",
                 integration_disabler,
             )
+        existing_unique_ids = {
+            str(entity_entry.unique_id or "")
+            for entity_entry in _entry_entities()
+            if entity_entry.platform == DOMAIN
+        }
+        missing_live_status_ids = [
+            unique_id
+            for unique_id in status_sparse_unique_ids
+            if unique_id not in existing_unique_ids and _is_sparse_entity_live(unique_id)
+        ]
+        if missing_live_status_ids:
+            _LOGGER.info(
+                "Helianthus scheduling reload for %d live sparse status entities for entry %s (%s)",
+                len(missing_live_status_ids),
+                entry.entry_id,
+                reason,
+            )
+            schedule_reload("sparse status entities became live")
+            return
         enabled = 0
         for entity_entry in _entry_entities():
             if entity_entry.platform != DOMAIN:
@@ -1809,19 +1831,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def handle_radio_update() -> None:
         payload = radio_coordinator.data or {}
-        current_keys: set[str] = set()
-        for radio in payload.get("radio_devices", []) or []:
-            if not isinstance(radio, dict):
-                continue
-            key = str(radio.get("radio_bus_key") or "").strip()
-            if key:
-                current_keys.add(key)
-                continue
-            group = parse_optional_int(radio.get("group"))
-            instance = parse_optional_int(radio.get("instance"))
-            if group is None or instance is None:
-                continue
-            current_keys.add(build_radio_bus_key(group, instance))
+        radio_devices = payload.get("radio_devices", []) or []
+        current_keys = exportable_radio_bus_keys(radio_devices)
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
             zone_parent_device_ids,
