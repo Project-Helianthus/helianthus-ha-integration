@@ -454,6 +454,18 @@ def _parse_identifier_index(token: str, prefix: str) -> int | None:
     return value
 
 
+def _config_entry_sort_key(config_entry: object) -> str:
+    """Return a stable ordering key for duplicate config entry ownership."""
+
+    return str(getattr(config_entry, "entry_id", "") or "")
+
+
+def _config_entry_enabled(config_entry: object) -> bool:
+    """Return whether a config entry may own live gateway setup."""
+
+    return getattr(config_entry, "disabled_by", None) is None
+
+
 async def _find_verified_entry_by_configured_instance_guid(
     hass: object,
     session: object,
@@ -467,8 +479,12 @@ async def _find_verified_entry_by_configured_instance_guid(
         verify_gateway_identity,
     )
 
+    owner_entry: object | None = None
+
     for config_entry in hass.config_entries.async_entries(DOMAIN):
         if getattr(config_entry, "entry_id", None) == exclude_entry_id:
+            continue
+        if not _config_entry_enabled(config_entry):
             continue
         data = getattr(config_entry, "data", None) or {}
         if (
@@ -503,8 +519,11 @@ async def _find_verified_entry_by_configured_instance_guid(
                 getattr(exc, "reason", type(exc).__name__),
             )
             continue
-        return config_entry
-    return None
+        if owner_entry is None or _config_entry_sort_key(config_entry) < _config_entry_sort_key(
+            owner_entry
+        ):
+            owner_entry = config_entry
+    return owner_entry
 
 
 def _merge_duplicate_config_entry_options(
@@ -551,6 +570,29 @@ def _schedule_duplicate_config_entry_removal(hass: object, entry_id: str) -> boo
         return False
     async_create_task(async_remove(entry_id))
     return True
+
+
+def _remove_config_entry_registry_state(
+    *,
+    device_registry: object,
+    entity_registry: object,
+    entry_id: str,
+    device_entries_for_config_entry: object,
+    entity_entries_for_config_entry: object,
+) -> tuple[int, int]:
+    """Remove device/entity registry rows that belong only to a duplicate entry."""
+
+    removed_entities = 0
+    for entity_entry in tuple(entity_entries_for_config_entry(entity_registry, entry_id)):
+        entity_registry.async_remove(entity_entry.entity_id)
+        removed_entities += 1
+
+    removed_devices = 0
+    for device_entry in tuple(device_entries_for_config_entry(device_registry, entry_id)):
+        device_registry.async_remove_device(device_entry.id)
+        removed_devices += 1
+
+    return removed_entities, removed_devices
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -610,6 +652,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
+
+    def refuse_duplicate_setup(owner_entry: object, instance_guid: str) -> bool:
+        options_merged = _merge_duplicate_config_entry_options(
+            hass,
+            alias_entry=entry,
+            owner_entry=owner_entry,
+        )
+        removed_entities, removed_devices = _remove_config_entry_registry_state(
+            device_registry=device_registry,
+            entity_registry=entity_registry,
+            entry_id=entry.entry_id,
+            device_entries_for_config_entry=dr.async_entries_for_config_entry,
+            entity_entries_for_config_entry=er.async_entries_for_config_entry,
+        )
+        _LOGGER.warning(
+            "Refusing to set up Helianthus entry %s because %s reports "
+            "instance GUID %s already owned by entry %s; removed %d stale "
+            "entities and %d stale devices; migrated_options=%s",
+            entry.entry_id,
+            host,
+            instance_guid,
+            owner_entry.entry_id,
+            removed_entities,
+            removed_devices,
+            options_merged,
+        )
+        if _schedule_duplicate_config_entry_removal(hass, entry.entry_id):
+            _LOGGER.warning(
+                "Scheduled duplicate Helianthus config entry %s for removal",
+                entry.entry_id,
+            )
+        return False
 
     # Phase C2: migrate camelCase unique_ids to snake_case before platform setup.
     uid_migrated = _migrate_unique_ids_to_snake_case(hass, entry)
@@ -714,41 +788,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 exclude_entry_id=entry.entry_id,
             )
             if duplicate_entry is not None:
-                options_merged = _merge_duplicate_config_entry_options(
-                    hass,
-                    alias_entry=entry,
-                    owner_entry=duplicate_entry,
-                )
-                removed_entities = 0
-                for entity_entry in tuple(
-                    er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-                ):
-                    entity_registry.async_remove(entity_entry.entity_id)
-                    removed_entities += 1
-                removed_devices = 0
-                for device_entry in tuple(
-                    dr.async_entries_for_config_entry(device_registry, entry.entry_id)
-                ):
-                    device_registry.async_remove_device(device_entry.id)
-                    removed_devices += 1
-                _LOGGER.warning(
-                    "Refusing to set up Helianthus entry %s because %s now reports "
-                    "instance GUID %s already owned by entry %s; removed %d stale "
-                    "entities and %d stale devices; migrated_options=%s",
-                    entry.entry_id,
-                    host,
-                    live_instance_guid,
-                    duplicate_entry.entry_id,
-                    removed_entities,
-                    removed_devices,
-                    options_merged,
-                )
-                if _schedule_duplicate_config_entry_removal(hass, entry.entry_id):
-                    _LOGGER.warning(
-                        "Scheduled duplicate Helianthus config entry %s for removal",
-                        entry.entry_id,
-                    )
-                return False
+                return refuse_duplicate_setup(duplicate_entry, live_instance_guid)
 
             entry_instance_guid = live_instance_guid
             hass.config_entries.async_update_entry(
@@ -770,6 +810,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.entry_id,
                 entry_instance_guid,
             )
+        else:
+            duplicate_entry = await _find_verified_entry_by_configured_instance_guid(
+                hass,
+                session,
+                live_instance_guid,
+                exclude_entry_id=entry.entry_id,
+            )
+            if (
+                duplicate_entry is not None
+                and _config_entry_sort_key(duplicate_entry)
+                < _config_entry_sort_key(entry)
+            ):
+                return refuse_duplicate_setup(duplicate_entry, live_instance_guid)
 
     if entry_instance_guid is not None:
         normalized_unique_id = normalize_instance_guid(entry.unique_id)
