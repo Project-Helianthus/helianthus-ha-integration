@@ -32,6 +32,7 @@ class InventoryField:
     key: str
     name: str
     icon: str | None = None
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,12 @@ STATUS_FIELDS = [
 DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
     InventoryField("initiator_address", "eBUS Initiator Address", icon="mdi:chip"),
     InventoryField("admission_trusted", "Admission Trusted", icon="mdi:shield-check-outline"),
-    InventoryField("admission_repair_code", "Admission Repair Code", icon="mdi:alert-circle-outline"),
+    InventoryField(
+        "admission_repair_code",
+        "Admission Repair Code",
+        icon="mdi:alert-circle-outline",
+        optional=True,
+    ),
     InventoryField("source_selection_state", "Source Selection State", icon="mdi:source-branch"),
     InventoryField("source_selection_reason", "Source Selection Reason", icon="mdi:message-alert-outline"),
     InventoryField("source_selection_selected_source", "Selected Source", icon="mdi:chip"),
@@ -1049,6 +1055,8 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{self._identifier[1]}-{field.key}"
         if field.icon is not None:
             self._attr_icon = field.icon
+        if field.optional:
+            self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1083,6 +1091,7 @@ class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
         self._field = field
         self._attr_name = field.label
         self._attr_unique_id = f"{entry_id}-boiler-{field.key}"
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     def _boiler_state(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1242,6 +1251,7 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
             self._attr_entity_category = field.entity_category
         if field.icon is not None:
             self._attr_icon = field.icon
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1750,6 +1760,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
         self._target_device_id = target_device_id
         self._attr_name = "Valve Position"
         self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-valve_position_pct"
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     def _zone(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -1813,6 +1824,7 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = (
             f"{entry_id}-{target[0]}-{target[1] or 'dhw'}-heating-demand"
         )
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1996,6 +2008,7 @@ class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = state_class
         if icon is not None:
             self._attr_icon = icon
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -2033,6 +2046,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
         self._boiler_device_id = boiler_device_id
         self._attr_unique_id = f"{entry_id}-boiler-sensor-hours_till_service"
         self._attr_name = "Hours Till Service"
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:

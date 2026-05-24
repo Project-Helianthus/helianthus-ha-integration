@@ -476,6 +476,53 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
     assert semantic.data["zones"][2]["id"] == "zone-2"
 
 
+def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:
+    class _FakeSemanticCoordinator:
+        def __init__(self) -> None:
+            self.data = {
+                "zones": [],
+                "dhw": {
+                    "state": {
+                        "current_temp_c": 47.0,
+                        "special_function": "off",
+                    },
+                    "config": {
+                        "operating_mode": "auto",
+                        "target_temp_c": 50.0,
+                    },
+                },
+            }
+
+        def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
+            self.data = payload
+
+    semantic = _FakeSemanticCoordinator()
+
+    asyncio.run(
+        subscriptions._handle_message(
+            {
+                "type": "next",
+                "payload": {
+                    "data": {
+                        "dhw_update": {
+                            "state": {"current_temp_c": 49.0},
+                        }
+                    }
+                },
+            },
+            semantic_coordinator=semantic,
+            energy_coordinator=None,
+            boiler_coordinator=None,
+            radio_coordinator=None,
+        )
+    )
+
+    assert semantic.data["dhw"]["state"]["current_temp_c"] == 49.0
+    assert semantic.data["dhw"]["state"]["special_function"] == "off"
+    assert semantic.data["dhw"]["config"]["operating_mode"] == "auto"
+    assert semantic.data["dhw"]["config"]["target_temp_c"] == 50.0
+
+
 def test_radio_zone_candidates_update_on_reassignment() -> None:
     coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
     coordinator._last_by_slot = {}

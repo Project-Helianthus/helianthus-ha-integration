@@ -1181,6 +1181,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     cylinder_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-cylinder-(?P<index>\d+)-(?:(?:config-(?P<config_key>.+))|(?P<kind>temperature))$"
     )
+    status_sparse_unique_ids = frozenset(
+        {
+            f"daemon-{entry.entry_id}-admission_repair_code",
+        }
+    )
+    boiler_temp_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
+    )
+    boiler_sensor_sparse_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-boiler-sensor-(?P<key>hours_till_service)$"
+    )
+    boiler_text_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-boiler-text-(?P<key>phone_number)$"
+    )
+    circuit_sensor_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-circuit-(?P<index>\d+)-sensor-(?P<key>.+)$"
+    )
+    circuit_number_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-circuit-(?P<index>\d+)-number-(?P<key>.+)$"
+    )
+    adapter_hw_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-adapter-hw-(?P<key>.+)$"
+    )
+    zone_demand_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-zone-(?P<zone_id>.+)-heating-demand$"
+    )
+    zone_valve_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-zone-(?P<zone_id>.+)-sensor-valve_position_pct$"
+    )
+    dhw_demand_unique_id = f"{entry.entry_id}-dhw-dhw-heating-demand"
+    system_text_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-system-text-(?P<key>installer_name|installer_phone)$"
+    )
 
     def _entry_entities() -> tuple:
         return tuple(er.async_entries_for_config_entry(entity_registry, entry.entry_id))
@@ -1227,9 +1260,127 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             out[index] = {key for key, value in cylinder.items() if value is not None}
         return out
 
+    def _live_keys(payload: object) -> set[str]:
+        if not isinstance(payload, dict):
+            return set()
+        return {key for key, value in payload.items() if value is not None}
+
+    def _current_status_live_keys(target: str) -> set[str]:
+        payload = status_coordinator.data if status_coordinator else None
+        bucket = payload.get(target) if isinstance(payload, dict) else None
+        return _live_keys(bucket)
+
+    def _current_boiler_bucket_live_keys(bucket_name: str) -> set[str]:
+        payload = boiler_coordinator.data if boiler_coordinator else None
+        boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
+        bucket = boiler_status.get(bucket_name) if isinstance(boiler_status, dict) else None
+        return _live_keys(bucket)
+
+    def _current_circuit_live_keys(bucket_name: str, index: int) -> set[str]:
+        payload = circuit_coordinator.data if circuit_coordinator else None
+        if not isinstance(payload, dict):
+            return set()
+        for circuit in payload.get("circuits", []) or []:
+            if not isinstance(circuit, dict):
+                continue
+            if parse_optional_int(circuit.get("index")) != index:
+                continue
+            return _live_keys(circuit.get(bucket_name))
+        return set()
+
+    def _current_adapter_hw_live_keys() -> set[str]:
+        payload = adapter_info_coordinator.data if adapter_info_coordinator else None
+        return _live_keys(payload)
+
+    def _current_zone_state_live_keys(zone_id: str) -> set[str]:
+        payload = semantic_coordinator.data if semantic_coordinator else None
+        if not isinstance(payload, dict):
+            return set()
+        for zone in payload.get("zones", []) or []:
+            if not isinstance(zone, dict):
+                continue
+            if str(zone.get("id")) != zone_id:
+                continue
+            return _live_keys(zone.get("state"))
+        return set()
+
+    def _current_dhw_state_live_keys() -> set[str]:
+        payload = semantic_coordinator.data if semantic_coordinator else None
+        dhw = payload.get("dhw") if isinstance(payload, dict) else None
+        state = dhw.get("state") if isinstance(dhw, dict) else None
+        return _live_keys(state)
+
+    def _current_system_config_live_keys() -> set[str]:
+        payload = system_coordinator.data if system_coordinator else None
+        config = payload.get("config") if isinstance(payload, dict) else None
+        return _live_keys(config)
+
+    def _is_sparse_entity_candidate(unique_id: str | None) -> bool:
+        if not unique_id:
+            return False
+        return (
+            unique_id in status_sparse_unique_ids
+            or unique_id == dhw_demand_unique_id
+            or radio_sensor_unique_id_re.match(unique_id) is not None
+            or solar_unique_id_re.match(unique_id) is not None
+            or cylinder_unique_id_re.match(unique_id) is not None
+            or boiler_temp_unique_id_re.match(unique_id) is not None
+            or boiler_sensor_sparse_unique_id_re.match(unique_id) is not None
+            or boiler_text_unique_id_re.match(unique_id) is not None
+            or circuit_sensor_unique_id_re.match(unique_id) is not None
+            or circuit_number_unique_id_re.match(unique_id) is not None
+            or adapter_hw_unique_id_re.match(unique_id) is not None
+            or zone_demand_unique_id_re.match(unique_id) is not None
+            or zone_valve_unique_id_re.match(unique_id) is not None
+            or system_text_unique_id_re.match(unique_id) is not None
+        )
+
     def _is_sparse_entity_live(unique_id: str | None) -> bool:
         if not unique_id:
             return False
+        if unique_id in status_sparse_unique_ids:
+            return "admission_repair_code" in _current_status_live_keys("daemon")
+        if unique_id == dhw_demand_unique_id:
+            return "heating_demand_pct" in _current_dhw_state_live_keys()
+
+        boiler_temp_match = boiler_temp_unique_id_re.match(unique_id)
+        if boiler_temp_match:
+            return boiler_temp_match.group("key") in _current_boiler_bucket_live_keys("state")
+
+        boiler_sensor_match = boiler_sensor_sparse_unique_id_re.match(unique_id)
+        if boiler_sensor_match:
+            return boiler_sensor_match.group("key") in _current_boiler_bucket_live_keys("config")
+
+        boiler_text_match = boiler_text_unique_id_re.match(unique_id)
+        if boiler_text_match:
+            return boiler_text_match.group("key") in _current_boiler_bucket_live_keys("config")
+
+        circuit_sensor_match = circuit_sensor_unique_id_re.match(unique_id)
+        if circuit_sensor_match:
+            index = int(circuit_sensor_match.group("index"))
+            return circuit_sensor_match.group("key") in _current_circuit_live_keys("state", index)
+
+        circuit_number_match = circuit_number_unique_id_re.match(unique_id)
+        if circuit_number_match:
+            index = int(circuit_number_match.group("index"))
+            return circuit_number_match.group("key") in _current_circuit_live_keys("config", index)
+
+        adapter_hw_match = adapter_hw_unique_id_re.match(unique_id)
+        if adapter_hw_match:
+            return adapter_hw_match.group("key") in _current_adapter_hw_live_keys()
+
+        zone_demand_match = zone_demand_unique_id_re.match(unique_id)
+        if zone_demand_match:
+            return "heating_demand_pct" in _current_zone_state_live_keys(zone_demand_match.group("zone_id"))
+
+        zone_valve_match = zone_valve_unique_id_re.match(unique_id)
+        if zone_valve_match:
+            return "valve_position_pct" in _current_zone_state_live_keys(zone_valve_match.group("zone_id"))
+
+        system_text_match = system_text_unique_id_re.match(unique_id)
+        if system_text_match:
+            return system_text_match.group("key") in _current_system_config_live_keys()
+
         radio_match = radio_sensor_unique_id_re.match(unique_id)
         if radio_match:
             radio_slots_with_live_values = _current_radio_slots_with_live_values()
@@ -1399,6 +1550,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             schedule_reload("sparse entities became live")
 
+    def auto_disable_sparse_entities(reason: str) -> None:
+        registry_disabler = getattr(er, "RegistryEntryDisabler", None)
+        integration_disabler = "integration"
+        if registry_disabler is not None:
+            integration_disabler = getattr(
+                registry_disabler,
+                "INTEGRATION",
+                integration_disabler,
+            )
+        disabled = 0
+        for entity_entry in _entry_entities():
+            if entity_entry.platform != DOMAIN:
+                continue
+            if entity_entry.disabled_by is not None:
+                continue
+            unique_id = str(entity_entry.unique_id or "")
+            if not _is_sparse_entity_candidate(unique_id):
+                continue
+            if _is_sparse_entity_live(unique_id):
+                continue
+            entity_registry.async_update_entity(
+                entity_entry.entity_id,
+                disabled_by=integration_disabler,
+            )
+            disabled += 1
+        if disabled:
+            _LOGGER.info(
+                "Helianthus auto-disabled %d sparse entities for entry %s (%s)",
+                disabled,
+                entry.entry_id,
+                reason,
+            )
+            schedule_reload("sparse entities became null")
+
     def run_trusted_cleanup(reason: str) -> None:
         nonlocal cleanup_ran
         if cleanup_ran:
@@ -1411,6 +1596,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             return
         cleanup_obsolete_entity_registry_entries()
+        auto_disable_sparse_entities(reason)
         auto_enable_sparse_entities(reason)
         cleanup_obsolete_devices(reason)
         cleanup_ran = True
@@ -1551,6 +1737,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if current_ids and not current_ids.issubset(known_bus_devices):
             schedule_reload("new bus devices discovered")
             return
+        auto_enable_sparse_entities("status update")
         if cleanup_allowed and current_ids:
             run_trusted_cleanup("trusted admission status refresh")
 
@@ -1572,6 +1759,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         if has_new_zones or has_new_dhw:
             schedule_reload("semantic inventory became available")
+            return
+        auto_enable_sparse_entities("semantic update")
 
     def handle_circuit_update() -> None:
         payload = circuit_coordinator.data or {}
@@ -1584,6 +1773,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 current_indexes.add(index)
         if current_indexes - known_circuit_indexes:
             schedule_reload("circuit inventory became available")
+            return
+        auto_enable_sparse_entities("circuit update")
 
     def handle_radio_update() -> None:
         payload = radio_coordinator.data or {}
@@ -1630,6 +1821,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         auto_enable_sparse_entities("fm5 update")
 
+    def handle_boiler_update() -> None:
+        auto_enable_sparse_entities("boiler update")
+
+    def handle_adapter_info_update() -> None:
+        auto_enable_sparse_entities("adapter info update")
+
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(status_coordinator.async_add_listener(handle_status_update))
     unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
@@ -1637,6 +1834,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
     unsub_listeners.append(radio_coordinator.async_add_listener(handle_radio_update))
     unsub_listeners.append(fm5_coordinator.async_add_listener(handle_fm5_update))
+    unsub_listeners.append(boiler_coordinator.async_add_listener(handle_boiler_update))
+    unsub_listeners.append(adapter_info_coordinator.async_add_listener(handle_adapter_info_update))
 
     for zone_id, helper_entity in zone_schedule_helpers.items():
         @callback

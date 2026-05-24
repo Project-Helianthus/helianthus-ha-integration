@@ -196,6 +196,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         self._attr_name = field.label
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -276,6 +277,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         self._attr_name = field.label
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
+        self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
