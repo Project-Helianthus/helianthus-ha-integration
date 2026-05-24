@@ -14,6 +14,7 @@ from custom_components.helianthus.device_ids import (
     energy_identifier,
     exportable_radio_bus_keys,
     has_bus_identity_evidence,
+    is_b524_inventory_radio_bus_key,
     managing_device_identifier,
     nonexportable_radio_bus_keys,
     radio_device_identifier,
@@ -141,6 +142,13 @@ def test_nonexportable_radio_bus_keys_selects_observed_identityless_slots() -> N
             },
         ]
     ) == {"g0c-i00"}
+
+
+def test_is_b524_inventory_radio_bus_key_matches_only_inventory_group() -> None:
+    assert is_b524_inventory_radio_bus_key("g0c-i00")
+    assert is_b524_inventory_radio_bus_key("g0c-i02")
+    assert not is_b524_inventory_radio_bus_key("g09-i02")
+    assert not is_b524_inventory_radio_bus_key("")
 
 
 def test_alias_faces_share_fallback_key_when_alias_addresses_match() -> None:

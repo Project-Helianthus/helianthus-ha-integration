@@ -96,6 +96,12 @@ def radio_bus_key_from_device(device: dict) -> str | None:
     return build_radio_bus_key(group, instance)
 
 
+def is_b524_inventory_radio_bus_key(key: str | None) -> bool:
+    """Return whether a radio bus key belongs to the B524 inventory group."""
+
+    return bool(key and key.startswith("g0c-i"))
+
+
 def exportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
     """Return radio slot keys that should participate in HA inventory decisions."""
 
@@ -118,12 +124,11 @@ def nonexportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
     for device in devices:
         if not isinstance(device, dict):
             continue
-        group = _parse_bus_address(device.get("group"))
-        if group != 0x0C:
+        key = radio_bus_key_from_device(device)
+        if not is_b524_inventory_radio_bus_key(key):
             continue
         if should_export_radio_device(device):
             continue
-        key = radio_bus_key_from_device(device)
         if key:
             out.add(key)
     return out

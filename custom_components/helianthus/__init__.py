@@ -593,6 +593,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         daemon_identifier,
         exportable_radio_bus_keys,
         has_bus_identity_evidence,
+        is_b524_inventory_radio_bus_key,
         managing_device_identifier,
         nonexportable_radio_bus_keys,
         radio_device_identifier,
@@ -1494,14 +1495,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         reason: str,
     ) -> None:
         if not radio_keys:
-            return
+            radio_keys = set()
+        radio_keys_to_remove = set(radio_keys)
         removed_entities = 0
         for entity_entry in _entry_entities():
             if entity_entry.platform != DOMAIN:
                 continue
             unique_id = str(entity_entry.unique_id or "")
             radio_bus_key = _radio_bus_key_from_unique_id(unique_id)
-            if radio_bus_key not in radio_keys:
+            if radio_bus_key is None:
+                continue
+            if radio_bus_key not in radio_keys_to_remove and not (
+                is_b524_inventory_radio_bus_key(radio_bus_key)
+                and radio_bus_key not in known_radio_bus_keys
+            ):
                 continue
             entity_registry.async_remove(entity_entry.entity_id)
             removed_entities += 1
@@ -1513,7 +1520,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for identifier_domain, token in _iter_identifier_pairs(device_entry.identifiers):
                 if identifier_domain != DOMAIN or not token.startswith(radio_prefix):
                     continue
-                if token[len(radio_prefix):] in radio_keys:
+                radio_bus_key = token[len(radio_prefix):]
+                if radio_bus_key in radio_keys_to_remove or (
+                    is_b524_inventory_radio_bus_key(radio_bus_key)
+                    and radio_bus_key not in known_radio_bus_keys
+                ):
                     remove_device = True
                     break
             if not remove_device:
