@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 import voluptuous as vol
@@ -16,6 +17,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_HOST_ALIASES,
     CONF_INSTANCE_GUID,
     CONF_PATH,
     CONF_TRANSPORT,
@@ -28,6 +30,7 @@ from .discovery import normalize_transport, parse_mdns_service
 from .identity import (
     GatewayIdentityVerificationError,
     VerifiedHelianthusEndpoint,
+    candidate_hosts,
     configured_instance_guid,
     same_endpoint,
     updated_entry_data,
@@ -197,19 +200,46 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         *,
         version: str | None,
         title: str,
+        host_aliases: list[str] | tuple[str, ...] | None = None,
     ) -> FlowResult:
         if verified_endpoint is None:
             return self.async_abort(reason="invalid_response")
+
+        def with_host_aliases(data: dict[str, Any], primary_host: str) -> dict[str, Any]:
+            alias_source: Iterable[str] | None
+            if host_aliases is not None:
+                alias_source = host_aliases
+            else:
+                stored_aliases = data.get(CONF_HOST_ALIASES)
+                if isinstance(stored_aliases, str):
+                    alias_source = (stored_aliases,)
+                elif isinstance(stored_aliases, Iterable):
+                    alias_source = stored_aliases
+                else:
+                    alias_source = None
+            aliases = [
+                host
+                for host in candidate_hosts(primary_host, alias_source)
+                if host != primary_host
+            ]
+            if aliases:
+                data[CONF_HOST_ALIASES] = aliases
+            else:
+                data.pop(CONF_HOST_ALIASES, None)
+            return data
 
         instance_guid = verified_endpoint.instance_guid
         await self.async_set_unique_id(instance_guid)
         existing_entry = self._async_find_entry_by_guid(instance_guid)
 
         if existing_entry is not None:
-            existing_data = updated_entry_data(
-                existing_entry.data,
-                verified_endpoint,
-                version=version or verified_endpoint.version,
+            existing_data = with_host_aliases(
+                updated_entry_data(
+                    existing_entry.data,
+                    verified_endpoint,
+                    version=version or verified_endpoint.version,
+                ),
+                verified_endpoint.host,
             )
             if same_endpoint(existing_entry.data, verified_endpoint):
                 if (
@@ -242,10 +272,13 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         live_existing = await self._async_find_entry_by_live_guid(instance_guid)
         if live_existing is not None:
             existing_entry, current_verified = live_existing
-            existing_data = updated_entry_data(
-                existing_entry.data,
-                current_verified,
-                version=version or current_verified.version,
+            existing_data = with_host_aliases(
+                updated_entry_data(
+                    existing_entry.data,
+                    current_verified,
+                    version=version or current_verified.version,
+                ),
+                current_verified.host,
             )
             self.hass.config_entries.async_update_entry(
                 existing_entry,
@@ -256,10 +289,13 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.hass.config_entries.async_reload(existing_entry.entry_id)
             return self.async_abort(reason="reconfigured")
 
-        data = updated_entry_data(
-            {},
-            verified_endpoint,
-            version=version or verified_endpoint.version,
+        data = with_host_aliases(
+            updated_entry_data(
+                {},
+                verified_endpoint,
+                version=version or verified_endpoint.version,
+            ),
+            verified_endpoint.host,
         )
         return self.async_create_entry(title=title, data=data)
 
@@ -291,4 +327,5 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             verified_endpoint,
             version=record.version,
             title=record.name or verified_endpoint.host,
+            host_aliases=list(candidate_hosts(record.host, record.addresses)),
         )

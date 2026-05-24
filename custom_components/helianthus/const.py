@@ -7,6 +7,7 @@ CONF_PATH = "path"
 CONF_TRANSPORT = "transport"
 CONF_VERSION = "version"
 CONF_INSTANCE_GUID = "instance_guid"
+CONF_HOST_ALIASES = "host_aliases"
 
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_USE_SUBSCRIPTIONS = "use_subscriptions"
