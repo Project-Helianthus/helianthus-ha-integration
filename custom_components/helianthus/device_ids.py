@@ -111,6 +111,24 @@ def exportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
     return out
 
 
+def nonexportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
+    """Return observed B524 inventory slot keys that must not stay in HA inventory."""
+
+    out: set[str] = set()
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        group = _parse_bus_address(device.get("group"))
+        if group != 0x0C:
+            continue
+        if should_export_radio_device(device):
+            continue
+        key = radio_bus_key_from_device(device)
+        if key:
+            out.add(key)
+    return out
+
+
 def stable_bus_identity_model(device_id: object | None, product_model: object | None = None) -> str:
     normalized_device_id = _clean(device_id)
     token = (normalized_device_id or "unknown").upper()

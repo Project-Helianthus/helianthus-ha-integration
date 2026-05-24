@@ -15,6 +15,7 @@ from custom_components.helianthus.device_ids import (
     exportable_radio_bus_keys,
     has_bus_identity_evidence,
     managing_device_identifier,
+    nonexportable_radio_bus_keys,
     radio_device_identifier,
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
@@ -109,6 +110,37 @@ def test_exportable_radio_bus_keys_ignores_identityless_inventory_slots() -> Non
             },
         ]
     ) == {"g09-i01"}
+
+
+def test_nonexportable_radio_bus_keys_selects_observed_identityless_slots() -> None:
+    assert nonexportable_radio_bus_keys(
+        [
+            {
+                "group": 0x0C,
+                "instance": 0,
+                "radio_bus_key": "g0c-i00",
+                "device_connected": True,
+                "device_class_address": 0,
+                "device_model": "Unknown (0x00)",
+                "hardware_identifier": 0,
+            },
+            {
+                "group": 0x09,
+                "instance": 2,
+                "radio_bus_key": "g09-i02",
+                "device_connected": False,
+                "device_class_address": 0,
+                "hardware_identifier": 0,
+            },
+            {
+                "group": 0x0C,
+                "instance": 1,
+                "radio_bus_key": "g0c-i01",
+                "device_connected": True,
+                "device_class_address": 0x26,
+            },
+        ]
+    ) == {"g0c-i00"}
 
 
 def test_alias_faces_share_fallback_key_when_alias_addresses_match() -> None:
