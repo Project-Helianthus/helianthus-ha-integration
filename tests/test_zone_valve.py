@@ -425,7 +425,7 @@ def test_build_zone_parent_device_ids_flags_mapped_zone_without_physical_parent(
     assert unresolved == ("zone-2",)
 
 
-def test_build_zone_parent_device_ids_recovers_once_live_radio_payload_is_available() -> None:
+def test_build_zone_parent_device_ids_resolves_mapped_zones_from_disconnected_slot_identity() -> None:
     zones = [
         {
             "id": "zone-1",
@@ -495,13 +495,153 @@ def test_build_zone_parent_device_ids_recovers_once_live_radio_payload_is_availa
         regulator,
     )
 
-    assert sparse_parent_ids == {}
-    assert sparse_unresolved == ("zone-1", "zone-2")
+    assert sparse_parent_ids == {
+        "zone-1": radio_device_identifier("entry-1", "g09-i01"),
+        "zone-2": radio_device_identifier("entry-1", "g0a-i01"),
+    }
+    assert sparse_unresolved == ()
     assert live_parent_ids == {
         "zone-1": radio_device_identifier("entry-1", "g09-i01"),
         "zone-2": radio_device_identifier("entry-1", "g0a-i01"),
     }
     assert live_unresolved == ()
+
+
+def test_build_zone_parent_device_ids_prefers_connected_slot_over_disconnected_identity() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-2",
+                "name": "Etaj",
+                "config": {"room_temperature_zone_mapping": 2},
+            }
+        ],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x0A,
+                    "instance": 1,
+                    "radio_bus_key": "g0a-i01",
+                    "device_connected": False,
+                    "remote_control_address": 1,
+                },
+                {
+                    "group": 0x0A,
+                    "instance": 2,
+                    "radio_bus_key": "g0a-i02",
+                    "device_connected": True,
+                    "remote_control_address": 1,
+                },
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+    )
+
+    assert zone_parent_device_ids == {
+        "zone-2": radio_device_identifier("entry-1", "g0a-i02"),
+    }
+    assert unresolved == ()
+
+
+def test_build_zone_parent_device_ids_prefers_exact_disconnected_identity_over_connected_fallback() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-1",
+                "name": "Parter",
+                "config": {"room_temperature_zone_mapping": 1},
+            },
+            {
+                "id": "zone-2",
+                "name": "Etaj",
+                "config": {"room_temperature_zone_mapping": 2},
+            },
+        ],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x09,
+                    "instance": 5,
+                    "radio_bus_key": "g09-i05",
+                    "device_connected": True,
+                    "remote_control_address": 5,
+                },
+                {
+                    "group": 0x09,
+                    "instance": 1,
+                    "radio_bus_key": "g09-i01",
+                    "device_connected": False,
+                    "remote_control_address": 0,
+                },
+                {
+                    "group": 0x0A,
+                    "instance": 5,
+                    "radio_bus_key": "g0a-i05",
+                    "device_connected": True,
+                    "remote_control_address": 5,
+                },
+                {
+                    "group": 0x0A,
+                    "instance": 1,
+                    "radio_bus_key": "g0a-i01",
+                    "device_connected": False,
+                    "remote_control_address": 1,
+                },
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+    )
+
+    assert zone_parent_device_ids == {
+        "zone-1": radio_device_identifier("entry-1", "g09-i01"),
+        "zone-2": radio_device_identifier("entry-1", "g0a-i01"),
+    }
+    assert unresolved == ()
+
+
+def test_build_zone_parent_device_ids_keeps_nonmatching_disconnected_slots_unresolved() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-1",
+                "name": "Parter",
+                "config": {"room_temperature_zone_mapping": 1},
+            },
+            {
+                "id": "zone-2",
+                "name": "Etaj",
+                "config": {"room_temperature_zone_mapping": 2},
+            },
+        ],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x09,
+                    "instance": 4,
+                    "radio_bus_key": "g09-i04",
+                    "device_connected": False,
+                    "remote_control_address": 4,
+                },
+                {
+                    "group": 0x0A,
+                    "instance": 3,
+                    "radio_bus_key": "g0a-i03",
+                    "device_connected": False,
+                    "remote_control_address": 3,
+                },
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+    )
+
+    assert zone_parent_device_ids == {}
+    assert unresolved == ("zone-1", "zone-2")
 
 
 def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:

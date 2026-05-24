@@ -116,12 +116,16 @@ def radio_device_ids_from_payload(
     return out
 
 
-def build_global_radio_candidates(radio_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_global_radio_candidates(
+    radio_devices: list[dict[str, Any]],
+    *,
+    connected_only: bool = True,
+) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for device in radio_devices:
         if not isinstance(device, dict):
             continue
-        if device.get("device_connected") is not True:
+        if connected_only and device.get("device_connected") is not True:
             continue
         normalized = normalize_radio_slot_candidate(
             {
@@ -156,7 +160,14 @@ def select_zone_radio_candidate(
     radio_devices: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     candidates = list(radio_zone_candidates.get(zone_instance, []) or [])
-    global_candidates = build_global_radio_candidates(radio_devices or [])
+    global_candidates = build_global_radio_candidates(
+        radio_devices or [],
+        connected_only=True,
+    )
+    global_candidates_any = build_global_radio_candidates(
+        radio_devices or [],
+        connected_only=False,
+    )
 
     def pick(
         items: list[dict[str, Any]],
@@ -198,16 +209,18 @@ def select_zone_radio_candidate(
     if room_temperature_zone_mapping == 1:
         return (
             pick(candidates, 0x09, 0)
-            or pick(candidates, 0x09)
             or pick(global_candidates, 0x09, 0)
+            or pick(global_candidates_any, 0x09, 0)
+            or pick(candidates, 0x09)
             or pick(global_candidates, 0x09)
         )
     if room_temperature_zone_mapping in (2, 3, 4):
         remote_addr = room_temperature_zone_mapping - 1
         return (
             pick(candidates, 0x0A, remote_addr)
-            or pick_thermostat_fallback(candidates, remote_addr)
             or pick(global_candidates, 0x0A, remote_addr)
+            or pick(global_candidates_any, 0x0A, remote_addr)
+            or pick_thermostat_fallback(candidates, remote_addr)
             or pick_thermostat_fallback(global_candidates, remote_addr)
         )
     if room_temperature_zone_mapping in (0, None):
