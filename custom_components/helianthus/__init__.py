@@ -594,6 +594,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         exportable_radio_bus_keys,
         has_bus_identity_evidence,
         managing_device_identifier,
+        nonexportable_radio_bus_keys,
         radio_device_identifier,
         radio_bus_key_from_device,
         resolve_bus_address,
@@ -1040,12 +1041,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 break
 
     radio_payload = radio_coordinator.data or {}
-    radio_devices_payload = radio_payload.get("radio_devices")
-    if not isinstance(radio_devices_payload, list):
-        radio_devices_payload = []
+    raw_radio_devices_payload = radio_payload.get("radio_devices")
+    if not isinstance(raw_radio_devices_payload, list):
+        raw_radio_devices_payload = []
+    nonexportable_radio_keys = nonexportable_radio_bus_keys(raw_radio_devices_payload)
     radio_devices_payload = [
         device
-        for device in radio_devices_payload
+        for device in raw_radio_devices_payload
         if isinstance(device, dict) and should_export_radio_device(device)
     ]
 
@@ -1487,6 +1489,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.entry_id,
             )
 
+    def cleanup_nonexportable_radio_registry_entries(
+        radio_keys: set[str],
+        reason: str,
+    ) -> None:
+        if not radio_keys:
+            return
+        removed_entities = 0
+        for entity_entry in _entry_entities():
+            if entity_entry.platform != DOMAIN:
+                continue
+            unique_id = str(entity_entry.unique_id or "")
+            radio_bus_key = _radio_bus_key_from_unique_id(unique_id)
+            if radio_bus_key not in radio_keys:
+                continue
+            entity_registry.async_remove(entity_entry.entity_id)
+            removed_entities += 1
+
+        removed_devices = 0
+        radio_prefix = f"{entry.entry_id}-radio-"
+        for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
+            remove_device = False
+            for identifier_domain, token in _iter_identifier_pairs(device_entry.identifiers):
+                if identifier_domain != DOMAIN or not token.startswith(radio_prefix):
+                    continue
+                if token[len(radio_prefix):] in radio_keys:
+                    remove_device = True
+                    break
+            if not remove_device:
+                continue
+            if _device_has_entities(device_entry.id):
+                continue
+            device_registry.async_remove_device(device_entry.id)
+            removed_devices += 1
+
+        if removed_entities or removed_devices:
+            _LOGGER.info(
+                "Helianthus cleanup removed %d entities and %d devices for non-exportable radio slots %s (%s)",
+                removed_entities,
+                removed_devices,
+                sorted(radio_keys),
+                reason,
+            )
+
     def cleanup_obsolete_devices(reason: str) -> None:
         # Remove stale calendar entities with old zone_N unique_id format
         # (pre-fix: B555 zone indices were used directly instead of semantic zone IDs).
@@ -1830,8 +1875,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         auto_enable_sparse_entities("circuit update")
 
     def handle_radio_update() -> None:
+        nonlocal nonexportable_radio_keys
         payload = radio_coordinator.data or {}
         radio_devices = payload.get("radio_devices", []) or []
+        current_nonexportable = nonexportable_radio_bus_keys(radio_devices)
+        nonexportable_radio_keys = current_nonexportable
+        if current_nonexportable:
+            cleanup_nonexportable_radio_registry_entries(
+                current_nonexportable,
+                "radio update",
+            )
         current_keys = exportable_radio_bus_keys(radio_devices)
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
@@ -1974,6 +2027,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Run stale cleanup again after platform setup so registry-backed entities
     # created by prior installs are removed from the fully materialized registry.
+    cleanup_nonexportable_radio_registry_entries(
+        nonexportable_radio_keys,
+        "post-platform setup",
+    )
     run_trusted_cleanup("post-platform setup")
 
     return True
