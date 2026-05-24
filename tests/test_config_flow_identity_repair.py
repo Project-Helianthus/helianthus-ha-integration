@@ -1,0 +1,282 @@
+"""Tests for config-flow stable identity repair."""
+
+from __future__ import annotations
+
+import asyncio
+from types import ModuleType, SimpleNamespace
+import sys
+
+from custom_components.helianthus.const import (
+    CONF_INSTANCE_GUID,
+    CONF_PATH,
+    CONF_TRANSPORT,
+    DOMAIN,
+)
+from custom_components.helianthus.identity import VerifiedHelianthusEndpoint
+
+
+OLD_GUID = "3678381d-034e-4f6a-ab72-fce6eaa91245"
+LIVE_GUID = "323de887-ee42-4f71-98cd-7cf61a5a8f07"
+
+
+def _ensure_config_flow_stubs() -> None:
+    voluptuous_module = sys.modules.setdefault("voluptuous", ModuleType("voluptuous"))
+    if not hasattr(voluptuous_module, "Schema"):
+        voluptuous_module.Schema = lambda value: value
+        voluptuous_module.Required = lambda key, default=None: key
+        voluptuous_module.Optional = lambda key, default=None: key
+
+    homeassistant_module = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
+
+    config_entries_module = sys.modules.setdefault(
+        "homeassistant.config_entries",
+        ModuleType("homeassistant.config_entries"),
+    )
+    setattr(homeassistant_module, "config_entries", config_entries_module)
+
+    if not hasattr(config_entries_module, "ConfigFlow"):
+        class _ConfigFlow:
+            def __init_subclass__(cls, **kwargs):  # noqa: ANN003
+                super().__init_subclass__()
+
+            async def async_set_unique_id(self, unique_id: str) -> None:
+                self._unique_id = unique_id
+
+            def async_abort(self, *, reason: str) -> dict[str, str]:
+                return {"type": "abort", "reason": reason}
+
+            def async_create_entry(self, *, title: str, data: dict) -> dict:
+                return {"type": "create_entry", "title": title, "data": data}
+
+            def async_show_form(self, **kwargs):  # noqa: ANN003
+                return {"type": "form", **kwargs}
+
+        config_entries_module.ConfigFlow = _ConfigFlow
+
+    if not hasattr(config_entries_module, "OptionsFlow"):
+        class _OptionsFlow:
+            def async_create_entry(self, *, title: str, data: dict) -> dict:
+                return {"type": "create_entry", "title": title, "data": data}
+
+            def async_show_form(self, **kwargs):  # noqa: ANN003
+                return {"type": "form", **kwargs}
+
+        config_entries_module.OptionsFlow = _OptionsFlow
+
+    if not hasattr(config_entries_module, "ConfigEntry"):
+        class _ConfigEntry:
+            pass
+
+        config_entries_module.ConfigEntry = _ConfigEntry
+    if not hasattr(config_entries_module, "FlowResult"):
+        config_entries_module.FlowResult = dict
+
+    const_module = sys.modules.setdefault("homeassistant.const", ModuleType("homeassistant.const"))
+    const_module.CONF_HOST = "host"
+    const_module.CONF_PORT = "port"
+    const_module.CONF_SCAN_INTERVAL = "scan_interval"
+
+    data_entry_flow_module = sys.modules.setdefault(
+        "homeassistant.data_entry_flow",
+        ModuleType("homeassistant.data_entry_flow"),
+    )
+    data_entry_flow_module.FlowResult = dict
+
+    helpers_module = sys.modules.setdefault(
+        "homeassistant.helpers",
+        ModuleType("homeassistant.helpers"),
+    )
+    setattr(homeassistant_module, "helpers", helpers_module)
+
+    aiohttp_client_module = sys.modules.setdefault(
+        "homeassistant.helpers.aiohttp_client",
+        ModuleType("homeassistant.helpers.aiohttp_client"),
+    )
+    aiohttp_client_module.async_get_clientsession = lambda hass: object()
+    setattr(helpers_module, "aiohttp_client", aiohttp_client_module)
+
+    service_info_parent = sys.modules.setdefault(
+        "homeassistant.helpers.service_info",
+        ModuleType("homeassistant.helpers.service_info"),
+    )
+    service_info_module = sys.modules.setdefault(
+        "homeassistant.helpers.service_info.zeroconf",
+        ModuleType("homeassistant.helpers.service_info.zeroconf"),
+    )
+    setattr(helpers_module, "service_info", service_info_parent)
+    setattr(service_info_parent, "zeroconf", service_info_module)
+    if not hasattr(service_info_module, "ZeroconfServiceInfo"):
+        class _ZeroconfServiceInfo:
+            pass
+
+        service_info_module.ZeroconfServiceInfo = _ZeroconfServiceInfo
+
+
+class _FakeConfigEntries:
+    def __init__(self, entries: list[SimpleNamespace]) -> None:
+        self._entries = entries
+        self.created: list[dict] = []
+        self.reloads: list[str] = []
+
+    def async_entries(self, domain: str) -> list[SimpleNamespace]:
+        assert domain == DOMAIN
+        return self._entries
+
+    def async_update_entry(self, entry: SimpleNamespace, **kwargs) -> None:  # noqa: ANN003
+        for key, value in kwargs.items():
+            setattr(entry, key, value)
+
+    async def async_reload(self, entry_id: str) -> None:
+        self.reloads.append(entry_id)
+
+
+class _FakeResponse:
+    def __init__(self, instance_guid: str) -> None:
+        self.instance_guid = instance_guid
+
+    async def __aenter__(self) -> "_FakeResponse":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def json(self) -> dict:
+        return {
+            "data": {
+                "gateway_identity": {
+                    "instance_guid": self.instance_guid,
+                }
+            }
+        }
+
+
+class _FakeSession:
+    def __init__(self, instance_guids: list[str]) -> None:
+        self.instance_guids = instance_guids
+        self.urls: list[str] = []
+
+    def post(self, url: str, json: dict) -> _FakeResponse:
+        self.urls.append(url)
+        return _FakeResponse(self.instance_guids.pop(0))
+
+
+def test_zeroconf_rebinds_existing_entry_when_stored_guid_is_stale() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus.config_flow import HelianthusConfigFlow
+
+    stale_entry = SimpleNamespace(
+        entry_id="01KK2FYJ7KCXCZ4A766ZPJSPE9",
+        title="172.30.32.1",
+        unique_id=OLD_GUID,
+        data={
+            "host": "172.30.32.1",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: OLD_GUID,
+        },
+    )
+    config_entries = _FakeConfigEntries([stale_entry])
+    flow = HelianthusConfigFlow()
+    flow.hass = SimpleNamespace(config_entries=config_entries)
+
+    async def _validate_connection(**kwargs):  # noqa: ANN003
+        assert kwargs["host"] == "172.30.32.1"
+        assert kwargs["expected_instance_guid"] == LIVE_GUID
+        return (
+            VerifiedHelianthusEndpoint(
+                instance_guid=LIVE_GUID,
+                host="172.30.32.1",
+                port=8080,
+                path="/graphql",
+                transport="http",
+            ),
+            None,
+        )
+
+    flow._async_validate_connection = _validate_connection
+
+    result = asyncio.run(
+        flow._async_finish_verified_entry(
+            VerifiedHelianthusEndpoint(
+                instance_guid=LIVE_GUID,
+                host="172.30.232.1",
+                port=8080,
+                path="/graphql",
+                transport="http",
+            ),
+            version=None,
+            title="helianthus._helianthus-graphql._tcp.local.",
+        )
+    )
+
+    assert result == {"type": "abort", "reason": "reconfigured"}
+    assert stale_entry.unique_id == LIVE_GUID
+    assert stale_entry.data[CONF_INSTANCE_GUID] == LIVE_GUID
+    assert stale_entry.data["host"] == "172.30.32.1"
+    assert config_entries.reloads == ["01KK2FYJ7KCXCZ4A766ZPJSPE9"]
+
+
+def test_setup_duplicate_owner_requires_live_identity_proof() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+
+    stale_claimant = SimpleNamespace(
+        entry_id="stale-entry",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "192.0.2.10",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    hass = SimpleNamespace(config_entries=_FakeConfigEntries([stale_claimant]))
+    session = _FakeSession([OLD_GUID])
+
+    result = asyncio.run(
+        _find_verified_entry_by_configured_instance_guid(
+            hass,
+            session,
+            LIVE_GUID,
+            exclude_entry_id="live-entry",
+        )
+    )
+
+    assert result is None
+    assert session.urls == ["http://192.0.2.10:8080/graphql"]
+
+
+def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+
+    live_claimant = SimpleNamespace(
+        entry_id="live-entry",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "192.0.2.10",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    hass = SimpleNamespace(config_entries=_FakeConfigEntries([live_claimant]))
+    session = _FakeSession([LIVE_GUID])
+
+    result = asyncio.run(
+        _find_verified_entry_by_configured_instance_guid(
+            hass,
+            session,
+            LIVE_GUID,
+            exclude_entry_id="stale-entry",
+        )
+    )
+
+    assert result is live_claimant
+    assert session.urls == ["http://192.0.2.10:8080/graphql"]
