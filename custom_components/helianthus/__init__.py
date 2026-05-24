@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 from .admission import (
@@ -507,6 +507,52 @@ async def _find_verified_entry_by_configured_instance_guid(
     return None
 
 
+def _merge_duplicate_config_entry_options(
+    hass: object,
+    *,
+    alias_entry: object,
+    owner_entry: object,
+) -> bool:
+    """Preserve alias-only options before removing a duplicate config entry."""
+
+    alias_options = dict(getattr(alias_entry, "options", None) or {})
+    if not alias_options:
+        return False
+    owner_options = dict(getattr(owner_entry, "options", None) or {})
+    merged_options = _deep_merge_options(alias_options, owner_options)
+    if merged_options == owner_options:
+        return False
+    hass.config_entries.async_update_entry(owner_entry, options=merged_options)
+    return True
+
+
+def _deep_merge_options(
+    alias_options: Mapping[str, object],
+    owner_options: Mapping[str, object],
+) -> dict[str, object]:
+    """Merge alias-only nested options while preserving owner conflicts."""
+
+    merged = dict(alias_options)
+    for key, owner_value in owner_options.items():
+        alias_value = merged.get(key)
+        if isinstance(alias_value, Mapping) and isinstance(owner_value, Mapping):
+            merged[key] = _deep_merge_options(alias_value, owner_value)
+        else:
+            merged[key] = owner_value
+    return merged
+
+
+def _schedule_duplicate_config_entry_removal(hass: object, entry_id: str) -> bool:
+    """Schedule removal of an alias entry after setup returns."""
+
+    async_remove = getattr(hass.config_entries, "async_remove", None)
+    async_create_task = getattr(hass, "async_create_task", None)
+    if not callable(async_remove) or not callable(async_create_task):
+        return False
+    async_create_task(async_remove(entry_id))
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -662,6 +708,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 exclude_entry_id=entry.entry_id,
             )
             if duplicate_entry is not None:
+                options_merged = _merge_duplicate_config_entry_options(
+                    hass,
+                    alias_entry=entry,
+                    owner_entry=duplicate_entry,
+                )
                 removed_entities = 0
                 for entity_entry in tuple(
                     er.async_entries_for_config_entry(entity_registry, entry.entry_id)
@@ -677,14 +728,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning(
                     "Refusing to set up Helianthus entry %s because %s now reports "
                     "instance GUID %s already owned by entry %s; removed %d stale "
-                    "entities and %d stale devices",
+                    "entities and %d stale devices; migrated_options=%s",
                     entry.entry_id,
                     host,
                     live_instance_guid,
                     duplicate_entry.entry_id,
                     removed_entities,
                     removed_devices,
+                    options_merged,
                 )
+                if _schedule_duplicate_config_entry_removal(hass, entry.entry_id):
+                    _LOGGER.warning(
+                        "Scheduled duplicate Helianthus config entry %s for removal",
+                        entry.entry_id,
+                    )
                 return False
 
             entry_instance_guid = live_instance_guid
