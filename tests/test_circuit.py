@@ -373,6 +373,35 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     assert "connected_zone_names" not in attrs
 
 
+def test_circuit_sparse_sensors_and_numbers_are_disabled_by_default_when_value_null() -> None:
+    payload, _, _ = _build_payload()
+    payload["circuit_coordinator"].data["circuits"][0]["state"]["calc_flow_temp_c"] = None
+    payload["circuit_coordinator"].data["circuits"][0]["config"]["frost_prot_c"] = None
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    sensor_entities: list = []
+    number_entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
+    asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
+
+    calc_flow = next(
+        entity
+        for entity in sensor_entities
+        if isinstance(entity, sensor_platform.HelianthusCircuitSensor)
+        and entity._attr_unique_id == "entry-1-circuit-0-sensor-calc_flow_temp_c"
+    )
+    frost = next(
+        entity
+        for entity in number_entities
+        if isinstance(entity, number_platform.HelianthusCircuitNumber)
+        and entity._attr_unique_id == "entry-1-circuit-0-number-frost_prot_c"
+    )
+
+    assert calc_flow._attr_entity_registry_enabled_default is False
+    assert frost._attr_entity_registry_enabled_default is False
+
+
 def test_circuit_number_select_entities_call_circuit_config_mutation_without_cooling_enabled() -> None:
     payload, circuit_coordinator, client = _build_payload()
     hass = _FakeHass(payload)

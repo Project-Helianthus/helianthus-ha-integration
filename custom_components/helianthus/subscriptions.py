@@ -263,10 +263,17 @@ async def _handle_message(
         ):
             current = semantic_coordinator.data
             zones = current.get("zones", [])
+            current_dhw = current.get("dhw")
+            merged_dhw = (
+                _merge_dicts(current_dhw, dhw)
+                if isinstance(current_dhw, dict) and isinstance(dhw, dict)
+                else dhw if dhw is None or isinstance(dhw, dict)
+                else current_dhw
+            )
             semantic_coordinator.async_set_updated_data(
                 {
                     "zones": zones if isinstance(zones, list) else [],
-                    "dhw": dhw if dhw is None or isinstance(dhw, dict) else current.get("dhw"),
+                    "dhw": merged_dhw,
                 }
             )
 

@@ -50,6 +50,7 @@ def _ensure_homeassistant_stubs() -> None:
     if not hasattr(const_module, "EntityCategory"):
         class _EntityCategory:
             DIAGNOSTIC = "diagnostic"
+            CONFIG = "config"
 
         const_module.EntityCategory = _EntityCategory
     if not hasattr(const_module, "PERCENTAGE"):
@@ -228,6 +229,26 @@ def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00()
     assert boiler_entities == []
 
 
+def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_null() -> None:
+    boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
+    payload = _build_payload(boiler_device_id=boiler_device_id)
+    payload["boiler_coordinator"].data["boiler_status"]["state"]["return_temperature_c"] = None
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    boiler_entities = {
+        entity._attr_unique_id: entity
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBoilerTemperatureSensor)
+    }
+
+    assert boiler_entities["entry-1-boiler-flow_temperature_c"]._attr_entity_registry_enabled_default is True
+    assert boiler_entities["entry-1-boiler-return_temperature_c"]._attr_entity_registry_enabled_default is False
+
+
 def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
@@ -329,6 +350,49 @@ def test_status_sensor_reads_live_coordinator_status() -> None:
     }
 
     assert entity.native_value is False
+
+
+def test_sparse_demand_and_adapter_sensors_are_disabled_by_default_when_value_null() -> None:
+    semantic = _FakeCoordinator(
+        {
+            "zones": [
+                {
+                    "id": "zone-1",
+                    "state": {"heating_demand_pct": None},
+                }
+            ],
+            "dhw": {"state": {"heating_demand_pct": 12.0}},
+        }
+    )
+    zone_demand = sensor_platform.HelianthusDemandSensor(
+        semantic,
+        "entry-1",
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        "Vaillant",
+        "Zone 1",
+        ("zone", "zone-1"),
+        target_device_id=("helianthus", "entry-1-bus-BASV2-15"),
+    )
+    dhw_demand = sensor_platform.HelianthusDemandSensor(
+        semantic,
+        "entry-1",
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        "Vaillant",
+        "DHW",
+        ("dhw", None),
+        target_device_id=None,
+    )
+    adapter = sensor_platform.HelianthusAdapterInfoSensor(
+        _FakeCoordinator({"wifi_rssi_dbm": None}),
+        "entry-1",
+        ("helianthus", "adapter-entry-1"),
+        key="wifi_rssi_dbm",
+        label="Adapter WiFi Signal",
+    )
+
+    assert zone_demand._attr_entity_registry_enabled_default is False
+    assert dhw_demand._attr_entity_registry_enabled_default is True
+    assert adapter._attr_entity_registry_enabled_default is False
 
 
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:
