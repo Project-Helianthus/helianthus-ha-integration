@@ -32,6 +32,14 @@ def _clean(value: object | None) -> str | None:
     return cleaned or None
 
 
+def _has_known_identity_text(value: object | None) -> bool:
+    cleaned = _clean(value)
+    if not cleaned:
+        return False
+    lowered = cleaned.lower()
+    return lowered not in _UNKNOWN_IDENTITY_TOKENS and not lowered.startswith("unknown ")
+
+
 def has_bus_identity_evidence(device: dict) -> bool:
     """Return whether a GraphQL device payload is more than an address sighting."""
 
@@ -46,10 +54,61 @@ def has_bus_identity_evidence(device: dict) -> bool:
         "software_version",
         "part_number",
     ):
-        cleaned = _clean(device.get(key))
-        if cleaned and cleaned.lower() not in _UNKNOWN_IDENTITY_TOKENS:
+        if _has_known_identity_text(device.get(key)):
             return True
     return False
+
+
+def has_radio_identity_evidence(device: dict) -> bool:
+    """Return whether a radio slot carries a real device identity."""
+
+    class_address = _parse_bus_address(device.get("device_class_address"))
+    if class_address in {0x15, 0x26, 0x35}:
+        return True
+    for key in ("device_model", "firmware_version"):
+        if _has_known_identity_text(device.get(key)):
+            return True
+    hardware_identifier = _parse_bus_address(device.get("hardware_identifier"))
+    return hardware_identifier is not None and hardware_identifier > 0
+
+
+def should_export_radio_device(device: dict) -> bool:
+    """Return whether a radio slot should become HA device/entity inventory."""
+
+    group = _parse_bus_address(device.get("group"))
+    if group is None:
+        return False
+    if group == 0x0C:
+        return has_radio_identity_evidence(device)
+    return device.get("device_connected") is True or has_radio_identity_evidence(device)
+
+
+def radio_bus_key_from_device(device: dict) -> str | None:
+    """Return the stable radio slot key carried by a radio device payload."""
+
+    key = _clean(device.get("radio_bus_key"))
+    if key:
+        return key
+    group = _parse_bus_address(device.get("group"))
+    instance = _parse_bus_address(device.get("instance"))
+    if group is None or instance is None:
+        return None
+    return build_radio_bus_key(group, instance)
+
+
+def exportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
+    """Return radio slot keys that should participate in HA inventory decisions."""
+
+    out: set[str] = set()
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        if not should_export_radio_device(device):
+            continue
+        key = radio_bus_key_from_device(device)
+        if key:
+            out.add(key)
+    return out
 
 
 def stable_bus_identity_model(device_id: object | None, product_model: object | None = None) -> str:

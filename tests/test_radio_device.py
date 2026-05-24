@@ -229,6 +229,32 @@ def test_radio_sensor_entities_cover_room_and_inventory_devices() -> None:
     assert "entry-1-radio-0c-02-sensor-hardware_identifier" in unique_ids
 
 
+def test_identityless_inventory_radio_slot_exports_no_entities() -> None:
+    radio_devices = [
+        {
+            "group": 0x0C,
+            "instance": 0,
+            "radio_bus_key": "g0c-i00",
+            "device_class_address": 0,
+            "device_connected": True,
+            "hardware_identifier": 0,
+            "stale_cycles": 0,
+        },
+    ]
+    hass = _FakeHass(_base_payload(radio_devices))
+    entry = _FakeEntry("entry-1")
+    sensor_entities: list = []
+    binary_entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, binary_entities.extend))
+
+    sensor_uids = {getattr(entity, "_attr_unique_id", "") for entity in sensor_entities}
+    binary_uids = {getattr(entity, "_attr_unique_id", "") for entity in binary_entities}
+    assert "entry-1-radio-0c-00-sensor-device_class_address" not in sensor_uids
+    assert "entry-1-radio-0c-00-connected" not in binary_uids
+
+
 def test_radio_connected_entity_becomes_unavailable_after_third_stale_cycle() -> None:
     radio_devices = [
         {

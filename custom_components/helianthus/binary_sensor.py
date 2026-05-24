@@ -15,6 +15,7 @@ from .device_ids import (
     circuit_identifier,
     dhw_identifier,
     radio_device_identifier,
+    should_export_radio_device,
     solar_identifier,
 )
 
@@ -271,6 +272,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if radio_coordinator and radio_coordinator.data:
         for radio in radio_coordinator.data.get("radio_devices", []) or []:
             if not isinstance(radio, dict):
+                continue
+            if not should_export_radio_device(radio):
                 continue
             slot = _radio_slot(radio)
             bus_key = _radio_bus_key(radio)

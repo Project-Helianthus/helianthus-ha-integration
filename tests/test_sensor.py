@@ -393,6 +393,52 @@ def test_status_sensor_reads_live_coordinator_status() -> None:
     assert entity.native_value is False
 
 
+def test_async_setup_entry_skips_null_optional_status_sensor() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    payload["status_coordinator"] = _FakeCoordinator(
+        {
+            "daemon": {
+                "admission_trusted": True,
+                "admission_repair_code": None,
+            },
+            "adapter": {},
+        }
+    )
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    unique_ids = {getattr(entity, "_attr_unique_id", "") for entity in entities}
+    assert "daemon-entry-1-admission_repair_code" not in unique_ids
+
+
+def test_async_setup_entry_creates_live_optional_status_sensor() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    payload["status_coordinator"] = _FakeCoordinator(
+        {
+            "daemon": {
+                "admission_trusted": False,
+                "admission_repair_code": "admission_degraded",
+            },
+            "adapter": {},
+        }
+    )
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    entity = next(
+        entity
+        for entity in entities
+        if getattr(entity, "_attr_unique_id", "") == "daemon-entry-1-admission_repair_code"
+    )
+    assert entity.native_value == "admission_degraded"
+
+
 def test_sparse_demand_and_adapter_sensors_are_disabled_by_default_when_value_null() -> None:
     semantic = _FakeCoordinator(
         {
