@@ -153,6 +153,8 @@ async def async_setup_entry(
         def _handle_admission_update() -> None:
             for entity in entities:
                 if hasattr(entity, "async_write_ha_state"):
+                    if getattr(entity, "hass", None) is None:
+                        continue
                     entity.async_write_ha_state()
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
