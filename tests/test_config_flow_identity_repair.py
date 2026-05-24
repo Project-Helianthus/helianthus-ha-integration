@@ -117,6 +117,7 @@ class _FakeConfigEntries:
         self._entries = entries
         self.created: list[dict] = []
         self.reloads: list[str] = []
+        self.removals: list[str] = []
 
     def async_entries(self, domain: str) -> list[SimpleNamespace]:
         assert domain == DOMAIN
@@ -128,6 +129,10 @@ class _FakeConfigEntries:
 
     async def async_reload(self, entry_id: str) -> None:
         self.reloads.append(entry_id)
+
+    def async_remove(self, entry_id: str) -> str:
+        self.removals.append(entry_id)
+        return f"remove:{entry_id}"
 
 
 class _FakeResponse:
@@ -280,3 +285,56 @@ def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
 
     assert result is live_claimant
     assert session.urls == ["http://192.0.2.10:8080/graphql"]
+
+
+def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _merge_duplicate_config_entry_options
+
+    alias_entry = SimpleNamespace(
+        entry_id="alias-entry",
+        options={
+            "scan_interval": 15,
+            "zone_schedule_helpers": {
+                "zone-1": "calendar.old",
+                "zone-2": "calendar.alias",
+            },
+        },
+    )
+    owner_entry = SimpleNamespace(
+        entry_id="owner-entry",
+        options={
+            "scan_interval": 30,
+            "zone_schedule_helpers": {"zone-2": "calendar.owner"},
+        },
+    )
+    hass = SimpleNamespace(config_entries=_FakeConfigEntries([alias_entry, owner_entry]))
+
+    assert _merge_duplicate_config_entry_options(
+        hass,
+        alias_entry=alias_entry,
+        owner_entry=owner_entry,
+    )
+    assert owner_entry.options == {
+        "scan_interval": 30,
+        "zone_schedule_helpers": {
+            "zone-1": "calendar.old",
+            "zone-2": "calendar.owner",
+        },
+    }
+
+
+def test_duplicate_alias_removal_is_scheduled_after_refusal() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _schedule_duplicate_config_entry_removal
+
+    config_entries = _FakeConfigEntries([])
+    scheduled: list[str] = []
+    hass = SimpleNamespace(
+        config_entries=config_entries,
+        async_create_task=scheduled.append,
+    )
+
+    assert _schedule_duplicate_config_entry_removal(hass, "alias-entry")
+    assert config_entries.removals == ["alias-entry"]
+    assert scheduled == ["remove:alias-entry"]
