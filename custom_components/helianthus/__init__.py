@@ -454,6 +454,59 @@ def _parse_identifier_index(token: str, prefix: str) -> int | None:
     return value
 
 
+async def _find_verified_entry_by_configured_instance_guid(
+    hass: object,
+    session: object,
+    instance_guid: str,
+    *,
+    exclude_entry_id: str | None = None,
+) -> object | None:
+    from .identity import (
+        GatewayIdentityVerificationError,
+        configured_instance_guid,
+        verify_gateway_identity,
+    )
+
+    for config_entry in hass.config_entries.async_entries(DOMAIN):
+        if getattr(config_entry, "entry_id", None) == exclude_entry_id:
+            continue
+        data = getattr(config_entry, "data", None) or {}
+        if (
+            configured_instance_guid(data, getattr(config_entry, "unique_id", None))
+            != instance_guid
+        ):
+            continue
+        try:
+            host = str(data["host"])
+            port = int(data["port"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        path = data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
+        transport = data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+        version = (data.get(CONF_VERSION) or "").strip() or None
+        try:
+            await verify_gateway_identity(
+                session=session,
+                host=host,
+                port=port,
+                path=path,
+                transport=transport,
+                expected_instance_guid=instance_guid,
+                version=version,
+            )
+        except (GatewayIdentityVerificationError, TypeError, ValueError) as exc:
+            _LOGGER.debug(
+                "Configured Helianthus owner entry %s did not verify live "
+                "instance GUID %s: %s",
+                getattr(config_entry, "entry_id", "<unknown>"),
+                instance_guid,
+                getattr(exc, "reason", type(exc).__name__),
+            )
+            continue
+        return config_entry
+    return None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -550,6 +603,123 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             stale_devices_removed,
         )
 
+    host = entry.data.get(CONF_HOST)
+    port = entry.data.get(CONF_PORT)
+    if not host or not port:
+        _LOGGER.warning("Config entry missing host/port; device discovery skipped")
+        return True
+
+    session = async_get_clientsession(hass)
+    path = entry.data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
+    transport = entry.data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
+    version = (entry.data.get(CONF_VERSION) or "").strip() or None
+    entry_instance_guid = configured_instance_guid(entry.data, entry.unique_id)
+    try:
+        verified_endpoint = await verify_gateway_identity(
+            session=session,
+            host=str(host),
+            port=int(port),
+            path=path,
+            transport=transport,
+            expected_instance_guid=None,
+            version=version,
+        )
+    except (GatewayIdentityVerificationError, TypeError, ValueError) as exc:
+        reason = getattr(exc, "reason", type(exc).__name__)
+        _LOGGER.debug(
+            "Stable identity refresh skipped for Helianthus entry %s: %s",
+            entry.entry_id,
+            reason,
+        )
+    else:
+        live_instance_guid = verified_endpoint.instance_guid
+        if entry_instance_guid is None:
+            entry_instance_guid = live_instance_guid
+            hass.config_entries.async_update_entry(
+                entry,
+                data=updated_entry_data(
+                    entry.data,
+                    verified_endpoint,
+                    version=version or verified_endpoint.version,
+                ),
+                unique_id=entry_instance_guid,
+            )
+            host = verified_endpoint.host
+            port = verified_endpoint.port
+            path = verified_endpoint.path
+            transport = verified_endpoint.transport
+            version = version or verified_endpoint.version
+            _LOGGER.info(
+                "Migrated Helianthus entry %s to stable instance GUID %s",
+                entry.entry_id,
+                entry_instance_guid,
+            )
+        elif live_instance_guid != entry_instance_guid:
+            duplicate_entry = await _find_verified_entry_by_configured_instance_guid(
+                hass,
+                session,
+                live_instance_guid,
+                exclude_entry_id=entry.entry_id,
+            )
+            if duplicate_entry is not None:
+                removed_entities = 0
+                for entity_entry in tuple(
+                    er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+                ):
+                    entity_registry.async_remove(entity_entry.entity_id)
+                    removed_entities += 1
+                removed_devices = 0
+                for device_entry in tuple(
+                    dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+                ):
+                    device_registry.async_remove_device(device_entry.id)
+                    removed_devices += 1
+                _LOGGER.warning(
+                    "Refusing to set up Helianthus entry %s because %s now reports "
+                    "instance GUID %s already owned by entry %s; removed %d stale "
+                    "entities and %d stale devices",
+                    entry.entry_id,
+                    host,
+                    live_instance_guid,
+                    duplicate_entry.entry_id,
+                    removed_entities,
+                    removed_devices,
+                )
+                return False
+
+            entry_instance_guid = live_instance_guid
+            hass.config_entries.async_update_entry(
+                entry,
+                data=updated_entry_data(
+                    entry.data,
+                    verified_endpoint,
+                    version=version or verified_endpoint.version,
+                ),
+                unique_id=entry_instance_guid,
+            )
+            host = verified_endpoint.host
+            port = verified_endpoint.port
+            path = verified_endpoint.path
+            transport = verified_endpoint.transport
+            version = version or verified_endpoint.version
+            _LOGGER.warning(
+                "Rebound Helianthus entry %s from stale instance GUID to live GUID %s",
+                entry.entry_id,
+                entry_instance_guid,
+            )
+
+    if entry_instance_guid is not None:
+        normalized_unique_id = normalize_instance_guid(entry.unique_id)
+        stored_data_guid = normalize_instance_guid(entry.data.get(CONF_INSTANCE_GUID))
+        if normalized_unique_id != entry_instance_guid or stored_data_guid != entry_instance_guid:
+            updated_data = dict(entry.data)
+            updated_data[CONF_INSTANCE_GUID] = entry_instance_guid
+            hass.config_entries.async_update_entry(
+                entry,
+                data=updated_data,
+                unique_id=entry_instance_guid,
+            )
+
     daemon_device_id = daemon_identifier(entry.entry_id)
     adapter_device_id = adapter_identifier(entry.entry_id)
     existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
@@ -572,67 +742,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     adapter_registry_device_id = adapter_device_entry.id
     del daemon_device_entry
-
-    host = entry.data.get(CONF_HOST)
-    port = entry.data.get(CONF_PORT)
-    if not host or not port:
-        _LOGGER.warning("Config entry missing host/port; device discovery skipped")
-        return True
-
-    session = async_get_clientsession(hass)
-    path = entry.data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
-    transport = entry.data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
-    version = (entry.data.get(CONF_VERSION) or "").strip() or None
-    entry_instance_guid = configured_instance_guid(entry.data, entry.unique_id)
-    if entry_instance_guid is None:
-        try:
-            verified_endpoint = await verify_gateway_identity(
-                session=session,
-                host=str(host),
-                port=int(port),
-                path=path,
-                transport=transport,
-                expected_instance_guid=None,
-                version=version,
-            )
-        except GatewayIdentityVerificationError as exc:
-            _LOGGER.debug(
-                "Stable identity adoption skipped for Helianthus entry %s: %s",
-                entry.entry_id,
-                exc.reason,
-            )
-        else:
-            entry_instance_guid = verified_endpoint.instance_guid
-            hass.config_entries.async_update_entry(
-                entry,
-                data=updated_entry_data(
-                    entry.data,
-                    verified_endpoint,
-                    version=version or verified_endpoint.version,
-                ),
-                unique_id=entry_instance_guid,
-            )
-            host = verified_endpoint.host
-            port = verified_endpoint.port
-            path = verified_endpoint.path
-            transport = verified_endpoint.transport
-            version = version or verified_endpoint.version
-            _LOGGER.info(
-                "Migrated Helianthus entry %s to stable instance GUID %s",
-                entry.entry_id,
-                entry_instance_guid,
-            )
-    else:
-        normalized_unique_id = normalize_instance_guid(entry.unique_id)
-        stored_data_guid = normalize_instance_guid(entry.data.get(CONF_INSTANCE_GUID))
-        if normalized_unique_id != entry_instance_guid or stored_data_guid != entry_instance_guid:
-            updated_data = dict(entry.data)
-            updated_data[CONF_INSTANCE_GUID] = entry_instance_guid
-            hass.config_entries.async_update_entry(
-                entry,
-                data=updated_data,
-                unique_id=entry_instance_guid,
-            )
 
     graphql_url = build_graphql_url(host, port, path=path, transport=transport)
     client = GraphQLClient(session=session, url=graphql_url)

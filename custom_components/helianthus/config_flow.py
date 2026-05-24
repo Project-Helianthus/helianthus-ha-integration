@@ -178,6 +178,19 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return None
         return verified
 
+    async def _async_find_entry_by_live_guid(
+        self, instance_guid: str
+    ) -> tuple[config_entries.ConfigEntry, VerifiedHelianthusEndpoint] | None:
+        """Find an existing entry whose configured endpoint proves this live GUID."""
+
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if configured_instance_guid(entry.data, entry.unique_id) == instance_guid:
+                continue
+            verified = await self._async_verify_existing_entry(entry, instance_guid)
+            if verified is not None:
+                return entry, verified
+        return None
+
     async def _async_finish_verified_entry(
         self,
         verified_endpoint: VerifiedHelianthusEndpoint | None,
@@ -217,6 +230,23 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if current_verified is not None:
                 return self.async_abort(reason="duplicate_instance_guid")
 
+            self.hass.config_entries.async_update_entry(
+                existing_entry,
+                data=existing_data,
+                unique_id=instance_guid,
+                title=existing_entry.title or title,
+            )
+            await self.hass.config_entries.async_reload(existing_entry.entry_id)
+            return self.async_abort(reason="reconfigured")
+
+        live_existing = await self._async_find_entry_by_live_guid(instance_guid)
+        if live_existing is not None:
+            existing_entry, current_verified = live_existing
+            existing_data = updated_entry_data(
+                existing_entry.data,
+                current_verified,
+                version=version or current_verified.version,
+            )
             self.hass.config_entries.async_update_entry(
                 existing_entry,
                 data=existing_data,
