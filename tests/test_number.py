@@ -177,6 +177,25 @@ def test_async_setup_entry_skips_boiler_config_numbers_without_physical_bai00() 
     assert not any(isinstance(entity, number_platform.HelianthusBoilerNumber) for entity in entities)
 
 
+def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None:
+    payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
+    payload["boiler_coordinator"].data["boiler_status"]["config"]["partload_hwc_kw"] = None
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
+
+    boiler_numbers = {
+        entity._field.key: entity
+        for entity in entities
+        if isinstance(entity, number_platform.HelianthusBoilerNumber)
+    }
+
+    assert boiler_numbers["flowset_hc_max_c"]._attr_entity_registry_enabled_default is True
+    assert boiler_numbers["partload_hwc_kw"]._attr_entity_registry_enabled_default is False
+
+
 def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     payload, boiler_coordinator, client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
     hass = _FakeHass(payload)

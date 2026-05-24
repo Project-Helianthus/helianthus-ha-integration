@@ -1192,6 +1192,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     boiler_sensor_sparse_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-sensor-(?P<key>hours_till_service)$"
     )
+    boiler_number_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-boiler-number-(?P<key>.+)$"
+    )
     boiler_text_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-text-(?P<key>phone_number)$"
     )
@@ -1326,6 +1329,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             or cylinder_unique_id_re.match(unique_id) is not None
             or boiler_temp_unique_id_re.match(unique_id) is not None
             or boiler_sensor_sparse_unique_id_re.match(unique_id) is not None
+            or boiler_number_unique_id_re.match(unique_id) is not None
             or boiler_text_unique_id_re.match(unique_id) is not None
             or circuit_sensor_unique_id_re.match(unique_id) is not None
             or circuit_number_unique_id_re.match(unique_id) is not None
@@ -1350,6 +1354,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         boiler_sensor_match = boiler_sensor_sparse_unique_id_re.match(unique_id)
         if boiler_sensor_match:
             return boiler_sensor_match.group("key") in _current_boiler_bucket_live_keys("config")
+
+        boiler_number_match = boiler_number_unique_id_re.match(unique_id)
+        if boiler_number_match:
+            return boiler_number_match.group("key") in _current_boiler_bucket_live_keys("config")
 
         boiler_text_match = boiler_text_unique_id_re.match(unique_id)
         if boiler_text_match:
