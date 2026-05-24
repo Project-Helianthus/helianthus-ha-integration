@@ -287,6 +287,94 @@ def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
     assert session.urls == ["http://192.0.2.10:8080/graphql"]
 
 
+def test_setup_duplicate_owner_prefers_earliest_entry_id_among_verified_claimants() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+
+    later_claimant = SimpleNamespace(
+        entry_id="z-entry",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "192.0.2.20",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    earlier_claimant = SimpleNamespace(
+        entry_id="a-entry",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "192.0.2.10",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    hass = SimpleNamespace(config_entries=_FakeConfigEntries([later_claimant, earlier_claimant]))
+    session = _FakeSession([LIVE_GUID, LIVE_GUID])
+
+    result = asyncio.run(
+        _find_verified_entry_by_configured_instance_guid(
+            hass,
+            session,
+            LIVE_GUID,
+        )
+    )
+
+    assert result is earlier_claimant
+    assert session.urls == [
+        "http://192.0.2.20:8080/graphql",
+        "http://192.0.2.10:8080/graphql",
+    ]
+
+
+def test_setup_duplicate_owner_ignores_disabled_entries() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+
+    disabled_claimant = SimpleNamespace(
+        entry_id="a-disabled-entry",
+        unique_id=LIVE_GUID,
+        disabled_by="user",
+        data={
+            "host": "192.0.2.10",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    enabled_claimant = SimpleNamespace(
+        entry_id="z-enabled-entry",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "192.0.2.20",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    hass = SimpleNamespace(
+        config_entries=_FakeConfigEntries([disabled_claimant, enabled_claimant])
+    )
+    session = _FakeSession([LIVE_GUID])
+
+    result = asyncio.run(
+        _find_verified_entry_by_configured_instance_guid(
+            hass,
+            session,
+            LIVE_GUID,
+        )
+    )
+
+    assert result is enabled_claimant
+    assert session.urls == ["http://192.0.2.20:8080/graphql"]
+
+
 def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None:
     _ensure_config_flow_stubs()
     from custom_components.helianthus import _merge_duplicate_config_entry_options
@@ -322,6 +410,54 @@ def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None
             "zone-2": "calendar.owner",
         },
     }
+
+
+def test_duplicate_alias_registry_cleanup_removes_alias_tree_only() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _remove_config_entry_registry_state
+
+    class _FakeEntityRegistry:
+        def __init__(self) -> None:
+            self.removed: list[str] = []
+
+        def async_remove(self, entity_id: str) -> None:
+            self.removed.append(entity_id)
+
+    class _FakeDeviceRegistry:
+        def __init__(self) -> None:
+            self.removed: list[str] = []
+
+        def async_remove_device(self, device_id: str) -> None:
+            self.removed.append(device_id)
+
+    entity_registry = _FakeEntityRegistry()
+    device_registry = _FakeDeviceRegistry()
+    entity_entries = {
+        "alias-entry": [SimpleNamespace(entity_id="sensor.alias_gateway")],
+        "owner-entry": [SimpleNamespace(entity_id="sensor.owner_gateway")],
+    }
+    device_entries = {
+        "alias-entry": [SimpleNamespace(id="alias-device")],
+        "owner-entry": [SimpleNamespace(id="owner-device")],
+    }
+
+    removed_entities, removed_devices = _remove_config_entry_registry_state(
+        device_registry=device_registry,
+        entity_registry=entity_registry,
+        entry_id="alias-entry",
+        device_entries_for_config_entry=lambda _registry, entry_id: device_entries[
+            entry_id
+        ],
+        entity_entries_for_config_entry=lambda _registry, entry_id: entity_entries[
+            entry_id
+        ],
+    )
+
+    assert (removed_entities, removed_devices) == (1, 1)
+    assert entity_registry.removed == ["sensor.alias_gateway"]
+    assert device_registry.removed == ["alias-device"]
+    assert entity_entries["owner-entry"][0].entity_id == "sensor.owner_gateway"
+    assert device_entries["owner-entry"][0].id == "owner-device"
 
 
 def test_duplicate_alias_removal_is_scheduled_after_refusal() -> None:
