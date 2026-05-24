@@ -165,6 +165,47 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
     }
 
 
+def test_async_setup_entry_skips_address_only_bus_devices() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    payload["device_coordinator"] = _FakeCoordinator(
+        [
+            {
+                "address": 0x31,
+                "addresses": [0x31],
+                "device_id": "",
+                "display_name": None,
+                "hardware_version": "",
+                "mac_address": "",
+                "manufacturer": "",
+                "part_number": None,
+                "product_family": None,
+                "product_model": None,
+                "serial_number": "",
+                "software_version": "",
+            },
+            {
+                "address": 0x15,
+                "addresses": [0x15],
+                "device_id": "BASV2",
+                "product_model": "VRC 720f/2",
+            },
+        ]
+    )
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+    entities: list = []
+
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
+
+    bus_unique_ids = {
+        entity._attr_unique_id
+        for entity in entities
+        if isinstance(entity, sensor_platform.HelianthusBusAddressSensor)
+    }
+    assert "entry-1-bus-unknown-31-ebus-address" not in bus_unique_ids
+    assert "entry-1-bus-VRC-720f/2-15-ebus-address" in bus_unique_ids
+
+
 def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)

@@ -1582,7 +1582,8 @@ def _has_radio_identity_evidence(device: dict[str, Any]) -> bool:
         return True
     if str(device.get("firmware_version") or "").strip():
         return True
-    if _parse_optional_int(device.get("hardware_identifier")) is not None:
+    hardware_identifier = _parse_optional_int(device.get("hardware_identifier"))
+    if hardware_identifier is not None and hardware_identifier > 0:
         return True
     return False
 

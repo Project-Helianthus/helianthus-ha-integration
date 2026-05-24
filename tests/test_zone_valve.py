@@ -149,7 +149,10 @@ from custom_components.helianthus import climate as climate_platform
 from custom_components.helianthus import sensor as sensor_platform
 from custom_components.helianthus.const import DOMAIN
 from custom_components.helianthus.device_ids import radio_device_identifier
-from custom_components.helianthus.zone_parent import build_zone_parent_device_ids
+from custom_components.helianthus.zone_parent import (
+    build_zone_parent_device_ids,
+    should_reload_zone_parent_state,
+)
 
 
 class _FakeCoordinator:
@@ -532,3 +535,30 @@ def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
     asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))
 
     assert entities == []
+
+
+def test_zone_parent_reload_skips_when_baseline_already_incomplete() -> None:
+    assert should_reload_zone_parent_state(
+        baseline_parent_device_ids={},
+        baseline_unresolved_zone_ids=("zone-1",),
+        current_parent_device_ids={},
+        current_unresolved_zone_ids=("zone-1",),
+    ) is False
+
+
+def test_zone_parent_reload_triggers_when_complete_baseline_becomes_incomplete() -> None:
+    assert should_reload_zone_parent_state(
+        baseline_parent_device_ids={"zone-1": ("helianthus", "entry-1-bus-BASV-15")},
+        baseline_unresolved_zone_ids=(),
+        current_parent_device_ids={},
+        current_unresolved_zone_ids=("zone-1",),
+    ) is True
+
+
+def test_zone_parent_reload_triggers_when_incomplete_baseline_partially_resolves() -> None:
+    assert should_reload_zone_parent_state(
+        baseline_parent_device_ids={},
+        baseline_unresolved_zone_ids=("zone-1", "zone-2"),
+        current_parent_device_ids={"zone-1": ("helianthus", "entry-1-radio-g09-i01")},
+        current_unresolved_zone_ids=("zone-2",),
+    ) is True

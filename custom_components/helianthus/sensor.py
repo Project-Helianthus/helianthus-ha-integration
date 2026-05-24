@@ -19,6 +19,7 @@ from .device_ids import (
     circuit_identifier,
     dhw_identifier,
     energy_identifier,
+    has_bus_identity_evidence,
     radio_device_identifier,
     resolve_bus_address,
     solar_identifier,
@@ -511,6 +512,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     sensors: list[SensorEntity] = []
     seen_bus_keys: set[str] = set()
     for device in device_coordinator.data or []:
+        if not has_bus_identity_evidence(device):
+            continue
         device_id = _clean_text(device.get("device_id")) or "unknown"
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
