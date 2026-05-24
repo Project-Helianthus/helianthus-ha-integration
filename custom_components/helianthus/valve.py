@@ -11,7 +11,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .device_ids import boiler_hydraulics_identifier, circuit_identifier, zone_identifier
+from .device_ids import (
+    boiler_hydraulics_identifier,
+    circuit_display_name,
+    circuit_identifier,
+    zone_identifier,
+)
 
 try:
     from homeassistant.components.valve import ValveEntityFeature
@@ -21,14 +26,6 @@ except ImportError:  # pragma: no cover - test stub fallback
 
         def __new__(cls, value: int = 0):
             return int.__new__(cls, value)
-
-_CIRCUIT_TYPE_LABELS = {
-    "heating": "Heating",
-    "fixed_value": "Fixed Value",
-    "dhw": "DHW",
-    "return_increase": "Return Increase",
-}
-
 
 def _parse_circuit_index(value: object | None) -> int | None:
     if isinstance(value, bool):
@@ -43,9 +40,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuit_type") or "").strip().lower()
-    label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
-    return f"Circuit {index + 1} ({label})"
+    return circuit_display_name(circuit, index)
 
 
 def _normalize_zone_id(zone_id: object | None) -> str | None:

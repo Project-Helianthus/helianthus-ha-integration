@@ -694,7 +694,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         build_radio_bus_key,
         build_bus_device_key,
         bus_identifier,
+        circuit_display_name,
         circuit_identifier,
+        circuit_type_display_name,
         daemon_identifier,
         exportable_radio_bus_keys,
         has_bus_identity_evidence,
@@ -1074,15 +1076,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return f"{major}.{minor}.{patch}"
         return token
 
-    def circuit_type_display_name(value: object | None) -> str:
-        token = str(value or "").strip().lower()
-        return {
-            "heating": "Heating",
-            "fixed_value": "Fixed Value",
-            "dhw": "DHW",
-            "return_increase": "Return Increase",
-        }.get(token, token.replace("_", " ").title() or "Circuit")
-
     known_bus_devices: set[str] = set()
     bus_address_device_ids: dict[int, tuple[str, str]] = {}
     regulator_device: tuple[str, str] | None = None
@@ -1268,7 +1261,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "identifiers": {circuit_device_id},
             "manufacturer": regulator_manufacturer,
             "model": circuit_type_name,
-            "name": f"Circuit {index + 1} ({circuit_type_name})",
+            "name": circuit_display_name(circuit, index),
         }
         if managing_device is not None:
             device_kwargs["via_device"] = managing_device

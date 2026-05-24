@@ -17,6 +17,12 @@ _KNOWN_BUS_IDENTITY_MODELS: dict[str, str] = {
     "NETX3": "VR940f",
 }
 _UNKNOWN_IDENTITY_TOKENS = {"unknown", "none", "null"}
+_CIRCUIT_TYPE_LABELS = {
+    "heating": "Heating",
+    "fixed_value": "Fixed Value",
+    "dhw": "DHW",
+    "return_increase": "Return Increase",
+}
 
 
 def _token(value: object | None) -> str:
@@ -38,6 +44,25 @@ def _has_known_identity_text(value: object | None) -> bool:
         return False
     lowered = cleaned.lower()
     return lowered not in _UNKNOWN_IDENTITY_TOKENS and not lowered.startswith("unknown ")
+
+
+def circuit_type_display_name(value: object | None) -> str:
+    """Return the human display label for a gateway circuit type token."""
+
+    token = str(value or "").strip().lower()
+    return _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
+
+
+def circuit_display_name(circuit: dict, index: int) -> str:
+    """Return the HA display name for a circuit while preserving stable indexes."""
+
+    token = str(circuit.get("circuit_type") or "").strip().lower()
+    label = circuit_type_display_name(token)
+    if token == "dhw":
+        if index == 9:
+            return "DHW Circuit"
+        return f"DHW Circuit {index + 1}"
+    return f"Circuit {index + 1} ({label})"
 
 
 def has_bus_identity_evidence(device: dict) -> bool:
