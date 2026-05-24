@@ -7,6 +7,7 @@ from types import ModuleType, SimpleNamespace
 import sys
 
 from custom_components.helianthus.const import (
+    CONF_HOST_ALIASES,
     CONF_INSTANCE_GUID,
     CONF_PATH,
     CONF_TRANSPORT,
@@ -223,6 +224,160 @@ def test_zeroconf_rebinds_existing_entry_when_stored_guid_is_stale() -> None:
     assert stale_entry.data[CONF_INSTANCE_GUID] == LIVE_GUID
     assert stale_entry.data["host"] == "172.30.32.1"
     assert config_entries.reloads == ["01KK2FYJ7KCXCZ4A766ZPJSPE9"]
+
+
+def test_zeroconf_entry_records_unselected_host_aliases() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus.config_flow import HelianthusConfigFlow
+
+    config_entries = _FakeConfigEntries([])
+    flow = HelianthusConfigFlow()
+    flow.hass = SimpleNamespace(config_entries=config_entries)
+
+    result = asyncio.run(
+        flow._async_finish_verified_entry(
+            VerifiedHelianthusEndpoint(
+                instance_guid=LIVE_GUID,
+                host="172.30.32.1",
+                port=8080,
+                path="/graphql",
+                transport="http",
+            ),
+            version=None,
+            title="helianthus._helianthus-graphql._tcp.local.",
+            host_aliases=["172.30.232.1", "172.30.32.1"],
+        )
+    )
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["host"] == "172.30.32.1"
+    assert result["data"][CONF_HOST_ALIASES] == ["172.30.232.1"]
+
+
+def test_existing_entry_update_preserves_host_aliases_when_user_flow_has_no_aliases() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus.config_flow import HelianthusConfigFlow
+
+    existing_entry = SimpleNamespace(
+        entry_id="01KSC4TH4K09D1VXX0MHFT6BBF",
+        title="Helianthus",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "172.30.32.1",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+            CONF_HOST_ALIASES: ["172.30.232.1", "local-helianthus.local.hass.io"],
+        },
+    )
+    config_entries = _FakeConfigEntries([existing_entry])
+    flow = HelianthusConfigFlow()
+    flow.hass = SimpleNamespace(config_entries=config_entries)
+
+    result = asyncio.run(
+        flow._async_finish_verified_entry(
+            VerifiedHelianthusEndpoint(
+                instance_guid=LIVE_GUID,
+                host="172.30.32.1",
+                port=8080,
+                path="/graphql",
+                transport="http",
+            ),
+            version=None,
+            title="172.30.32.1",
+        )
+    )
+
+    assert result == {"type": "abort", "reason": "already_configured"}
+    assert existing_entry.data[CONF_HOST_ALIASES] == [
+        "172.30.232.1",
+        "local-helianthus.local.hass.io",
+    ]
+    assert config_entries.reloads == []
+
+
+def test_existing_entry_update_preserves_string_host_alias_without_character_split() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus.config_flow import HelianthusConfigFlow
+
+    existing_entry = SimpleNamespace(
+        entry_id="01KSC4TH4K09D1VXX0MHFT6BBF",
+        title="Helianthus",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "172.30.32.1",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+            CONF_HOST_ALIASES: "172.30.232.1",
+        },
+    )
+    config_entries = _FakeConfigEntries([existing_entry])
+    flow = HelianthusConfigFlow()
+    flow.hass = SimpleNamespace(config_entries=config_entries)
+
+    result = asyncio.run(
+        flow._async_finish_verified_entry(
+            VerifiedHelianthusEndpoint(
+                instance_guid=LIVE_GUID,
+                host="172.30.32.1",
+                port=8080,
+                path="/graphql",
+                transport="http",
+            ),
+            version=None,
+            title="172.30.32.1",
+        )
+    )
+
+    assert result == {"type": "abort", "reason": "already_configured"}
+    assert existing_entry.data[CONF_HOST_ALIASES] == ["172.30.232.1"]
+    assert config_entries.reloads == []
+
+
+def test_setup_identity_probe_addresses_adds_stored_and_hassio_fallbacks() -> None:
+    from custom_components.helianthus import _entry_identity_probe_addresses
+
+    assert _entry_identity_probe_addresses(
+        {CONF_HOST_ALIASES: ["172.30.232.1", "local-helianthus.local.hass.io"]},
+        "172.30.232.1",
+    ) == ("local-helianthus.local.hass.io", "172.30.32.1")
+
+
+def test_setup_identity_refresh_rebinds_same_guid_to_reachable_alias() -> None:
+    _ensure_config_flow_stubs()
+    from custom_components.helianthus import _update_entry_endpoint_if_changed
+
+    entry = SimpleNamespace(
+        entry_id="01KSC4TH4K09D1VXX0MHFT6BBF",
+        unique_id=LIVE_GUID,
+        data={
+            "host": "172.30.232.1",
+            "port": 8080,
+            CONF_PATH: "/graphql",
+            CONF_TRANSPORT: "http",
+            CONF_INSTANCE_GUID: LIVE_GUID,
+        },
+    )
+    config_entries = _FakeConfigEntries([entry])
+    hass = SimpleNamespace(config_entries=config_entries)
+
+    assert _update_entry_endpoint_if_changed(
+        hass,
+        entry,
+        VerifiedHelianthusEndpoint(
+            instance_guid=LIVE_GUID,
+            host="172.30.32.1",
+            port=8080,
+            path="/graphql",
+            transport="http",
+        ),
+        version=None,
+    )
+    assert entry.data["host"] == "172.30.32.1"
+    assert entry.unique_id == LIVE_GUID
 
 
 def test_setup_duplicate_owner_requires_live_identity_proof() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from .admission import (
@@ -14,6 +14,7 @@ from .admission import (
 )
 from .const import (
     CONF_DHW_SCHEDULE_HELPER,
+    CONF_HOST_ALIASES,
     CONF_INSTANCE_GUID,
     CONF_PATH,
     CONF_TRANSPORT,
@@ -466,6 +467,68 @@ def _config_entry_enabled(config_entry: object) -> bool:
     return getattr(config_entry, "disabled_by", None) is None
 
 
+_HASSIO_HELIANTHUS_FALLBACK_HOSTS = (
+    "local-helianthus.local.hass.io",
+    "172.30.32.1",
+)
+
+
+def _entry_identity_probe_addresses(
+    data: Mapping[str, object],
+    primary_host: str,
+) -> tuple[str, ...]:
+    """Return secondary hosts to try when verifying a stored gateway endpoint."""
+
+    ordered: list[str] = []
+    seen = {primary_host}
+
+    def add(value: object) -> None:
+        host = str(value or "").strip()
+        if not host or host in seen:
+            return
+        seen.add(host)
+        ordered.append(host)
+
+    aliases = data.get(CONF_HOST_ALIASES)
+    if isinstance(aliases, str):
+        add(aliases)
+    elif isinstance(aliases, Iterable):
+        for alias in aliases:
+            add(alias)
+
+    if primary_host.startswith("172.30."):
+        for host in _HASSIO_HELIANTHUS_FALLBACK_HOSTS:
+            add(host)
+
+    return tuple(ordered)
+
+
+def _update_entry_endpoint_if_changed(
+    hass: object,
+    entry: object,
+    verified_endpoint: object,
+    *,
+    version: str | None,
+) -> bool:
+    """Persist a verified reachable endpoint when a config entry drifted."""
+
+    from .identity import same_endpoint, updated_entry_data
+
+    data = getattr(entry, "data", None) or {}
+    if same_endpoint(data, verified_endpoint):
+        return False
+    hass.config_entries.async_update_entry(
+        entry,
+        data=updated_entry_data(
+            data,
+            verified_endpoint,
+            version=version or getattr(verified_endpoint, "version", None),
+        ),
+        unique_id=verified_endpoint.instance_guid,
+    )
+    return True
+
+
 async def _find_verified_entry_by_configured_instance_guid(
     hass: object,
     session: object,
@@ -747,6 +810,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             port=int(port),
             path=path,
             transport=transport,
+            addresses=_entry_identity_probe_addresses(entry.data, str(host)),
             expected_instance_guid=None,
             version=version,
         )
@@ -823,6 +887,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 < _config_entry_sort_key(entry)
             ):
                 return refuse_duplicate_setup(duplicate_entry, live_instance_guid)
+            if _update_entry_endpoint_if_changed(
+                hass,
+                entry,
+                verified_endpoint,
+                version=version or verified_endpoint.version,
+            ):
+                host = verified_endpoint.host
+                port = verified_endpoint.port
+                path = verified_endpoint.path
+                transport = verified_endpoint.transport
+                version = version or verified_endpoint.version
+                _LOGGER.info(
+                    "Rebound Helianthus entry %s to reachable endpoint %s:%s",
+                    entry.entry_id,
+                    host,
+                    port,
+                )
 
     if entry_instance_guid is not None:
         normalized_unique_id = normalize_instance_guid(entry.unique_id)
