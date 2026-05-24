@@ -12,6 +12,7 @@ from custom_components.helianthus.device_ids import (
     daemon_identifier,
     dhw_identifier,
     energy_identifier,
+    has_bus_identity_evidence,
     managing_device_identifier,
     radio_device_identifier,
     resolve_boiler_physical_device_id,
@@ -40,6 +41,30 @@ def test_resolve_bus_address_uses_alias_list_when_available() -> None:
     assert resolve_bus_address(0x15, [0x08, "0x15"]) == 0x08
     assert resolve_bus_address("0x26", None) == 0x26
     assert resolve_bus_address(None, None) is None
+
+
+def test_has_bus_identity_evidence_rejects_address_only_payload() -> None:
+    assert not has_bus_identity_evidence(
+        {
+            "address": 0x31,
+            "addresses": [0x31],
+            "device_id": "",
+            "display_name": None,
+            "hardware_version": "",
+            "mac_address": "",
+            "manufacturer": "",
+            "part_number": None,
+            "product_family": None,
+            "product_model": None,
+            "serial_number": "",
+            "software_version": "",
+        }
+    )
+
+
+def test_has_bus_identity_evidence_accepts_device_identity_payload() -> None:
+    assert has_bus_identity_evidence({"address": 0x15, "device_id": "BASV2"})
+    assert has_bus_identity_evidence({"address": 0x08, "serial_number": "ABC123"})
 
 
 def test_alias_faces_share_fallback_key_when_alias_addresses_match() -> None:

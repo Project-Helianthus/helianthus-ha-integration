@@ -16,6 +16,7 @@ _KNOWN_BUS_IDENTITY_MODELS: dict[str, str] = {
     "BAI00": "VUW",
     "NETX3": "VR940f",
 }
+_UNKNOWN_IDENTITY_TOKENS = {"unknown", "none", "null"}
 
 
 def _token(value: object | None) -> str:
@@ -29,6 +30,26 @@ def _clean(value: object | None) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def has_bus_identity_evidence(device: dict) -> bool:
+    """Return whether a GraphQL device payload is more than an address sighting."""
+
+    for key in (
+        "device_id",
+        "product_model",
+        "product_family",
+        "display_name",
+        "serial_number",
+        "mac_address",
+        "hardware_version",
+        "software_version",
+        "part_number",
+    ):
+        cleaned = _clean(device.get(key))
+        if cleaned and cleaned.lower() not in _UNKNOWN_IDENTITY_TOKENS:
+            return True
+    return False
 
 
 def stable_bus_identity_model(device_id: object | None, product_model: object | None = None) -> str:

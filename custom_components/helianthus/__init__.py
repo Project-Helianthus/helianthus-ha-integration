@@ -591,6 +591,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bus_identifier,
         circuit_identifier,
         daemon_identifier,
+        has_bus_identity_evidence,
         managing_device_identifier,
         radio_device_identifier,
         resolve_bus_address,
@@ -600,7 +601,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zone_identifier,
     )
     from .subscriptions import start_subscriptions
-    from .zone_parent import build_zone_parent_device_ids
+    from .zone_parent import build_zone_parent_device_ids, should_reload_zone_parent_state
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
@@ -848,6 +849,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
 
     def resolved_bus_device_key(device: dict) -> str | None:
+        if not has_bus_identity_evidence(device):
+            return None
         address = resolve_bus_address(device.get("address"), device.get("addresses"))
         if address is None:
             return None
@@ -1175,6 +1178,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     radio_sensor_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
     )
+    radio_connected_unique_id_re = re.compile(
+        rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-connected$"
+    )
     solar_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-solar-(?P<kind>sensor|binary)-(?P<key>.+)$"
     )
@@ -1418,6 +1424,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return "temperature_c" in live_keys
         return False
 
+    def _radio_bus_key_from_unique_id(unique_id: str | None) -> str | None:
+        if not unique_id:
+            return None
+        for pattern in (radio_sensor_unique_id_re, radio_connected_unique_id_re):
+            match = pattern.match(unique_id)
+            if match is None:
+                continue
+            return build_radio_bus_key(
+                int(match.group("group"), 16),
+                int(match.group("instance")),
+            )
+        return None
+
     # ADR-027: build set of merged B524 slot prefixes for entity cleanup.
     # bus_key format: "g0c-i01" -> unique_id slot format: "0c-01"
     def _bus_key_to_uid_slot(bk: str) -> str:
@@ -1449,6 +1468,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 unique_id.startswith(prefix) for prefix in _b524_merged_uid_prefixes
             ):
                 remove_entry = True
+            elif (radio_bus_key := _radio_bus_key_from_unique_id(unique_id)) is not None:
+                remove_entry = radio_bus_key not in known_radio_bus_keys
             else:
                 cylinder_match = cylinder_unique_id_re.match(unique_id)
                 if cylinder_match and int(cylinder_match.group("index")) not in known_cylinder_indexes:
@@ -1513,7 +1534,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 radio_prefix = f"{entry.entry_id}-radio-"
                 if token.startswith(radio_prefix):
                     radio_bus_key = token[len(radio_prefix):]
-                    if radio_bus_key in b524_merge_targets:
+                    if radio_bus_key not in known_radio_bus_keys or radio_bus_key in b524_merge_targets:
                         remove_device = True
                         break
             if not remove_device:
@@ -1759,10 +1780,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         has_new_zones = bool(current_zone_ids - known_zones)
         has_new_dhw = dhw is not None and not known_has_dhw
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
-        if unresolved:
-            schedule_reload("zone parent resolution became incomplete")
-            return
-        if current_zone_parent_ids != zone_parent_device_ids:
+        if should_reload_zone_parent_state(
+            zone_parent_device_ids,
+            unresolved_zone_ids,
+            current_zone_parent_ids,
+            unresolved,
+        ):
             schedule_reload("zone parent mapping changed")
             return
         if has_new_zones or has_new_dhw:
@@ -1800,10 +1823,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 continue
             current_keys.add(build_radio_bus_key(group, instance))
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
-        if unresolved:
-            schedule_reload("zone parent resolution became incomplete")
-            return
-        if current_zone_parent_ids != zone_parent_device_ids:
+        if should_reload_zone_parent_state(
+            zone_parent_device_ids,
+            unresolved_zone_ids,
+            current_zone_parent_ids,
+            unresolved,
+        ):
             schedule_reload("zone parent mapping changed")
             return
         auto_enable_sparse_entities("radio update")

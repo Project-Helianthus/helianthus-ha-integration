@@ -112,6 +112,14 @@ class _FakeStatusCoordinator:
         return lambda: None
 
 
+def _set_entity_hass(entity: object, hass: object | None) -> None:
+    hass_descriptor = getattr(type(entity), "hass", None)
+    if isinstance(hass_descriptor, property):
+        setattr(entity, "_hass", hass)
+        return
+    setattr(entity, "hass", hass)
+
+
 def test_text_listener_skips_entities_until_home_assistant_attaches_them() -> None:
     _ensure_text_stubs()
     from custom_components.helianthus import text as text_platform
@@ -136,11 +144,12 @@ def test_text_listener_skips_entities_until_home_assistant_attaches_them() -> No
             entity.write_count = getattr(entity, "write_count", 0) + 1
 
         entity.async_write_ha_state = _write_state
+        _set_entity_hass(entity, None)
 
     status_coordinator.listener()
     assert [getattr(entity, "write_count", 0) for entity in entities] == [0, 0, 0]
 
     for entity in entities:
-        entity.hass = hass
+        _set_entity_hass(entity, hass)
     status_coordinator.listener()
     assert [getattr(entity, "write_count", 0) for entity in entities] == [1, 1, 1]

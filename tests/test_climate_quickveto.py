@@ -279,6 +279,8 @@ def test_climate_setup_refreshes_state_on_admission_updates(monkeypatch: pytest.
     entities = []
 
     asyncio.run(climate_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend))
+    for entity in entities:
+        entity.hass = object()
     status.listeners[0]()
 
     assert writes == ["zone-1"]

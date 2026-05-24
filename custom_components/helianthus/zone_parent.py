@@ -277,3 +277,28 @@ def build_zone_parent_device_ids(
         parent_device_ids[zone_id] = parent_device_id
 
     return parent_device_ids, tuple(sorted(unresolved_zone_ids))
+
+
+def should_reload_zone_parent_state(
+    baseline_parent_device_ids: dict[str, tuple[str, str]],
+    baseline_unresolved_zone_ids: tuple[str, ...],
+    current_parent_device_ids: dict[str, tuple[str, str]],
+    current_unresolved_zone_ids: tuple[str, ...],
+) -> bool:
+    """Return True when zone parent changes require a config entry reload."""
+    baseline_unresolved = set(baseline_unresolved_zone_ids)
+    current_unresolved = set(current_unresolved_zone_ids)
+    if current_unresolved:
+        # Transition from complete -> incomplete can orphan existing entities.
+        if not baseline_unresolved:
+            return True
+        if current_unresolved != baseline_unresolved:
+            return True
+        if current_parent_device_ids != baseline_parent_device_ids:
+            return True
+        # If a previously-resolved zone became unresolved, re-parenting is required.
+        if set(baseline_parent_device_ids).intersection(current_unresolved):
+            return True
+        # Baseline was already incomplete; wait for a complete mapping before reload.
+        return False
+    return current_parent_device_ids != baseline_parent_device_ids

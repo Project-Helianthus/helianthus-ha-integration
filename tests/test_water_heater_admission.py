@@ -192,6 +192,8 @@ def test_water_heater_setup_refreshes_state_on_admission_updates(monkeypatch: py
     asyncio.run(
         water_heater_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend)
     )
+    for entity in entities:
+        entity.hass = object()
     status.listeners[0]()
 
     assert writes == ["entry-1-dhw"]

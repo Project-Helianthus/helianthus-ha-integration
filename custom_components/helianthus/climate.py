@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
 from .device_ids import build_radio_bus_key, radio_device_identifier
+from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
 from .zone_parent import (
@@ -175,8 +176,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if entities and hasattr(status_coordinator, "async_add_listener"):
         def _handle_admission_update() -> None:
             for entity in entities:
-                if hasattr(entity, "async_write_ha_state"):
-                    entity.async_write_ha_state()
+                async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
         data.setdefault("unsub_listeners", []).append(unsub)
