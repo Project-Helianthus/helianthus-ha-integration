@@ -349,6 +349,11 @@ def _select_bus_migration_target(
     serial_number: str | None,
 ) -> object | None:
     _, stable_token = stable_identifier
+    for device_entry in existing_devices:
+        tokens = _bus_identifier_tokens_for_entry(getattr(device_entry, "identifiers", set()), entry_id)
+        if stable_token in tokens:
+            return device_entry
+
     best_score: tuple[int, int, int, int, int, int] | None = None
     best_entry: object | None = None
     serialized_model_matches: list[object] = []
@@ -356,8 +361,6 @@ def _select_bus_migration_target(
         tokens = _bus_identifier_tokens_for_entry(getattr(device_entry, "identifiers", set()), entry_id)
         if not tokens:
             continue
-        if stable_token in tokens:
-            return device_entry
         entry_manufacturer = _clean_label(getattr(device_entry, "manufacturer", None))
         if entry_manufacturer and entry_manufacturer != manufacturer:
             continue

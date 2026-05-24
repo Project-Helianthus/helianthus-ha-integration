@@ -181,6 +181,36 @@ def test_select_bus_migration_target_prefers_serialized_area_device_for_sparse_p
     assert selected is old_good
 
 
+def test_select_bus_migration_target_prefers_stable_owner_before_serial_match() -> None:
+    stable_identifier = (DOMAIN, "entry-1-bus-VR940f-04")
+    serial_duplicate = SimpleNamespace(
+        id="serial-dup",
+        identifiers={(DOMAIN, "entry-1-bus-VR940f-f1")},
+        manufacturer="Vaillant",
+        model="VR940f (eBUS: NETX3)",
+        serial_number="21-23-05-0020292012-0933-016291-N9",
+        area_id=None,
+    )
+    stable_owner = SimpleNamespace(
+        id="stable-owner",
+        identifiers={(DOMAIN, "entry-1-bus-VR940f-04")},
+        manufacturer="Vaillant",
+        model="VR940f (eBUS: NETX3)",
+        serial_number=None,
+        area_id=None,
+    )
+    selected = _select_bus_migration_target(
+        (serial_duplicate, stable_owner),
+        entry_id="entry-1",
+        stable_identifier=stable_identifier,
+        address=0x04,
+        manufacturer="Vaillant",
+        model_name="VR940f (eBUS: NETX3)",
+        serial_number="21-23-05-0020292012-0933-016291-N9",
+    )
+    assert selected is stable_owner
+
+
 def test_select_bus_migration_target_matches_sparse_duplicate_by_address() -> None:
     stable_identifier = (DOMAIN, "entry-1-bus-VUW-09")
     wrong_address = SimpleNamespace(
