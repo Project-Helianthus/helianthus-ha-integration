@@ -14,16 +14,10 @@ from .const import DOMAIN
 from .device_ids import (
     boiler_burner_identifier,
     boiler_hydraulics_identifier,
+    circuit_display_name,
     circuit_identifier,
     solar_identifier,
 )
-
-_CIRCUIT_TYPE_LABELS = {
-    "heating": "Heating",
-    "fixed_value": "Fixed Value",
-    "dhw": "DHW",
-    "return_increase": "Return Increase",
-}
 
 _FM5_MODE_INTERPRETED = "INTERPRETED"
 
@@ -41,9 +35,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuit_type") or "").strip().lower()
-    label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
-    return f"Circuit {index + 1} ({label})"
+    return circuit_display_name(circuit, index)
 
 
 def _fm5_mode(payload: dict[str, Any] | None) -> str:

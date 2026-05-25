@@ -197,6 +197,24 @@ from custom_components.helianthus import valve as valve_platform
 from custom_components.helianthus.const import DOMAIN
 
 
+@pytest.mark.parametrize(
+    "platform",
+    [
+        binary_sensor_platform,
+        fan_platform,
+        number_platform,
+        select_platform,
+        sensor_platform,
+        switch_platform,
+        valve_platform,
+    ],
+)
+def test_circuit_name_labels_dhw_pseudo_circuit_by_role(platform) -> None:  # noqa: ANN001
+    assert platform._circuit_name({"circuit_type": "dhw"}, 9) == "DHW Circuit"
+    assert platform._circuit_name({"circuit_type": "dhw"}, 2) == "DHW Circuit 3"
+    assert platform._circuit_name({"circuit_type": "heating"}, 0) == "Circuit 1 (Heating)"
+
+
 class _FakeCoordinator:
     def __init__(self, data) -> None:  # noqa: ANN001
         self.data = data

@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
 from .const import DOMAIN
-from .device_ids import circuit_identifier
+from .device_ids import circuit_display_name, circuit_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
@@ -25,12 +25,6 @@ mutation SetCircuitConfig($index: Int!, $field: String!, $value: String!) {
 }
 """
 
-_CIRCUIT_TYPE_LABELS = {
-    "heating": "Heating",
-    "fixed_value": "Fixed Value",
-    "dhw": "DHW",
-    "return_increase": "Return Increase",
-}
 _OPTIONS = ["off", "modulating", "thermostat"]
 
 
@@ -47,9 +41,7 @@ def _parse_circuit_index(value: object | None) -> int | None:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuit_type") or "").strip().lower()
-    label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
-    return f"Circuit {index + 1} ({label})"
+    return circuit_display_name(circuit, index)
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:

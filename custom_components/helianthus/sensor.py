@@ -16,6 +16,7 @@ from .device_ids import (
     build_bus_device_key,
     cylinder_identifier,
     bus_identifier,
+    circuit_display_name,
     circuit_identifier,
     dhw_identifier,
     energy_identifier,
@@ -106,13 +107,6 @@ _SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASI
 _RADIO_ROOM_CLASSES = {0x15, 0x35}
 _RADIO_STALE_GRACE_CYCLES = 3
 _FM5_MODE_INTERPRETED = "INTERPRETED"
-
-_CIRCUIT_TYPE_LABELS = {
-    "heating": "Heating",
-    "fixed_value": "Fixed Value",
-    "dhw": "DHW",
-    "return_increase": "Return Increase",
-}
 
 CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
@@ -455,9 +449,7 @@ def _fm5_mode(payload: dict[str, Any] | None) -> str:
 
 
 def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    token = str(circuit.get("circuit_type") or "").strip().lower()
-    label = _CIRCUIT_TYPE_LABELS.get(token, token.replace("_", " ").title() or "Circuit")
-    return f"Circuit {index + 1} ({label})"
+    return circuit_display_name(circuit, index)
 
 
 def _normalize_zone_id(zone_id: object | None) -> str | None:

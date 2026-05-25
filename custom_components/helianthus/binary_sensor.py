@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .device_ids import (
     build_radio_bus_key,
+    circuit_display_name,
     circuit_identifier,
     dhw_identifier,
     radio_device_identifier,
@@ -43,6 +44,10 @@ def _parse_optional_int(value: object | None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _circuit_name(circuit: dict[str, Any], index: int) -> str:
+    return circuit_display_name(circuit, index)
 
 
 def _radio_slot(device: dict[str, Any]) -> tuple[int, int] | None:
@@ -205,15 +210,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             circuit_index = _parse_optional_int(circuit.get("index"))
             if circuit_index is None or circuit_index < 0:
                 continue
-            circuit_type = str(circuit.get("circuit_type") or "").strip().lower()
-            label = circuit_type.replace("_", " ").title() if circuit_type else f"Circuit {circuit_index + 1}"
             entities.append(
                 HelianthusCircuitPumpBinarySensor(
                     coordinator=circuit_coordinator,
                     entry_id=entry.entry_id,
                     manufacturer=manufacturer,
                     circuit_index=circuit_index,
-                    initial_name=f"Circuit {circuit_index + 1} ({label})",
+                    initial_name=_circuit_name(circuit, circuit_index),
                 )
             )
 

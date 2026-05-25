@@ -8,7 +8,9 @@ from custom_components.helianthus.device_ids import (
     bus_identifier,
     build_bus_device_key,
     cylinder_identifier,
+    circuit_display_name,
     circuit_identifier,
+    circuit_type_display_name,
     daemon_identifier,
     dhw_identifier,
     energy_identifier,
@@ -25,6 +27,18 @@ from custom_components.helianthus.device_ids import (
     solar_identifier,
     zone_identifier,
 )
+
+
+def test_circuit_display_name_labels_dhw_pseudo_circuit_by_role() -> None:
+    assert circuit_display_name({"circuit_type": "dhw"}, 9) == "DHW Circuit"
+    assert circuit_display_name({"circuit_type": "dhw"}, 2) == "DHW Circuit 3"
+    assert circuit_display_name({"circuit_type": "heating"}, 0) == "Circuit 1 (Heating)"
+
+
+def test_circuit_type_display_name_formats_known_and_unknown_tokens() -> None:
+    assert circuit_type_display_name("fixed_value") == "Fixed Value"
+    assert circuit_type_display_name("return_increase") == "Return Increase"
+    assert circuit_type_display_name("vendor_specific") == "Vendor Specific"
 
 
 def test_build_bus_device_key_uses_stable_model_and_address_only() -> None:
