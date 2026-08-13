@@ -999,7 +999,11 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._stale_cycles: dict[tuple[int, int], int] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
-        empty = {"radio_devices": [], "radio_zone_candidates": {}}
+        empty = {
+            "radio_devices": [],
+            "radio_zone_candidates": {},
+            "inventory_complete": False,
+        }
         missing_fields = [
             "radio_devices",
             "group",
@@ -1100,6 +1104,8 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "radio_devices": radio_devices,
             "radio_zone_candidates": candidates,
+            # The GraphQL list has no snapshot-completeness contract yet.
+            "inventory_complete": False,
         }
 
 

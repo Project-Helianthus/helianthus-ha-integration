@@ -85,6 +85,40 @@ def radio_mappings_by_zone_id(zones: list[dict[str, Any]]) -> dict[str, int]:
     return out
 
 
+def resolve_retained_parent_bindings(
+    registry_parent_ids: dict[str, tuple[str, str]],
+    stored_bindings: object,
+    *,
+    current_mappings: dict[str, int],
+    allow_registry_bootstrap: bool,
+) -> tuple[
+    dict[str, tuple[str, str]],
+    dict[str, int],
+    dict[str, dict[str, object]],
+]:
+    """Validate persisted parent provenance or migrate pre-V1 live bindings."""
+    stored = stored_bindings if isinstance(stored_bindings, dict) else {}
+    parent_ids: dict[str, tuple[str, str]] = {}
+    parent_mappings: dict[str, int] = {}
+    normalized: dict[str, dict[str, object]] = {}
+    for zone_id, parent_id in registry_parent_ids.items():
+        raw = stored.get(zone_id)
+        identifier = parent_id[1]
+        mapping: int | None = None
+        if isinstance(raw, dict) and raw.get("identifier") == identifier:
+            parsed = parse_optional_int(raw.get("mapping"))
+            if parsed in (1, 2, 3, 4):
+                mapping = parsed
+        elif allow_registry_bootstrap:
+            mapping = current_mappings.get(zone_id)
+        if mapping not in (1, 2, 3, 4):
+            continue
+        parent_ids[zone_id] = parent_id
+        parent_mappings[zone_id] = mapping
+        normalized[zone_id] = {"identifier": identifier, "mapping": mapping}
+    return parent_ids, parent_mappings, normalized
+
+
 def radio_devices_from_payload(radio_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(radio_payload, dict):
         return []
@@ -288,6 +322,7 @@ def build_zone_parent_device_ids(
     *,
     existing_parent_device_ids: dict[str, tuple[str, str]] | None = None,
     existing_parent_mappings: dict[str, int] | None = None,
+    allow_existing_parent_fallback: bool = False,
 ) -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
     radio_devices = radio_devices_from_payload(radio_payload)
     radio_zone_candidates = radio_zone_candidates_from_payload(radio_payload)
@@ -318,6 +353,7 @@ def build_zone_parent_device_ids(
             and existing_parent_device_ids is not None
             and existing_parent_mappings is not None
             and existing_parent_mappings.get(zone_id) == mapping
+            and allow_existing_parent_fallback
         ):
             parent_device_id = existing_parent_device_ids.get(zone_id)
         if parent_device_id is None:

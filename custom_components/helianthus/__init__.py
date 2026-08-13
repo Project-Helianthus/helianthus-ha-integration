@@ -715,6 +715,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .zone_parent import (
         build_zone_parent_device_ids,
         radio_mappings_by_zone_id,
+        resolve_retained_parent_bindings,
         should_reload_zone_parent_state,
         zone_ids_by_climate_unique_id,
     )
@@ -1874,9 +1875,61 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial_radio_payload,
         regulator_device,
     )
-    retained_zone_parent_ids = existing_zone_parent_device_ids(initial_zones)
-    retained_zone_parent_ids.update(initial_live_parent_ids)
-    retained_zone_parent_mappings = radio_mappings_by_zone_id(initial_zones)
+    initial_mappings = radio_mappings_by_zone_id(initial_zones)
+    binding_key = "zone_parent_bindings_v1"
+    retained_zone_parent_ids, retained_zone_parent_mappings, normalized_bindings = (
+        resolve_retained_parent_bindings(
+            existing_zone_parent_device_ids(initial_zones),
+            entry.data.get(binding_key),
+            current_mappings=initial_mappings,
+            allow_registry_bootstrap=binding_key not in entry.data,
+        )
+    )
+    for zone_id, parent_id in initial_live_parent_ids.items():
+        mapping = initial_mappings.get(zone_id)
+        if mapping is None:
+            continue
+        retained_zone_parent_ids[zone_id] = parent_id
+        retained_zone_parent_mappings[zone_id] = mapping
+        normalized_bindings[zone_id] = {
+            "identifier": parent_id[1],
+            "mapping": mapping,
+        }
+
+    def persist_retained_zone_parent_bindings() -> None:
+        if entry.data.get(binding_key) == normalized_bindings:
+            return
+        updated_data = dict(entry.data)
+        updated_data[binding_key] = dict(normalized_bindings)
+        hass.config_entries.async_update_entry(entry, data=updated_data)
+
+    persist_retained_zone_parent_bindings()
+
+    def adopt_current_live_parent_bindings() -> None:
+        payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
+        zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
+        radio_payload = radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
+        live_parent_ids, _ = build_zone_parent_device_ids(
+            entry.entry_id,
+            zones,
+            radio_payload,
+            regulator_device,
+        )
+        mappings = radio_mappings_by_zone_id(zones)
+        changed = False
+        for zone_id, parent_id in live_parent_ids.items():
+            mapping = mappings.get(zone_id)
+            if mapping is None:
+                continue
+            binding = {"identifier": parent_id[1], "mapping": mapping}
+            if normalized_bindings.get(zone_id) == binding:
+                continue
+            retained_zone_parent_ids[zone_id] = parent_id
+            retained_zone_parent_mappings[zone_id] = mapping
+            normalized_bindings[zone_id] = binding
+            changed = True
+        if changed:
+            persist_retained_zone_parent_bindings()
 
     def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
         payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
@@ -1889,6 +1942,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             regulator_device,
             existing_parent_device_ids=retained_zone_parent_ids,
             existing_parent_mappings=retained_zone_parent_mappings,
+            allow_existing_parent_fallback=(
+                isinstance(radio_payload, dict)
+                and radio_payload.get("inventory_complete") is False
+            ),
         )
 
     zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()
@@ -2029,6 +2086,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         has_new_zones = bool(current_zone_ids - known_zones)
         has_new_dhw = dhw is not None and not known_has_dhw
+        adopt_current_live_parent_bindings()
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
             zone_parent_device_ids,
@@ -2069,6 +2127,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "radio update",
             )
         current_keys = exportable_radio_bus_keys(radio_devices)
+        adopt_current_live_parent_bindings()
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
             zone_parent_device_ids,
