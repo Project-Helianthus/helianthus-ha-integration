@@ -152,6 +152,7 @@ from custom_components.helianthus.device_ids import radio_device_identifier
 from custom_components.helianthus.zone_parent import (
     build_zone_parent_device_ids,
     should_reload_zone_parent_state,
+    zone_ids_by_climate_unique_id,
 )
 
 
@@ -706,6 +707,31 @@ def test_build_zone_parent_device_ids_prefers_live_parent_over_existing_parent()
         "zone-2": ("helianthus", "entry-1-radio-g0a-i02")
     }
     assert unresolved == ()
+
+
+def test_zone_parent_registry_keys_normalize_numeric_zone_ids() -> None:
+    assert zone_ids_by_climate_unique_id(
+        "entry-1",
+        [{"id": "1"}, {"id": "zone-2"}, {"id": None}],
+    ) == {
+        "entry-1-zone-zone-1": "zone-1",
+        "entry-1-zone-zone-2": "zone-2",
+    }
+
+
+def test_existing_radio_parent_does_not_override_nonradio_mapping() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [{"id": "zone-1", "config": {"room_temperature_zone_mapping": 0}}],
+        {"radio_devices": [], "radio_zone_candidates": {}},
+        None,
+        existing_parent_device_ids={
+            "zone-1": ("helianthus", "entry-1-radio-g09-i01")
+        },
+    )
+
+    assert zone_parent_device_ids == {}
+    assert unresolved == ("zone-1",)
 
 
 def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:

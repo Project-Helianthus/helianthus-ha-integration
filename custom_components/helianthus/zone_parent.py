@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .device_ids import build_radio_bus_key, radio_device_identifier
+from .device_ids import build_radio_bus_key, radio_device_identifier, zone_identifier
 
 
 def parse_optional_int(value: object | None) -> int | None:
@@ -58,6 +58,19 @@ def zone_instance_from_id(zone_id: object | None) -> int | None:
     if value <= 0:
         return None
     return value - 1
+
+
+def zone_ids_by_climate_unique_id(
+    entry_id: str,
+    zones: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Map existing climate unique IDs to canonical zone IDs."""
+    out: dict[str, str] = {}
+    for zone in zones:
+        normalized = normalize_zone_id(zone.get("id"))
+        if normalized is not None:
+            out[zone_identifier(entry_id, normalized)[1]] = normalized
+    return out
 
 
 def radio_devices_from_payload(radio_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -286,7 +299,11 @@ def build_zone_parent_device_ids(
             radio_device_ids,
             regulator_device_id,
         )
-        if parent_device_id is None and existing_parent_device_ids is not None:
+        if (
+            parent_device_id is None
+            and mapping in (1, 2, 3, 4)
+            and existing_parent_device_ids is not None
+        ):
             parent_device_id = existing_parent_device_ids.get(zone_id)
         if parent_device_id is None:
             unresolved_zone_ids.append(zone_id)

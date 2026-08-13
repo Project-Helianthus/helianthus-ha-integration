@@ -710,10 +710,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resolve_boiler_via_device_id,
         should_export_radio_device,
         stable_bus_identity_model,
-        zone_identifier,
     )
     from .subscriptions import start_subscriptions
-    from .zone_parent import build_zone_parent_device_ids, should_reload_zone_parent_state
+    from .zone_parent import (
+        build_zone_parent_device_ids,
+        should_reload_zone_parent_state,
+        zone_ids_by_climate_unique_id,
+    )
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
@@ -1837,12 +1840,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def existing_zone_parent_device_ids(zones: list[dict]) -> dict[str, tuple[str, str]]:
         """Recover validated radio parents from existing climate registry entries."""
-        climate_unique_ids = {
-            str(zone.get("id")): zone_identifier(entry.entry_id, str(zone.get("id")))[1]
-            for zone in zones
-            if zone.get("id") is not None
-        }
-        zone_ids_by_unique_id = {unique_id: zone_id for zone_id, unique_id in climate_unique_ids.items()}
+        zone_ids_by_unique_id = zone_ids_by_climate_unique_id(entry.entry_id, zones)
         radio_identifier_prefix = f"{entry.entry_id}-radio-"
         existing: dict[str, tuple[str, str]] = {}
         for entity_entry in _entry_entities():
