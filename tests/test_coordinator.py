@@ -773,6 +773,7 @@ def test_radio_query_builds_candidates_and_inventory_slot() -> None:
     assert 1 in data["radio_zone_candidates"]
     assert data["radio_zone_candidates"][1][0]["group"] == 0x09
     assert data["radio_zone_candidates"][1][0]["instance"] == 1
+    assert data["inventory_complete"] is False
     assert client.calls == [QUERY_RADIO_DEVICES]
 
 

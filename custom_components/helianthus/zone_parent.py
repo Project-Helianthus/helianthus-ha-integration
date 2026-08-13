@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .device_ids import build_radio_bus_key, radio_device_identifier
+from .device_ids import build_radio_bus_key, radio_device_identifier, zone_identifier
 
 
 def parse_optional_int(value: object | None) -> int | None:
@@ -58,6 +58,60 @@ def zone_instance_from_id(zone_id: object | None) -> int | None:
     if value <= 0:
         return None
     return value - 1
+
+
+def zone_ids_by_climate_unique_id(
+    entry_id: str,
+    zones: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Map existing climate unique IDs to canonical zone IDs."""
+    out: dict[str, str] = {}
+    for zone in zones:
+        normalized = normalize_zone_id(zone.get("id"))
+        if normalized is not None:
+            out[zone_identifier(entry_id, normalized)[1]] = normalized
+    return out
+
+
+def radio_mappings_by_zone_id(zones: list[dict[str, Any]]) -> dict[str, int]:
+    """Return canonical zone IDs with an active radio-controller mapping."""
+    out: dict[str, int] = {}
+    for zone in zones:
+        zone_id = normalize_zone_id(zone.get("id"))
+        config = zone.get("config")
+        mapping = parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
+        if zone_id is not None and mapping in (1, 2, 3, 4):
+            out[zone_id] = mapping
+    return out
+
+
+def resolve_retained_parent_bindings(
+    registry_parent_ids: dict[str, tuple[str, str]],
+    stored_bindings: object,
+) -> tuple[
+    dict[str, tuple[str, str]],
+    dict[str, int],
+    dict[str, dict[str, object]],
+]:
+    """Validate persisted parent provenance or migrate pre-V1 live bindings."""
+    stored = stored_bindings if isinstance(stored_bindings, dict) else {}
+    parent_ids: dict[str, tuple[str, str]] = {}
+    parent_mappings: dict[str, int] = {}
+    normalized: dict[str, dict[str, object]] = {}
+    for zone_id, parent_id in registry_parent_ids.items():
+        raw = stored.get(zone_id)
+        identifier = parent_id[1]
+        mapping: int | None = None
+        if isinstance(raw, dict) and raw.get("identifier") == identifier:
+            parsed = parse_optional_int(raw.get("mapping"))
+            if parsed in (1, 2, 3, 4):
+                mapping = parsed
+        if mapping not in (1, 2, 3, 4):
+            continue
+        parent_ids[zone_id] = parent_id
+        parent_mappings[zone_id] = mapping
+        normalized[zone_id] = {"identifier": identifier, "mapping": mapping}
+    return parent_ids, parent_mappings, normalized
 
 
 def radio_devices_from_payload(radio_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -182,30 +236,6 @@ def select_zone_radio_candidate(
             return candidate
         return None
 
-    def pick_thermostat_fallback(
-        items: list[dict[str, Any]],
-        target_remote_addr: int,
-    ) -> dict[str, Any] | None:
-        ranked = sorted(
-            (
-                candidate
-                for candidate in items
-                if candidate.get("group") == 0x0A
-            ),
-            key=lambda candidate: (
-                abs(
-                    (
-                        candidate.get("remote_control_address")
-                        if isinstance(candidate.get("remote_control_address"), int)
-                        else 255
-                    )
-                    - target_remote_addr
-                ),
-                int(candidate.get("instance") or 0),
-            ),
-        )
-        return ranked[0] if ranked else None
-
     if room_temperature_zone_mapping == 1:
         return (
             pick(candidates, 0x09, 0)
@@ -220,8 +250,6 @@ def select_zone_radio_candidate(
             pick(candidates, 0x0A, remote_addr)
             or pick(global_candidates, 0x0A, remote_addr)
             or pick(global_candidates_any, 0x0A, remote_addr)
-            or pick_thermostat_fallback(candidates, remote_addr)
-            or pick_thermostat_fallback(global_candidates, remote_addr)
         )
     if room_temperature_zone_mapping in (0, None):
         return None
@@ -260,6 +288,10 @@ def build_zone_parent_device_ids(
     zones: list[dict[str, Any]],
     radio_payload: dict[str, Any] | None,
     regulator_device_id: tuple[str, str] | None,
+    *,
+    existing_parent_device_ids: dict[str, tuple[str, str]] | None = None,
+    existing_parent_mappings: dict[str, int] | None = None,
+    allow_existing_parent_fallback: bool = False,
 ) -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
     radio_devices = radio_devices_from_payload(radio_payload)
     radio_zone_candidates = radio_zone_candidates_from_payload(radio_payload)
@@ -284,6 +316,15 @@ def build_zone_parent_device_ids(
             radio_device_ids,
             regulator_device_id,
         )
+        if (
+            parent_device_id is None
+            and mapping in (1, 2, 3, 4)
+            and existing_parent_device_ids is not None
+            and existing_parent_mappings is not None
+            and existing_parent_mappings.get(zone_id) == mapping
+            and allow_existing_parent_fallback
+        ):
+            parent_device_id = existing_parent_device_ids.get(zone_id)
         if parent_device_id is None:
             unresolved_zone_ids.append(zone_id)
             continue
