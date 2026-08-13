@@ -414,6 +414,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         )
 
         for field, key in [
+            ("source_label", "source_label"),
+            ("operation_mode_changeable", "operation_mode_changeable"),
             ("quick_veto", "quick_veto"),
             ("quick_veto_setpoint_c", "quick_veto_setpoint"),
             ("quick_veto_duration_h", "quick_veto_duration"),

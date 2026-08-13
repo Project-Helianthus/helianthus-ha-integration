@@ -177,6 +177,11 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         special = state.get("special_function")
         if special is not None and str(special).strip() != "":
             attrs["special_function"] = special
+        for field in ("operation_mode_changeable",):
+            if field in config:
+                attrs[field] = config[field]
+        if "overrun_active" in state:
+            attrs["overrun_active"] = state["overrun_active"]
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:

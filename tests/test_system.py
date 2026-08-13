@@ -257,6 +257,7 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
                 "system_scheme": 3,
                 "module_configuration_vr71": 1,
             },
+            "metadata": {"gateway_brand": "Helianthus", "gateway_vendor": "Gateway Vendor"},
         }
     )
     client = _FakeClient()
@@ -313,6 +314,11 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
     assert scheme.native_value == 3
     assert scheme._attr_entity_category == sensor_platform.EntityCategory.DIAGNOSTIC
     assert pressure.device_info["identifiers"] == {payload["regulator_device_id"]}
+    assert pressure.extra_state_attributes == {
+        "gateway_brand": "Helianthus",
+        "gateway_vendor": "Gateway Vendor",
+    }
+    assert pressure._attr_unique_id == "entry-1-system-sensor-system_water_pressure"
 
 
 def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
