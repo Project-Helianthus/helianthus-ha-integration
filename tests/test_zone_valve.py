@@ -883,6 +883,44 @@ def test_mapping_change_stays_unresolved_across_reload_until_live_reparent() -> 
     assert live_unresolved == ()
 
 
+def test_changed_thermostat_mapping_rejects_nearest_sparse_candidate() -> None:
+    old_parent = ("helianthus", "entry-1-radio-g0a-i01")
+    parent_ids, parent_mappings, _ = resolve_retained_parent_bindings(
+        {"zone-1": old_parent},
+        {
+            "zone-1": {
+                "identifier": old_parent[1],
+                "mapping": 2,
+            }
+        },
+        current_mappings={"zone-1": 3},
+        allow_registry_bootstrap=False,
+    )
+
+    resolved, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [{"id": "zone-1", "config": {"room_temperature_zone_mapping": 3}}],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x0A,
+                    "instance": 1,
+                    "device_connected": True,
+                    "remote_control_address": 1,
+                }
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+        existing_parent_device_ids=parent_ids,
+        existing_parent_mappings=parent_mappings,
+        allow_existing_parent_fallback=True,
+    )
+
+    assert resolved == {}
+    assert unresolved == ("zone-1",)
+
+
 def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
     payload = {
         "semantic_coordinator": _FakeCoordinator(

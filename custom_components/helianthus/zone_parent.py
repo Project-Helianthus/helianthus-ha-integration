@@ -241,30 +241,6 @@ def select_zone_radio_candidate(
             return candidate
         return None
 
-    def pick_thermostat_fallback(
-        items: list[dict[str, Any]],
-        target_remote_addr: int,
-    ) -> dict[str, Any] | None:
-        ranked = sorted(
-            (
-                candidate
-                for candidate in items
-                if candidate.get("group") == 0x0A
-            ),
-            key=lambda candidate: (
-                abs(
-                    (
-                        candidate.get("remote_control_address")
-                        if isinstance(candidate.get("remote_control_address"), int)
-                        else 255
-                    )
-                    - target_remote_addr
-                ),
-                int(candidate.get("instance") or 0),
-            ),
-        )
-        return ranked[0] if ranked else None
-
     if room_temperature_zone_mapping == 1:
         return (
             pick(candidates, 0x09, 0)
@@ -279,8 +255,6 @@ def select_zone_radio_candidate(
             pick(candidates, 0x0A, remote_addr)
             or pick(global_candidates, 0x0A, remote_addr)
             or pick(global_candidates_any, 0x0A, remote_addr)
-            or pick_thermostat_fallback(candidates, remote_addr)
-            or pick_thermostat_fallback(global_candidates, remote_addr)
         )
     if room_temperature_zone_mapping in (0, None):
         return None
