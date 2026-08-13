@@ -183,6 +183,15 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     schedule_label=schedule_label,
                 )
             )
+        dhw_state = dhw.get("state") if isinstance(dhw, dict) else None
+        if isinstance(dhw_state, dict) and "overrun_active" in dhw_state:
+            entities.append(
+                HelianthusDhwOverrunBinarySensor(
+                    coordinator=coordinator,
+                    entry_id=entry.entry_id,
+                    manufacturer=manufacturer,
+                )
+            )
 
     if boiler_coordinator and boiler_device_id:
         for key, label in [
@@ -374,14 +383,45 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
                 identifiers={identifier},
                 manufacturer=self._manufacturer,
             )
-        else:
-            identifier = dhw_identifier(self._entry_id)
-            return DeviceInfo(
-                identifiers={identifier},
-                manufacturer=self._manufacturer,
-                model="Virtual DHW",
-                name="Domestic Hot Water",
-            )
+        identifier = dhw_identifier(self._entry_id)
+        return DeviceInfo(
+            identifiers={identifier},
+            manufacturer=self._manufacturer,
+            model="Virtual DHW",
+            name="Domestic Hot Water",
+        )
+
+
+class HelianthusDhwOverrunBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Read-only DHW overrun state on the existing virtual DHW device."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:water-alert"
+
+    def __init__(self, *, coordinator, entry_id: str, manufacturer: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._manufacturer = manufacturer
+        self._attr_name = "Overrun Active"
+        self._attr_unique_id = f"{entry_id}-dhw-binary-overrun_active"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={dhw_identifier(self._entry_id)},
+            manufacturer=self._manufacturer,
+            model="Virtual DHW",
+            name="Domestic Hot Water",
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self.coordinator.data or {}
+        dhw = payload.get("dhw") if isinstance(payload, dict) else None
+        state = dhw.get("state") if isinstance(dhw, dict) else None
+        value = state.get("overrun_active") if isinstance(state, dict) else None
+        return value if isinstance(value, bool) else None
 
 
 class HelianthusBoilerStateBinarySensor(CoordinatorEntity, BinarySensorEntity):

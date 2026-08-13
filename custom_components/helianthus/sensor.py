@@ -1374,6 +1374,18 @@ class HelianthusSystemSensor(CoordinatorEntity, SensorEntity):
             return value
         return None
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        payload = self.coordinator.data or {}
+        metadata = payload.get("metadata") if isinstance(payload, dict) else None
+        if not isinstance(metadata, dict):
+            return {}
+        return {
+            key: metadata[key]
+            for key in ("gateway_brand", "gateway_vendor")
+            if key in metadata
+        }
+
 
 class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
     """Per-slot remote radio sensor."""

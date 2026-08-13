@@ -147,6 +147,22 @@ def test_water_heater_write_omits_source_parameter() -> None:
     assert "source" not in client.calls[0]["variables"]["params"]
 
 
+def test_water_heater_promoted_metadata_preserves_false_zero_and_nil() -> None:
+    entity, _client = _make_entity()
+    entity.coordinator.data["dhw"] = {
+        "state": {"current_temp_c": 0.0, "overrun_active": False},
+        "config": {"target_temp_c": 0.0, "operation_mode_changeable": False},
+    }
+
+    assert entity.current_temperature == 0.0
+    assert entity.target_temperature == 0.0
+    assert entity.extra_state_attributes["operation_mode_changeable"] is False
+    assert entity.extra_state_attributes["overrun_active"] is False
+    entity.coordinator.data["dhw"]["state"]["overrun_active"] = None
+    assert entity.extra_state_attributes["overrun_active"] is None
+    assert entity._attr_unique_id == "entry-1-dhw"
+
+
 def test_water_heater_write_fails_closed_when_admission_untrusted() -> None:
     entity, client = _make_entity(admission_trusted=False)
 

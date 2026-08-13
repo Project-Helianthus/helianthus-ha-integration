@@ -255,3 +255,43 @@ def test_zone_valve_binary_sensor_none_when_position_absent() -> None:
     ]
     assert len(valve_entities) == 1
     assert valve_entities[0].is_on is None
+
+
+def test_dhw_overrun_sensor_is_read_only_and_uses_existing_dhw_parent() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    payload["semantic_coordinator"] = _FakeCoordinator(
+        {"zones": [], "dhw": {"state": {"overrun_active": False}, "config": {}}}
+    )
+    hass = _FakeHass(payload)
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, _FakeEntry("entry-1"), entities.extend))
+
+    overrun = next(entity for entity in entities if isinstance(entity, binary_sensor_platform.HelianthusDhwOverrunBinarySensor))
+    assert overrun._attr_unique_id == "entry-1-dhw-binary-overrun_active"
+    assert sum(isinstance(entity, binary_sensor_platform.HelianthusDhwOverrunBinarySensor) for entity in entities) == 1
+    assert len({entity._attr_unique_id for entity in entities}) == len(entities)
+    assert all("eebus" not in entity._attr_unique_id.lower() for entity in entities)
+    assert overrun.is_on is False
+    assert overrun.device_info["identifiers"] == {("helianthus", "entry-1-dhw")}
+    payload["semantic_coordinator"].data["dhw"]["state"]["overrun_active"] = None
+    assert overrun.is_on is None
+
+
+def test_dhw_overrun_sensor_is_absent_when_gateway_lacks_promoted_field() -> None:
+    payload = _build_payload(boiler_device_id=None)
+    payload["semantic_coordinator"] = _FakeCoordinator(
+        {"zones": [], "dhw": {"state": {}, "config": {}}}
+    )
+    entities: list = []
+
+    asyncio.run(
+        binary_sensor_platform.async_setup_entry(
+            _FakeHass(payload), _FakeEntry("entry-1"), entities.extend
+        )
+    )
+
+    assert not any(
+        isinstance(entity, binary_sensor_platform.HelianthusDhwOverrunBinarySensor)
+        for entity in entities
+    )

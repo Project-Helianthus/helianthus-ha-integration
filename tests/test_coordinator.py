@@ -50,6 +50,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_FM5,
     QUERY_RADIO_DEVICES,
     QUERY_SEMANTIC,
+    QUERY_SEMANTIC_PROMOTED,
     QUERY_SEMANTIC_NO_HOLIDAY,
     QUERY_SEMANTIC_NO_QV,
     QUERY_SEMANTIC_LEGACY,
@@ -58,6 +59,7 @@ from custom_components.helianthus.coordinator import (
     QUERY_STATUS_MINIMAL,
     QUERY_STATUS_LEGACY,
     QUERY_SYSTEM,
+    QUERY_SYSTEM_GATEWAY_METADATA,
     UpdateFailed,
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
@@ -729,7 +731,7 @@ def test_system_query_missing_field_falls_back_to_empty_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data == {"state": {}, "config": {}, "properties": {}}
+    assert data == {"state": {}, "config": {}, "properties": {}, "metadata": {}}
     assert client.calls[0] == QUERY_SYSTEM
 
 
@@ -999,12 +1001,15 @@ def test_semantic_full_query_succeeds() -> None:
 
     assert len(result["zones"]) == 1
     assert result["zones"][0]["config"]["quick_veto"] is False
-    assert client.calls == [QUERY_SEMANTIC]
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED]
 
 
 def test_semantic_falls_back_to_no_holiday() -> None:
     client = _ScriptedClient(
         [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
+            ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
             ),
@@ -1016,14 +1021,17 @@ def test_semantic_falls_back_to_no_holiday() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY]
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY]
 
 
 def test_semantic_falls_back_to_no_qv() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
+            ),
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
@@ -1036,14 +1044,22 @@ def test_semantic_falls_back_to_no_qv() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV]
+    assert client.calls == [
+        QUERY_SEMANTIC_PROMOTED,
+        QUERY_SEMANTIC,
+        QUERY_SEMANTIC_NO_HOLIDAY,
+        QUERY_SEMANTIC_NO_QV,
+    ]
 
 
 def test_semantic_falls_back_to_legacy() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
+                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
+            ),
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
@@ -1063,7 +1079,13 @@ def test_semantic_falls_back_to_legacy() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+    assert client.calls == [
+        QUERY_SEMANTIC_PROMOTED,
+        QUERY_SEMANTIC,
+        QUERY_SEMANTIC_NO_HOLIDAY,
+        QUERY_SEMANTIC_NO_QV,
+        QUERY_SEMANTIC_LEGACY,
+    ]
 
 
 def test_semantic_returns_empty_on_zones_missing() -> None:
@@ -1079,3 +1101,93 @@ def test_semantic_returns_empty_on_zones_missing() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert result == {"zones": [], "dhw": None}
+
+
+def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> None:
+    payload = _semantic_payload()
+    payload["dhw"] = {"state": {"current_temp_c": 0.0}, "config": {"target_temp_c": 0.0}}
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
+            ),
+            payload,
+        ]
+    )
+    coordinator = _build_semantic_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == payload
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC]
+
+
+def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leaks() -> None:
+    """Keep the 18-leaf MSP-09C contract at existing public query roots only."""
+    semantic_paths = {
+        "/dhw/operating_mode": "operating_mode",
+        "/dhw/operation_mode_changeable": "operation_mode_changeable",
+        "/dhw/overrun_active": "overrun_active",
+        "/dhw/target_temperature_c": "target_temp_c",
+        "/dhw/temperature_c": "current_temp_c",
+        "/system/gateway_brand": "gateway_brand",
+        "/system/gateway_vendor": "gateway_vendor",
+        "/system/outside_air_temperature_c": "outdoor_temperature",
+        "/zones/zone_1/name": "source_label",
+        "/zones/zone_1/operating_mode": "operating_mode",
+        "/zones/zone_1/operation_mode_changeable": "operation_mode_changeable",
+        "/zones/zone_1/room_temperature_c": "current_temp_c",
+        "/zones/zone_1/target_temperature_c": "target_temp_c",
+        "/zones/zone_2/name": "source_label",
+        "/zones/zone_2/operating_mode": "operating_mode",
+        "/zones/zone_2/operation_mode_changeable": "operation_mode_changeable",
+        "/zones/zone_2/room_temperature_c": "current_temp_c",
+        "/zones/zone_2/target_temperature_c": "target_temp_c",
+    }
+
+    assert len(semantic_paths) == 18
+    public_queries = "\n".join([QUERY_SEMANTIC_PROMOTED, QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA])
+    assert all(field in public_queries for field in semantic_paths.values())
+    assert all(
+        forbidden not in public_queries
+        for forbidden in (
+            "candidate_id",
+            "candidate_ref",
+            "remote_ski",
+            "ship_id",
+            "device_address",
+            "entity_address",
+            "feature_address",
+            "raw_value",
+            "ebus_selector",
+        )
+    )
+
+
+def test_system_gateway_metadata_is_optional_and_preserves_existing_system_payload() -> None:
+    payload = {
+        "system": {
+            "state": {"outdoor_temperature": 0.0},
+            "config": {"max_room_humidity": 0},
+            "properties": {"system_scheme": 0},
+        }
+    }
+    client = _ScriptedClient(
+        [
+            payload,
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "gateway_brand" on type "System".'}]
+            ),
+            {},
+            {},
+        ]
+    )
+    coordinator = _build_system_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result["state"] == {"outdoor_temperature": 0.0}
+    assert result["config"] == {"max_room_humidity": 0}
+    assert result["properties"] == {"system_scheme": 0}
+    assert result["metadata"] == {}
+    assert client.calls[:2] == [QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA]

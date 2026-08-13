@@ -226,6 +226,19 @@ def test_climate_write_omits_source_parameter() -> None:
     assert "source" not in client.calls[0]["variables"]["params"]
 
 
+def test_climate_promoted_metadata_preserves_false_and_source_label() -> None:
+    entity, _client, _coord = _make_entity(preset="manual")
+    entity.coordinator.data["zones"][0]["config"].update(
+        {"source_label": "Zone 1", "operation_mode_changeable": False}
+    )
+
+    attrs = entity.extra_state_attributes
+
+    assert attrs["source_label"] == "Zone 1"
+    assert attrs["operation_mode_changeable"] is False
+    assert entity._attr_unique_id == "entry-1-zone-zone-1"
+
+
 def test_climate_write_fails_closed_when_admission_untrusted() -> None:
     entity, client, _coord = _make_entity(preset="manual")
     entity._status_coordinator.data["admission"]["trusted"] = False

@@ -353,6 +353,62 @@ query Semantic {
 }
 """
 
+# MSP-09C intentionally uses a separate primary query.  An older gateway that
+# lacks any promoted field must continue through the established semantic
+# fallback chain below, rather than losing zones or DHW as a side effect.
+QUERY_SEMANTIC_PROMOTED = """
+query Semantic {
+  zones {
+    id
+    name
+    state {
+      current_temp_c
+      current_humidity_pct
+      hvac_action
+      special_function
+      heating_demand_pct
+      valve_position_pct
+    }
+    config {
+      operating_mode
+      operation_mode_changeable
+      source_label
+      preset
+      target_temp_c
+      allowed_modes
+      circuit_type
+      associated_circuit
+      room_temperature_zone_mapping
+      quick_veto
+      quick_veto_setpoint
+      quick_veto_duration
+      quick_veto_expiry
+      holiday_start_date
+      holiday_end_date
+      holiday_setpoint
+      holiday_start_time
+      holiday_end_time
+    }
+  }
+  dhw {
+    state {
+      current_temp_c
+      overrun_active
+      special_function
+      heating_demand_pct
+    }
+    config {
+      operating_mode
+      operation_mode_changeable
+      preset
+      target_temp_c
+      holiday_start_date
+      holiday_end_date
+    }
+  }
+}
+"""
+
 QUERY_SEMANTIC_NO_HOLIDAY = """
 query Semantic {
   zones {
@@ -473,6 +529,7 @@ query Semantic {
 _HOLIDAY_FIELDS = ["holiday_start_date", "holiday_end_date", "holiday_setpoint", "holiday_start_time", "holiday_end_time"]
 _QV_FIELDS = ["quick_veto", "quick_veto_setpoint", "quick_veto_duration", "quick_veto_expiry"]
 _SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
+_PROMOTED_SEMANTIC_FIELDS = ["operation_mode_changeable", "source_label", "overrun_active"]
 _STATUS_SCHEMA_FIELDS = [
     "busSummary",
     "status",
@@ -601,6 +658,15 @@ query System {
       system_scheme
       module_configuration_vr71
     }
+  }
+}
+"""
+
+QUERY_SYSTEM_GATEWAY_METADATA = """
+query SystemGatewayMetadata {
+  system {
+    gateway_brand
+    gateway_vendor
   }
 }
 """
@@ -830,7 +896,7 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
 
     async def _async_update_data(self) -> dict[str, Any]:
-        queries = [QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+        queries = [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
         payload = None
         for query in queries:
             try:
@@ -839,6 +905,8 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
                     return {"zones": [], "dhw": None}
+                if _is_missing_field_error(exc.errors, _PROMOTED_SEMANTIC_FIELDS):
+                    continue
                 if _is_missing_field_error(exc.errors, _SEMANTIC_RECOVERABLE_FIELDS):
                     continue
                 raise UpdateFailed(str(exc)) from exc
@@ -1163,7 +1231,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._system_sensitive_available is not False
 
     async def _async_update_data(self) -> dict[str, Any]:
-        empty = {"state": {}, "config": {}, "properties": {}}
+        empty = {"state": {}, "config": {}, "properties": {}, "metadata": {}}
         missing_fields = [
             "system",
             "state",
@@ -1209,7 +1277,25 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "state": state if isinstance(state, dict) else {},
             "config": config if isinstance(config, dict) else {},
             "properties": properties if isinstance(properties, dict) else {},
+            "metadata": {},
         }
+
+        # Keep gateway metadata optional and isolated from the base system
+        # query: older gateways must retain their system state/config payload.
+        try:
+            metadata_payload = await self._client.execute(QUERY_SYSTEM_GATEWAY_METADATA)
+            metadata_system = metadata_payload.get("system") if isinstance(metadata_payload, dict) else None
+            if isinstance(metadata_system, dict):
+                result["metadata"] = {
+                    key: metadata_system[key]
+                    for key in ("gateway_brand", "gateway_vendor")
+                    if key in metadata_system
+                }
+        except GraphQLResponseError as exc:
+            if not _is_missing_field_error(exc.errors, ["gateway_brand", "gateway_vendor"]):
+                raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError:
+            pass
 
         # Optional installer query (backward-compat with older gateways).
         if self._system_installer_available is not False:
