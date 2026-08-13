@@ -88,9 +88,6 @@ def radio_mappings_by_zone_id(zones: list[dict[str, Any]]) -> dict[str, int]:
 def resolve_retained_parent_bindings(
     registry_parent_ids: dict[str, tuple[str, str]],
     stored_bindings: object,
-    *,
-    current_mappings: dict[str, int],
-    allow_registry_bootstrap: bool,
 ) -> tuple[
     dict[str, tuple[str, str]],
     dict[str, int],
@@ -109,8 +106,6 @@ def resolve_retained_parent_bindings(
             parsed = parse_optional_int(raw.get("mapping"))
             if parsed in (1, 2, 3, 4):
                 mapping = parsed
-        elif allow_registry_bootstrap:
-            mapping = current_mappings.get(zone_id)
         if mapping not in (1, 2, 3, 4):
             continue
         parent_ids[zone_id] = parent_id

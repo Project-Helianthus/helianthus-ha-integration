@@ -1881,8 +1881,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resolve_retained_parent_bindings(
             existing_zone_parent_device_ids(initial_zones),
             entry.data.get(binding_key),
-            current_mappings=initial_mappings,
-            allow_registry_bootstrap=binding_key not in entry.data,
         )
     )
     for zone_id, parent_id in initial_live_parent_ids.items():

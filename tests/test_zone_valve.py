@@ -789,8 +789,6 @@ def test_retained_parent_binding_preserves_validating_mapping_across_reload() ->
     parent_ids, parent_mappings, normalized = resolve_retained_parent_bindings(
         registry_parent_ids,
         stored,
-        current_mappings={"zone-1": 2},
-        allow_registry_bootstrap=False,
     )
 
     assert parent_ids == registry_parent_ids
@@ -798,35 +796,17 @@ def test_retained_parent_binding_preserves_validating_mapping_across_reload() ->
     assert normalized == stored
 
 
-def test_registry_parent_bootstraps_once_then_requires_persisted_provenance() -> None:
+def test_registry_parent_without_persisted_provenance_is_rejected() -> None:
     registry_parent_ids = {
         "zone-1": ("helianthus", "entry-1-radio-g09-i01")
     }
 
-    bootstrapped = resolve_retained_parent_bindings(
+    missing = resolve_retained_parent_bindings(
         registry_parent_ids,
         None,
-        current_mappings={"zone-1": 1},
-        allow_registry_bootstrap=True,
-    )
-    rejected = resolve_retained_parent_bindings(
-        registry_parent_ids,
-        {},
-        current_mappings={"zone-1": 1},
-        allow_registry_bootstrap=False,
     )
 
-    assert bootstrapped == (
-        registry_parent_ids,
-        {"zone-1": 1},
-        {
-            "zone-1": {
-                "identifier": "entry-1-radio-g09-i01",
-                "mapping": 1,
-            }
-        },
-    )
-    assert rejected == ({}, {}, {})
+    assert missing == ({}, {}, {})
 
 
 def test_mapping_change_stays_unresolved_across_reload_until_live_reparent() -> None:
@@ -839,8 +819,6 @@ def test_mapping_change_stays_unresolved_across_reload_until_live_reparent() -> 
                 "mapping": 1,
             }
         },
-        current_mappings={"zone-1": 2},
-        allow_registry_bootstrap=False,
     )
     zones = [
         {"id": "zone-1", "config": {"room_temperature_zone_mapping": 2}}
@@ -893,8 +871,6 @@ def test_changed_thermostat_mapping_rejects_nearest_sparse_candidate() -> None:
                 "mapping": 2,
             }
         },
-        current_mappings={"zone-1": 3},
-        allow_registry_bootstrap=False,
     )
 
     resolved, unresolved = build_zone_parent_device_ids(
