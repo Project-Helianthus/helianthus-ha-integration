@@ -644,6 +644,70 @@ def test_build_zone_parent_device_ids_keeps_nonmatching_disconnected_slots_unres
     assert unresolved == ("zone-1", "zone-2")
 
 
+def test_build_zone_parent_device_ids_preserves_existing_parent_when_inventory_is_sparse() -> None:
+    existing_parent = ("helianthus", "entry-1-radio-g09-i01")
+
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-1",
+                "name": "Parter",
+                "config": {"room_temperature_zone_mapping": 1},
+            }
+        ],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x0C,
+                    "instance": 1,
+                    "device_connected": True,
+                }
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+        existing_parent_device_ids={"zone-1": existing_parent},
+    )
+
+    assert zone_parent_device_ids == {"zone-1": existing_parent}
+    assert unresolved == ()
+
+
+def test_build_zone_parent_device_ids_prefers_live_parent_over_existing_parent() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [
+            {
+                "id": "zone-2",
+                "name": "Etaj",
+                "config": {"room_temperature_zone_mapping": 2},
+            }
+        ],
+        {
+            "radio_devices": [
+                {
+                    "group": 0x0A,
+                    "instance": 2,
+                    "radio_bus_key": "g0a-i02",
+                    "device_connected": True,
+                    "remote_control_address": 1,
+                }
+            ],
+            "radio_zone_candidates": {},
+        },
+        ("helianthus", "entry-1-bus-BASV-15"),
+        existing_parent_device_ids={
+            "zone-2": ("helianthus", "entry-1-radio-g0a-i01")
+        },
+    )
+
+    assert zone_parent_device_ids == {
+        "zone-2": ("helianthus", "entry-1-radio-g0a-i02")
+    }
+    assert unresolved == ()
+
+
 def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
     payload = {
         "semantic_coordinator": _FakeCoordinator(
