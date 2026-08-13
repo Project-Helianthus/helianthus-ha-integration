@@ -714,6 +714,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .subscriptions import start_subscriptions
     from .zone_parent import (
         build_zone_parent_device_ids,
+        radio_mappings_by_zone_id,
         should_reload_zone_parent_state,
         zone_ids_by_climate_unique_id,
     )
@@ -1856,6 +1857,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     break
         return existing
 
+    initial_semantic_payload = (
+        semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
+    )
+    initial_zones = [
+        zone
+        for zone in (initial_semantic_payload.get("zones", []) or [])
+        if isinstance(zone, dict)
+    ]
+    initial_radio_payload = (
+        radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
+    )
+    initial_live_parent_ids, _ = build_zone_parent_device_ids(
+        entry.entry_id,
+        initial_zones,
+        initial_radio_payload,
+        regulator_device,
+    )
+    retained_zone_parent_ids = existing_zone_parent_device_ids(initial_zones)
+    retained_zone_parent_ids.update(initial_live_parent_ids)
+    retained_zone_parent_mappings = radio_mappings_by_zone_id(initial_zones)
+
     def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
         payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
         zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
@@ -1865,7 +1887,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             zones,
             radio_payload,
             regulator_device,
-            existing_parent_device_ids=existing_zone_parent_device_ids(zones),
+            existing_parent_device_ids=retained_zone_parent_ids,
+            existing_parent_mappings=retained_zone_parent_mappings,
         )
 
     zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()

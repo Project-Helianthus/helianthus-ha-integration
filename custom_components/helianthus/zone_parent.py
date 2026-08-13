@@ -73,6 +73,18 @@ def zone_ids_by_climate_unique_id(
     return out
 
 
+def radio_mappings_by_zone_id(zones: list[dict[str, Any]]) -> dict[str, int]:
+    """Return canonical zone IDs with an active radio-controller mapping."""
+    out: dict[str, int] = {}
+    for zone in zones:
+        zone_id = normalize_zone_id(zone.get("id"))
+        config = zone.get("config")
+        mapping = parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
+        if zone_id is not None and mapping in (1, 2, 3, 4):
+            out[zone_id] = mapping
+    return out
+
+
 def radio_devices_from_payload(radio_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(radio_payload, dict):
         return []
@@ -275,6 +287,7 @@ def build_zone_parent_device_ids(
     regulator_device_id: tuple[str, str] | None,
     *,
     existing_parent_device_ids: dict[str, tuple[str, str]] | None = None,
+    existing_parent_mappings: dict[str, int] | None = None,
 ) -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
     radio_devices = radio_devices_from_payload(radio_payload)
     radio_zone_candidates = radio_zone_candidates_from_payload(radio_payload)
@@ -303,6 +316,8 @@ def build_zone_parent_device_ids(
             parent_device_id is None
             and mapping in (1, 2, 3, 4)
             and existing_parent_device_ids is not None
+            and existing_parent_mappings is not None
+            and existing_parent_mappings.get(zone_id) == mapping
         ):
             parent_device_id = existing_parent_device_ids.get(zone_id)
         if parent_device_id is None:

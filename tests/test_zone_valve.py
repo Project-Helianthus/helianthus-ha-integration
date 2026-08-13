@@ -669,6 +669,7 @@ def test_build_zone_parent_device_ids_preserves_existing_parent_when_inventory_i
         },
         ("helianthus", "entry-1-bus-BASV-15"),
         existing_parent_device_ids={"zone-1": existing_parent},
+        existing_parent_mappings={"zone-1": 1},
     )
 
     assert zone_parent_device_ids == {"zone-1": existing_parent}
@@ -701,6 +702,7 @@ def test_build_zone_parent_device_ids_prefers_live_parent_over_existing_parent()
         existing_parent_device_ids={
             "zone-2": ("helianthus", "entry-1-radio-g0a-i01")
         },
+        existing_parent_mappings={"zone-2": 2},
     )
 
     assert zone_parent_device_ids == {
@@ -728,6 +730,23 @@ def test_existing_radio_parent_does_not_override_nonradio_mapping() -> None:
         existing_parent_device_ids={
             "zone-1": ("helianthus", "entry-1-radio-g09-i01")
         },
+        existing_parent_mappings={"zone-1": 1},
+    )
+
+    assert zone_parent_device_ids == {}
+    assert unresolved == ("zone-1",)
+
+
+def test_existing_radio_parent_is_rejected_after_radio_mapping_changes() -> None:
+    zone_parent_device_ids, unresolved = build_zone_parent_device_ids(
+        "entry-1",
+        [{"id": "zone-1", "config": {"room_temperature_zone_mapping": 2}}],
+        {"radio_devices": [], "radio_zone_candidates": {}},
+        ("helianthus", "entry-1-bus-BASV-15"),
+        existing_parent_device_ids={
+            "zone-1": ("helianthus", "entry-1-radio-g09-i01")
+        },
+        existing_parent_mappings={"zone-1": 1},
     )
 
     assert zone_parent_device_ids == {}
