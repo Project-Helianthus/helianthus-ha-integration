@@ -1835,6 +1835,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         cleanup_obsolete_devices(reason)
         cleanup_ran = True
 
+    def existing_zone_parent_device_ids(zones: list[dict]) -> dict[str, tuple[str, str]]:
+        """Recover validated radio parents from existing climate registry entries."""
+        climate_unique_ids = {
+            str(zone.get("id")): zone_identifier(entry.entry_id, str(zone.get("id")))[1]
+            for zone in zones
+            if zone.get("id") is not None
+        }
+        zone_ids_by_unique_id = {unique_id: zone_id for zone_id, unique_id in climate_unique_ids.items()}
+        radio_identifier_prefix = f"{entry.entry_id}-radio-"
+        existing: dict[str, tuple[str, str]] = {}
+        for entity_entry in _entry_entities():
+            zone_id = zone_ids_by_unique_id.get(entity_entry.unique_id)
+            if zone_id is None or entity_entry.device_id is None:
+                continue
+            device_entry = device_registry.async_get(entity_entry.device_id)
+            if device_entry is None:
+                continue
+            for identifier in sorted(device_entry.identifiers):
+                if identifier[0] == DOMAIN and identifier[1].startswith(radio_identifier_prefix):
+                    existing[zone_id] = identifier
+                    break
+        return existing
+
     def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
         payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
         zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
@@ -1844,6 +1867,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             zones,
             radio_payload,
             regulator_device,
+            existing_parent_device_ids=existing_zone_parent_device_ids(zones),
         )
 
     zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()

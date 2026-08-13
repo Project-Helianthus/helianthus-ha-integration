@@ -260,6 +260,8 @@ def build_zone_parent_device_ids(
     zones: list[dict[str, Any]],
     radio_payload: dict[str, Any] | None,
     regulator_device_id: tuple[str, str] | None,
+    *,
+    existing_parent_device_ids: dict[str, tuple[str, str]] | None = None,
 ) -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
     radio_devices = radio_devices_from_payload(radio_payload)
     radio_zone_candidates = radio_zone_candidates_from_payload(radio_payload)
@@ -284,6 +286,8 @@ def build_zone_parent_device_ids(
             radio_device_ids,
             regulator_device_id,
         )
+        if parent_device_id is None and existing_parent_device_ids is not None:
+            parent_device_id = existing_parent_device_ids.get(zone_id)
         if parent_device_id is None:
             unresolved_zone_ids.append(zone_id)
             continue
