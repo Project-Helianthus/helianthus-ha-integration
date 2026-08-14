@@ -14,6 +14,7 @@ from .admission import (
 )
 from .const import (
     CONF_DHW_SCHEDULE_HELPER,
+    CONF_EEBUS_ADMIN_CREDENTIAL,
     CONF_HOST_ALIASES,
     CONF_INSTANCE_GUID,
     CONF_PATH,
@@ -712,6 +713,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         stable_bus_identity_model,
     )
     from .subscriptions import start_subscriptions
+    from .eebus_admin import (
+        EEBusAdminV1Client,
+        credential_for_config_entry,
+    )
+    from .eebus_admin_coordinator import (
+        EEBusAdminV1Coordinator,
+        EEBusAdminV1Lifecycle,
+        create_admin_session,
+    )
     from .zone_parent import (
         build_zone_parent_device_ids,
         radio_mappings_by_zone_id,
@@ -972,6 +982,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await boiler_coordinator.async_config_entry_first_refresh()
     await schedule_coordinator.async_config_entry_first_refresh()
     await adapter_info_coordinator.async_config_entry_first_refresh()
+
+    # AdminV1 is an optional, isolated diagnostic consumer.  It must not use
+    # the GraphQL session or turn an unavailable admin boundary into setup
+    # failure for the primary integration.
+    admin_coordinator = None
+    admin_session = None
+    try:
+        admin_credential = credential_for_config_entry({"data": entry.data})
+        if admin_credential is not None:
+            admin_session = create_admin_session(hass)
+            admin_origin = f"{transport}://{host}:{port}"
+            admin_lifecycle = EEBusAdminV1Lifecycle(entry_id=entry.entry_id)
+            admin_lifecycle.reconcile_binding(
+                origin=admin_origin,
+                instance_guid=entry_instance_guid or entry.entry_id,
+                credential=admin_credential,
+            )
+            admin_coordinator = EEBusAdminV1Coordinator(
+                hass,
+                entry,
+                EEBusAdminV1Client(
+                    session=admin_session,
+                    base_url=admin_origin,
+                    credential=admin_credential,
+                ),
+                admin_lifecycle,
+                scan_interval,
+            )
+            await admin_coordinator.async_refresh()
+    except (TypeError, ValueError):
+        _LOGGER.warning(
+            "Ignoring invalid eeBUS AdminV1 configuration for entry %s",
+            entry.entry_id,
+        )
+        admin_coordinator = None
 
     adapter_hw = adapter_info_coordinator.data
     if isinstance(adapter_hw, dict) and adapter_hw.get("firmware_version"):
@@ -2242,6 +2287,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "boiler_coordinator": boiler_coordinator,
         "schedule_coordinator": schedule_coordinator,
         "adapter_info_coordinator": adapter_info_coordinator,
+        "eebus_admin_coordinator": admin_coordinator,
+        "eebus_admin_session": admin_session,
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
@@ -2294,4 +2341,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     unsub()
                 except Exception:  # pragma: no cover - best-effort cleanup
                     pass
+        admin_coordinator = None if data is None else data.get("eebus_admin_coordinator")
+        if admin_coordinator is not None:
+            admin_coordinator.lifecycle.store.clear()
+        admin_session = None if data is None else data.get("eebus_admin_session")
+        if admin_session is not None:
+            from .eebus_admin_coordinator import close_admin_session
+            await close_admin_session(admin_session)
     return unload_ok

@@ -21,6 +21,19 @@ def _modules():
     return admin, coordinator
 
 
+def _status() -> dict[str, object]:
+    return {
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+    }
+
+
+PARTNER_ID = "ha-" + "a" * 32
+
+
 def test_dedicated_admin_session_has_no_cookie_jar_and_client_hardening_is_local() -> None:
     admin, coordinator = _modules()
     client_source = inspect.getsource(admin)
@@ -53,7 +66,7 @@ def test_lifecycle_clears_admin_projection_only_when_identity_or_credential_bind
             {
                 "contract": "helianthus.eebus.operator-admin.v1",
                 "projection_revision": 1,
-                "data": {"listener": "ready", "discovery": "ready"},
+                "data": _status(),
                 "error": None,
             },
             expected_view="status",
@@ -67,18 +80,18 @@ def test_lifecycle_clears_admin_projection_only_when_identity_or_credential_bind
     lifecycle.store.accept(
         "status",
         admin.parse_ha_admin_envelope(
-            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 2, "data": {"listener": "ready", "discovery": "ready"}, "error": None},
+            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 2, "data": _status(), "error": None},
             expected_view="status",
         ),
     )
     lifecycle.reconcile_binding(origin="https://gateway.example.test", instance_guid="guid-a", credential="a" * 32)
-    assert lifecycle.store.data_for("status") == {"listener": "ready", "discovery": "ready"}
+    assert lifecycle.store.data_for("status") == _status()
     lifecycle.reconcile_binding(origin="https://other.example.test", instance_guid="guid-a", credential="a" * 32)
     assert lifecycle.store.data_for("status") is None
     lifecycle.store.accept(
         "status",
         admin.parse_ha_admin_envelope(
-            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 3, "data": {"listener": "ready", "discovery": "ready"}, "error": None},
+            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 3, "data": _status(), "error": None},
             expected_view="status",
         ),
     )
@@ -89,12 +102,12 @@ def test_lifecycle_clears_admin_projection_only_when_identity_or_credential_bind
 def test_admin_failures_are_diagnostic_only_and_view_failures_remain_stale_not_deleted() -> None:
     admin, coordinator = _modules()
     lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-1")
-    lifecycle.note_view_success("status", {"listener": "ready", "discovery": "ready"})
-    lifecycle.note_view_success("trusted", {"partners": [{"partner_id": "ha-1", "view": "trusted"}]})
+    lifecycle.note_view_success("status", _status())
+    lifecycle.note_view_success("trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]})
     lifecycle.note_view_failure("trusted", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
 
     assert lifecycle.diagnostic_available is True
-    assert lifecycle.store.data_for("trusted") == {"partners": [{"partner_id": "ha-1", "view": "trusted"}]}
+    assert lifecycle.store.data_for("trusted") == {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}
     assert lifecycle.view_is_stale("trusted") is True
     assert lifecycle.graphql_setup_failed is False
     lifecycle.note_view_failure("status", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
@@ -129,9 +142,9 @@ def test_actual_ha_wiring_exists_in_config_setup_options_and_sensor_modules() ->
     config = (component / "config_flow.py").read_text()
     options = (component / "options_flow.py").read_text()
     sensor = (component / "sensor.py").read_text()
-    for required in ("EEBusAdminV1Coordinator", "eebus_admin_credential", "hass.data", "async_unload_entry"):
+    for required in ("EEBusAdminV1Coordinator", "CONF_EEBUS_ADMIN_CREDENTIAL", "hass.data", "async_unload_entry"):
         assert required in root
-    for required in ("async_step_reconfigure", "async_step_reauth", "TextSelector", "eebus_admin_credential"):
+    for required in ("async_step_reconfigure", "async_step_reauth", "TextSelector", "CONF_EEBUS_ADMIN_CREDENTIAL"):
         assert required in config
     assert "/portal/eebus" in options and "eebus_admin_credential" not in options
     assert "EEBusAdmin" in sensor and "configuration_url" in sensor

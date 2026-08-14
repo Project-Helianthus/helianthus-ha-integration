@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import copy
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -31,7 +33,9 @@ class HAAdminEnvelopeV1:
 
 def build_eebus_admin_base_url(value: str) -> str:
     parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
+    try: port = parsed.port
+    except ValueError: raise ValueError("invalid origin") from None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment or (port is not None and not 1 <= port <= 65535):
         raise ValueError("invalid origin")
     return urlunsplit((parsed.scheme, parsed.netloc, "/admin/eebus/v1", "", ""))
 
@@ -65,14 +69,16 @@ def config_entry_machine_credential(entry: dict[str, Any]) -> _CredentialHolder:
 
 
 def _valid_status(data: dict[str, Any]) -> bool:
-    return set(data) <= {"listener", "discovery", "trusted_count", "connected_count", "discovered_count", "degraded_code"}
+    required = {"listener", "discovery", "trusted_count", "connected_count", "discovered_count"}
+    if not required <= set(data) <= required | {"degraded_code"}: return False
+    return all(isinstance(data[k], str) and 0 < len(data[k]) <= 256 for k in ("listener", "discovery")) and all(isinstance(data[k], int) and not isinstance(data[k], bool) and 0 <= data[k] <= 65535 for k in required - {"listener", "discovery"}) and ("degraded_code" not in data or isinstance(data["degraded_code"], str) and len(data["degraded_code"]) <= 128)
 
 
 def _valid_partners(view: str, data: dict[str, Any]) -> bool:
     if set(data) != {"partners"} or not isinstance(data["partners"], list):
         return False
     allowed = {"partner_id", "view", "brand", "device_type", "model", "trust_state", "connection_state", "last_seen"}
-    return all(isinstance(row, dict) and set(row) <= allowed and row.get("view") == view for row in data["partners"])
+    return len(data["partners"]) <= 128 and all(isinstance(row, dict) and set(row) <= allowed and row.get("view") == view and isinstance(row.get("partner_id"), str) and re.fullmatch(r"ha-[0-9a-f]{32}", row["partner_id"]) and all(isinstance(v, str) and len(v) <= 256 for k, v in row.items() if k != "partner_id") for row in data["partners"])
 
 
 def parse_ha_admin_envelope(payload: Any, *, expected_view: str) -> HAAdminEnvelopeV1:
@@ -131,11 +137,12 @@ class HAAdminProjectionStore:
             raise EEBusAdminV1ProtocolError()
         changed = self._data.get(view) != envelope.data
         if changed:
-            self._data[view] = envelope.data
+            self._data[view] = copy.deepcopy(envelope.data)
         return changed
 
     def data_for(self, view: str) -> dict[str, Any] | None:
-        return self._data.get(view)
+        value = self._data.get(view)
+        return copy.deepcopy(value) if value is not None else None
 
     def clear(self) -> None:
         self._data.clear()

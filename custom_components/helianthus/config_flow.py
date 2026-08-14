@@ -15,9 +15,23 @@ except ImportError:  # pragma: no cover - older HA versions
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+try:
+    from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+except ImportError:  # pragma: no cover - lightweight unit-test stubs
+    class TextSelectorType:
+        PASSWORD = "password"
+
+    class TextSelectorConfig:
+        def __init__(self, *, type: str) -> None:
+            self.type = type
+
+    class TextSelector:
+        def __init__(self, config: TextSelectorConfig) -> None:
+            self.config = config
 
 from .const import (
     CONF_HOST_ALIASES,
+    CONF_EEBUS_ADMIN_CREDENTIAL,
     CONF_INSTANCE_GUID,
     CONF_PATH,
     CONF_TRANSPORT,
@@ -81,7 +95,8 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._async_finish_verified_entry(
                     verified_endpoint,
                     version=version,
-                    title=str(user_input[CONF_HOST]),
+                title=str(user_input[CONF_HOST]),
+                credential=user_input.get(CONF_EEBUS_ADMIN_CREDENTIAL),
                 )
 
             self._discovery = {
@@ -113,6 +128,9 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_PATH, default=default_path): str,
                 vol.Optional(CONF_TRANSPORT, default=default_transport): str,
                 vol.Optional(CONF_VERSION, default=default_version): str,
+                vol.Optional(CONF_EEBUS_ADMIN_CREDENTIAL): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }
         )
 
@@ -201,9 +219,17 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         version: str | None,
         title: str,
         host_aliases: list[str] | tuple[str, ...] | None = None,
+        credential: str | None = None,
     ) -> FlowResult:
         if verified_endpoint is None:
             return self.async_abort(reason="invalid_response")
+
+        if credential is not None:
+            from .eebus_admin import validate_machine_credential
+            try:
+                credential = validate_machine_credential(credential)
+            except ValueError:
+                return self.async_abort(reason="invalid_auth")
 
         def with_host_aliases(data: dict[str, Any], primary_host: str) -> dict[str, Any]:
             alias_source: Iterable[str] | None
@@ -241,6 +267,8 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 verified_endpoint.host,
             )
+            if credential is not None:
+                existing_data[CONF_EEBUS_ADMIN_CREDENTIAL] = credential
             if same_endpoint(existing_entry.data, verified_endpoint):
                 if (
                     existing_entry.unique_id != instance_guid
@@ -297,7 +325,52 @@ class HelianthusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             verified_endpoint.host,
         )
+        if credential is not None:
+            data[CONF_EEBUS_ADMIN_CREDENTIAL] = credential
         return self.async_create_entry(title=title, data=data)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Replace only a supplied AdminV1 credential; never prefill it."""
+        entry = self._get_reconfigure_entry()
+        if user_input is not None:
+            credential = user_input.get(CONF_EEBUS_ADMIN_CREDENTIAL)
+            if credential:
+                from .eebus_admin import validate_machine_credential
+                try:
+                    credential = validate_machine_credential(credential)
+                except ValueError:
+                    return self.async_show_form(step_id="reconfigure", data_schema=self._admin_credential_schema(), errors={"base": "invalid_auth"})
+                data = dict(entry.data)
+                data[CONF_EEBUS_ADMIN_CREDENTIAL] = credential
+                self.hass.config_entries.async_update_entry(entry, data=data)
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return self.async_abort(reason="reconfigured")
+        return self.async_show_form(step_id="reconfigure", data_schema=self._admin_credential_schema())
+
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Update the per-entry credential without exposing its stored value."""
+        entry = self._get_reauth_entry()
+        if user_input is not None:
+            credential = user_input.get(CONF_EEBUS_ADMIN_CREDENTIAL)
+            from .eebus_admin import validate_machine_credential
+            try:
+                credential = validate_machine_credential(credential)
+            except ValueError:
+                return self.async_show_form(step_id="reauth", data_schema=self._admin_credential_schema(), errors={"base": "invalid_auth"})
+            data = dict(entry.data)
+            data[CONF_EEBUS_ADMIN_CREDENTIAL] = credential
+            self.hass.config_entries.async_update_entry(entry, data=data)
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return self.async_abort(reason="reauth_successful")
+        return self.async_show_form(step_id="reauth", data_schema=self._admin_credential_schema())
+
+    @staticmethod
+    def _admin_credential_schema() -> vol.Schema:
+        return vol.Schema({
+            vol.Required(CONF_EEBUS_ADMIN_CREDENTIAL): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            )
+        })
 
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo

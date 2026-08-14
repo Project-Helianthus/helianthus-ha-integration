@@ -72,6 +72,19 @@ def _envelope(data: dict[str, Any], revision: int = 1) -> dict[str, Any]:
     }
 
 
+def _status(listener: str = "ready", discovery: str = "ready") -> dict[str, Any]:
+    return {
+        "listener": listener,
+        "discovery": discovery,
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+    }
+
+
+PARTNER_ID = "ha-" + "a" * 32
+
+
 def _parsed(admin: Any, view: str, data: dict[str, Any], revision: int = 1) -> Any:
     return admin.parse_ha_admin_envelope(_envelope(data, revision), expected_view=view)
 
@@ -110,17 +123,17 @@ def test_status_and_partner_schemas_are_exactly_bounded_and_non_boolean() -> Non
 
 def test_store_defensively_copies_input_and_output_data() -> None:
     admin = _admin_module(); store = admin.HAAdminProjectionStore()
-    source = {"listener": "ready", "discovery": "ready"}
+    source = _status()
     store.accept("status", _parsed(admin, "status", source))
     source["listener"] = "mutated"; returned = store.data_for("status"); returned["listener"] = "mutated-again"
-    assert store.data_for("status") == {"listener": "ready", "discovery": "ready"}
+    assert store.data_for("status") == _status()
 
 
 def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_authority() -> None:
     admin = _admin_module()
     session = _Session(
         [
-            _Response(_envelope({"listener": "ready", "discovery": "ready"})),
+            _Response(_envelope(_status())),
             _Response(_envelope({"partners": []})),
             _Response(_envelope({"partners": []})),
             _Response(_envelope({"partners": []})),
@@ -134,7 +147,7 @@ def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_author
 
     status = asyncio.run(client.fetch_status())
     assert isinstance(status, admin.HAAdminEnvelopeV1)
-    assert status.data["listener"] == "ready"
+    assert status.data == _status()
     for view in ("trusted", "connected", "discovered"):
         partners = asyncio.run(client.fetch_partners(view))
         assert isinstance(partners, admin.HAAdminEnvelopeV1)
@@ -217,7 +230,7 @@ def test_per_view_data_schema_rejects_non_ha_identity_candidate_raw_and_unknown_
         "degraded_code": "",
     }
     valid_partner = {
-        "partner_id": "ha-partner",
+        "partner_id": PARTNER_ID,
         "view": "trusted",
         "brand": "brand",
         "device_type": "device",
@@ -260,8 +273,8 @@ def test_per_view_data_schema_rejects_non_ha_identity_candidate_raw_and_unknown_
 def test_projection_store_retains_each_last_good_view_and_suppresses_identical_data() -> None:
     admin = _admin_module()
     store = admin.HAAdminProjectionStore()
-    status = _parsed(admin, "status", {"listener": "ready", "discovery": "ready"}, revision=7)
-    trusted = _parsed(admin, "trusted", {"partners": [{"partner_id": "ha-1", "view": "trusted"}]}, revision=8)
+    status = _parsed(admin, "status", _status(), revision=7)
+    trusted = _parsed(admin, "trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}, revision=8)
 
     assert store.accept("status", status) is True
     assert store.accept("trusted", trusted) is True
@@ -271,20 +284,20 @@ def test_projection_store_retains_each_last_good_view_and_suppresses_identical_d
     with pytest.raises(admin.EEBusAdminV1ProtocolError):
         store.accept("connected", _parsed(admin, "connected", {"candidate_state": "pending"}, revision=9))
 
-    assert store.data_for("status") == {"listener": "ready", "discovery": "ready"}
-    assert store.data_for("trusted") == {"partners": [{"partner_id": "ha-1", "view": "trusted"}]}
+    assert store.data_for("status") == _status()
+    assert store.data_for("trusted") == {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}
     assert store.data_for("connected") is None
 
 
 def test_projection_revision_churn_with_identical_permitted_data_is_not_an_ha_change() -> None:
     admin = _admin_module()
     store = admin.HAAdminProjectionStore()
-    first = _parsed(admin, "status", {"listener": "ready", "discovery": "ready"}, revision=10)
-    candidate_only_churn = _parsed(admin, "status", {"listener": "ready", "discovery": "ready"}, revision=11)
+    first = _parsed(admin, "status", _status(), revision=10)
+    candidate_only_churn = _parsed(admin, "status", _status(), revision=11)
 
     assert store.accept("status", first) is True
     assert store.accept("status", candidate_only_churn) is False
-    assert store.data_for("status") == {"listener": "ready", "discovery": "ready"}
+    assert store.data_for("status") == _status()
 
 
 @pytest.mark.parametrize(
@@ -363,9 +376,9 @@ def test_poller_updates_views_independently_and_retains_each_last_good_view_on_f
     store = admin.HAAdminProjectionStore()
     first_client = _PollingClient(
         {
-            "status": _parsed(admin, "status", {"listener": "ready", "discovery": "ready"}, 1),
-            "trusted": _parsed(admin, "trusted", {"partners": [{"partner_id": "ha-a", "view": "trusted"}]}, 1),
-            "connected": _parsed(admin, "connected", {"partners": [{"partner_id": "ha-a", "view": "connected"}]}, 1),
+            "status": _parsed(admin, "status", _status(), 1),
+            "trusted": _parsed(admin, "trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}, 1),
+            "connected": _parsed(admin, "connected", {"partners": [{"partner_id": PARTNER_ID, "view": "connected"}]}, 1),
             "discovered": _parsed(admin, "discovered", {"partners": []}, 1),
         }
     )
@@ -379,10 +392,10 @@ def test_poller_updates_views_independently_and_retains_each_last_good_view_on_f
     failure = admin.EEBusAdminV1Error("admin_boundary_unavailable")
     second_client = _PollingClient(
         {
-            "status": _parsed(admin, "status", {"listener": "degraded", "discovery": "ready"}, 2),
+            "status": _parsed(admin, "status", _status("degraded"), 2),
             "trusted": _parsed(admin, "trusted", {"partners": []}, 2),
             "connected": failure,
-            "discovered": _parsed(admin, "discovered", {"partners": [{"partner_id": "ha-b", "view": "discovered"}]}, 2),
+            "discovered": _parsed(admin, "discovered", {"partners": [{"partner_id": PARTNER_ID, "view": "discovered"}]}, 2),
         }
     )
     assert asyncio.run(admin.EEBusAdminV1Poller(second_client, store).async_poll()) == {
@@ -391,7 +404,7 @@ def test_poller_updates_views_independently_and_retains_each_last_good_view_on_f
         "connected": False,
         "discovered": True,
     }
-    assert store.data_for("status") == {"listener": "degraded", "discovery": "ready"}
+    assert store.data_for("status") == _status("degraded")
     assert store.data_for("trusted") == {"partners": []}
-    assert store.data_for("connected") == {"partners": [{"partner_id": "ha-a", "view": "connected"}]}
-    assert store.data_for("discovered") == {"partners": [{"partner_id": "ha-b", "view": "discovered"}]}
+    assert store.data_for("connected") == {"partners": [{"partner_id": PARTNER_ID, "view": "connected"}]}
+    assert store.data_for("discovered") == {"partners": [{"partner_id": PARTNER_ID, "view": "discovered"}]}
