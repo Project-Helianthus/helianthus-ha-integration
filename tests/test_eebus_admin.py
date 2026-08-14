@@ -23,6 +23,7 @@ def _admin_module():
 class _Response:
     payload: Any
     status: int = 200
+    content_length: int | None = None
 
     async def __aenter__(self) -> "_Response":
         return self
@@ -40,10 +41,10 @@ class _Response:
 class _Session:
     def __init__(self, responses: list[_Response]) -> None:
         self._responses = responses
-        self.requests: list[tuple[str, dict[str, str]]] = []
+        self.requests: list[tuple[str, dict[str, str], bool]] = []
 
-    def get(self, url: str, *, headers: dict[str, str]) -> _Response:
-        self.requests.append((url, headers))
+    def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _Response:
+        self.requests.append((url, headers, allow_redirects))
         return self._responses.pop(0)
 
 
@@ -89,7 +90,7 @@ def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_author
     client = admin.EEBusAdminV1Client(
         session=session,
         base_url="https://gateway.example.test/admin/eebus/v1",
-        credential="entry-one-machine-credential",
+        credential="m" * 32,
     )
 
     status = asyncio.run(client.fetch_status())
@@ -109,12 +110,27 @@ def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_author
         "https://gateway.example.test/admin/eebus/v1/partners?view=connected",
         "https://gateway.example.test/admin/eebus/v1/partners?view=discovered",
     ]
-    for _, headers in session.requests:
-        assert headers["Authorization"] == "Bearer entry-one-machine-credential"
+    for _, headers, allow_redirects in session.requests:
+        assert headers["Authorization"] == "Bearer " + ("m" * 32)
         assert headers["Accept"] == "application/json"
         assert "Cookie" not in headers
         assert "Origin" not in headers
         assert "Referer" not in headers
+        assert allow_redirects is False
+
+
+def test_client_rejects_oversized_admin_body_before_parsing() -> None:
+    admin = _admin_module()
+    session = _Session([_Response(_envelope({"listener": "ready"}), content_length=65_537)])
+    client = admin.EEBusAdminV1Client(
+        session=session,
+        base_url="https://gateway.example.test/admin/eebus/v1",
+        credential="m" * 32,
+    )
+
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(client.fetch_status())
+    assert captured.value.code == "invalid_response"
 
 
 def test_strict_ha_envelope_has_one_typed_view_aware_path_and_rejects_owner_fields() -> None:
@@ -229,7 +245,7 @@ def test_projection_revision_churn_with_identical_permitted_data_is_not_an_ha_ch
 )
 def test_client_maps_http_failures_to_fixed_sanitized_categories(status: int, expected_code: str) -> None:
     admin = _admin_module()
-    credential = "credential-not-for-errors"
+    credential = "e" * 32
     session = _Session([_Response({"detail": "raw server body must not escape"}, status=status)])
     client = admin.EEBusAdminV1Client(
         session=session,
@@ -255,7 +271,7 @@ def test_client_maps_http_failures_to_fixed_sanitized_categories(status: int, ex
 
 def test_client_maps_malformed_json_and_wrong_content_to_one_sanitized_category() -> None:
     admin = _admin_module()
-    credential = "credential-not-for-errors"
+    credential = "e" * 32
     session = _Session([_Response("not an AdminV1 object"), _Response(_envelope({"raw_spine": {}}))])
     client = admin.EEBusAdminV1Client(
         session=session,
