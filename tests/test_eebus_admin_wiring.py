@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -60,6 +61,8 @@ def test_lifecycle_clears_admin_projection_only_when_identity_or_credential_bind
     )
     lifecycle.reconcile_binding(origin="https://gateway.example.test", instance_guid="guid-a", credential="a" * 32)
     assert lifecycle.store.data_for("status") is None
+    assert "a" * 32 not in repr(lifecycle)
+    assert "a" * 32 not in repr(lifecycle.__dict__)
 
     lifecycle.store.accept(
         "status",
@@ -118,3 +121,17 @@ def test_device_info_configuration_url_is_local_portal_url_not_partner_data() ->
     rendered = repr(info)
     for forbidden in ("partner_id", "remote_ski", "endpoint", "candidate", "token"):
         assert forbidden not in rendered.lower()
+
+
+def test_actual_ha_wiring_exists_in_config_setup_options_and_sensor_modules() -> None:
+    component = Path(__file__).parents[1] / "custom_components" / "helianthus"
+    root = (component / "__init__.py").read_text()
+    config = (component / "config_flow.py").read_text()
+    options = (component / "options_flow.py").read_text()
+    sensor = (component / "sensor.py").read_text()
+    for required in ("EEBusAdminV1Coordinator", "eebus_admin_credential", "hass.data", "async_unload_entry"):
+        assert required in root
+    for required in ("async_step_reconfigure", "async_step_reauth", "TextSelector", "eebus_admin_credential"):
+        assert required in config
+    assert "/portal/eebus" in options and "eebus_admin_credential" not in options
+    assert "EEBusAdmin" in sensor and "configuration_url" in sensor

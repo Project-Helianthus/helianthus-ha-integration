@@ -90,6 +90,30 @@ def test_admin_base_url_is_fixed_same_origin_and_has_no_user_path_escape() -> No
     for unsafe in ("gateway.example.test", "https://gateway.example.test/?next=x", "https://gateway.example.test/#token"):
         with pytest.raises(ValueError):
             admin.build_eebus_admin_base_url(unsafe)
+    for unsafe in ("https://user@gateway.example.test", "https://gateway.example.test:bad", "https://gateway.example.test:99999"):
+        with pytest.raises(ValueError):
+            admin.build_eebus_admin_base_url(unsafe)
+
+
+def test_status_and_partner_schemas_are_exactly_bounded_and_non_boolean() -> None:
+    admin = _admin_module()
+    status = {"listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 0, "discovered_count": 2}
+    assert _parsed(admin, "status", status).data == status
+    for invalid in ({"listener": "x"}, {**status, "trusted_count": True}, {**status, "listener": "x" * 257}):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "status", invalid)
+    row = {"partner_id": "ha-" + "a" * 32, "view": "trusted", "brand": "b"}
+    assert _parsed(admin, "trusted", {"partners": [row]}).data == {"partners": [row]}
+    for bad in ({**row, "partner_id": "ha-not-valid"}, {**row, "view": "connected"}, {**row, "brand": "x" * 257}):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "trusted", {"partners": [bad]})
+    with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "trusted", {"partners": [row] * 129})
+
+
+def test_store_defensively_copies_input_and_output_data() -> None:
+    admin = _admin_module(); store = admin.HAAdminProjectionStore()
+    source = {"listener": "ready", "discovery": "ready"}
+    store.accept("status", _parsed(admin, "status", source))
+    source["listener"] = "mutated"; returned = store.data_for("status"); returned["listener"] = "mutated-again"
+    assert store.data_for("status") == {"listener": "ready", "discovery": "ready"}
 
 
 def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_authority() -> None:
