@@ -22,6 +22,9 @@ from .eebus_admin import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_ADMIN_TIMEOUT_TOTAL_SECONDS = 15
+_ADMIN_TIMEOUT_CONNECT_SECONDS = 5
+_ADMIN_TIMEOUT_READ_SECONDS = 10
 
 class EEBusAdminV1Coordinator(DataUpdateCoordinator):
     """Separate, diagnostic-only AdminV1 refresh path.
@@ -35,6 +38,8 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
         self._entry = entry
         self._client = client
         self.lifecycle = lifecycle
+        self._reauth_binding_generation = lifecycle.binding_generation
+        self._reauth_started = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         for view in ("status", "trusted", "connected", "discovered"):
@@ -59,6 +64,13 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
     async def _async_schedule_reauth(self) -> None:
         if not self.lifecycle.reauth_scheduled:
             return
+        generation = getattr(self.lifecycle, "binding_generation", 0)
+        if getattr(self, "_reauth_binding_generation", None) != generation:
+            self._reauth_binding_generation = generation
+            self._reauth_started = False
+        if getattr(self, "_reauth_started", False):
+            return
+        self._reauth_started = True
         result = self._entry.async_start_reauth(self.hass)
         if hasattr(result, "__await__"):
             await result
@@ -67,7 +79,15 @@ def create_admin_session(hass: Any) -> Any:
     """Never reuse the shared cookie-bearing GraphQL session."""
     if aiohttp is None:
         return None
-    return async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
+    return async_create_clientsession(
+        hass,
+        cookie_jar=aiohttp.DummyCookieJar(),
+        timeout=aiohttp.ClientTimeout(
+            total=_ADMIN_TIMEOUT_TOTAL_SECONDS,
+            connect=_ADMIN_TIMEOUT_CONNECT_SECONDS,
+            sock_read=_ADMIN_TIMEOUT_READ_SECONDS,
+        ),
+    )
 
 
 async def close_admin_session(session: Any) -> None:
@@ -87,10 +107,13 @@ def admin_device_info(origin: str) -> _Info:
 class EEBusAdminV1Lifecycle:
     def __init__(self, *, entry_id: str) -> None:
         self.entry_id, self.store, self._binding = entry_id, HAAdminProjectionStore(), None
+        self.binding_generation = 0
         self._failed: set[str] = set(); self.diagnostic_available = True; self.reauth_scheduled = False; self.graphql_setup_failed = False; self.unload_requested = False
     def reconcile_binding(self, *, origin: str, instance_guid: str, credential: str) -> None:
         binding = (origin, instance_guid, hashlib.sha256(credential.encode()).hexdigest())
-        if self._binding != binding: self.store.clear(); self._binding = binding
+        if self._binding != binding:
+            self.store.clear(); self._failed.clear(); self.reauth_scheduled = False
+            self._binding = binding; self.binding_generation += 1
     def note_view_success(self, view: str, data: dict[str, Any]) -> None:
         from .eebus_admin import parse_ha_admin_envelope, CONTRACT
         self.store.accept(view, parse_ha_admin_envelope({"contract": CONTRACT, "projection_revision": 1, "data": data, "error": None}, expected_view=view)); self._failed.discard(view); self.diagnostic_available = True
