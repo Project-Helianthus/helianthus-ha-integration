@@ -22,6 +22,7 @@ def _admin_module():
 @dataclass
 class _Response:
     payload: Any
+    status: int = 200
 
     async def __aenter__(self) -> "_Response":
         return self
@@ -143,3 +144,123 @@ def test_projection_store_retains_each_last_good_view_and_suppresses_identical_d
     assert store.data_for("trusted") == {"partners": [{"partner_id": "ha-1", "view": "trusted"}]}
     assert store.data_for("connected") is None
 
+
+def test_projection_revision_churn_with_identical_permitted_data_is_not_an_ha_change() -> None:
+    admin = _admin_module()
+    store = admin.HAAdminProjectionStore()
+    first = _envelope({"listener": "ready", "discovery": "ready"}, revision=10)
+    candidate_only_churn = _envelope({"listener": "ready", "discovery": "ready"}, revision=11)
+
+    assert store.accept("status", first) is True
+    assert store.accept("status", candidate_only_churn) is False
+    assert store.data_for("status") == {"listener": "ready", "discovery": "ready"}
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (401, "unauthenticated"),
+        (403, "forbidden"),
+        (409, "state_conflict"),
+        (503, "admin_boundary_unavailable"),
+    ],
+)
+def test_client_maps_http_failures_to_fixed_sanitized_categories(status: int, expected_code: str) -> None:
+    admin = _admin_module()
+    credential = "credential-not-for-errors"
+    session = _Session([_Response({"detail": "raw server body must not escape"}, status=status)])
+    client = admin.EEBusAdminV1Client(
+        session=session,
+        base_url="https://gateway.example.test/admin/eebus/v1",
+        credential=credential,
+    )
+
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(client.fetch_status())
+
+    error = captured.value
+    assert error.code == expected_code
+    rendered = f"{error!s} {error!r}"
+    for secret_or_transport_detail in (
+        credential,
+        "raw server body",
+        "gateway.example.test",
+        "Authorization",
+        "Bearer",
+    ):
+        assert secret_or_transport_detail not in rendered
+
+
+def test_client_maps_malformed_json_and_wrong_content_to_one_sanitized_category() -> None:
+    admin = _admin_module()
+    credential = "credential-not-for-errors"
+    session = _Session([_Response("not an AdminV1 object"), _Response(_envelope({"raw_spine": {}}))])
+    client = admin.EEBusAdminV1Client(
+        session=session,
+        base_url="https://gateway.example.test/admin/eebus/v1",
+        credential=credential,
+    )
+
+    for request in (client.fetch_status, lambda: client.fetch_partners("trusted")):
+        with pytest.raises(admin.EEBusAdminV1Error) as captured:
+            asyncio.run(request())
+        assert captured.value.code == "invalid_response"
+        rendered = f"{captured.value!s} {captured.value!r}"
+        assert credential not in rendered
+        assert "gateway.example.test" not in rendered
+
+
+class _PollingClient:
+    def __init__(self, responses: dict[str, Any]) -> None:
+        self.responses = responses
+
+    async def fetch_status(self) -> dict[str, Any]:
+        response = self.responses["status"]
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def fetch_partners(self, view: str) -> dict[str, Any]:
+        response = self.responses[view]
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def test_poller_updates_views_independently_and_retains_each_last_good_view_on_failure() -> None:
+    admin = _admin_module()
+    store = admin.HAAdminProjectionStore()
+    first_client = _PollingClient(
+        {
+            "status": _envelope({"listener": "ready", "discovery": "ready"}, 1),
+            "trusted": _envelope({"partners": [{"partner_id": "ha-a", "view": "trusted"}]}, 1),
+            "connected": _envelope({"partners": [{"partner_id": "ha-a", "view": "connected"}]}, 1),
+            "discovered": _envelope({"partners": []}, 1),
+        }
+    )
+    assert asyncio.run(admin.EEBusAdminV1Poller(first_client, store).async_poll()) == {
+        "status": True,
+        "trusted": True,
+        "connected": True,
+        "discovered": True,
+    }
+
+    failure = admin.EEBusAdminV1Error("admin_boundary_unavailable")
+    second_client = _PollingClient(
+        {
+            "status": _envelope({"listener": "degraded", "discovery": "ready"}, 2),
+            "trusted": _envelope({"partners": []}, 2),
+            "connected": failure,
+            "discovered": _envelope({"partners": [{"partner_id": "ha-b", "view": "discovered"}]}, 2),
+        }
+    )
+    assert asyncio.run(admin.EEBusAdminV1Poller(second_client, store).async_poll()) == {
+        "status": True,
+        "trusted": True,
+        "connected": False,
+        "discovered": True,
+    }
+    assert store.data_for("status") == {"listener": "degraded", "discovery": "ready"}
+    assert store.data_for("trusted") == {"partners": []}
+    assert store.data_for("connected") == {"partners": [{"partner_id": "ha-a", "view": "connected"}]}
+    assert store.data_for("discovered") == {"partners": [{"partner_id": "ha-b", "view": "discovered"}]}
