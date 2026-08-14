@@ -503,6 +503,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
+    admin_coordinator = data.get("eebus_admin_coordinator")
+    if admin_coordinator is not None:
+        origin = f"{entry.data.get('transport', 'http')}://{entry.data.get('host')}:{entry.data.get('port')}"
+        sensors.append(HelianthusEEBusAdminSensor(admin_coordinator, entry.entry_id, origin))
     seen_bus_keys: set[str] = set()
     for device in device_coordinator.data or []:
         if not has_bus_identity_evidence(device):
@@ -1069,6 +1073,52 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         if not isinstance(status, dict):
             status = self._fallback_status
         return status.get(self._field.key)
+
+
+class HelianthusEEBusAdminSensor(CoordinatorEntity, SensorEntity):
+    """One scalar health diagnostic for the isolated eeBUS AdminV1 boundary."""
+
+    _attr_has_entity_name = True
+    _attr_name = "eeBUS Admin Available"
+    _attr_icon = "mdi:shield-check-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry_id: str, origin: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._origin = origin
+        self._attr_unique_id = f"{entry_id}-eebus-admin-available"
+
+    @property
+    def native_value(self) -> str:
+        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+        status = data.get("status") if isinstance(data.get("status"), dict) else {}
+        return status.get("listener") if isinstance(status.get("listener"), str) else "unavailable"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+        status = data.get("status") if isinstance(data.get("status"), dict) else {}
+        counts = {
+            key: status.get(key)
+            for key in ("trusted_count", "connected_count", "discovered_count")
+            if isinstance(status.get(key), int) and not isinstance(status.get(key), bool)
+        }
+        return {
+            "discovery": status.get("discovery") if isinstance(status.get("discovery"), str) else "unavailable",
+            **counts,
+            "fresh": bool(data.get("available")) and not bool(data.get("stale_views")),
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        from .eebus_admin import portal_eebus_url
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._entry_id}-eebus-admin")},
+            name="eeBUS Admin",
+            configuration_url=portal_eebus_url(self._origin),
+        )
 
 
 class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):

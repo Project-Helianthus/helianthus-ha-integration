@@ -9,13 +9,25 @@
           "port": "Port",
           "path": "GraphQL path",
           "transport": "Transport",
-          "version": "API version"
+          "version": "API version",
+          "eebus_admin_credential": "eeBUS Admin credential"
         },
         "data_description": {
           "path": "GraphQL endpoint path (default /graphql).",
           "transport": "Transport scheme (http/https).",
           "version": "Discovered API version (optional)."
         }
+      }
+      ,
+      "reconfigure": {
+        "title": "Update eeBUS Admin credential",
+        "description": "Enter a replacement credential. The stored credential is never shown.",
+        "data": {"eebus_admin_credential": "eeBUS Admin credential"}
+      },
+      "reauth": {
+        "title": "eeBUS Admin authentication required",
+        "description": "The gateway rejected the stored eeBUS Admin credential.",
+        "data": {"eebus_admin_credential": "eeBUS Admin credential"}
       }
     },
     "error": {
@@ -24,7 +36,8 @@
       "requires_gateway_upgrade": "The Helianthus gateway must be updated before this integration can bind to it.",
       "missing_instance_guid": "The Helianthus gateway did not expose a stable instance GUID.",
       "identity_mismatch": "Discovered identity did not match the verified Helianthus gateway.",
-      "unknown": "Unexpected error."
+      "unknown": "Unexpected error.",
+      "invalid_auth": "The eeBUS Admin credential is invalid."
     },
     "abort": {
       "already_configured": "This Helianthus endpoint is already configured.",
@@ -36,6 +49,19 @@
       "identity_mismatch": "Discovery TXT data did not match the verified Helianthus gateway identity.",
       "duplicate_instance_guid": "Another live Helianthus endpoint already claims this instance GUID. Automatic rebinding was refused.",
       "reconfigured": "The existing Helianthus entry was rebound to the rediscovered endpoint."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "eeBUS administration is available only in the gateway [Portal](/portal/eebus).",
+        "data": {
+          "scan_interval": "Scan interval",
+          "use_subscriptions": "Use subscriptions",
+          "zone_schedule_helpers": "Zone schedule helpers",
+          "dhw_schedule_helper": "DHW schedule helper"
+        }
+      }
     }
   }
 }

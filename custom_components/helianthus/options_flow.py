@@ -51,4 +51,8 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            description_placeholders={"eebus_portal": "/portal/eebus"},
+        )
