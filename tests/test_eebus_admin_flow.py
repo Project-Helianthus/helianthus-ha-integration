@@ -80,7 +80,8 @@ def test_machine_credential_matches_the_gateway_visible_ascii_boundary_and_never
         with pytest.raises(ValueError) as captured:
             admin.validate_machine_credential(credential)
         rendered = f"{captured.value!s} {captured.value!r}"
-        assert credential not in rendered
+        if credential:
+            assert credential not in rendered
         assert "eebus_admin_credential" not in rendered
 
 
