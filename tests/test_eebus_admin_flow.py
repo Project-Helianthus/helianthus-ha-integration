@@ -47,10 +47,10 @@ def test_entry_update_never_copies_a_machine_credential_between_entries() -> Non
 
 def test_machine_credential_matches_the_gateway_visible_ascii_boundary_and_never_leaks() -> None:
     admin = _admin_module()
-    valid = "a" * 12
+    valid = "a" * 32
     assert admin.validate_machine_credential(valid) == valid
 
-    invalid = ("", "short", " leading-value", "trailing-value ", "non-ascii-\u00e9", "a" * 257)
+    invalid = ("", "short", "a" * 31, " leading-value", "trailing-value ", "non-ascii-\u00e9", "a" * 257)
     for credential in (*invalid, "internal value"):
         with pytest.raises(ValueError) as captured:
             admin.validate_machine_credential(credential)
