@@ -49,6 +49,32 @@ def test_dedicated_admin_session_has_no_cookie_jar_and_client_hardening_is_local
     assert "aiohttp" not in client_source.lower()
 
 
+def test_dedicated_admin_session_has_a_bounded_total_connect_and_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _admin, coordinator_module = _modules()
+    captured: dict[str, object] = {}
+
+    class FakeAiohttp:
+        class DummyCookieJar:
+            pass
+
+        class ClientTimeout:
+            def __init__(self, **kwargs: object) -> None:
+                captured["timeout_values"] = kwargs
+
+    def create_session(_hass: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(coordinator_module, "aiohttp", FakeAiohttp)
+    monkeypatch.setattr(coordinator_module, "async_create_clientsession", create_session, raising=False)
+    coordinator_module.create_admin_session(object())
+
+    timeout_values = captured["timeout_values"]
+    assert isinstance(timeout_values, dict)
+    assert all(isinstance(timeout_values[key], (int, float)) and 0 < timeout_values[key] <= 30 for key in ("total", "connect", "sock_read"))
+    assert "timeout" in captured
+
+
 def test_wiring_owns_one_admin_coordinator_and_never_turns_partner_rows_into_entities() -> None:
     _admin, coordinator = _modules()
     source = inspect.getsource(coordinator)
@@ -146,6 +172,36 @@ def test_unauthenticated_refresh_uses_the_entry_reauth_api_with_hass() -> None:
     coordinator.lifecycle = type("Lifecycle", (), {"reauth_scheduled": True})()
 
     asyncio.run(coordinator._async_schedule_reauth())
+    assert entry.calls == [hass]
+
+
+def test_all_401_views_and_repeated_refreshes_start_one_reauth_per_binding() -> None:
+    admin, coordinator_module = _modules()
+
+    class Entry:
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+
+        async def async_start_reauth(self, hass: object) -> None:
+            self.calls.append(hass)
+
+    class Client:
+        async def fetch_status(self) -> object:
+            raise admin.EEBusAdminV1Error("unauthenticated")
+
+        async def fetch_partners(self, _view: str) -> object:
+            raise admin.EEBusAdminV1Error("unauthenticated")
+
+    entry = Entry()
+    hass = object()
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._entry = entry
+    coordinator._client = Client()
+    coordinator.hass = hass
+    coordinator.lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-1")
+
+    asyncio.run(coordinator._async_update_data())
+    asyncio.run(coordinator._async_update_data())
     assert entry.calls == [hass]
 
 
