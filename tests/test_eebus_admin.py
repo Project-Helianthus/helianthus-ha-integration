@@ -24,6 +24,7 @@ class _Response:
     payload: Any
     status: int = 200
     content_length: int | None = None
+    chunked_body: bytes | None = None
 
     async def __aenter__(self) -> "_Response":
         return self
@@ -36,6 +37,20 @@ class _Response:
 
     async def json(self) -> Any:
         return self.payload
+
+    @property
+    def content(self) -> "_ChunkedContent":
+        return _ChunkedContent(self.chunked_body or b"")
+
+
+class _ChunkedContent:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+        self.read_limits: list[int] = []
+
+    async def read(self, limit: int = -1) -> bytes:
+        self.read_limits.append(limit)
+        return self.body
 
 
 class _Session:
@@ -122,6 +137,20 @@ def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_author
 def test_client_rejects_oversized_admin_body_before_parsing() -> None:
     admin = _admin_module()
     session = _Session([_Response(_envelope({"listener": "ready"}), content_length=65_537)])
+    client = admin.EEBusAdminV1Client(
+        session=session,
+        base_url="https://gateway.example.test/admin/eebus/v1",
+        credential="m" * 32,
+    )
+
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(client.fetch_status())
+    assert captured.value.code == "invalid_response"
+
+
+def test_client_bounds_unknown_length_chunked_body_before_json_parsing() -> None:
+    admin = _admin_module()
+    session = _Session([_Response(None, content_length=None, chunked_body=b"x" * 65_537)])
     client = admin.EEBusAdminV1Client(
         session=session,
         base_url="https://gateway.example.test/admin/eebus/v1",
