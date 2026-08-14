@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urlsplit
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING
 
@@ -720,6 +721,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .eebus_admin_coordinator import (
         EEBusAdminV1Coordinator,
         EEBusAdminV1Lifecycle,
+        close_admin_session,
         create_admin_session,
     )
     from .zone_parent import (
@@ -991,8 +993,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         admin_credential = credential_for_config_entry({"data": entry.data})
         if admin_credential is not None:
+            parsed_graphql_url = urlsplit(graphql_url)
+            admin_origin = f"{parsed_graphql_url.scheme}://{parsed_graphql_url.netloc}"
             admin_session = create_admin_session(hass)
-            admin_origin = f"{transport}://{host}:{port}"
             admin_lifecycle = EEBusAdminV1Lifecycle(entry_id=entry.entry_id)
             admin_lifecycle.reconcile_binding(
                 origin=admin_origin,
@@ -1011,11 +1014,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 scan_interval,
             )
             await admin_coordinator.async_refresh()
-    except (TypeError, ValueError):
+    except Exception:
         _LOGGER.warning(
-            "Ignoring invalid eeBUS AdminV1 configuration for entry %s",
+            "eeBUS AdminV1 setup failed non-fatally for entry %s",
             entry.entry_id,
+            exc_info=True,
         )
+        if admin_session is not None:
+            await close_admin_session(admin_session)
+            admin_session = None
         admin_coordinator = None
 
     adapter_hw = adapter_info_coordinator.data
@@ -2346,6 +2353,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             admin_coordinator.lifecycle.store.clear()
         admin_session = None if data is None else data.get("eebus_admin_session")
         if admin_session is not None:
-            from .eebus_admin_coordinator import close_admin_session
             await close_admin_session(admin_session)
     return unload_ok

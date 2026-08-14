@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 from dataclasses import dataclass
 import hashlib
+import logging
 from typing import Any
 
 try:
@@ -20,6 +21,8 @@ from .eebus_admin import (
     portal_eebus_url,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 class EEBusAdminV1Coordinator(DataUpdateCoordinator):
     """Separate, diagnostic-only AdminV1 refresh path.
 
@@ -28,7 +31,7 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
     """
 
     def __init__(self, hass: Any, entry: Any, client: EEBusAdminV1Client, lifecycle: "EEBusAdminV1Lifecycle", interval: int) -> None:
-        super().__init__(hass, None, name="eeBUS AdminV1", update_interval=timedelta(seconds=interval))
+        super().__init__(hass, _LOGGER, name="eeBUS AdminV1", update_interval=timedelta(seconds=interval))
         self._entry = entry
         self._client = client
         self.lifecycle = lifecycle
@@ -56,11 +59,9 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
     async def _async_schedule_reauth(self) -> None:
         if not self.lifecycle.reauth_scheduled:
             return
-        starter = getattr(self.hass.config_entries, "async_start_reauth", None)
-        if starter is not None:
-            result = starter(self._entry)
-            if hasattr(result, "__await__"):
-                await result
+        result = self._entry.async_start_reauth(self.hass)
+        if hasattr(result, "__await__"):
+            await result
 
 def create_admin_session(hass: Any) -> Any:
     """Never reuse the shared cookie-bearing GraphQL session."""

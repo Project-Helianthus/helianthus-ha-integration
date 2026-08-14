@@ -1090,9 +1090,25 @@ class HelianthusEEBusAdminSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry_id}-eebus-admin-available"
 
     @property
-    def native_value(self) -> bool:
+    def native_value(self) -> str:
         data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
-        return bool(data.get("available"))
+        status = data.get("status") if isinstance(data.get("status"), dict) else {}
+        return status.get("listener") if isinstance(status.get("listener"), str) else "unavailable"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+        status = data.get("status") if isinstance(data.get("status"), dict) else {}
+        counts = {
+            key: status.get(key)
+            for key in ("trusted_count", "connected_count", "discovered_count")
+            if isinstance(status.get(key), int) and not isinstance(status.get(key), bool)
+        }
+        return {
+            "discovery": status.get("discovery") if isinstance(status.get("discovery"), str) else "unavailable",
+            **counts,
+            "fresh": bool(data.get("available")) and not bool(data.get("stale_views")),
+        }
 
     @property
     def device_info(self) -> DeviceInfo:
