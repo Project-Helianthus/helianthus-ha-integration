@@ -119,6 +119,7 @@ class _FakeCoordinator:
 class _FakeEntry:
     def __init__(self, entry_id: str) -> None:
         self.entry_id = entry_id
+        self.data = {"transport": "https", "host": "gateway.example.test", "port": 8443}
 
 
 class _FakeHass:
@@ -163,6 +164,35 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV2-15"),
         "regulator_manufacturer": "Vaillant",
     }
+
+
+def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts() -> None:
+    coordinator = _FakeCoordinator(
+        {
+            "status": {
+                "listener": "ready",
+                "discovery": "ready",
+                "trusted_count": 2,
+                "connected_count": 1,
+                "discovered_count": 3,
+            },
+            "available": True,
+            "stale_views": frozenset(),
+        }
+    )
+    entity = sensor_platform.HelianthusEEBusAdminSensor(
+        coordinator, "entry-1", "https://gateway.example.test:8443"
+    )
+
+    assert entity.native_value == "ready"
+    assert entity.extra_state_attributes == {
+        "discovery": "ready",
+        "trusted_count": 2,
+        "connected_count": 1,
+        "discovered_count": 3,
+        "fresh": True,
+    }
+    assert "partner" not in repr(entity.extra_state_attributes).lower()
 
 
 def test_async_setup_entry_skips_address_only_bus_devices() -> None:

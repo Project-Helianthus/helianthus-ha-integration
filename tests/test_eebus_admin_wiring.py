@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -126,6 +128,27 @@ def test_unauthenticated_admin_response_schedules_reauth_without_unloading_graph
     assert lifecycle.unload_requested is False
 
 
+def test_unauthenticated_refresh_uses_the_entry_reauth_api_with_hass() -> None:
+    _admin, coordinator_module = _modules()
+
+    class Entry:
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+
+        async def async_start_reauth(self, hass: object) -> None:
+            self.calls.append(hass)
+
+    entry = Entry()
+    hass = object()
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._entry = entry
+    coordinator.hass = hass
+    coordinator.lifecycle = type("Lifecycle", (), {"reauth_scheduled": True})()
+
+    asyncio.run(coordinator._async_schedule_reauth())
+    assert entry.calls == [hass]
+
+
 def test_device_info_configuration_url_is_local_portal_url_not_partner_data() -> None:
     _admin, coordinator = _modules()
     info = coordinator.admin_device_info("https://gateway.example.test")
@@ -144,7 +167,21 @@ def test_actual_ha_wiring_exists_in_config_setup_options_and_sensor_modules() ->
     sensor = (component / "sensor.py").read_text()
     for required in ("EEBusAdminV1Coordinator", "CONF_EEBUS_ADMIN_CREDENTIAL", "hass.data", "async_unload_entry"):
         assert required in root
+    assert "urlsplit(graphql_url)" in root
+    assert "close_admin_session(admin_session)" in root
     for required in ("async_step_reconfigure", "async_step_reauth", "TextSelector", "CONF_EEBUS_ADMIN_CREDENTIAL"):
         assert required in config
     assert "/portal/eebus" in options and "eebus_admin_credential" not in options
     assert "EEBusAdmin" in sensor and "configuration_url" in sensor
+
+
+def test_admin_strings_cover_credential_reauth_reconfigure_and_portal_help() -> None:
+    strings = json.loads(
+        (Path(__file__).parents[1] / "custom_components" / "helianthus" / "strings.json").read_text()
+    )
+    config = strings["config"]
+    assert config["step"]["user"]["data"]["eebus_admin_credential"]
+    assert config["step"]["reconfigure"]["data"]["eebus_admin_credential"]
+    assert config["step"]["reauth"]["data"]["eebus_admin_credential"]
+    assert config["error"]["invalid_auth"]
+    assert "/portal/eebus" in strings["options"]["step"]["init"]["description"]
