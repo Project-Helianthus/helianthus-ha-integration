@@ -6,6 +6,7 @@ import copy
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -15,6 +16,7 @@ _VIEWS = frozenset({"status", "trusted", "connected", "discovered", "candidate"}
 _SKI = re.compile(r"[0-9a-f]{40}")
 _OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _DATA_HASH = re.compile(r"sha256:[0-9a-f]{64}")
+_RFC3339_UTC = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z")
 _UNSET = object()
 
 
@@ -97,6 +99,16 @@ def _is_string(value: Any, maximum: int = 256) -> bool:
     return isinstance(value, str) and 0 < len(value) <= maximum
 
 
+def _is_rfc3339_utc(value: Any) -> bool:
+    if not _is_string(value, 128) or _RFC3339_UTC.fullmatch(value) is None:
+        return False
+    try:
+        datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        return False
+    return True
+
+
 def _valid_status(data: dict[str, Any]) -> bool:
     required = {
         "status", "pairing_window", "register", "listener", "discovery", "trusted_count",
@@ -106,7 +118,9 @@ def _valid_status(data: dict[str, Any]) -> bool:
         return False
     return all(_is_string(data[key]) for key in ("status", "pairing_window", "register", "listener", "discovery")) and all(
         _is_count(data[key]) for key in ("trusted_count", "connected_count", "discovered_count", "candidate_count")
-    ) and ("degraded_code" not in data or _is_string(data["degraded_code"], 128))
+    ) and ("degraded_code" not in data or _is_string(data["degraded_code"], 128)) and (
+        "pairing_window_deadline" not in data or _is_rfc3339_utc(data["pairing_window_deadline"])
+    )
 
 
 def _valid_partner(view: str, row: dict[str, Any]) -> bool:
