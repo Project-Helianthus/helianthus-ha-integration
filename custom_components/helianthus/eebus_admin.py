@@ -87,6 +87,10 @@ def _is_count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 65535
 
 
+def _is_state_revision(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 18_446_744_073_709_551_615
+
+
 def _is_string(value: Any, maximum: int = 256) -> bool:
     return isinstance(value, str) and 0 < len(value) <= maximum
 
@@ -134,7 +138,7 @@ def parse_ha_admin_envelope(payload: Any, *, expected_view: str) -> HAAdminEnvel
     if expected_view not in _VIEWS or not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         raise EEBusAdminV1ProtocolError()
     revision = payload["state_revision"]
-    if payload["contract"] != CONTRACT or not _is_opaque(payload["request_id"]) or not _is_count(revision) or revision == 0 or payload["error"] is not None or not isinstance(payload["data"], dict):
+    if payload["contract"] != CONTRACT or not _is_opaque(payload["request_id"]) or not _is_state_revision(revision) or payload["error"] is not None or not isinstance(payload["data"], dict):
         raise EEBusAdminV1ProtocolError()
     data = payload["data"]
     if not ((_valid_status(data) if expected_view == "status" else _valid_partners(expected_view, data))):
@@ -157,7 +161,7 @@ def _valid_spine_data(data: dict[str, Any]) -> bool:
 def parse_spine_page_envelope(payload: Any) -> HAAdminEnvelopeV1:
     if not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         raise EEBusAdminV1ProtocolError()
-    if payload["contract"] != CONTRACT or not _is_opaque(payload["request_id"]) or not _is_count(payload["state_revision"]) or payload["state_revision"] == 0 or payload["error"] is not None or not isinstance(payload["data"], dict) or not _valid_spine_data(payload["data"]):
+    if payload["contract"] != CONTRACT or not _is_opaque(payload["request_id"]) or not _is_state_revision(payload["state_revision"]) or payload["error"] is not None or not isinstance(payload["data"], dict) or not _valid_spine_data(payload["data"]):
         raise EEBusAdminV1ProtocolError()
     return HAAdminEnvelopeV1(payload["request_id"], payload["state_revision"], copy.deepcopy(payload["data"]))
 
@@ -174,7 +178,7 @@ def _parse_mutation(payload: Any) -> HAAdminMutationResultV1:
     if not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         raise EEBusAdminV1ProtocolError()
     data = payload.get("data")
-    if payload.get("contract") != CONTRACT or not _is_opaque(payload.get("request_id")) or not _is_count(payload.get("state_revision")) or payload["state_revision"] == 0 or payload.get("error") is not None or not isinstance(data, dict) or not {"outcome", "replayed"} <= set(data) <= {"outcome", "replayed", "selection_id"} or not _is_string(data["outcome"], 128) or not isinstance(data["replayed"], bool) or ("selection_id" in data and not _is_opaque(data["selection_id"])):
+    if payload.get("contract") != CONTRACT or not _is_opaque(payload.get("request_id")) or not _is_state_revision(payload.get("state_revision")) or payload.get("error") is not None or not isinstance(data, dict) or not {"outcome", "replayed"} <= set(data) <= {"outcome", "replayed", "selection_id"} or not _is_string(data["outcome"], 128) or not isinstance(data["replayed"], bool) or ("selection_id" in data and not _is_opaque(data["selection_id"])):
         raise EEBusAdminV1ProtocolError()
     return HAAdminMutationResultV1(payload["state_revision"], data["outcome"], data["replayed"], data.get("selection_id"))
 
@@ -194,7 +198,9 @@ class EEBusAdminV1Client:
             request = getattr(self._session, method.lower())
             async with request(self._base_url + suffix, **kwargs) as response:
                 if getattr(response, "status", 200) != 200:
-                    raise EEBusAdminV1Error({409: "state_conflict", 503: "admin_boundary_unavailable"}.get(getattr(response, "status", 0), "invalid_response"))
+                    status = getattr(response, "status", 0)
+                    code = "snapshot_expired" if method == "GET" and "/spine?" in suffix and status == 409 else {409: "state_conflict", 503: "admin_boundary_unavailable"}.get(status, "invalid_response")
+                    raise EEBusAdminV1Error(code)
                 length = getattr(response, "content_length", None)
                 if length is not None and length > MAX_BODY_BYTES:
                     raise EEBusAdminV1ProtocolError()
@@ -231,7 +237,7 @@ class EEBusAdminV1Client:
 
     @staticmethod
     def _mutation_body(expected_state_revision: int, idempotency_key: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-        if not _is_count(expected_state_revision) or expected_state_revision == 0 or not _is_string(idempotency_key, 128):
+        if not _is_state_revision(expected_state_revision) or not _is_string(idempotency_key, 128):
             raise ValueError("invalid mutation precondition")
         return {**(extra or {}), "state_revision": expected_state_revision}
 

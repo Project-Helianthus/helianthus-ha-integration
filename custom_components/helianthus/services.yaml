@@ -1,14 +1,36 @@
-eebus_entry_operation:
-  name: eeBUS operator action
-  description: Run one typed operator-admin v1 action for one configured Helianthus entry.
-  fields:
-    expected_state_revision:
-      required: true
-      selector:
-        number:
-          min: 1
-          mode: box
-    idempotency_key:
-      required: true
-      selector:
-        text: {}
+eebus_admin_snapshot:
+  name: eeBUS snapshot
+  description: Read one closed eeBUS operator-admin view for an entry.
+eebus_admin_spine_root:
+  name: eeBUS SPINE root
+  description: Read the bounded root page for one partner.
+eebus_admin_spine_children:
+  name: eeBUS SPINE children
+  description: Read one bounded child page from an active SPINE snapshot.
+eebus_admin_spine_continue:
+  name: eeBUS SPINE continuation
+  description: Continue one bounded SPINE page.
+eebus_admin_open_pairing_window:
+  name: Open eeBUS pairing window
+  description: Open a bounded pairing window using a revision precondition.
+eebus_admin_close_pairing_window:
+  name: Close eeBUS pairing window
+  description: Close the current pairing window using a revision precondition.
+eebus_admin_select_observation:
+  name: Select eeBUS observation
+  description: Select one observed partner after independent SKI comparison.
+eebus_admin_connect_selection:
+  name: Connect eeBUS selection
+  description: Connect one server-held selection.
+eebus_admin_confirm_candidate:
+  name: Confirm eeBUS candidate
+  description: Confirm the active candidate after independent SKI comparison.
+eebus_admin_cancel_candidate:
+  name: Cancel eeBUS candidate
+  description: Cancel the active candidate.
+eebus_admin_retry_trusted_partner:
+  name: Retry eeBUS trusted partner
+  description: Request a retry for one trusted partner.
+eebus_admin_untrust_partner:
+  name: Untrust eeBUS partner
+  description: Revoke one trusted partner.
