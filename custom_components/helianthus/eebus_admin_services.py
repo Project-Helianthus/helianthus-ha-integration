@@ -39,12 +39,24 @@ _MAX_UINT64 = 18_446_744_073_709_551_615
 _REGISTRY_ATTR = "_helianthus_eebus_operator_entries"
 
 
+def _strict_int(value: Any, *, minimum: int, maximum: int) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        if vol is not None and hasattr(vol, "Invalid"):
+            raise vol.Invalid("invalid integer")
+        raise ValueError("invalid integer")
+    return value
+
+
 def _opaque(value: Any) -> bool:
     return isinstance(value, str) and 1 <= len(value) <= 256 and value.replace("-", "").replace("_", "").isalnum()
 
 
 def _revision(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= _MAX_UINT64
+    try:
+        _strict_int(value, minimum=1, maximum=_MAX_UINT64)
+    except Exception:
+        return False
+    return True
 
 
 def _key(value: Any) -> bool:
@@ -89,8 +101,11 @@ def validate_service_call(operation: str, data: Any) -> dict[str, Any] | None:
         }
         if not _matches(data, fields[operation]) or not _revision(data.get("expected_state_revision")) or not _key(data.get("idempotency_key")):
             return None
-        if operation == "open_pairing_window" and (not isinstance(data.get("duration_seconds"), int) or isinstance(data["duration_seconds"], bool) or not 1 <= data["duration_seconds"] <= 300):
-            return None
+        if operation == "open_pairing_window":
+            try:
+                _strict_int(data.get("duration_seconds"), minimum=1, maximum=300)
+            except Exception:
+                return None
         if operation in {"select_observation", "connect_selection"} and not _opaque(data.get("observation_id") if operation == "select_observation" else data.get("selection_id")):
             return None
         if operation in {"select_observation", "confirm_candidate"} and not _ski(data.get("expected_ski")):
@@ -177,10 +192,10 @@ def _service_schema(operation: str) -> Any:
         for name in names:
             fields[vol.Required(name)] = vol.All(str, vol.Length(min=1, max=256))
     else:
-        fields[vol.Required("expected_state_revision")] = vol.All(int, vol.Range(min=1, max=_MAX_UINT64))
+        fields[vol.Required("expected_state_revision")] = vol.All(lambda value: _strict_int(value, minimum=1, maximum=_MAX_UINT64), vol.Range(min=1, max=_MAX_UINT64))
         fields[vol.Required("idempotency_key")] = vol.All(str, vol.Length(min=1, max=128))
         if operation == "open_pairing_window":
-            fields[vol.Required("duration_seconds")] = vol.All(int, vol.Range(min=1, max=300))
+            fields[vol.Required("duration_seconds")] = vol.All(lambda value: _strict_int(value, minimum=1, maximum=300), vol.Range(min=1, max=300))
         elif operation == "select_observation":
             fields[vol.Required("observation_id")] = vol.All(str, vol.Length(min=1, max=256))
             fields[vol.Required("expected_ski")] = vol.All(str, vol.Length(min=40, max=40))

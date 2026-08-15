@@ -14,6 +14,7 @@ MAX_BODY_BYTES = 64 * 1024
 _VIEWS = frozenset({"status", "trusted", "connected", "discovered", "candidate"})
 _SKI = re.compile(r"[0-9a-f]{40}")
 _OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,256}")
+_DATA_HASH = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 class EEBusAdminV1Error(RuntimeError):
@@ -150,7 +151,7 @@ def parse_ha_admin_envelope(payload: Any, *, expected_view: str) -> HAAdminEnvel
 
 def _valid_spine_data(data: dict[str, Any]) -> bool:
     required = {"snapshot_id", "snapshot_hash", "parent_node_id", "nodes"}
-    if not required <= set(data) <= required | {"next_cursor"} or not _is_opaque(data.get("snapshot_id")) or not isinstance(data.get("snapshot_hash"), str) or len(data["snapshot_hash"]) != 64 or not isinstance(data["nodes"], list) or len(data["nodes"]) > 8:
+    if not required <= set(data) <= required | {"next_cursor"} or not _is_opaque(data.get("snapshot_id")) or not isinstance(data.get("snapshot_hash"), str) or _DATA_HASH.fullmatch(data["snapshot_hash"]) is None or not isinstance(data["nodes"], list) or len(data["nodes"]) > 8:
         return False
     if data["parent_node_id"] is not None and not _is_opaque(data["parent_node_id"]):
         return False
