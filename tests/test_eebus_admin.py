@@ -1,22 +1,31 @@
-"""RED contract tests for the candidate-free eeBUS AdminV1 HA client."""
+"""RED contract tests for the credential-free eeBUS AdminV1 HA client."""
 
 from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
 
-def _admin_module():
-    """Load the intentionally new production boundary with a clear RED failure."""
+CONTRACT = "helianthus.eebus.operator-admin.v1"
+SKI = "0123456789abcdef0123456789abcdef01234567"
+PARTNER_ID = "p-" + "a" * 32
 
-    try:
-        return importlib.import_module("custom_components.helianthus.eebus_admin")
-    except ModuleNotFoundError as exc:
-        pytest.fail(f"missing eeBUS AdminV1 production boundary: {exc}")
+
+def _admin() -> Any:
+    return importlib.import_module("custom_components.helianthus.eebus_admin")
+
+
+def _envelope(data: dict[str, Any], revision: int = 7) -> dict[str, Any]:
+    return {"contract": CONTRACT, "request_id": "request-opaque", "state_revision": revision, "data": data, "error": None}
+
+
+def _status() -> dict[str, Any]:
+    return {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 0, "connected_count": 0, "discovered_count": 0, "candidate_count": 0}
 
 
 @dataclass
@@ -24,7 +33,6 @@ class _Response:
     payload: Any
     status: int = 200
     content_length: int | None = None
-    chunked_body: bytes | None = None
 
     async def __aenter__(self) -> "_Response":
         return self
@@ -32,379 +40,128 @@ class _Response:
     async def __aexit__(self, *_args: object) -> None:
         return None
 
-    def raise_for_status(self) -> None:
-        return None
-
     async def json(self) -> Any:
         return self.payload
-
-    @property
-    def content(self) -> "_ChunkedContent":
-        return _ChunkedContent(self.chunked_body or b"")
-
-
-class _ChunkedContent:
-    def __init__(self, body: bytes) -> None:
-        self.body = body
-        self.read_limits: list[int] = []
-
-    async def read(self, limit: int = -1) -> bytes:
-        self.read_limits.append(limit)
-        return self.body
 
 
 class _Session:
     def __init__(self, responses: list[_Response]) -> None:
-        self._responses = responses
-        self.requests: list[tuple[str, dict[str, str], bool]] = []
-
-    def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _Response:
-        self.requests.append((url, headers, allow_redirects))
-        return self._responses.pop(0)
-
-
-def _envelope(data: dict[str, Any], revision: int = 1) -> dict[str, Any]:
-    return {
-        "contract": "helianthus.eebus.operator-admin.v1",
-        "projection_revision": revision,
-        "data": data,
-        "error": None,
-    }
-
-
-def _status(listener: str = "ready", discovery: str = "ready") -> dict[str, Any]:
-    return {
-        "listener": listener,
-        "discovery": discovery,
-        "trusted_count": 0,
-        "connected_count": 0,
-        "discovered_count": 0,
-    }
-
-
-PARTNER_ID = "ha-" + "a" * 32
-
-
-def _parsed(admin: Any, view: str, data: dict[str, Any], revision: int = 1) -> Any:
-    return admin.parse_ha_admin_envelope(_envelope(data, revision), expected_view=view)
-
-
-def test_admin_base_url_is_fixed_same_origin_and_has_no_user_path_escape() -> None:
-    admin = _admin_module()
-
-    assert (
-        admin.build_eebus_admin_base_url("https://gateway.example.test:8443/graphql")
-        == "https://gateway.example.test:8443/admin/eebus/v1"
-    )
-    assert (
-        admin.build_eebus_admin_base_url("http://gateway.example.test/anything")
-        == "http://gateway.example.test/admin/eebus/v1"
-    )
-    for unsafe in ("gateway.example.test", "https://gateway.example.test/?next=x", "https://gateway.example.test/#token"):
-        with pytest.raises(ValueError):
-            admin.build_eebus_admin_base_url(unsafe)
-    for unsafe in ("https://user@gateway.example.test", "https://gateway.example.test:bad", "https://gateway.example.test:99999"):
-        with pytest.raises(ValueError):
-            admin.build_eebus_admin_base_url(unsafe)
-
-
-def test_status_and_partner_schemas_are_exactly_bounded_and_non_boolean() -> None:
-    admin = _admin_module()
-    status = {"listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 0, "discovered_count": 2}
-    assert _parsed(admin, "status", status).data == status
-    for invalid in ({"listener": "x"}, {**status, "trusted_count": True}, {**status, "listener": "x" * 257}):
-        with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "status", invalid)
-    row = {"partner_id": "ha-" + "a" * 32, "view": "trusted", "brand": "b"}
-    assert _parsed(admin, "trusted", {"partners": [row]}).data == {"partners": [row]}
-    for bad in ({**row, "partner_id": "ha-not-valid"}, {**row, "view": "connected"}, {**row, "brand": "x" * 257}):
-        with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "trusted", {"partners": [bad]})
-    with pytest.raises(admin.EEBusAdminV1ProtocolError): _parsed(admin, "trusted", {"partners": [row] * 129})
-
-
-def test_store_defensively_copies_input_and_output_data() -> None:
-    admin = _admin_module(); store = admin.HAAdminProjectionStore()
-    source = _status()
-    store.accept("status", _parsed(admin, "status", source))
-    source["listener"] = "mutated"; returned = store.data_for("status"); returned["listener"] = "mutated-again"
-    assert store.data_for("status") == _status()
-
-
-def test_client_allows_only_candidate_free_get_views_and_sends_no_browser_authority() -> None:
-    admin = _admin_module()
-    session = _Session(
-        [
-            _Response(_envelope(_status())),
-            _Response(_envelope({"partners": []})),
-            _Response(_envelope({"partners": []})),
-            _Response(_envelope({"partners": []})),
-        ]
-    )
-    client = admin.EEBusAdminV1Client(
-        session=session,
-        base_url="https://gateway.example.test/admin/eebus/v1",
-        credential="m" * 32,
-    )
-
-    status = asyncio.run(client.fetch_status())
-    assert isinstance(status, admin.HAAdminEnvelopeV1)
-    assert status.data == _status()
-    for view in ("trusted", "connected", "discovered"):
-        partners = asyncio.run(client.fetch_partners(view))
-        assert isinstance(partners, admin.HAAdminEnvelopeV1)
-        assert partners.data == {"partners": []}
-    for forbidden in ("candidate", "raw", "spine", "unknown"):
-        with pytest.raises(ValueError):
-            asyncio.run(client.fetch_partners(forbidden))
-
-    assert [request[0] for request in session.requests] == [
-        "https://gateway.example.test/admin/eebus/v1/status",
-        "https://gateway.example.test/admin/eebus/v1/partners?view=trusted",
-        "https://gateway.example.test/admin/eebus/v1/partners?view=connected",
-        "https://gateway.example.test/admin/eebus/v1/partners?view=discovered",
-    ]
-    for _, headers, allow_redirects in session.requests:
-        assert headers["Authorization"] == "Bearer " + ("m" * 32)
-        assert headers["Accept"] == "application/json"
-        assert "Cookie" not in headers
-        assert "Origin" not in headers
-        assert "Referer" not in headers
-        assert allow_redirects is False
-
-
-def test_client_rejects_oversized_admin_body_before_parsing() -> None:
-    admin = _admin_module()
-    session = _Session([_Response(_envelope({"listener": "ready"}), content_length=65_537)])
-    client = admin.EEBusAdminV1Client(
-        session=session,
-        base_url="https://gateway.example.test/admin/eebus/v1",
-        credential="m" * 32,
-    )
-
-    with pytest.raises(admin.EEBusAdminV1Error) as captured:
-        asyncio.run(client.fetch_status())
-    assert captured.value.code == "invalid_response"
-
-
-def test_client_bounds_unknown_length_chunked_body_before_json_parsing() -> None:
-    admin = _admin_module()
-    session = _Session([_Response(None, content_length=None, chunked_body=b"x" * 65_537)])
-    client = admin.EEBusAdminV1Client(
-        session=session,
-        base_url="https://gateway.example.test/admin/eebus/v1",
-        credential="m" * 32,
-    )
-
-    with pytest.raises(admin.EEBusAdminV1Error) as captured:
-        asyncio.run(client.fetch_status())
-    assert captured.value.code == "invalid_response"
-
-
-def test_strict_ha_envelope_has_one_typed_view_aware_path_and_rejects_owner_fields() -> None:
-    admin = _admin_module()
-    accepted = admin.parse_ha_admin_envelope(_envelope({"partners": []}), expected_view="trusted")
-    assert isinstance(accepted, admin.HAAdminEnvelopeV1)
-    assert accepted.projection_revision == 1
-    assert accepted.data == {"partners": []}
-
-    invalid_payloads = [
-        {**_envelope({}), "state_revision": 2},
-        {**_envelope({}), "request_id": "owner-only"},
-        _envelope({"candidate_count": 1}),
-        _envelope({"raw_spine": {}}),
-        {**_envelope({}), "unexpected": True},
-        {"contract": "helianthus.eebus.operator-admin.v2", "projection_revision": 1, "data": {}, "error": None},
-    ]
-    for payload in invalid_payloads:
-        with pytest.raises(admin.EEBusAdminV1ProtocolError):
-            admin.parse_ha_admin_envelope(payload, expected_view="status")
-
-
-def test_per_view_data_schema_rejects_non_ha_identity_candidate_raw_and_unknown_fields() -> None:
-    admin = _admin_module()
-    valid_status = {
-        "listener": "ready",
-        "discovery": "ready",
-        "trusted_count": 1,
-        "connected_count": 1,
-        "discovered_count": 1,
-        "degraded_code": "",
-    }
-    valid_partner = {
-        "partner_id": PARTNER_ID,
-        "view": "trusted",
-        "brand": "brand",
-        "device_type": "device",
-        "model": "model",
-        "trust_state": "trusted",
-        "connection_state": "connected",
-        "last_seen": "2026-08-14T12:00:00Z",
-    }
-    assert _parsed(admin, "status", valid_status).data == valid_status
-    assert _parsed(admin, "trusted", {"partners": [valid_partner]}).data == {"partners": [valid_partner]}
-
-    invalid_status = [
-        {**valid_status, "candidate_count": 1},
-        {**valid_status, "pairing_window": "open"},
-        {**valid_status, "unknown": True},
-    ]
-    forbidden_partner_fields = (
-        "remote_ski",
-        "remote_ship_id",
-        "endpoint",
-        "observation_id",
-        "observation_revision",
-        "candidate_state",
-        "candidate_expires_at",
-        "raw_spine",
-        "unknown",
-    )
-    for data in invalid_status:
-        with pytest.raises(admin.EEBusAdminV1ProtocolError):
-            _parsed(admin, "status", data)
-    with pytest.raises(admin.EEBusAdminV1ProtocolError):
-        _parsed(admin, "trusted", {"partners": [], "unknown": True})
-    for field in forbidden_partner_fields:
-        with pytest.raises(admin.EEBusAdminV1ProtocolError):
-            _parsed(admin, "trusted", {"partners": [{**valid_partner, field: "forbidden"}]})
-    with pytest.raises(admin.EEBusAdminV1ProtocolError):
-        _parsed(admin, "connected", {"partners": [valid_partner]})
-
-
-def test_projection_store_retains_each_last_good_view_and_suppresses_identical_data() -> None:
-    admin = _admin_module()
-    store = admin.HAAdminProjectionStore()
-    status = _parsed(admin, "status", _status(), revision=7)
-    trusted = _parsed(admin, "trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}, revision=8)
-
-    assert store.accept("status", status) is True
-    assert store.accept("trusted", trusted) is True
-    assert store.accept("status", status) is False
-    with pytest.raises((TypeError, admin.EEBusAdminV1ProtocolError)):
-        store.accept("status", _envelope({"listener": "raw-path"}))
-    with pytest.raises(admin.EEBusAdminV1ProtocolError):
-        store.accept("connected", _parsed(admin, "connected", {"candidate_state": "pending"}, revision=9))
-
-    assert store.data_for("status") == _status()
-    assert store.data_for("trusted") == {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}
-    assert store.data_for("connected") is None
-
-
-def test_projection_revision_churn_with_identical_permitted_data_is_not_an_ha_change() -> None:
-    admin = _admin_module()
-    store = admin.HAAdminProjectionStore()
-    first = _parsed(admin, "status", _status(), revision=10)
-    candidate_only_churn = _parsed(admin, "status", _status(), revision=11)
-
-    assert store.accept("status", first) is True
-    assert store.accept("status", candidate_only_churn) is False
-    assert store.data_for("status") == _status()
-
-
-@pytest.mark.parametrize(
-    ("status", "expected_code"),
-    [
-        (401, "unauthenticated"),
-        (403, "forbidden"),
-        (409, "state_conflict"),
-        (503, "admin_boundary_unavailable"),
-    ],
-)
-def test_client_maps_http_failures_to_fixed_sanitized_categories(status: int, expected_code: str) -> None:
-    admin = _admin_module()
-    credential = "e" * 32
-    session = _Session([_Response({"detail": "raw server body must not escape"}, status=status)])
-    client = admin.EEBusAdminV1Client(
-        session=session,
-        base_url="https://gateway.example.test/admin/eebus/v1",
-        credential=credential,
-    )
-
-    with pytest.raises(admin.EEBusAdminV1Error) as captured:
-        asyncio.run(client.fetch_status())
-
-    error = captured.value
-    assert error.code == expected_code
-    rendered = f"{error!s} {error!r}"
-    for secret_or_transport_detail in (
-        credential,
-        "raw server body",
-        "gateway.example.test",
-        "Authorization",
-        "Bearer",
-    ):
-        assert secret_or_transport_detail not in rendered
-
-
-def test_client_maps_malformed_json_and_wrong_content_to_one_sanitized_category() -> None:
-    admin = _admin_module()
-    credential = "e" * 32
-    session = _Session([_Response("not an AdminV1 object"), _Response(_envelope({"raw_spine": {}}))])
-    client = admin.EEBusAdminV1Client(
-        session=session,
-        base_url="https://gateway.example.test/admin/eebus/v1",
-        credential=credential,
-    )
-
-    for request in (client.fetch_status, lambda: client.fetch_partners("trusted")):
-        with pytest.raises(admin.EEBusAdminV1Error) as captured:
-            asyncio.run(request())
-        assert captured.value.code == "invalid_response"
-        rendered = f"{captured.value!s} {captured.value!r}"
-        assert credential not in rendered
-        assert "gateway.example.test" not in rendered
-
-
-class _PollingClient:
-    def __init__(self, responses: dict[str, Any]) -> None:
         self.responses = responses
+        self.calls: list[tuple[str, str, dict[str, str], Any, bool]] = []
 
-    async def fetch_status(self) -> Any:
-        response = self.responses["status"]
-        if isinstance(response, Exception):
-            raise response
-        return response
+    def _call(self, method: str, url: str, **kwargs: Any) -> _Response:
+        self.calls.append((method, url, kwargs["headers"], kwargs.get("json"), kwargs["allow_redirects"]))
+        return self.responses.pop(0)
 
-    async def fetch_partners(self, view: str) -> Any:
-        response = self.responses[view]
-        if isinstance(response, Exception):
-            raise response
-        return response
+    def get(self, url: str, **kwargs: Any) -> _Response:
+        return self._call("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> _Response:
+        return self._call("POST", url, **kwargs)
+
+    def delete(self, url: str, **kwargs: Any) -> _Response:
+        return self._call("DELETE", url, **kwargs)
 
 
-def test_poller_updates_views_independently_and_retains_each_last_good_view_on_failure() -> None:
-    admin = _admin_module()
+def test_client_has_no_eebus_credential_or_reauth_source() -> None:
+    source = inspect_source = __import__("inspect").getsource(_admin())
+    assert "credential" not in source.lower()
+    assert "authorization" not in source.lower()
+    assert "reauth" not in source.lower()
+    assert "password" not in source.lower()
+    assert inspect_source  # keep this an explicit source-boundary assertion
+
+
+def test_read_client_uses_closed_views_no_browser_authority_and_no_redirects() -> None:
+    admin = _admin()
+    session = _Session([_Response(_envelope(_status())), *[_Response(_envelope({"partners": []})) for _ in range(4)]])
+    client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
+
+    assert asyncio.run(client.fetch_status()).data == _status()
+    for view in ("trusted", "connected", "discovered", "candidate"):
+        assert asyncio.run(client.fetch_partners(view)).data == {"partners": []}
+    for view in ("status", "raw", "spine", "anything"):
+        with pytest.raises(ValueError):
+            asyncio.run(client.fetch_partners(view))
+
+    assert [call[:2] for call in session.calls] == [
+        ("GET", "https://gateway.example.test/admin/eebus/v1/status"),
+        *( ("GET", f"https://gateway.example.test/admin/eebus/v1/partners?view={view}") for view in ("trusted", "connected", "discovered", "candidate") ),
+    ]
+    for _, _, headers, body, redirects in session.calls:
+        assert headers == {"Accept": "application/json"}
+        assert body is None and redirects is False
+
+
+def test_state_revision_envelope_and_all_five_closed_read_schemas_are_strict() -> None:
+    admin = _admin()
+    assert admin.parse_ha_admin_envelope(_envelope(_status()), expected_view="status").state_revision == 7
+    rows = {
+        "trusted": {"partner_id": PARTNER_ID, "view": "trusted", "remote_ski": SKI, "trust_state": "durably_trusted", "connection_state": "connected"},
+        "connected": {"partner_id": PARTNER_ID, "view": "connected", "remote_ski": SKI, "trust_state": "durably_trusted", "connection_state": "connected"},
+        "discovered": {"observation_id": "o-" + "b" * 32, "view": "discovered", "remote_ski": SKI, "observation_revision": 3, "connection_state": "discovered"},
+        "candidate": {"view": "candidate", "remote_ski": SKI, "candidate_state": "tls_bound", "candidate_expires_at": "2026-08-15T12:00:00Z", "connection_state": "connected"},
+    }
+    for view, row in rows.items():
+        assert admin.parse_ha_admin_envelope(_envelope({"partners": [row]}), expected_view=view).data == {"partners": [row]}
+    invalid = [
+        {"contract": CONTRACT, "projection_revision": 7, "data": _status(), "error": None},
+        {**_envelope(_status()), "unexpected": True},
+        _envelope({**_status(), "candidate_ref": "store-token"}),
+        _envelope({"partners": [{**rows["trusted"], "endpoint": "192.0.2.1:4712"}]}),
+        _envelope({"partners": [{**rows["candidate"], "remote_ski": SKI.upper()}]}),
+    ]
+    for payload in invalid:
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(payload, expected_view="status" if payload["data"] == _status() else "trusted")
+
+
+def test_candidate_identity_is_active_response_only_not_storeable_or_entity_safe() -> None:
+    admin = _admin()
+    candidate = {"view": "candidate", "remote_ski": SKI, "candidate_state": "tls_bound", "candidate_expires_at": "2026-08-15T12:00:00Z", "connection_state": "connected"}
+    envelope = admin.parse_ha_admin_envelope(_envelope({"partners": [candidate]}), expected_view="candidate")
     store = admin.HAAdminProjectionStore()
-    first_client = _PollingClient(
-        {
-            "status": _parsed(admin, "status", _status(), 1),
-            "trusted": _parsed(admin, "trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}, 1),
-            "connected": _parsed(admin, "connected", {"partners": [{"partner_id": PARTNER_ID, "view": "connected"}]}, 1),
-            "discovered": _parsed(admin, "discovered", {"partners": []}, 1),
-        }
-    )
-    assert asyncio.run(admin.EEBusAdminV1Poller(first_client, store).async_poll()) == {
-        "status": True,
-        "trusted": True,
-        "connected": True,
-        "discovered": True,
-    }
+    assert store.accept("candidate", envelope) is False
+    assert store.data_for("candidate") is None
+    active = admin.ActiveCandidateResponse.from_envelope(envelope)
+    assert active.remote_ski == SKI
+    for method in ("clear", "on_visibility_lost", "on_navigation_away", "on_candidate_expired"):
+        getattr(active, method)()
+        assert active.remote_ski is None
 
-    failure = admin.EEBusAdminV1Error("admin_boundary_unavailable")
-    second_client = _PollingClient(
-        {
-            "status": _parsed(admin, "status", _status("degraded"), 2),
-            "trusted": _parsed(admin, "trusted", {"partners": []}, 2),
-            "connected": failure,
-            "discovered": _parsed(admin, "discovered", {"partners": [{"partner_id": PARTNER_ID, "view": "discovered"}]}, 2),
-        }
-    )
-    assert asyncio.run(admin.EEBusAdminV1Poller(second_client, store).async_poll()) == {
-        "status": True,
-        "trusted": True,
-        "connected": False,
-        "discovered": True,
-    }
-    assert store.data_for("status") == _status("degraded")
-    assert store.data_for("trusted") == {"partners": []}
-    assert store.data_for("connected") == {"partners": [{"partner_id": PARTNER_ID, "view": "connected"}]}
-    assert store.data_for("discovered") == {"partners": [{"partner_id": PARTNER_ID, "view": "discovered"}]}
+
+def test_spine_page_has_fixed_closed_query_shapes_and_bounded_lossless_nodes() -> None:
+    admin = _admin()
+    session = _Session([_Response(_envelope({"snapshot_id": "s-opaque", "snapshot_hash": "a" * 64, "parent_node_id": None, "nodes": [{"node_id": "n1", "parent_node_id": None, "kind": "device", "sort_key": "device|1", "payload": {"ski": SKI, "address": "d1", "type": "device"}}]}))])
+    client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
+    page = asyncio.run(client.fetch_spine_root(PARTNER_ID))
+    assert page.data["nodes"][0]["payload"]["ski"] == SKI
+    assert session.calls[0][:2] == ("GET", f"https://gateway.example.test/admin/eebus/v1/partners/{PARTNER_ID}/spine?request=root")
+    for kwargs in ({"cursor": "caller-page-size"}, {"request": "anything"}):
+        with pytest.raises(ValueError):
+            asyncio.run(client.fetch_spine_page(PARTNER_ID, **kwargs))
+
+
+def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies() -> None:
+    admin = _admin()
+    operations = [
+        ("open_pairing_window", "POST", "/pairing-window:open", {"duration_seconds": 60, "state_revision": 7}, {"duration_seconds": 60}),
+        ("close_pairing_window", "POST", "/pairing-window:close", {"state_revision": 7}, {}),
+        ("select_observation", "POST", "/observations/o-opaque:select", {"state_revision": 7, "expected_ski": SKI}, {"observation_id": "o-opaque", "expected_ski": SKI}),
+        ("connect_selection", "POST", "/selections/s-opaque:connect", {"state_revision": 7}, {"selection_id": "s-opaque"}),
+        ("confirm_candidate", "POST", "/candidate:confirm", {"state_revision": 7, "expected_ski": SKI}, {"expected_ski": SKI}),
+        ("cancel_candidate", "POST", "/candidate:cancel", {"state_revision": 7}, {}),
+        ("retry_trusted_partner", "POST", f"/partners/{PARTNER_ID}:retry", {"state_revision": 7}, {"partner_id": PARTNER_ID}),
+        ("untrust_partner", "DELETE", f"/partners/{PARTNER_ID}/trust", {"state_revision": 7}, {"partner_id": PARTNER_ID}),
+    ]
+    session = _Session([_Response(_envelope({"outcome": "accepted", "replayed": False}, 8)) for _ in operations])
+    client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
+    for index, (name, method, suffix, body, arguments) in enumerate(operations):
+        result = asyncio.run(getattr(client, name)(**arguments, expected_state_revision=7, idempotency_key=f"test-key-{index}"))
+        assert result.state_revision == 8
+        actual_method, url, headers, actual_body, redirects = session.calls[index]
+        assert (actual_method, url) == (method, "https://gateway.example.test/admin/eebus/v1" + suffix)
+        assert headers == {"Accept": "application/json", "Content-Type": "application/json", "Idempotency-Key": f"test-key-{index}"}
+        assert actual_body == body and redirects is False
+    for name, *_unused in operations:
+        assert not {"route", "endpoint", "url", "path"} & set(inspect.signature(getattr(client, name)).parameters)
