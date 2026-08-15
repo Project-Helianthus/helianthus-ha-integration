@@ -691,6 +691,16 @@ def _remove_config_entry_registry_state(
     return removed_entities, removed_devices
 
 
+async def async_sanitize_legacy_eebus_admin_entry(hass: object, entry: object) -> bool:
+    """Remove the retired eeBUS field without changing any other entry state."""
+    data = dict(getattr(entry, "data", {}) or {})
+    if "eebus_admin_credential" not in data:
+        return False
+    data.pop("eebus_admin_credential")
+    hass.config_entries.async_update_entry(entry, data=data)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -757,6 +767,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         should_reload_zone_parent_state,
         zone_ids_by_climate_unique_id,
     )
+
+    await async_sanitize_legacy_eebus_admin_entry(hass, entry)
 
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
