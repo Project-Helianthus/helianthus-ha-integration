@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+try:
+    import voluptuous as vol
+except ModuleNotFoundError:  # lightweight test environment
+    vol = None
+if vol is not None and not all(hasattr(vol, name) for name in ("Schema", "All", "Length", "In", "Required", "Optional", "Range", "PREVENT_EXTRA")):
+    vol = None
+
 from .const import DOMAIN
 
 try:
@@ -82,7 +89,7 @@ def validate_service_call(operation: str, data: Any) -> dict[str, Any] | None:
         }
         if not _matches(data, fields[operation]) or not _revision(data.get("expected_state_revision")) or not _key(data.get("idempotency_key")):
             return None
-        if operation == "open_pairing_window" and (not isinstance(data.get("duration_seconds"), int) or isinstance(data["duration_seconds"], bool) or not 1 <= data["duration_seconds"] <= 65535):
+        if operation == "open_pairing_window" and (not isinstance(data.get("duration_seconds"), int) or isinstance(data["duration_seconds"], bool) or not 1 <= data["duration_seconds"] <= 300):
             return None
         if operation in {"select_observation", "connect_selection"} and not _opaque(data.get("observation_id") if operation == "select_observation" else data.get("selection_id")):
             return None
@@ -143,7 +150,47 @@ def _register_all(hass: Any) -> None:
     for operation, service_name in SERVICE_NAMES.items():
         async def handler(call: Any, *, _operation: str = operation) -> dict[str, Any]:
             return await _invoke(hass, _operation, call)
-        target.async_register(DOMAIN, service_name, handler, supports_response=SupportsResponse.ONLY)
+        target.async_register(DOMAIN, service_name, handler, schema=_service_schema(operation), supports_response=SupportsResponse.ONLY)
+
+
+class _FallbackSchema:
+    def __init__(self, operation: str) -> None:
+        self._operation = operation
+
+    def __call__(self, value: Any) -> dict[str, Any]:
+        normalized = validate_service_call(self._operation, value)
+        if normalized is None:
+            raise ValueError("invalid service data")
+        return normalized
+
+
+def _service_schema(operation: str) -> Any:
+    if vol is None:
+        return _FallbackSchema(operation)
+    fields: dict[Any, Any] = {vol.Required("entry_id"): vol.All(str, vol.Length(min=1, max=256))}
+    if operation == "snapshot":
+        fields[vol.Optional("view", default="status")] = vol.In({"status", "trusted", "connected", "discovered", "candidate"})
+    elif operation == "spine_root":
+        fields[vol.Required("partner_id")] = vol.All(str, vol.Length(min=1, max=256))
+    elif operation in {"spine_children", "spine_continue"}:
+        names = ("partner_id", "snapshot_id", "parent_node_id") if operation == "spine_children" else ("partner_id", "snapshot_id", "parent_node_id", "cursor")
+        for name in names:
+            fields[vol.Required(name)] = vol.All(str, vol.Length(min=1, max=256))
+    else:
+        fields[vol.Required("expected_state_revision")] = vol.All(int, vol.Range(min=1, max=_MAX_UINT64))
+        fields[vol.Required("idempotency_key")] = vol.All(str, vol.Length(min=1, max=128))
+        if operation == "open_pairing_window":
+            fields[vol.Required("duration_seconds")] = vol.All(int, vol.Range(min=1, max=300))
+        elif operation == "select_observation":
+            fields[vol.Required("observation_id")] = vol.All(str, vol.Length(min=1, max=256))
+            fields[vol.Required("expected_ski")] = vol.All(str, vol.Length(min=40, max=40))
+        elif operation == "connect_selection":
+            fields[vol.Required("selection_id")] = vol.All(str, vol.Length(min=1, max=256))
+        elif operation == "confirm_candidate":
+            fields[vol.Required("expected_ski")] = vol.All(str, vol.Length(min=40, max=40))
+        elif operation in {"retry_trusted_partner", "untrust_partner"}:
+            fields[vol.Required("partner_id")] = vol.All(str, vol.Length(min=1, max=256))
+    return vol.Schema(fields, extra=vol.PREVENT_EXTRA)
 
 
 def register_eebus_admin_services(hass: Any, *, entry_id: str, client: Any) -> EntryServices:

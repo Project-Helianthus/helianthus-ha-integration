@@ -6,6 +6,7 @@ import logging
 import re
 from urllib.parse import urlsplit
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .admission import (
@@ -51,6 +52,37 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _EEBusAdminBoundary:
+    client: object
+    lifecycle: object
+    session: object
+
+
+async def async_setup_eebus_admin_boundary(
+    hass: object, *, entry_id: str, origin: str, instance_guid: str, session: object
+) -> _EEBusAdminBoundary:
+    """Create one isolated operator boundary and register fixed entry services."""
+    from .eebus_admin import EEBusAdminV1Client
+    from .eebus_admin_coordinator import EEBusAdminV1Lifecycle
+    from .eebus_admin_services import register_eebus_admin_services
+
+    lifecycle = EEBusAdminV1Lifecycle(entry_id=entry_id)
+    lifecycle.reconcile_binding(origin=origin, instance_guid=instance_guid)
+    client = EEBusAdminV1Client(session=session, base_url=origin)
+    register_eebus_admin_services(hass, entry_id=entry_id, client=client)
+    return _EEBusAdminBoundary(client=client, lifecycle=lifecycle, session=session)
+
+
+async def async_unload_eebus_admin_boundary(hass: object, *, entry_id: str, session: object) -> None:
+    """Close one isolated session; fixed services remain until final entry unload."""
+    from .eebus_admin_coordinator import close_admin_session
+    from .eebus_admin_services import unregister_eebus_admin_services
+
+    unregister_eebus_admin_services(hass, entry_id=entry_id)
+    await close_admin_session(session)
 
 # --- B524 namespace: camelCase -> snake_case unique_id migration (C2) ---
 # Sorted by key length descending to prevent substring collision during replace.
@@ -713,16 +745,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         stable_bus_identity_model,
     )
     from .subscriptions import start_subscriptions
-    from .eebus_admin import EEBusAdminV1Client
     from .eebus_admin_coordinator import (
         EEBusAdminV1Coordinator,
-        EEBusAdminV1Lifecycle,
         close_admin_session,
         create_admin_session,
-    )
-    from .eebus_admin_services import (
-        register_eebus_admin_services,
-        unregister_eebus_admin_services,
     )
     from .zone_parent import (
         build_zone_parent_device_ids,
@@ -991,15 +1017,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     admin_coordinator = None
     admin_session = None
     admin_services_registered = False
+    admin_boundary = None
     try:
         parsed_graphql_url = urlsplit(graphql_url)
         admin_origin = f"{parsed_graphql_url.scheme}://{parsed_graphql_url.netloc}"
         admin_session = create_admin_session(hass)
-        admin_lifecycle = EEBusAdminV1Lifecycle(entry_id=entry.entry_id)
-        admin_lifecycle.reconcile_binding(origin=admin_origin, instance_guid=entry_instance_guid or entry.entry_id)
-        admin_client = EEBusAdminV1Client(session=admin_session, base_url=admin_origin)
-        admin_coordinator = EEBusAdminV1Coordinator(hass, admin_client, admin_lifecycle, scan_interval)
-        register_eebus_admin_services(hass, entry_id=entry.entry_id, client=admin_client)
+        admin_boundary = await async_setup_eebus_admin_boundary(
+            hass,
+            entry_id=entry.entry_id,
+            origin=admin_origin,
+            instance_guid=entry_instance_guid or entry.entry_id,
+            session=admin_session,
+        )
+        admin_coordinator = EEBusAdminV1Coordinator(hass, admin_boundary.client, admin_boundary.lifecycle, scan_interval)
         admin_services_registered = True
         await admin_coordinator.async_refresh()
     except Exception:
@@ -1007,13 +1037,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "eeBUS AdminV1 setup failed non-fatally for entry %s",
             entry.entry_id,
         )
-        if admin_session is not None:
+        if admin_boundary is not None:
+            await async_unload_eebus_admin_boundary(hass, entry_id=entry.entry_id, session=admin_boundary.session)
+            admin_session = None
+        elif admin_session is not None:
             await close_admin_session(admin_session)
             admin_session = None
         admin_coordinator = None
-        if admin_services_registered:
-            unregister_eebus_admin_services(hass, entry_id=entry.entry_id)
-            admin_services_registered = False
+        admin_services_registered = False
 
     adapter_hw = adapter_info_coordinator.data
     if isinstance(adapter_hw, dict) and adapter_hw.get("firmware_version"):
@@ -2343,8 +2374,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if admin_coordinator is not None:
             admin_coordinator.lifecycle.store.clear()
         admin_session = None if data is None else data.get("eebus_admin_session")
-        if admin_session is not None:
+        if admin_session is not None and data is not None and data.get("eebus_admin_services_registered"):
+            await async_unload_eebus_admin_boundary(hass, entry_id=entry.entry_id, session=admin_session)
+        elif admin_session is not None:
+            from .eebus_admin_coordinator import close_admin_session
             await close_admin_session(admin_session)
-        if data is not None and data.get("eebus_admin_services_registered"):
-            unregister_eebus_admin_services(hass, entry_id=entry.entry_id)
     return unload_ok

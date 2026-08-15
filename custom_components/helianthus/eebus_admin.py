@@ -109,13 +109,15 @@ def _valid_status(data: dict[str, Any]) -> bool:
 
 def _valid_partner(view: str, row: dict[str, Any]) -> bool:
     common = {"view", "remote_ski", "brand", "device_type", "model", "remote_ship_id", "trust_state", "connection_state", "last_seen", "degraded_reason"}
-    by_view = {
+    required_by_view = {
         "trusted": {"partner_id"},
         "connected": {"partner_id"},
         "discovered": {"observation_id", "observation_revision"},
         "candidate": {"candidate_state", "candidate_expires_at"},
     }
-    if view not in by_view or not set(by_view[view]) <= set(row) <= common | by_view[view]:
+    endpoint_views = {"connected", "discovered"}
+    allowed = common | required_by_view.get(view, set()) | ({"endpoint"} if view in endpoint_views else set())
+    if view not in required_by_view or not required_by_view[view] <= set(row) <= allowed:
         return False
     if row.get("view") != view or not _is_ski(row.get("remote_ski")):
         return False
