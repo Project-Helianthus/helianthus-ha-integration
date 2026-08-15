@@ -116,5 +116,16 @@ def test_periodic_refresh_fetches_only_sanitized_status_and_retains_only_status_
     assert lifecycle.store.data_for("connected") is None
     assert lifecycle.store.data_for("discovered") is None
     rendered = repr(lifecycle.store.__dict__) + repr(first) + repr(second)
-    for forbidden in ("remote_ski", "endpoint", "partner_id", "candidate"):
+    assert "candidate_count" in rendered
+    for forbidden in (
+        "remote_ski",
+        "endpoint",
+        "partner_id",
+        "observation_id",
+        "candidate_state",
+        "candidate_expires",
+        "raw_spine",
+        "partners",
+        "remote_ship_id",
+    ):
         assert forbidden not in rendered

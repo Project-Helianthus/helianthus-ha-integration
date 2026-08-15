@@ -15,6 +15,7 @@ _VIEWS = frozenset({"status", "trusted", "connected", "discovered", "candidate"}
 _SKI = re.compile(r"[0-9a-f]{40}")
 _OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _DATA_HASH = re.compile(r"sha256:[0-9a-f]{64}")
+_UNSET = object()
 
 
 class EEBusAdminV1Error(RuntimeError):
@@ -161,12 +162,22 @@ def _valid_spine_data(data: dict[str, Any]) -> bool:
     return all(isinstance(node, dict) and set(node) == {"node_id", "parent_node_id", "kind", "sort_key", "payload"} and _is_opaque(node["node_id"]) and (node["parent_node_id"] is None or _is_opaque(node["parent_node_id"])) and node["kind"] in allowed_kinds and _is_string(node["sort_key"]) and isinstance(node["payload"], dict) for node in data["nodes"])
 
 
-def parse_spine_page_envelope(payload: Any) -> HAAdminEnvelopeV1:
+def parse_spine_page_envelope(
+    payload: Any,
+    *,
+    expected_snapshot_id: str | None = None,
+    expected_parent_node_id: Any = _UNSET,
+) -> HAAdminEnvelopeV1:
     if not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         raise EEBusAdminV1ProtocolError()
     if payload["contract"] != CONTRACT or not _is_opaque(payload["request_id"]) or not _is_state_revision(payload["state_revision"]) or payload["error"] is not None or not isinstance(payload["data"], dict) or not _valid_spine_data(payload["data"]):
         raise EEBusAdminV1ProtocolError()
-    return HAAdminEnvelopeV1(payload["request_id"], payload["state_revision"], copy.deepcopy(payload["data"]))
+    data = payload["data"]
+    if expected_snapshot_id is not None and data["snapshot_id"] != expected_snapshot_id:
+        raise EEBusAdminV1ProtocolError()
+    if expected_parent_node_id is not _UNSET and data["parent_node_id"] != expected_parent_node_id:
+        raise EEBusAdminV1ProtocolError()
+    return HAAdminEnvelopeV1(payload["request_id"], payload["state_revision"], copy.deepcopy(data))
 
 
 @dataclass(frozen=True)
@@ -228,7 +239,10 @@ class EEBusAdminV1Client:
     async def fetch_spine_root(self, partner_id: str) -> HAAdminEnvelopeV1:
         if not _is_opaque(partner_id):
             raise ValueError("invalid partner")
-        return parse_spine_page_envelope(await self._request("GET", "/partners/" + quote(partner_id, safe="") + "/spine?request=root"))
+        return parse_spine_page_envelope(
+            await self._request("GET", "/partners/" + quote(partner_id, safe="") + "/spine?request=root"),
+            expected_parent_node_id=None,
+        )
 
     async def fetch_spine_page(self, partner_id: str, *, request: str | None = None, snapshot_id: str | None = None, parent_node_id: str | None = None, cursor: str | None = None) -> HAAdminEnvelopeV1:
         if not _is_opaque(partner_id) or request not in {"children", "continue"} or not _is_opaque(snapshot_id) or not _is_opaque(parent_node_id) or (request == "children" and cursor is not None) or (request == "continue" and not _is_opaque(cursor)):
@@ -236,7 +250,11 @@ class EEBusAdminV1Client:
         query = f"request={request}&snapshot_id={quote(snapshot_id, safe='')}&parent_node_id={quote(parent_node_id, safe='')}"
         if cursor is not None:
             query += "&cursor=" + quote(cursor, safe="")
-        return parse_spine_page_envelope(await self._request("GET", "/partners/" + quote(partner_id, safe="") + "/spine?" + query))
+        return parse_spine_page_envelope(
+            await self._request("GET", "/partners/" + quote(partner_id, safe="") + "/spine?" + query),
+            expected_snapshot_id=snapshot_id,
+            expected_parent_node_id=parent_node_id,
+        )
 
     @staticmethod
     def _mutation_body(expected_state_revision: int, idempotency_key: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:

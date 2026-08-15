@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 _ADMIN_TIMEOUT_TOTAL_SECONDS = 15
 _ADMIN_TIMEOUT_CONNECT_SECONDS = 5
 _ADMIN_TIMEOUT_READ_SECONDS = 10
-_POLL_VIEWS = ("status", "trusted", "connected", "discovered")
+_POLL_VIEWS = ("status",)
 
 
 class EEBusAdminV1Coordinator(DataUpdateCoordinator):
@@ -35,13 +35,12 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
         self.lifecycle = lifecycle
 
     async def _async_update_data(self) -> dict[str, Any]:
-        for view in _POLL_VIEWS:
-            try:
-                envelope = await (self._client.fetch_status() if view == "status" else self._client.fetch_partners(view))
-                self.lifecycle.store.accept(view, envelope)
-                self.lifecycle.note_view_success(view, envelope.data)
-            except EEBusAdminV1Error as error:
-                self.lifecycle.note_view_failure(view, error)
+        try:
+            envelope = await self._client.fetch_status()
+            self.lifecycle.store.accept("status", envelope)
+            self.lifecycle.note_view_success("status", envelope.data)
+        except EEBusAdminV1Error as error:
+            self.lifecycle.note_view_failure("status", error)
         return {
             "status": self.lifecycle.store.data_for("status"),
             "available": self.lifecycle.diagnostic_available,
