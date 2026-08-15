@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -44,3 +45,38 @@ def test_unavailable_admin_boundary_is_diagnostic_only_and_sanitized() -> None:
     assert lifecycle.graphql_setup_failed is False
     assert lifecycle.unload_requested is False
     assert lifecycle.diagnostic_error == "admin_boundary_unavailable"
+
+
+def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
+    component = importlib.import_module("custom_components.helianthus")
+    calls: list[str] = []
+
+    class Session:
+        async def close(self) -> None:
+            calls.append("close")
+
+    class Services:
+        def __init__(self) -> None:
+            self.registered: set[tuple[str, str]] = set()
+
+        def async_register(self, domain: str, name: str, _handler: Any, *, schema: Any, supports_response: Any) -> None:
+            assert schema is not None and supports_response is not None
+            self.registered.add((domain, name))
+
+        def async_remove(self, domain: str, name: str) -> None:
+            self.registered.discard((domain, name))
+
+    class Hass:
+        def __init__(self) -> None:
+            self.services = Services()
+
+    hass = Hass()
+    first = asyncio.run(component.async_setup_eebus_admin_boundary(hass, entry_id="one", origin="https://gateway.example.test", instance_guid="guid-one", session=Session()))
+    second = asyncio.run(component.async_setup_eebus_admin_boundary(hass, entry_id="two", origin="https://gateway.example.test", instance_guid="guid-two", session=Session()))
+    assert first.client is not second.client
+    assert hass.services.registered
+    asyncio.run(component.async_unload_eebus_admin_boundary(hass, entry_id="one", session=first.session))
+    assert hass.services.registered
+    asyncio.run(component.async_unload_eebus_admin_boundary(hass, entry_id="two", session=second.session))
+    assert hass.services.registered == set()
+    assert calls == ["close", "close"]

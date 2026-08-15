@@ -104,11 +104,16 @@ def test_state_revision_envelope_and_all_five_closed_read_schemas_are_strict() -
     }
     for view, row in rows.items():
         assert admin.parse_ha_admin_envelope(_envelope({"partners": [row]}), expected_view=view).data == {"partners": [row]}
+    for view in ("connected", "discovered"):
+        row = {**rows[view], "endpoint": "192.0.2.44:4712"}
+        assert admin.parse_ha_admin_envelope(_envelope({"partners": [row]}), expected_view=view).data == {"partners": [row]}
     invalid = [
         {"contract": CONTRACT, "projection_revision": 7, "data": _status(), "error": None},
         {**_envelope(_status()), "unexpected": True},
         _envelope({**_status(), "candidate_ref": "store-token"}),
         _envelope({"partners": [{**rows["trusted"], "endpoint": "192.0.2.1:4712"}]}),
+        _envelope({"partners": [{**rows["connected"], "endpoint": "x" * 257}]}),
+        _envelope({"partners": [{**rows["candidate"], "endpoint": "192.0.2.1:4712"}]}),
         _envelope({"partners": [{**rows["candidate"], "remote_ski": SKI.upper()}]}),
     ]
     for payload in invalid:
