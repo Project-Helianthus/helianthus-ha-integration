@@ -14,6 +14,7 @@ import pytest
 CONTRACT = "helianthus.eebus.operator-admin.v1"
 SKI = "0123456789abcdef0123456789abcdef01234567"
 PARTNER_ID = "p-" + "a" * 32
+DATA_HASH = "sha256:" + "a" * 64
 
 
 def _admin() -> Any:
@@ -151,7 +152,7 @@ def test_candidate_identity_is_active_response_only_not_storeable_or_entity_safe
 
 def test_spine_page_has_fixed_closed_query_shapes_and_bounded_lossless_nodes() -> None:
     admin = _admin()
-    session = _Session([_Response(_envelope({"snapshot_id": "s-opaque", "snapshot_hash": "a" * 64, "parent_node_id": None, "nodes": [{"node_id": "n1", "parent_node_id": None, "kind": "device", "sort_key": "device|1", "payload": {"ski": SKI, "address": "d1", "type": "device"}}]}))])
+    session = _Session([_Response(_envelope({"snapshot_id": "s-opaque", "snapshot_hash": DATA_HASH, "parent_node_id": None, "nodes": [{"node_id": "n1", "parent_node_id": None, "kind": "device", "sort_key": "device|1", "payload": {"ski": SKI, "address": "d1", "type": "device"}}]}))])
     client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
     page = asyncio.run(client.fetch_spine_root(PARTNER_ID))
     assert page.data["nodes"][0]["payload"]["ski"] == SKI
@@ -163,7 +164,7 @@ def test_spine_page_has_fixed_closed_query_shapes_and_bounded_lossless_nodes() -
 
 def test_spine_root_children_and_continue_are_closed_response_only_operations() -> None:
     admin = _admin()
-    page = {"snapshot_id": "snapshot-opaque", "snapshot_hash": "a" * 64, "parent_node_id": "node-parent", "nodes": []}
+    page = {"snapshot_id": "snapshot-opaque", "snapshot_hash": DATA_HASH, "parent_node_id": "node-parent", "nodes": []}
     session = _Session([_Response(_envelope({**page, "parent_node_id": None})), _Response(_envelope(page)), _Response(_envelope({**page, "next_cursor": "cursor-next"}))])
     client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
     asyncio.run(client.fetch_spine_root(PARTNER_ID))
@@ -177,6 +178,15 @@ def test_spine_root_children_and_continue_are_closed_response_only_operations() 
     for _, _, headers, body, redirects in session.calls:
         assert headers == {"Accept": "application/json"}
         assert body is None and redirects is False
+
+
+def test_spine_snapshot_hash_is_exact_eebusreg_sha256_datahash() -> None:
+    admin = _admin()
+    valid = {"snapshot_id": "s-opaque", "snapshot_hash": DATA_HASH, "parent_node_id": None, "nodes": []}
+    assert admin.parse_spine_page_envelope(_envelope(valid)).data == valid
+    for invalid_hash in ("a" * 64, "sha256:" + "A" * 64, "sha512:" + "a" * 64, "sha256:" + "a" * 63):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_spine_page_envelope(_envelope({**valid, "snapshot_hash": invalid_hash}))
 
 
 def test_spine_expiry_is_sanitized_and_never_persists_raw_page_data() -> None:

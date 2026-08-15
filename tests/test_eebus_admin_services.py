@@ -106,3 +106,60 @@ def test_fixed_service_dispatch_isolated_by_entry_and_unknown_data_rejected_befo
     for invalid in ({}, {"entry_id": 2}, {"entry_id": "two", "candidate": "must-not-persist"}):
         with pytest.raises(Exception):
             schema(invalid)
+
+
+def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    services = _services()
+    strict_int = services._strict_int
+    assert strict_int(1, minimum=1, maximum=300) == 1
+    for invalid in (True, False, 0, 301, "1"):
+        with pytest.raises(Exception):
+            strict_int(invalid, minimum=1, maximum=300)
+
+    class FakeVol:
+        PREVENT_EXTRA = object()
+
+        class Invalid(ValueError):
+            pass
+
+        @staticmethod
+        def Required(name: str) -> str:
+            return name
+
+        @staticmethod
+        def Optional(name: str, default: Any = None) -> str:
+            return name
+
+        @staticmethod
+        def All(*validators: Any) -> Any:
+            def validate(value: Any) -> Any:
+                for validator in validators:
+                    value = validator(value)
+                return value
+            return validate
+
+        @staticmethod
+        def Length(*, min: int, max: int) -> Any:
+            return lambda value: value if isinstance(value, str) and min <= len(value) <= max else (_ for _ in ()).throw(FakeVol.Invalid())
+
+        @staticmethod
+        def Range(*, min: int, max: int) -> Any:
+            return lambda value: value if min <= value <= max else (_ for _ in ()).throw(FakeVol.Invalid())
+
+        @staticmethod
+        def In(values: set[str]) -> Any:
+            return lambda value: value if value in values else (_ for _ in ()).throw(FakeVol.Invalid())
+
+        @staticmethod
+        def Schema(fields: dict[str, Any], *, extra: object) -> Any:
+            def validate(data: dict[str, Any]) -> dict[str, Any]:
+                if set(data) != set(fields):
+                    raise FakeVol.Invalid()
+                return {key: validator(data[key]) for key, validator in fields.items()}
+            return validate
+
+    monkeypatch.setattr(services, "vol", FakeVol)
+    schema = services._service_schema("open_pairing_window")
+    assert schema({"entry_id": "one", "expected_state_revision": 7, "idempotency_key": "key-1234567890", "duration_seconds": 300})["duration_seconds"] == 300
+    with pytest.raises(FakeVol.Invalid):
+        schema({"entry_id": "one", "expected_state_revision": True, "idempotency_key": "key-1234567890", "duration_seconds": 60})
