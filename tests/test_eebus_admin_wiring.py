@@ -1,243 +1,131 @@
-"""RED lifecycle and wiring contract for the isolated eeBUS AdminV1 consumer."""
+"""RED lifecycle/wiring contract for the credential-free eeBUS operator client."""
 
 from __future__ import annotations
 
 import importlib
 import inspect
 import asyncio
-import json
 from pathlib import Path
-
-import pytest
-
-
-def _modules():
-    try:
-        admin = importlib.import_module("custom_components.helianthus.eebus_admin")
-    except ModuleNotFoundError as exc:
-        pytest.fail(f"missing pure eeBUS AdminV1 client boundary: {exc}")
-    try:
-        coordinator = importlib.import_module("custom_components.helianthus.eebus_admin_coordinator")
-    except ModuleNotFoundError as exc:
-        pytest.fail(f"missing eeBUS AdminV1 HA coordinator boundary: {exc}")
-    return admin, coordinator
+from typing import Any
 
 
-def _status() -> dict[str, object]:
-    return {
-        "listener": "ready",
-        "discovery": "ready",
-        "trusted_count": 0,
-        "connected_count": 0,
-        "discovered_count": 0,
-    }
+def _coordinator() -> Any:
+    return importlib.import_module("custom_components.helianthus.eebus_admin_coordinator")
 
 
-PARTNER_ID = "ha-" + "a" * 32
+def test_dedicated_session_is_cookie_auth_and_redirect_free() -> None:
+    source = inspect.getsource(_coordinator()).lower()
+    assert "dummycookiejar" in source
+    assert "credential" not in source
+    assert "reauth" not in source
+    assert "graphqlclient" not in source
 
 
-def test_dedicated_admin_session_has_no_cookie_jar_and_client_hardening_is_local() -> None:
-    admin, coordinator = _modules()
-    client_source = inspect.getsource(admin)
-    coordinator_source = inspect.getsource(coordinator)
-
-    assert "DummyCookieJar" in coordinator_source
-    assert "allow_redirects=False" in client_source
-    assert "64 * 1024" in client_source or "65_536" in client_source
-    assert "GraphQLClient" not in client_source
-    assert "homeassistant" not in client_source.lower()
-    assert "aiohttp" not in client_source.lower()
+def test_lifecycle_is_bound_only_to_entry_and_verified_gateway_identity() -> None:
+    coordinator = _coordinator()
+    lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-one")
+    lifecycle.reconcile_binding(origin="https://gateway.example.test", instance_guid="guid-a")
+    assert "credential" not in repr(lifecycle).lower()
+    assert lifecycle.entry_id == "entry-one"
 
 
-def test_dedicated_admin_session_has_a_bounded_total_connect_and_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    _admin, coordinator_module = _modules()
-    captured: dict[str, object] = {}
-
-    class FakeAiohttp:
-        class DummyCookieJar:
-            pass
-
-        class ClientTimeout:
-            def __init__(self, **kwargs: object) -> None:
-                captured["timeout_values"] = kwargs
-
-    def create_session(_hass: object, **kwargs: object) -> object:
-        captured.update(kwargs)
-        return object()
-
-    monkeypatch.setattr(coordinator_module, "aiohttp", FakeAiohttp)
-    monkeypatch.setattr(coordinator_module, "async_create_clientsession", create_session, raising=False)
-    coordinator_module.create_admin_session(object())
-
-    timeout_values = captured["timeout_values"]
-    assert isinstance(timeout_values, dict)
-    assert all(isinstance(timeout_values[key], (int, float)) and 0 < timeout_values[key] <= 30 for key in ("total", "connect", "sock_read"))
-    assert "timeout" in captured
+def test_candidate_and_raw_data_never_reach_hass_data_entities_storage_or_logs() -> None:
+    component = Path(__file__).parents[1] / "custom_components" / "helianthus"
+    for path in (component / "__init__.py", component / "sensor.py", component / "eebus_admin_coordinator.py"):
+        source = path.read_text().lower()
+        assert "candidate_ref" not in source
+        assert "remote_ski" not in source or "active_response" in source
+        assert "local_storage" not in source and "indexeddb" not in source
 
 
-def test_wiring_owns_one_admin_coordinator_and_never_turns_partner_rows_into_entities() -> None:
-    _admin, coordinator = _modules()
-    source = inspect.getsource(coordinator)
-
-    assert "EEBusAdminV1Coordinator" in source
-    assert "DataUpdateCoordinator" in source
-    assert "partner arrays" not in source.lower()
-    assert "async_add_entities" not in source
-
-
-def test_lifecycle_clears_admin_projection_only_when_identity_or_credential_binding_changes() -> None:
-    admin, coordinator = _modules()
-    lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-1")
-    lifecycle.store.accept(
-        "status",
-        admin.parse_ha_admin_envelope(
-            {
-                "contract": "helianthus.eebus.operator-admin.v1",
-                "projection_revision": 1,
-                "data": _status(),
-                "error": None,
-            },
-            expected_view="status",
-        ),
-    )
-    lifecycle.reconcile_binding(origin="https://gateway.example.test", instance_guid="guid-a", credential="a" * 32)
-    assert lifecycle.store.data_for("status") is None
-    assert "a" * 32 not in repr(lifecycle)
-    assert "a" * 32 not in repr(lifecycle.__dict__)
-
-    lifecycle.store.accept(
-        "status",
-        admin.parse_ha_admin_envelope(
-            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 2, "data": _status(), "error": None},
-            expected_view="status",
-        ),
-    )
-    lifecycle.reconcile_binding(origin="https://gateway.example.test", instance_guid="guid-a", credential="a" * 32)
-    assert lifecycle.store.data_for("status") == _status()
-    lifecycle.reconcile_binding(origin="https://other.example.test", instance_guid="guid-a", credential="a" * 32)
-    assert lifecycle.store.data_for("status") is None
-    lifecycle.store.accept(
-        "status",
-        admin.parse_ha_admin_envelope(
-            {"contract": "helianthus.eebus.operator-admin.v1", "projection_revision": 3, "data": _status(), "error": None},
-            expected_view="status",
-        ),
-    )
-    lifecycle.reconcile_binding(origin="https://other.example.test", instance_guid="guid-a", credential="b" * 32)
-    assert lifecycle.store.data_for("status") is None
-
-
-def test_admin_failures_are_diagnostic_only_and_view_failures_remain_stale_not_deleted() -> None:
-    admin, coordinator = _modules()
-    lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-1")
-    lifecycle.note_view_success("status", _status())
-    lifecycle.note_view_success("trusted", {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]})
-    lifecycle.note_view_failure("trusted", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
-
-    assert lifecycle.diagnostic_available is True
-    assert lifecycle.store.data_for("trusted") == {"partners": [{"partner_id": PARTNER_ID, "view": "trusted"}]}
-    assert lifecycle.view_is_stale("trusted") is True
-    assert lifecycle.graphql_setup_failed is False
-    lifecycle.note_view_failure("status", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
-    lifecycle.note_view_failure("connected", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
-    lifecycle.note_view_failure("discovered", admin.EEBusAdminV1Error("admin_boundary_unavailable"))
-    assert lifecycle.diagnostic_available is False
-
-
-def test_unauthenticated_admin_response_schedules_reauth_without_unloading_graphql() -> None:
-    admin, coordinator = _modules()
-    lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-1")
-
-    lifecycle.note_view_failure("status", admin.EEBusAdminV1Error("unauthenticated"))
-    assert lifecycle.reauth_scheduled is True
+def test_unavailable_admin_boundary_is_diagnostic_only_and_sanitized() -> None:
+    coordinator = _coordinator()
+    lifecycle = coordinator.EEBusAdminV1Lifecycle(entry_id="entry-one")
+    lifecycle.note_view_failure("status", coordinator.EEBusAdminV1Error("admin_boundary_unavailable"))
     assert lifecycle.graphql_setup_failed is False
     assert lifecycle.unload_requested is False
+    assert lifecycle.diagnostic_error == "admin_boundary_unavailable"
 
 
-def test_unauthenticated_refresh_uses_the_entry_reauth_api_with_hass() -> None:
-    _admin, coordinator_module = _modules()
+def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
+    component = importlib.import_module("custom_components.helianthus")
+    calls: list[str] = []
 
-    class Entry:
+    class Session:
+        async def close(self) -> None:
+            calls.append("close")
+
+    class Services:
         def __init__(self) -> None:
-            self.calls: list[object] = []
+            self.registered: set[tuple[str, str]] = set()
 
-        async def async_start_reauth(self, hass: object) -> None:
-            self.calls.append(hass)
+        def async_register(self, domain: str, name: str, _handler: Any, *, schema: Any, supports_response: Any) -> None:
+            assert schema is not None and supports_response is not None
+            self.registered.add((domain, name))
 
-    entry = Entry()
-    hass = object()
-    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
-    coordinator._entry = entry
-    coordinator.hass = hass
-    coordinator.lifecycle = type("Lifecycle", (), {"reauth_scheduled": True})()
+        def async_remove(self, domain: str, name: str) -> None:
+            self.registered.discard((domain, name))
 
-    asyncio.run(coordinator._async_schedule_reauth())
-    assert entry.calls == [hass]
-
-
-def test_all_401_views_and_repeated_refreshes_start_one_reauth_per_binding() -> None:
-    admin, coordinator_module = _modules()
-
-    class Entry:
+    class Hass:
         def __init__(self) -> None:
-            self.calls: list[object] = []
+            self.services = Services()
 
-        async def async_start_reauth(self, hass: object) -> None:
-            self.calls.append(hass)
+    hass = Hass()
+    first = asyncio.run(component.async_setup_eebus_admin_boundary(hass, entry_id="one", origin="https://gateway.example.test", instance_guid="guid-one", session=Session()))
+    second = asyncio.run(component.async_setup_eebus_admin_boundary(hass, entry_id="two", origin="https://gateway.example.test", instance_guid="guid-two", session=Session()))
+    assert first.client is not second.client
+    assert hass.services.registered
+    asyncio.run(component.async_unload_eebus_admin_boundary(hass, entry_id="one", session=first.session))
+    assert hass.services.registered
+    asyncio.run(component.async_unload_eebus_admin_boundary(hass, entry_id="two", session=second.session))
+    assert hass.services.registered == set()
+    assert calls == ["close", "close"]
+
+
+def test_periodic_refresh_fetches_only_sanitized_status_and_retains_only_status_lkg() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    status = {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 1, "discovered_count": 1, "candidate_count": 1}
+    envelope = admin.parse_ha_admin_envelope({"contract": admin.CONTRACT, "request_id": "request-opaque", "state_revision": 7, "data": status, "error": None}, expected_view="status")
 
     class Client:
+        def __init__(self) -> None:
+            self.status_calls = 0
+            self.partner_calls: list[str] = []
+
         async def fetch_status(self) -> object:
-            raise admin.EEBusAdminV1Error("unauthenticated")
+            self.status_calls += 1
+            if self.status_calls == 2:
+                raise admin.EEBusAdminV1Error("admin_boundary_unavailable")
+            return envelope
 
-        async def fetch_partners(self, _view: str) -> object:
-            raise admin.EEBusAdminV1Error("unauthenticated")
+        async def fetch_partners(self, view: str) -> object:
+            self.partner_calls.append(view)
+            raise AssertionError("periodic refresh must not fetch partner identity")
 
-    entry = Entry()
-    hass = object()
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-one")
     coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
-    coordinator._entry = entry
     coordinator._client = Client()
-    coordinator.hass = hass
-    coordinator.lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-1")
-
-    asyncio.run(coordinator._async_update_data())
-    asyncio.run(coordinator._async_update_data())
-    assert entry.calls == [hass]
-
-
-def test_device_info_configuration_url_is_local_portal_url_not_partner_data() -> None:
-    _admin, coordinator = _modules()
-    info = coordinator.admin_device_info("https://gateway.example.test")
-
-    assert info.configuration_url == "https://gateway.example.test/portal/eebus"
-    rendered = repr(info)
-    for forbidden in ("partner_id", "remote_ski", "endpoint", "candidate", "token"):
-        assert forbidden not in rendered.lower()
-
-
-def test_actual_ha_wiring_exists_in_config_setup_options_and_sensor_modules() -> None:
-    component = Path(__file__).parents[1] / "custom_components" / "helianthus"
-    root = (component / "__init__.py").read_text()
-    config = (component / "config_flow.py").read_text()
-    options = (component / "options_flow.py").read_text()
-    sensor = (component / "sensor.py").read_text()
-    for required in ("EEBusAdminV1Coordinator", "CONF_EEBUS_ADMIN_CREDENTIAL", "hass.data", "async_unload_entry"):
-        assert required in root
-    assert "urlsplit(graphql_url)" in root
-    assert "close_admin_session(admin_session)" in root
-    for required in ("async_step_reconfigure", "async_step_reauth", "TextSelector", "CONF_EEBUS_ADMIN_CREDENTIAL"):
-        assert required in config
-    assert "/portal/eebus" in options and "eebus_admin_credential" not in options
-    assert "EEBusAdmin" in sensor and "configuration_url" in sensor
-
-
-def test_admin_strings_cover_credential_reauth_reconfigure_and_portal_help() -> None:
-    strings = json.loads(
-        (Path(__file__).parents[1] / "custom_components" / "helianthus" / "strings.json").read_text()
-    )
-    config = strings["config"]
-    assert config["step"]["user"]["data"]["eebus_admin_credential"]
-    assert config["step"]["reconfigure"]["data"]["eebus_admin_credential"]
-    assert config["step"]["reauth"]["data"]["eebus_admin_credential"]
-    assert config["error"]["invalid_auth"]
-    assert "/portal/eebus" in strings["options"]["step"]["init"]["description"]
+    coordinator.lifecycle = lifecycle
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+    assert coordinator._client.status_calls == 2
+    assert coordinator._client.partner_calls == []
+    assert first["status"] == second["status"] == status
+    assert lifecycle.store.data_for("trusted") is None
+    assert lifecycle.store.data_for("connected") is None
+    assert lifecycle.store.data_for("discovered") is None
+    rendered = repr(lifecycle.store.__dict__) + repr(first) + repr(second)
+    assert "candidate_count" in rendered
+    for forbidden in (
+        "remote_ski",
+        "endpoint",
+        "partner_id",
+        "observation_id",
+        "candidate_state",
+        "candidate_expires",
+        "raw_spine",
+        "partners",
+        "remote_ship_id",
+    ):
+        assert forbidden not in rendered

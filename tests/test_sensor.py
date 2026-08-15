@@ -170,6 +170,9 @@ def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts()
     coordinator = _FakeCoordinator(
         {
             "status": {
+                "status": "ready",
+                "pairing_window": "closed",
+                "register": "ready",
                 "listener": "ready",
                 "discovery": "ready",
                 "trusted_count": 2,
@@ -192,7 +195,9 @@ def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts()
         "discovered_count": 3,
         "fresh": True,
     }
-    assert "partner" not in repr(entity.extra_state_attributes).lower()
+    rendered = repr(entity.extra_state_attributes).lower()
+    for forbidden in ("partner", "candidate", "remote_ski", "endpoint", "raw", "token"):
+        assert forbidden not in rendered
 
 
 def test_async_setup_entry_skips_address_only_bus_devices() -> None:

@@ -1112,12 +1112,10 @@ class HelianthusEEBusAdminSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        from .eebus_admin import portal_eebus_url
-
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._entry_id}-eebus-admin")},
             name="eeBUS Admin",
-            configuration_url=portal_eebus_url(self._origin),
+            configuration_url=self._origin.rstrip("/") + "/portal/eebus",
         )
 
 
