@@ -116,6 +116,20 @@ def test_state_revision_envelope_and_all_five_closed_read_schemas_are_strict() -
             admin.parse_ha_admin_envelope(payload, expected_view="status" if payload["data"] == _status() else "trusted")
 
 
+@pytest.mark.parametrize("revision", (65_536, 18_446_744_073_709_551_615))
+def test_state_revision_is_a_nonzero_uint64_while_status_counts_remain_uint16(revision: int) -> None:
+    admin = _admin()
+    payload = _envelope(_status(), revision)
+    assert admin.parse_ha_admin_envelope(payload, expected_view="status").state_revision == revision
+    for invalid_revision in (0, True, -1, 18_446_744_073_709_551_616):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(_envelope(_status(), invalid_revision), expected_view="status")
+    for invalid_count in (-1, True, 65_536):
+        invalid_status = {**_status(), "trusted_count": invalid_count}
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(_envelope(invalid_status), expected_view="status")
+
+
 def test_candidate_identity_is_active_response_only_not_storeable_or_entity_safe() -> None:
     admin = _admin()
     candidate = {"view": "candidate", "remote_ski": SKI, "candidate_state": "tls_bound", "candidate_expires_at": "2026-08-15T12:00:00Z", "connection_state": "connected"}
@@ -140,6 +154,36 @@ def test_spine_page_has_fixed_closed_query_shapes_and_bounded_lossless_nodes() -
     for kwargs in ({"cursor": "caller-page-size"}, {"request": "anything"}):
         with pytest.raises(ValueError):
             asyncio.run(client.fetch_spine_page(PARTNER_ID, **kwargs))
+
+
+def test_spine_root_children_and_continue_are_closed_response_only_operations() -> None:
+    admin = _admin()
+    page = {"snapshot_id": "snapshot-opaque", "snapshot_hash": "a" * 64, "parent_node_id": "node-parent", "nodes": []}
+    session = _Session([_Response(_envelope({**page, "parent_node_id": None})), _Response(_envelope(page)), _Response(_envelope({**page, "next_cursor": "cursor-next"}))])
+    client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
+    asyncio.run(client.fetch_spine_root(PARTNER_ID))
+    asyncio.run(client.fetch_spine_page(PARTNER_ID, request="children", snapshot_id="snapshot-opaque", parent_node_id="node-parent"))
+    asyncio.run(client.fetch_spine_page(PARTNER_ID, request="continue", snapshot_id="snapshot-opaque", parent_node_id="node-parent", cursor="cursor-next"))
+    assert [call[:2] for call in session.calls] == [
+        ("GET", f"https://gateway.example.test/admin/eebus/v1/partners/{PARTNER_ID}/spine?request=root"),
+        ("GET", f"https://gateway.example.test/admin/eebus/v1/partners/{PARTNER_ID}/spine?request=children&snapshot_id=snapshot-opaque&parent_node_id=node-parent"),
+        ("GET", f"https://gateway.example.test/admin/eebus/v1/partners/{PARTNER_ID}/spine?request=continue&snapshot_id=snapshot-opaque&parent_node_id=node-parent&cursor=cursor-next"),
+    ]
+    for _, _, headers, body, redirects in session.calls:
+        assert headers == {"Accept": "application/json"}
+        assert body is None and redirects is False
+
+
+def test_spine_expiry_is_sanitized_and_never_persists_raw_page_data() -> None:
+    admin = _admin()
+    client = admin.EEBusAdminV1Client(session=_Session([_Response({"error": {"detail": "raw endpoint"}}, status=409)]), base_url="https://gateway.example.test/graphql")
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(client.fetch_spine_root(PARTNER_ID))
+    assert captured.value.code == "snapshot_expired"
+    assert "raw endpoint" not in repr(captured.value)
+    store = admin.HAAdminProjectionStore()
+    with pytest.raises(admin.EEBusAdminV1ProtocolError):
+        store.accept("raw_spine", _envelope({"raw": "forbidden"}))
 
 
 def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies() -> None:
