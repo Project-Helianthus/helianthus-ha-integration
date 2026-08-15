@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,20 @@ FIXED_SERVICES = {
     "cancel_candidate": "eebus_admin_cancel_candidate",
     "retry_trusted_partner": "eebus_admin_retry_trusted_partner",
     "untrust_partner": "eebus_admin_untrust_partner",
+}
+REQUEST_FIELDS = {
+    "snapshot": {"entry_id", "view"},
+    "spine_root": {"entry_id", "partner_id"},
+    "spine_children": {"entry_id", "partner_id", "snapshot_id", "parent_node_id"},
+    "spine_continue": {"entry_id", "partner_id", "snapshot_id", "parent_node_id", "cursor"},
+    "open_pairing_window": {"entry_id", "expected_state_revision", "idempotency_key", "duration_seconds"},
+    "close_pairing_window": {"entry_id", "expected_state_revision", "idempotency_key"},
+    "select_observation": {"entry_id", "expected_state_revision", "idempotency_key", "observation_id", "expected_ski"},
+    "connect_selection": {"entry_id", "expected_state_revision", "idempotency_key", "selection_id"},
+    "confirm_candidate": {"entry_id", "expected_state_revision", "idempotency_key", "expected_ski"},
+    "cancel_candidate": {"entry_id", "expected_state_revision", "idempotency_key"},
+    "retry_trusted_partner": {"entry_id", "expected_state_revision", "idempotency_key", "partner_id"},
+    "untrust_partner": {"entry_id", "expected_state_revision", "idempotency_key", "partner_id"},
 }
 
 
@@ -163,3 +178,22 @@ def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatc
     assert schema({"entry_id": "one", "expected_state_revision": 7, "idempotency_key": "key-1234567890", "duration_seconds": 300})["duration_seconds"] == 300
     with pytest.raises(FakeVol.Invalid):
         schema({"entry_id": "one", "expected_state_revision": True, "idempotency_key": "key-1234567890", "duration_seconds": 60})
+
+
+def test_services_yaml_documents_all_closed_requests_and_response_shapes() -> None:
+    document = (Path(__file__).parents[1] / "custom_components" / "helianthus" / "services.yaml").read_text()
+    assert not re.search(r"credential|auth|password|route|endpoint", document, re.IGNORECASE)
+    for operation, name in FIXED_SERVICES.items():
+        section = re.search(rf"(?ms)^{name}:\n(.*?)(?=^[A-Za-z0-9_]+:|\Z)", document)
+        assert section is not None, name
+        text = section.group(1)
+        assert "response:" in text and "state_revision:" in text
+        documented_fields = set(re.findall(r"(?m)^    ([a-z_]+):\n      required:", text))
+        assert documented_fields == REQUEST_FIELDS[operation]
+        assert "entry_id:\n      required: true\n      selector:\n        text:" in text
+    open_section = re.search(r"(?ms)^eebus_admin_open_pairing_window:\n(.*?)(?=^[A-Za-z0-9_]+:|\Z)", document).group(1)
+    assert "duration_seconds:\n      required: true\n      selector:\n        number:\n          min: 1\n          max: 300" in open_section
+    mutation_names = {FIXED_SERVICES[key] for key in ("open_pairing_window", "close_pairing_window", "select_observation", "connect_selection", "confirm_candidate", "cancel_candidate", "retry_trusted_partner", "untrust_partner")}
+    for name in mutation_names:
+        section = re.search(rf"(?ms)^{name}:\n(.*?)(?=^[A-Za-z0-9_]+:|\Z)", document).group(1)
+        assert "expected_state_revision:" in section and "idempotency_key:" in section

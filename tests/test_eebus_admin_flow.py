@@ -1,5 +1,7 @@
 """RED contract tests: eeBUS AdminV1 must not alter HA authentication flows."""
 
+import asyncio
+import importlib
 from pathlib import Path
 
 
@@ -20,3 +22,46 @@ def test_generic_graphql_config_and_ha_auth_contract_remain_present() -> None:
     assert "verify_gateway_identity" in config
     assert "GraphQLClient" in init
     assert "async_start_reauth" not in init
+
+
+def test_legacy_eebus_secret_is_removed_idempotently_without_replacing_entry_state() -> None:
+    component = importlib.import_module("custom_components.helianthus")
+    secret = "legacy-eeBUS-secret-must-not-render"
+
+    class Entry:
+        entry_id = "entry-one"
+        data = {
+            "host": "gateway.example.test",
+            "port": 8443,
+            "path": "/graphql",
+            "transport": "https",
+            "version": "v1",
+            "instance_guid": "guid-one",
+            "host_aliases": ["gateway-alt.example.test"],
+            "eebus_admin_credential": secret,
+        }
+        options = {"scan_interval": 30}
+
+    class Entries:
+        def __init__(self) -> None:
+            self.updates: list[dict] = []
+
+        def async_update_entry(self, _entry: Entry, *, data: dict) -> None:
+            self.updates.append(data)
+            Entry.data = data
+
+    class Hass:
+        def __init__(self) -> None:
+            self.config_entries = Entries()
+
+    hass = Hass()
+    entry = Entry()
+    assert asyncio.run(component.async_sanitize_legacy_eebus_admin_entry(hass, entry)) is True
+    assert hass.config_entries.updates == [{
+        "host": "gateway.example.test", "port": 8443, "path": "/graphql", "transport": "https",
+        "version": "v1", "instance_guid": "guid-one", "host_aliases": ["gateway-alt.example.test"],
+    }]
+    assert entry.options == {"scan_interval": 30}
+    assert secret not in repr(hass.config_entries.updates)
+    assert asyncio.run(component.async_sanitize_legacy_eebus_admin_entry(hass, entry)) is False
+    assert len(hass.config_entries.updates) == 1
