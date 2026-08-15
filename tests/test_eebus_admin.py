@@ -136,6 +136,47 @@ def test_state_revision_is_a_nonzero_uint64_while_status_counts_remain_uint16(re
             admin.parse_ha_admin_envelope(_envelope(invalid_status), expected_view="status")
 
 
+@pytest.mark.parametrize("observation_revision", (65_536, 18_446_744_073_709_551_615))
+def test_discovered_observation_revision_is_nonzero_uint64_and_select_uses_its_opaque_id(
+    observation_revision: int,
+) -> None:
+    admin = _admin()
+    row = {
+        "observation_id": "o-" + "b" * 32,
+        "view": "discovered",
+        "remote_ski": SKI,
+        "observation_revision": observation_revision,
+        "connection_state": "discovered",
+    }
+    discovered = admin.parse_ha_admin_envelope(
+        _envelope({"partners": [row]}, revision=17), expected_view="discovered"
+    )
+    assert discovered.state_revision == 17
+    session = _Session([_Response(_envelope({"outcome": "accepted", "replayed": False}, 18))])
+    client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
+    result = asyncio.run(
+        client.select_observation(
+            observation_id=discovered.data["partners"][0]["observation_id"],
+            expected_ski=SKI,
+            expected_state_revision=discovered.state_revision,
+            idempotency_key="select-idempotency",
+        )
+    )
+    assert result.state_revision == 18
+    assert session.calls[0][3] == {"expected_ski": SKI, "state_revision": 17}
+
+    for invalid_revision in (0, True, -1, 18_446_744_073_709_551_616):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(
+                _envelope({"partners": [{**row, "observation_revision": invalid_revision}]}, revision=17),
+                expected_view="discovered",
+            )
+    with pytest.raises(admin.EEBusAdminV1ProtocolError):
+        admin.parse_ha_admin_envelope(
+            _envelope({**_status(), "discovered_count": 65_536}, revision=17), expected_view="status"
+        )
+
+
 def test_candidate_identity_is_active_response_only_not_storeable_or_entity_safe() -> None:
     admin = _admin()
     candidate = {"view": "candidate", "remote_ski": SKI, "candidate_state": "tls_bound", "candidate_expires_at": "2026-08-15T12:00:00Z", "connection_state": "connected"}
