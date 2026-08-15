@@ -125,7 +125,7 @@ def _valid_partner(view: str, row: dict[str, Any]) -> bool:
         return False
     if view in {"trusted", "connected"} and not _is_opaque(row.get("partner_id")):
         return False
-    if view == "discovered" and (not _is_opaque(row.get("observation_id")) or not _is_count(row.get("observation_revision"))):
+    if view == "discovered" and (not _is_opaque(row.get("observation_id")) or not _is_state_revision(row.get("observation_revision"))):
         return False
     if view == "candidate" and (not _is_string(row.get("candidate_state")) or not _is_string(row.get("candidate_expires_at"))):
         return False
