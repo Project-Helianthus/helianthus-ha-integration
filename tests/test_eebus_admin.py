@@ -136,6 +136,33 @@ def test_state_revision_is_a_nonzero_uint64_while_status_counts_remain_uint16(re
             admin.parse_ha_admin_envelope(_envelope(invalid_status), expected_view="status")
 
 
+def test_status_pairing_window_deadline_is_optional_bounded_rfc3339_scalar_and_never_enters_lkg_as_a_container() -> None:
+    admin = _admin()
+    store = admin.HAAdminProjectionStore()
+    baseline = admin.parse_ha_admin_envelope(_envelope(_status()), expected_view="status")
+    assert store.accept("status", baseline) is True
+    valid = {**_status(), "pairing_window_deadline": "2026-08-15T12:00:00Z"}
+    assert admin.parse_ha_admin_envelope(_envelope(valid), expected_view="status").data == valid
+
+    for deadline in (
+        {},
+        {"remote_ski": SKI},
+        [],
+        1,
+        True,
+        "",
+        "x" * 129,
+        "2026-08-15 12:00:00Z",
+    ):
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(
+                _envelope({**_status(), "pairing_window_deadline": deadline}), expected_view="status"
+            )
+        retained = store.data_for("status")
+        assert retained == _status()
+        assert all(not isinstance(value, (dict, list)) for value in retained.values())
+
+
 @pytest.mark.parametrize("observation_revision", (65_536, 18_446_744_073_709_551_615))
 def test_discovered_observation_revision_is_nonzero_uint64_and_select_uses_its_opaque_id(
     observation_revision: int,
