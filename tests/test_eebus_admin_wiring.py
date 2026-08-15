@@ -80,3 +80,41 @@ def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remo
     asyncio.run(component.async_unload_eebus_admin_boundary(hass, entry_id="two", session=second.session))
     assert hass.services.registered == set()
     assert calls == ["close", "close"]
+
+
+def test_periodic_refresh_fetches_only_sanitized_status_and_retains_only_status_lkg() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    status = {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 1, "discovered_count": 1, "candidate_count": 1}
+    envelope = admin.parse_ha_admin_envelope({"contract": admin.CONTRACT, "request_id": "request-opaque", "state_revision": 7, "data": status, "error": None}, expected_view="status")
+
+    class Client:
+        def __init__(self) -> None:
+            self.status_calls = 0
+            self.partner_calls: list[str] = []
+
+        async def fetch_status(self) -> object:
+            self.status_calls += 1
+            if self.status_calls == 2:
+                raise admin.EEBusAdminV1Error("admin_boundary_unavailable")
+            return envelope
+
+        async def fetch_partners(self, view: str) -> object:
+            self.partner_calls.append(view)
+            raise AssertionError("periodic refresh must not fetch partner identity")
+
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-one")
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = Client()
+    coordinator.lifecycle = lifecycle
+    first = asyncio.run(coordinator._async_update_data())
+    second = asyncio.run(coordinator._async_update_data())
+    assert coordinator._client.status_calls == 2
+    assert coordinator._client.partner_calls == []
+    assert first["status"] == second["status"] == status
+    assert lifecycle.store.data_for("trusted") is None
+    assert lifecycle.store.data_for("connected") is None
+    assert lifecycle.store.data_for("discovered") is None
+    rendered = repr(lifecycle.store.__dict__) + repr(first) + repr(second)
+    for forbidden in ("remote_ski", "endpoint", "partner_id", "candidate"):
+        assert forbidden not in rendered

@@ -189,6 +189,28 @@ def test_spine_snapshot_hash_is_exact_eebusreg_sha256_datahash() -> None:
             admin.parse_spine_page_envelope(_envelope({**valid, "snapshot_hash": invalid_hash}))
 
 
+def test_spine_responses_bind_to_the_request_shape_before_any_storage() -> None:
+    admin = _admin()
+    root = {"snapshot_id": "snapshot-opaque", "snapshot_hash": DATA_HASH, "parent_node_id": None, "nodes": []}
+    child = {**root, "parent_node_id": "node-parent"}
+    for method, arguments, response in (
+        ("fetch_spine_root", (PARTNER_ID,), child),
+        ("fetch_spine_page", (PARTNER_ID,), {**child, "parent_node_id": "wrong-parent"}),
+        ("fetch_spine_page", (PARTNER_ID,), {**child, "parent_node_id": None}),
+    ):
+        client = admin.EEBusAdminV1Client(session=_Session([_Response(_envelope(response))]), base_url="https://gateway.example.test/graphql")
+        with pytest.raises(admin.EEBusAdminV1Error) as captured:
+            if method == "fetch_spine_root":
+                asyncio.run(client.fetch_spine_root(*arguments))
+            elif response["parent_node_id"] == "wrong-parent":
+                asyncio.run(client.fetch_spine_page(*arguments, request="children", snapshot_id="snapshot-opaque", parent_node_id="node-parent"))
+            else:
+                asyncio.run(client.fetch_spine_page(*arguments, request="continue", snapshot_id="snapshot-opaque", parent_node_id="node-parent", cursor="cursor-opaque"))
+        assert captured.value.code == "invalid_response"
+    with pytest.raises(ValueError):
+        asyncio.run(admin.EEBusAdminV1Client(session=_Session([]), base_url="https://gateway.example.test/graphql").fetch_spine_page(PARTNER_ID, request="root", snapshot_id="snapshot-opaque", parent_node_id="node-parent"))
+
+
 def test_spine_expiry_is_sanitized_and_never_persists_raw_page_data() -> None:
     admin = _admin()
     client = admin.EEBusAdminV1Client(session=_Session([_Response({"error": {"detail": "raw endpoint"}}, status=409)]), base_url="https://gateway.example.test/graphql")

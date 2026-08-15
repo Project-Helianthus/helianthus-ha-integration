@@ -69,6 +69,9 @@ class _Client:
     async def fetch_status(self) -> Any:
         return type("Result", (), {"state_revision": 7, "data": {"client": self.identity}})()
 
+    async def fetch_partners(self, view: str) -> Any:
+        return type("Result", (), {"state_revision": 7, "data": {"view": view, "client": self.identity}})()
+
 
 def test_fixed_documented_response_only_services_register_once_and_unload_after_last_entry() -> None:
     services = _services()
@@ -121,6 +124,16 @@ def test_fixed_service_dispatch_isolated_by_entry_and_unknown_data_rejected_befo
     for invalid in ({}, {"entry_id": 2}, {"entry_id": "two", "candidate": "must-not-persist"}):
         with pytest.raises(Exception):
             schema(invalid)
+
+
+def test_direct_snapshot_services_keep_all_identity_views_response_only() -> None:
+    services = _services()
+    hass = _Hass()
+    services.register_eebus_admin_services(hass, entry_id="one", client=_Client("one"))
+    handler, _, _ = hass.services.registered[("helianthus", FIXED_SERVICES["snapshot"])]
+    for view in ("trusted", "connected", "discovered", "candidate"):
+        assert asyncio.run(handler({"entry_id": "one", "view": view})) == {"state_revision": 7, "data": {"view": view, "client": "one"}}
+    assert services.services_for_entry(hass, "one").client.identity == "one"
 
 
 def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatch: pytest.MonkeyPatch) -> None:
