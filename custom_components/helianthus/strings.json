@@ -9,25 +9,13 @@
           "port": "Port",
           "path": "GraphQL path",
           "transport": "Transport",
-          "version": "API version",
-          "eebus_admin_credential": "eeBUS Admin credential"
+          "version": "API version"
         },
         "data_description": {
           "path": "GraphQL endpoint path (default /graphql).",
           "transport": "Transport scheme (http/https).",
           "version": "Discovered API version (optional)."
         }
-      }
-      ,
-      "reconfigure": {
-        "title": "Update eeBUS Admin credential",
-        "description": "Enter a replacement credential. The stored credential is never shown.",
-        "data": {"eebus_admin_credential": "eeBUS Admin credential"}
-      },
-      "reauth": {
-        "title": "eeBUS Admin authentication required",
-        "description": "The gateway rejected the stored eeBUS Admin credential.",
-        "data": {"eebus_admin_credential": "eeBUS Admin credential"}
       }
     },
     "error": {
@@ -36,8 +24,7 @@
       "requires_gateway_upgrade": "The Helianthus gateway must be updated before this integration can bind to it.",
       "missing_instance_guid": "The Helianthus gateway did not expose a stable instance GUID.",
       "identity_mismatch": "Discovered identity did not match the verified Helianthus gateway.",
-      "unknown": "Unexpected error.",
-      "invalid_auth": "The eeBUS Admin credential is invalid."
+      "unknown": "Unexpected error."
     },
     "abort": {
       "already_configured": "This Helianthus endpoint is already configured.",

@@ -1,0 +1,14 @@
+eebus_entry_operation:
+  name: eeBUS operator action
+  description: Run one typed operator-admin v1 action for one configured Helianthus entry.
+  fields:
+    expected_state_revision:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    idempotency_key:
+      required: true
+      selector:
+        text: {}

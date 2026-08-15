@@ -1,9 +1,9 @@
-"""HA-specific wiring for the isolated eeBUS AdminV1 projection."""
+"""HA-specific, diagnostic-only wiring for operator-admin v1."""
+
 from __future__ import annotations
 
-from datetime import timedelta
 from dataclasses import dataclass
-import hashlib
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -11,72 +11,46 @@ try:
     import aiohttp
     from homeassistant.helpers.aiohttp_client import async_create_clientsession
     from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-except (ModuleNotFoundError, ImportError):  # lightweight unit tests
-    class DataUpdateCoordinator: pass
+except (ModuleNotFoundError, ImportError):
+    class DataUpdateCoordinator:  # type: ignore[no-redef]
+        pass
+
     aiohttp = None
-from .eebus_admin import (
-    EEBusAdminV1Client,
-    EEBusAdminV1Error,
-    HAAdminProjectionStore,
-    portal_eebus_url,
-)
+
+from .eebus_admin import EEBusAdminV1Client, EEBusAdminV1Error, HAAdminProjectionStore
 
 _LOGGER = logging.getLogger(__name__)
 _ADMIN_TIMEOUT_TOTAL_SECONDS = 15
 _ADMIN_TIMEOUT_CONNECT_SECONDS = 5
 _ADMIN_TIMEOUT_READ_SECONDS = 10
+_POLL_VIEWS = ("status", "trusted", "connected", "discovered")
+
 
 class EEBusAdminV1Coordinator(DataUpdateCoordinator):
-    """Separate, diagnostic-only AdminV1 refresh path.
+    """Refresh only sanitized diagnostic projections; failures keep last good data."""
 
-    The coordinator deliberately keeps a last-known-good value for every view;
-    a failing view must never erase a healthy sibling view.
-    """
-
-    def __init__(self, hass: Any, entry: Any, client: EEBusAdminV1Client, lifecycle: "EEBusAdminV1Lifecycle", interval: int) -> None:
+    def __init__(self, hass: Any, client: EEBusAdminV1Client, lifecycle: "EEBusAdminV1Lifecycle", interval: int) -> None:
         super().__init__(hass, _LOGGER, name="eeBUS AdminV1", update_interval=timedelta(seconds=interval))
-        self._entry = entry
         self._client = client
         self.lifecycle = lifecycle
-        self._reauth_binding_generation = lifecycle.binding_generation
-        self._reauth_started = False
 
     async def _async_update_data(self) -> dict[str, Any]:
-        for view in ("status", "trusted", "connected", "discovered"):
+        for view in _POLL_VIEWS:
             try:
-                envelope = await (
-                    self._client.fetch_status()
-                    if view == "status"
-                    else self._client.fetch_partners(view)
-                )
+                envelope = await (self._client.fetch_status() if view == "status" else self._client.fetch_partners(view))
                 self.lifecycle.store.accept(view, envelope)
                 self.lifecycle.note_view_success(view, envelope.data)
             except EEBusAdminV1Error as error:
                 self.lifecycle.note_view_failure(view, error)
-                if error.code == "unauthenticated":
-                    await self._async_schedule_reauth()
         return {
             "status": self.lifecycle.store.data_for("status"),
             "available": self.lifecycle.diagnostic_available,
             "stale_views": frozenset(self.lifecycle._failed),
         }
 
-    async def _async_schedule_reauth(self) -> None:
-        if not self.lifecycle.reauth_scheduled:
-            return
-        generation = getattr(self.lifecycle, "binding_generation", 0)
-        if getattr(self, "_reauth_binding_generation", None) != generation:
-            self._reauth_binding_generation = generation
-            self._reauth_started = False
-        if getattr(self, "_reauth_started", False):
-            return
-        self._reauth_started = True
-        result = self._entry.async_start_reauth(self.hass)
-        if hasattr(result, "__await__"):
-            await result
 
 def create_admin_session(hass: Any) -> Any:
-    """Never reuse the shared cookie-bearing GraphQL session."""
+    """Make a bounded isolated request session; it does not share GraphQL state."""
     if aiohttp is None:
         return None
     return async_create_clientsession(
@@ -97,26 +71,41 @@ async def close_admin_session(session: Any) -> None:
         if hasattr(result, "__await__"):
             await result
 
+
 @dataclass(frozen=True)
 class _Info:
     configuration_url: str
 
+
 def admin_device_info(origin: str) -> _Info:
-    return _Info(portal_eebus_url(origin))
+    return _Info(origin.rstrip("/") + "/portal/eebus")
+
 
 class EEBusAdminV1Lifecycle:
     def __init__(self, *, entry_id: str) -> None:
-        self.entry_id, self.store, self._binding = entry_id, HAAdminProjectionStore(), None
-        self.binding_generation = 0
-        self._failed: set[str] = set(); self.diagnostic_available = True; self.reauth_scheduled = False; self.graphql_setup_failed = False; self.unload_requested = False
-    def reconcile_binding(self, *, origin: str, instance_guid: str, credential: str) -> None:
-        binding = (origin, instance_guid, hashlib.sha256(credential.encode()).hexdigest())
+        self.entry_id = entry_id
+        self.store = HAAdminProjectionStore()
+        self._binding: tuple[str, str] | None = None
+        self._failed: set[str] = set()
+        self.diagnostic_available = True
+        self.diagnostic_error: str | None = None
+        self.graphql_setup_failed = False
+        self.unload_requested = False
+
+    def reconcile_binding(self, *, origin: str, instance_guid: str) -> None:
+        binding = (origin, instance_guid)
         if self._binding != binding:
-            self.store.clear(); self._failed.clear(); self.reauth_scheduled = False
-            self._binding = binding; self.binding_generation += 1
-    def note_view_success(self, view: str, data: dict[str, Any]) -> None:
-        from .eebus_admin import parse_ha_admin_envelope, CONTRACT
-        self.store.accept(view, parse_ha_admin_envelope({"contract": CONTRACT, "projection_revision": 1, "data": data, "error": None}, expected_view=view)); self._failed.discard(view); self.diagnostic_available = True
+            self.store.clear()
+            self._failed.clear()
+            self.diagnostic_error = None
+            self._binding = binding
+
+    def note_view_success(self, view: str, _data: dict[str, Any]) -> None:
+        self._failed.discard(view)
+        self.diagnostic_available = True
+        self.diagnostic_error = None
+
     def note_view_failure(self, view: str, error: EEBusAdminV1Error) -> None:
-        self._failed.add(view); self.reauth_scheduled |= error.code == "unauthenticated"; self.diagnostic_available = self._failed != {"status", "trusted", "connected", "discovered"}
-    def view_is_stale(self, view: str) -> bool: return view in self._failed
+        self._failed.add(view)
+        self.diagnostic_error = error.code if error.code in {"admin_boundary_unavailable", "invalid_response", "state_conflict"} else "admin_boundary_unavailable"
+        self.diagnostic_available = self._failed != set(_POLL_VIEWS)
