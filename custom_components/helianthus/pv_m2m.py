@@ -162,6 +162,12 @@ _REMOTE_ERROR_CODES = frozenset(
     }
 )
 _SOURCE_TIME_STATES = frozenset({"UNAVAILABLE", "VALID", "INVALID"})
+_POLICY_WINDOWS = {
+    "pv.telemetry.fast.v1": (30_000_000_000, 300_000_000_000),
+    "pv.status.v1": (60_000_000_000, 600_000_000_000),
+    "pv.accumulator.v1": (900_000_000_000, 86_400_000_000_000),
+    "pv.rating.v1": (86_400_000_000_000, 2_592_000_000_000_000),
+}
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 _UNSIGNED_RE = re.compile(r"^(0|[1-9][0-9]*)$")
@@ -360,7 +366,7 @@ def _parse_continuity(value: object, *, accumulator: bool, context: str) -> str 
     raise PVM2MProtocolError(f"invalid {context} continuity")
 
 
-def _parse_fact(value: object, index: int) -> PVM2MFact:
+def _parse_fact(value: object, index: int, *, evaluated: int) -> PVM2MFact:
     context = f"fact {index}"
     member = _closed_mapping(
         value,
@@ -403,11 +409,33 @@ def _parse_fact(value: object, index: int) -> PVM2MFact:
         raise PVM2MProtocolError(f"invalid freshness for {fact_id}")
     if (availability, freshness) not in _STATE_PAIRS:
         raise PVM2MProtocolError(f"invalid availability/freshness pair for {fact_id}")
-    for field in ("receiptMonotonicNs", "freshUntilMonotonicNs", "retainUntilMonotonicNs"):
-        _unsigned_string(member[field], f"{context} {field}")
+    receipt = int(_unsigned_string(member["receiptMonotonicNs"], f"{context} receiptMonotonicNs"))
+    fresh_until = int(
+        _unsigned_string(member["freshUntilMonotonicNs"], f"{context} freshUntilMonotonicNs")
+    )
+    retain_until = int(
+        _unsigned_string(member["retainUntilMonotonicNs"], f"{context} retainUntilMonotonicNs")
+    )
     policy = _string(member["freshnessPolicy"], f"{context} freshness policy")
     if policy != expected_policy:
         raise PVM2MProtocolError(f"invalid freshness policy for {fact_id}")
+    fresh_for, retain_for = _POLICY_WINDOWS[policy]
+    if (
+        evaluated < receipt
+        or fresh_until != receipt + fresh_for
+        or retain_until != receipt + retain_for
+    ):
+        raise PVM2MProtocolError(f"invalid temporal deadlines for {fact_id}")
+    if availability != "UNSUPPORTED":
+        expected_state = (
+            ("UNAVAILABLE", "EXPIRED")
+            if evaluated >= retain_until
+            else ("AVAILABLE", "STALE")
+            if evaluated >= fresh_until
+            else ("AVAILABLE", "FRESH")
+        )
+        if (availability, freshness) != expected_state:
+            raise PVM2MProtocolError(f"invalid temporal state for {fact_id}")
     origin_ref = _string(member["originRef"], f"{context} origin")
     coefficient: str | None = None
     scale: int | None = None
@@ -621,14 +649,19 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
         raise PVM2MProtocolError("invalid producedAt") from exc
     if parsed_time.tzinfo is None:
         raise PVM2MProtocolError("invalid producedAt")
-    _unsigned_string(snapshot["evaluatedMonotonicNs"], "evaluatedMonotonicNs")
+    evaluated = int(
+        _unsigned_string(snapshot["evaluatedMonotonicNs"], "evaluatedMonotonicNs")
+    )
     if snapshot["sourceTimeState"] not in _SOURCE_TIME_STATES:
         raise PVM2MProtocolError("invalid sourceTimeState")
     current_origin = _string(snapshot["currentSourceOriginRef"], "currentSourceOriginRef")
     raw_facts = snapshot["facts"]
     if not isinstance(raw_facts, list) or len(raw_facts) > M2M_MAX_FACTS:
         raise PVM2MProtocolError("facts are not bounded")
-    facts = tuple(_parse_fact(raw, index) for index, raw in enumerate(raw_facts))
+    facts = tuple(
+        _parse_fact(raw, index, evaluated=evaluated)
+        for index, raw in enumerate(raw_facts)
+    )
     fact_keys = [fact.key for fact in facts]
     if len(set(fact_keys)) != len(fact_keys):
         raise PVM2MProtocolError("duplicate fact identity")
@@ -680,7 +713,7 @@ class PVM2MClient:
             ) as response:
                 if response.status != 200:
                     raise PVM2MTransportError(f"unexpected HTTP status {response.status}")
-                raw = await response.content.read(M2M_MAX_RESPONSE_BYTES + 1)
+                raw = await _read_bounded_response(response.content)
         except PVM2MError:
             raise
         except Exception as exc:
@@ -700,6 +733,21 @@ class PVM2MClient:
 
     async def async_close(self) -> None:
         await self._session.close()
+
+
+async def _read_bounded_response(content: object) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while total <= M2M_MAX_RESPONSE_BYTES:
+        remaining = M2M_MAX_RESPONSE_BYTES + 1 - total
+        chunk = await content.read(min(65_536, remaining))
+        if not isinstance(chunk, bytes):
+            raise PVM2MProtocolError("response body is not bytes")
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
 
 
 def _validate_endpoint(endpoint: str) -> None:
@@ -767,6 +815,7 @@ def pv_m2m_option_signature(options: Mapping[str, object]) -> tuple[object, ...]
     return tuple(
         options.get(key)
         for key in (
+            "scan_interval",
             CONF_PV_M2M_ENABLED,
             CONF_PV_M2M_ENDPOINT,
             CONF_PV_M2M_ASSET_REF,
@@ -852,6 +901,9 @@ def load_pv_descriptor_store(
     keys = [descriptor.key for descriptor in descriptors]
     if len(set(keys)) != len(keys):
         raise PVM2MProtocolError("duplicate descriptor")
+    unique_ids = [descriptor.unique_id for descriptor in descriptors]
+    if len(set(unique_ids)) != len(unique_ids):
+        raise PVM2MProtocolError("duplicate descriptor unique id")
     return descriptors
 
 
@@ -863,10 +915,14 @@ def serialize_pv_descriptor_store(
         raise PVM2MProtocolError("descriptor store is not bounded")
     rows = []
     seen: set[tuple[str, str, str]] = set()
+    seen_unique_ids: set[str] = set()
     for descriptor in descriptors:
         if descriptor.key in seen:
             raise PVM2MProtocolError("duplicate descriptor")
+        if descriptor.unique_id in seen_unique_ids:
+            raise PVM2MProtocolError("duplicate descriptor unique id")
         seen.add(descriptor.key)
+        seen_unique_ids.add(descriptor.unique_id)
         wire_key = _DIMENSION_WIRE_KEYS[descriptor.dimension[0]]
         rows.append(
             {
@@ -960,11 +1016,11 @@ class HelianthusPVM2MCoordinator(DataUpdateCoordinator[PVM2MCoordinatorData]):
                 source_available=False,
                 error="contract_failure",
             )
-        current_by_key = {descriptor.key: descriptor for descriptor in previous.descriptors}
-        ordered: list[PVM2MDescriptor] = []
+        ordered = list(previous.descriptors)
+        current_by_key = {descriptor.key: descriptor for descriptor in ordered}
         for fact in snapshot.facts:
             descriptor = current_by_key.get(fact.key)
-            if descriptor is None:
+            if descriptor is None and len(ordered) < M2M_MAX_FACTS:
                 descriptor = PVM2MDescriptor(
                     fact_id=fact.fact_id,
                     dimension=fact.dimension,
@@ -975,14 +1031,9 @@ class HelianthusPVM2MCoordinator(DataUpdateCoordinator[PVM2MCoordinatorData]):
                         fact.dimension,
                     ),
                 )
-            ordered.append(descriptor)
-        current_keys = {descriptor.key for descriptor in ordered}
-        ordered.extend(
-            descriptor
-            for descriptor in previous.descriptors
-            if descriptor.key not in current_keys
-        )
-        descriptors = tuple(ordered[:M2M_MAX_FACTS])
+                ordered.append(descriptor)
+                current_by_key[descriptor.key] = descriptor
+        descriptors = tuple(ordered)
         if descriptors != previous.descriptors:
             await self._persist_descriptors(descriptors)
         updated = PVM2MCoordinatorData(
@@ -1049,13 +1100,7 @@ async def async_setup_pv_m2m_boundary(
     try:
         import aiohttp
 
-        tls = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.ca_cert_file)
-        tls.check_hostname = True
-        tls.verify_mode = ssl.CERT_REQUIRED
-        tls.load_cert_chain(
-            certfile=config.client_cert_file,
-            keyfile=config.client_key_file,
-        )
+        tls = await async_build_pv_ssl_context(hass, config)
         session = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ssl=tls, limit=1),
             cookie_jar=aiohttp.DummyCookieJar(),
@@ -1088,3 +1133,21 @@ async def async_setup_pv_m2m_boundary(
     )
     await coordinator.async_config_entry_first_refresh()
     return PVM2MBoundary(coordinator=coordinator, client=client)
+
+
+def _build_pv_ssl_context(config: PVM2MConfig) -> ssl.SSLContext:
+    tls = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.ca_cert_file)
+    tls.check_hostname = True
+    tls.verify_mode = ssl.CERT_REQUIRED
+    tls.load_cert_chain(
+        certfile=config.client_cert_file,
+        keyfile=config.client_key_file,
+    )
+    return tls
+
+
+async def async_build_pv_ssl_context(
+    hass: object,
+    config: PVM2MConfig,
+) -> ssl.SSLContext:
+    return await hass.async_add_executor_job(_build_pv_ssl_context, config)

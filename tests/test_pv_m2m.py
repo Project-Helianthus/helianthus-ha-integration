@@ -240,7 +240,8 @@ def test_client_bounds_decompressed_response_before_text_or_json_materialization
         asyncio.run(client.async_current_snapshot())
 
     assert response.text_calls == 0
-    assert response.content.read_sizes == [pv_m2m.M2M_MAX_RESPONSE_BYTES + 1]
+    assert max(response.content.read_sizes) <= 65_536
+    assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
 
 
 def test_client_reads_fragmented_valid_response_to_eof_within_bound() -> None:
@@ -268,6 +269,8 @@ def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() 
             "value": {"coefficient": "9007199254740993", "scale": -2},
             "unit": "Wh",
             "freshnessPolicy": "pv.accumulator.v1",
+            "freshUntilMonotonicNs": "1881234500000",
+            "retainUntilMonotonicNs": "87381234500000",
             "continuity": {
                 "__typename": "M2MBaselineContinuity",
                 "baseline": "BASELINE",
