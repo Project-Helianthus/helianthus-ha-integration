@@ -2151,7 +2151,7 @@ class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
             getattr(data, "source_available", False)
             and fact is not None
             and fact.availability == "AVAILABLE"
-            and fact.freshness == "FRESH"
+            and fact.freshness in {"FRESH", "STALE"}
         )
 
     @property

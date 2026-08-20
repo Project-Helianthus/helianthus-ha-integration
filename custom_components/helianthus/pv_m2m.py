@@ -680,18 +680,21 @@ class PVM2MClient:
             ) as response:
                 if response.status != 200:
                     raise PVM2MTransportError(f"unexpected HTTP status {response.status}")
-                raw = await response.text()
+                raw = await response.content.read(M2M_MAX_RESPONSE_BYTES + 1)
         except PVM2MError:
             raise
         except Exception as exc:
             raise PVM2MTransportError("HTTPS request failed") from exc
-        if len(raw.encode("utf-8")) > M2M_MAX_RESPONSE_BYTES:
+        if len(raw) > M2M_MAX_RESPONSE_BYTES:
             raise PVM2MProtocolError("response exceeds bounded size")
         try:
-            payload = json.loads(raw, object_pairs_hook=_reject_duplicate_pairs)
+            payload = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_reject_duplicate_pairs,
+            )
         except PVM2MError:
             raise
-        except (UnicodeError, json.JSONDecodeError) as exc:
+        except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
             raise PVM2MProtocolError("response is not valid JSON") from exc
         return parse_m2m_response(payload, expected_asset_ref=self._asset_ref)
 
