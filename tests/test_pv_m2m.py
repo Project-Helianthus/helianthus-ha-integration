@@ -150,6 +150,8 @@ class _Response:
     def __init__(self, payload: object, *, status: int = 200) -> None:
         self._text = json.dumps(payload, separators=(",", ":"))
         self.status = status
+        self.text_calls = 0
+        self.content = _BodyStream(self._text.encode("utf-8"))
 
     async def __aenter__(self) -> "_Response":
         return self
@@ -158,7 +160,18 @@ class _Response:
         return None
 
     async def text(self) -> str:
+        self.text_calls += 1
         return self._text
+
+
+class _BodyStream:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+        self.read_sizes: list[int] = []
+
+    async def read(self, size: int) -> bytes:
+        self.read_sizes.append(size)
+        return self._body[:size]
 
 
 class _Session:
@@ -207,6 +220,22 @@ def test_client_posts_only_the_fixed_single_asset_operation_without_auth_or_cook
     rendered = repr(kwargs).lower()
     assert "authorization" not in rendered
     assert "cookie" not in rendered
+
+
+def test_client_bounds_decompressed_response_before_text_or_json_materialization() -> None:
+    response = _Response({"padding": "x" * pv_m2m.M2M_MAX_RESPONSE_BYTES})
+    session = _Session([response])
+    client = pv_m2m.PVM2MClient(
+        session=session,
+        endpoint="https://pv.example.test/graphql/m2m/v1",
+        asset_ref="pv-asset-01",
+    )
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="bounded size"):
+        asyncio.run(client.async_current_snapshot())
+
+    assert response.text_calls == 0
+    assert response.content.read_sizes == [pv_m2m.M2M_MAX_RESPONSE_BYTES + 1]
 
 
 def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() -> None:

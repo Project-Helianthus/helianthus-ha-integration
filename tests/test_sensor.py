@@ -663,7 +663,7 @@ def test_pv_m2m_energy_sensor_retains_exact_integer_and_total_increasing_metadat
     assert entity._attr_state_class == "total_increasing"
 
 
-def test_pv_m2m_stale_is_stateful_but_unavailable_and_expired_has_no_value() -> None:
+def test_pv_m2m_stale_remains_available_data_and_expired_has_no_value() -> None:
     stale = _pv_entity(
         fact_id="pv.ac.power.active",
         value=Decimal("7310"),
@@ -678,6 +678,7 @@ def test_pv_m2m_stale_is_stateful_but_unavailable_and_expired_has_no_value() -> 
         availability="UNAVAILABLE",
     )
     assert stale.native_value == Decimal("7310")
-    assert stale.available is False
+    assert stale.available is True
+    assert stale.extra_state_attributes["freshness"] == "STALE"
     assert expired.native_value is None
     assert expired.available is False
