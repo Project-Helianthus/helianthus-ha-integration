@@ -2149,6 +2149,7 @@ class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
         fact = self._fact()
         return bool(
             getattr(super(), "available", True)
+            and getattr(self.coordinator, "last_update_success", True)
             and getattr(data, "source_available", False)
             and fact is not None
             and fact.availability == "AVAILABLE"
