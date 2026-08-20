@@ -307,6 +307,7 @@ def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() 
         (lambda fact: fact.update({"unit": "kW"}), "unit"),
         (lambda fact: fact.update({"dimension": {"phase": "L4"}}), "dimension"),
         (lambda fact: fact.update({"value": {"coefficient": 7310, "scale": 0}}), "value"),
+        (lambda fact: fact.update({"value": {"coefficient": "-0", "scale": 0}}), "value"),
         (lambda fact: fact.update({"quality": "UNKNOWN"}), "quality"),
         (lambda fact: fact.update({"availability": "DEGRADED"}), "availability"),
         (lambda fact: fact.update({"freshness": "WARM"}), "freshness"),
@@ -339,6 +340,85 @@ def test_parser_rejects_freshness_labels_that_contradict_monotonic_deadlines() -
     payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = "1281234500000"
 
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="temporal"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+
+
+def test_parser_rejects_unsupported_expiry_before_retention_deadline() -> None:
+    payload = _success_envelope()
+    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
+    fact["availability"] = "UNSUPPORTED"
+    fact["freshness"] = "EXPIRED"
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="temporal"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+
+
+@pytest.mark.parametrize(
+    ("evaluated", "availability", "freshness"),
+    [
+        ("1011234500000", "AVAILABLE", "STALE"),
+        ("1281234500000", "UNAVAILABLE", "EXPIRED"),
+    ],
+)
+def test_parser_accepts_exact_fresh_and_retain_boundaries(
+    evaluated: str,
+    availability: str,
+    freshness: str,
+) -> None:
+    payload = _success_envelope()
+    payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = evaluated
+    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
+    fact["availability"] = availability
+    fact["freshness"] = freshness
+    snapshot = pv_m2m.parse_m2m_response(
+        payload,
+        expected_asset_ref="pv-asset-01",
+    )
+    assert snapshot.facts[0].availability == availability
+    assert snapshot.facts[0].freshness == freshness
+
+
+@pytest.mark.parametrize(
+    "continuity",
+    [
+        {
+            "__typename": "M2MContiguousContinuity",
+            "delta": {"coefficient": "-1", "scale": 0},
+        },
+        {
+            "__typename": "M2MRolloverContinuity",
+            "delta": {"coefficient": "1", "scale": 0},
+            "modulus": {"coefficient": "0", "scale": 0},
+            "rolloverEvidenceRef": "sha256:" + "e" * 64,
+        },
+        {
+            "__typename": "M2MResetContinuity",
+            "resetEvidenceRef": "not-a-digest",
+        },
+        {
+            "__typename": "M2MDiscontinuityContinuity",
+            "discontinuityEvidenceRef": "not-a-digest",
+        },
+    ],
+)
+def test_parser_rejects_noncanonical_counter_continuity(continuity: dict) -> None:
+    payload = _success_envelope()
+    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
+    fact.update(
+        {
+            "factId": "pv.energy.active_export_total",
+            "unit": "Wh",
+            "freshnessPolicy": "pv.accumulator.v1",
+            "freshUntilMonotonicNs": "1881234500000",
+            "retainUntilMonotonicNs": "87381234500000",
+            "continuity": continuity,
+        }
+    )
+    payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0]["factId"] = fact[
+        "factId"
+    ]
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="continuity"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 
     payload = _success_envelope()

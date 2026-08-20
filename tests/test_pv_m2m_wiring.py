@@ -8,6 +8,8 @@ from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 
 def _ensure_coordinator_stubs() -> None:
     homeassistant_module = sys.modules.setdefault(
@@ -196,6 +198,24 @@ def test_boundary_close_marks_existing_entities_unavailable_before_closing_sessi
     )
     asyncio.run(boundary.async_close())
     assert calls == ["unavailable:unloaded", "close"]
+
+
+def test_cancelled_first_refresh_closes_untransferred_https_client() -> None:
+    calls: list[str] = []
+
+    class Coordinator:
+        async def async_config_entry_first_refresh(self) -> None:
+            calls.append("refresh")
+            raise asyncio.CancelledError
+
+    class Client:
+        async def async_close(self) -> None:
+            calls.append("close")
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(pv_m2m.async_first_refresh_with_cleanup(Coordinator(), Client()))
+
+    assert calls == ["refresh", "close"]
 
 
 def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it() -> None:
