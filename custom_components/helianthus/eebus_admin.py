@@ -18,6 +18,10 @@ _OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _DATA_HASH = re.compile(r"sha256:[0-9a-f]{64}")
 _RFC3339_UTC = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z")
 _UNSET = object()
+_SPINE_HTTP_ERRORS = {
+    409: frozenset({"disconnected", "snapshot_expired"}),
+    503: frozenset({"admin_boundary_unavailable", "spine_topology_unavailable"}),
+}
 
 
 class EEBusAdminV1Error(RuntimeError):
@@ -29,6 +33,18 @@ class EEBusAdminV1Error(RuntimeError):
 class EEBusAdminV1ProtocolError(EEBusAdminV1Error):
     def __init__(self) -> None:
         super().__init__("invalid_response")
+
+
+def _http_error_code(payload: Any, *, method: str, suffix: str, status: int) -> str:
+    fallback = "snapshot_expired" if method == "GET" and "/spine?" in suffix and status == 409 else {409: "state_conflict", 503: "admin_boundary_unavailable"}.get(status, "invalid_response")
+    allowed = _SPINE_HTTP_ERRORS.get(status) if method == "GET" and "/spine?" in suffix else None
+    if allowed is None or not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
+        return fallback
+    error = payload.get("error")
+    code = error.get("code") if isinstance(error, dict) and set(error) == {"code"} else None
+    if payload.get("contract") != CONTRACT or not _is_opaque(payload.get("request_id")) or type(payload.get("state_revision")) is not int or not 0 <= payload["state_revision"] <= (1 << 64) - 1 or payload.get("data") is not None or code not in allowed:
+        return fallback
+    return code
 
 
 @dataclass(frozen=True)
@@ -225,10 +241,7 @@ class EEBusAdminV1Client:
         try:
             request = getattr(self._session, method.lower())
             async with request(self._base_url + suffix, **kwargs) as response:
-                if getattr(response, "status", 200) != 200:
-                    status = getattr(response, "status", 0)
-                    code = "snapshot_expired" if method == "GET" and "/spine?" in suffix and status == 409 else {409: "state_conflict", 503: "admin_boundary_unavailable"}.get(status, "invalid_response")
-                    raise EEBusAdminV1Error(code)
+                status = getattr(response, "status", 200)
                 length = getattr(response, "content_length", None)
                 if length is not None and length > MAX_BODY_BYTES:
                     raise EEBusAdminV1ProtocolError()
@@ -236,7 +249,15 @@ class EEBusAdminV1Client:
                 raw = await content.read(MAX_BODY_BYTES + 1) if content is not None else b""
                 if len(raw) > MAX_BODY_BYTES:
                     raise EEBusAdminV1ProtocolError()
-                return json.loads(raw) if raw else await response.json()
+                try:
+                    payload = json.loads(raw) if raw else await response.json()
+                except Exception:
+                    if status != 200:
+                        raise EEBusAdminV1Error(_http_error_code(None, method=method, suffix=suffix, status=status)) from None
+                    raise
+                if status != 200:
+                    raise EEBusAdminV1Error(_http_error_code(payload, method=method, suffix=suffix, status=status))
+                return payload
         except EEBusAdminV1Error:
             raise
         except Exception:
