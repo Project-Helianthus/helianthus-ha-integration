@@ -25,6 +25,10 @@ def _envelope(data: dict[str, Any], revision: int = 7) -> dict[str, Any]:
     return {"contract": CONTRACT, "request_id": "request-opaque", "state_revision": revision, "data": data, "error": None}
 
 
+def _error_envelope(code: str) -> dict[str, Any]:
+    return {"contract": CONTRACT, "request_id": "request-opaque", "state_revision": 0, "data": None, "error": {"code": code}}
+
+
 def _status() -> dict[str, Any]:
     return {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 0, "connected_count": 0, "discovered_count": 0, "candidate_count": 0}
 
@@ -289,6 +293,27 @@ def test_spine_expiry_is_sanitized_and_never_persists_raw_page_data() -> None:
     store = admin.HAAdminProjectionStore()
     with pytest.raises(admin.EEBusAdminV1ProtocolError):
         store.accept("raw_spine", _envelope({"raw": "forbidden"}))
+
+
+def test_spine_http_errors_preserve_only_the_closed_gateway_availability_codes() -> None:
+    admin = _admin()
+    cases = (
+        (409, "disconnected", "disconnected"),
+        (409, "snapshot_expired", "snapshot_expired"),
+        (503, "spine_topology_unavailable", "spine_topology_unavailable"),
+        (503, "admin_boundary_unavailable", "admin_boundary_unavailable"),
+        (409, "raw_remote_ski_leak", "snapshot_expired"),
+        (503, "raw_remote_ski_leak", "admin_boundary_unavailable"),
+    )
+    for status, gateway_code, expected in cases:
+        client = admin.EEBusAdminV1Client(
+            session=_Session([_Response(_error_envelope(gateway_code), status=status)]),
+            base_url="https://gateway.example.test/graphql",
+        )
+        with pytest.raises(admin.EEBusAdminV1Error) as captured:
+            asyncio.run(client.fetch_spine_root(PARTNER_ID))
+        assert captured.value.code == expected
+        assert "raw_remote_ski_leak" not in repr(captured.value)
 
 
 def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies() -> None:
