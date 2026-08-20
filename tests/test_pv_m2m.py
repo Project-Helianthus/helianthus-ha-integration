@@ -244,6 +244,30 @@ def test_client_bounds_decompressed_response_before_text_or_json_materialization
     assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
 
 
+def test_client_rejects_excessive_json_depth_before_decoder(monkeypatch) -> None:  # noqa: ANN001
+    response = _Response({})
+    raw = b"[" * 65 + b"0" + b"]" * 65
+    response.content = _BodyStream(raw)
+    client = pv_m2m.PVM2MClient(
+        session=_Session([response]),
+        endpoint="https://pv.example.test/graphql/m2m/v1",
+        asset_ref="pv-asset-01",
+    )
+    decoder_called = False
+
+    def forbidden_decoder(*_args: object, **_kwargs: object) -> object:
+        nonlocal decoder_called
+        decoder_called = True
+        raise AssertionError("JSON decoder must not receive an over-depth payload")
+
+    monkeypatch.setattr(pv_m2m.json, "loads", forbidden_decoder)
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="depth"):
+        asyncio.run(client.async_current_snapshot())
+
+    assert decoder_called is False
+
+
 def test_client_reads_fragmented_valid_response_to_eof_within_bound() -> None:
     response = _Response(_success_envelope())
     response.content = _BodyStream(response._text.encode("utf-8"), max_chunk=17)
