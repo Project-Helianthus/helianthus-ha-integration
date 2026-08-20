@@ -165,13 +165,18 @@ class _Response:
 
 
 class _BodyStream:
-    def __init__(self, body: bytes) -> None:
+    def __init__(self, body: bytes, *, max_chunk: int | None = None) -> None:
         self._body = body
+        self._offset = 0
+        self._max_chunk = max_chunk
         self.read_sizes: list[int] = []
 
     async def read(self, size: int) -> bytes:
         self.read_sizes.append(size)
-        return self._body[:size]
+        bounded = size if self._max_chunk is None else min(size, self._max_chunk)
+        chunk = self._body[self._offset : self._offset + bounded]
+        self._offset += len(chunk)
+        return chunk
 
 
 class _Session:
@@ -236,6 +241,22 @@ def test_client_bounds_decompressed_response_before_text_or_json_materialization
 
     assert response.text_calls == 0
     assert response.content.read_sizes == [pv_m2m.M2M_MAX_RESPONSE_BYTES + 1]
+
+
+def test_client_reads_fragmented_valid_response_to_eof_within_bound() -> None:
+    response = _Response(_success_envelope())
+    response.content = _BodyStream(response._text.encode("utf-8"), max_chunk=17)
+    client = pv_m2m.PVM2MClient(
+        session=_Session([response]),
+        endpoint="https://pv.example.test/graphql/m2m/v1",
+        asset_ref="pv-asset-01",
+    )
+
+    snapshot = asyncio.run(client.async_current_snapshot())
+
+    assert snapshot.asset_ref == "pv-asset-01"
+    assert len(response.content.read_sizes) > 1
+    assert response.text_calls == 0
 
 
 def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() -> None:
@@ -307,6 +328,14 @@ def test_parser_rejects_duplicate_fact_identity_and_unknown_fields() -> None:
     snapshot = payload["data"]["m2mCurrentSnapshot"]
     snapshot["facts"].append(deepcopy(snapshot["facts"][0]))
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="duplicate fact"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+
+
+def test_parser_rejects_freshness_labels_that_contradict_monotonic_deadlines() -> None:
+    payload = _success_envelope()
+    payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = "1281234500000"
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="temporal"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 
     payload = _success_envelope()
@@ -395,6 +424,33 @@ def test_descriptor_migration_preserves_published_id_and_store_is_bounded() -> N
         pv_m2m.serialize_pv_descriptor_store("pv-asset-01", too_many)
 
 
+def test_descriptor_store_rejects_unique_id_aliasing_across_fact_keys() -> None:
+    shared_unique_id = "entry-1-pv-published"
+    raw = {
+        "schema_version": 1,
+        "asset_ref": "pv-asset-01",
+        "descriptors": [
+            {
+                "fact_id": "pv.ac.power.active",
+                "dimension": {"scope": "total"},
+                "unique_id": shared_unique_id,
+            },
+            {
+                "fact_id": "pv.ac.frequency",
+                "dimension": {"scope": "total"},
+                "unique_id": shared_unique_id,
+            },
+        ],
+    }
+
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="unique id"):
+        pv_m2m.load_pv_descriptor_store(
+            raw,
+            entry_id="entry-1",
+            asset_ref="pv-asset-01",
+        )
+
+
 def test_unique_id_is_stable_and_excludes_endpoint_or_source_metadata() -> None:
     first = pv_m2m.build_pv_unique_id(
         "entry-1",
@@ -462,3 +518,57 @@ def test_coordinator_keeps_descriptors_and_last_snapshot_atomic_on_transport_fai
     assert second.descriptors == first.descriptors
     assert second.facts == first.facts
     assert second.error == "transport_failure"
+
+
+def test_coordinator_never_evicts_published_descriptors_at_discovery_bound() -> None:
+    descriptors = tuple(
+        pv_m2m.PVM2MDescriptor(
+            fact_id="pv.dc.current",
+            dimension=("input_id", f"old-{index:03d}"),
+            unique_id=f"entry-1-pv-old-{index:03d}",
+        )
+        for index in range(pv_m2m.M2M_MAX_FACTS)
+    )
+    new_fact = pv_m2m.PVM2MFact(
+        fact_id="pv.dc.current",
+        dimension=("input_id", "new-input"),
+        value=Decimal("1"),
+        coefficient="1",
+        scale=0,
+        unit="A",
+        quality="GOOD",
+        availability="AVAILABLE",
+        freshness="FRESH",
+        freshness_policy="pv.telemetry.fast.v1",
+        origin_ref=ORIGIN,
+        continuity=None,
+    )
+
+    class Client:
+        async def async_current_snapshot(self) -> pv_m2m.PVM2MSnapshot:
+            return pv_m2m.PVM2MSnapshot(
+                asset_ref="pv-asset-01",
+                generation="9",
+                produced_at="2026-08-17T13:46:00Z",
+                facts=(new_fact,),
+            )
+
+    persisted: list[tuple[pv_m2m.PVM2MDescriptor, ...]] = []
+
+    async def persist(updated: tuple[pv_m2m.PVM2MDescriptor, ...]) -> None:
+        persisted.append(updated)
+
+    coordinator = pv_m2m.HelianthusPVM2MCoordinator(
+        hass=None,
+        client=Client(),
+        scan_interval=60,
+        entry_id="entry-1",
+        asset_ref="pv-asset-01",
+        descriptors=descriptors,
+        persist_descriptors=persist,
+    )
+
+    updated = asyncio.run(coordinator._async_update_data())
+
+    assert updated.descriptors == descriptors
+    assert persisted == []

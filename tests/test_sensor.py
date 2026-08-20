@@ -98,6 +98,10 @@ def _ensure_homeassistant_stubs() -> None:
             def __init__(self, coordinator) -> None:  # noqa: ANN001
                 self.coordinator = coordinator
 
+            @property
+            def available(self) -> bool:
+                return bool(getattr(self.coordinator, "last_update_success", True))
+
         update_coordinator_module.CoordinatorEntity = _CoordinatorEntity
     if not hasattr(update_coordinator_module, "DataUpdateCoordinator"):
         class _DataUpdateCoordinator:
@@ -124,8 +128,9 @@ from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
-    def __init__(self, data) -> None:  # noqa: ANN001
+    def __init__(self, data, *, last_update_success: bool = True) -> None:  # noqa: ANN001
         self.data = data
+        self.last_update_success = last_update_success
 
 
 class _FakeEntry:
@@ -682,3 +687,13 @@ def test_pv_m2m_stale_remains_available_data_and_expired_has_no_value() -> None:
     assert stale.extra_state_attributes["freshness"] == "STALE"
     assert expired.native_value is None
     assert expired.available is False
+
+
+def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
+    entity = _pv_entity(
+        fact_id="pv.ac.power.active",
+        value=Decimal("7310"),
+        unit="W",
+    )
+    entity.coordinator.last_update_success = False
+    assert entity.available is False

@@ -147,6 +147,38 @@ def test_descriptor_persistence_preserves_unrelated_options_without_forcing_relo
     assert pv_m2m.pv_m2m_option_signature(entry.options) == before
 
 
+def test_poll_interval_change_is_part_of_runtime_reload_signature() -> None:
+    original = {"scan_interval": 60, CONF_PV_M2M_ENABLED: True}
+    changed = {**original, "scan_interval": 300}
+    assert pv_m2m.pv_m2m_option_signature(changed) != pv_m2m.pv_m2m_option_signature(
+        original
+    )
+
+
+def test_tls_file_loading_runs_through_home_assistant_executor(monkeypatch) -> None:
+    config = pv_m2m.PVM2MConfig(
+        endpoint="https://pv.example.test/graphql/m2m/v1",
+        asset_ref="pv-asset-01",
+        ca_cert_file="/config/pki/ca.pem",
+        client_cert_file="/config/pki/client.pem",
+        client_key_file="/config/pki/client.key",
+    )
+    sentinel = object()
+    calls: list[tuple[object, tuple[object, ...]]] = []
+
+    class Hass:
+        async def async_add_executor_job(self, target, *args):  # noqa: ANN001, ANN202
+            calls.append((target, args))
+            return target(*args)
+
+    monkeypatch.setattr(pv_m2m, "_build_pv_ssl_context", lambda value: sentinel)
+
+    result = asyncio.run(pv_m2m.async_build_pv_ssl_context(Hass(), config))
+
+    assert result is sentinel
+    assert calls == [(pv_m2m._build_pv_ssl_context, (config,))]
+
+
 def test_boundary_close_marks_existing_entities_unavailable_before_closing_session() -> None:
     calls: list[str] = []
 
