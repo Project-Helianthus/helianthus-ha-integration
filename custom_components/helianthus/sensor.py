@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,11 @@ from .device_ids import (
     stable_bus_identity_model,
 )
 from .energy import compute_total
+from .pv_m2m import (
+    PVM2MDescriptor,
+    PVM2MFact,
+    build_pv_device_identifier,
+)
 
 
 @dataclass(frozen=True)
@@ -899,6 +905,49 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     energy_coordinator, entry.entry_id, via_device, manufacturer, "solar", "climate"
                 ),
             ]
+        )
+
+    pv_m2m_coordinator = data.get("pv_m2m_coordinator")
+    if pv_m2m_coordinator is not None:
+        pv_data = pv_m2m_coordinator.data
+        descriptors = tuple(getattr(pv_data, "descriptors", ()) or ())
+        known_pv_descriptor_keys = {descriptor.key for descriptor in descriptors}
+        sensors.extend(
+            HelianthusPVM2MSensor(
+                coordinator=pv_m2m_coordinator,
+                entry_id=entry.entry_id,
+                asset_ref=pv_m2m_coordinator.asset_ref,
+                descriptor=descriptor,
+            )
+            for descriptor in descriptors
+        )
+
+        def _add_discovered_pv_entities() -> None:
+            current = pv_m2m_coordinator.data
+            new_descriptors = [
+                descriptor
+                for descriptor in tuple(getattr(current, "descriptors", ()) or ())
+                if descriptor.key not in known_pv_descriptor_keys
+            ]
+            if not new_descriptors:
+                return
+            known_pv_descriptor_keys.update(
+                descriptor.key for descriptor in new_descriptors
+            )
+            async_add_entities(
+                [
+                    HelianthusPVM2MSensor(
+                        coordinator=pv_m2m_coordinator,
+                        entry_id=entry.entry_id,
+                        asset_ref=pv_m2m_coordinator.asset_ref,
+                        descriptor=descriptor,
+                    )
+                    for descriptor in new_descriptors
+                ]
+            )
+
+        data.setdefault("unsub_listeners", []).append(
+            pv_m2m_coordinator.async_add_listener(_add_discovered_pv_entities)
         )
 
     adapter_info_coordinator = data.get("adapter_info_coordinator")
@@ -2032,6 +2081,140 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         yearly = series.get("yearly") if isinstance(series.get("yearly"), list) else None
         today = series.get("today")
         return compute_total(yearly, today)
+
+
+def _pv_sensor_metadata(fact_id: str, unit: str) -> tuple[str | None, str | None, str | None]:
+    if fact_id in {"pv.energy.active_export_total", "pv.dc.energy.active_total"}:
+        return SensorDeviceClass.ENERGY, "Wh", _SENSOR_STATE_CLASS_TOTAL_INCREASING
+    if fact_id == "pv.ac.power.apparent":
+        return getattr(SensorDeviceClass, "APPARENT_POWER", None), "VA", SensorStateClass.MEASUREMENT
+    if fact_id == "pv.ac.power.reactive":
+        return getattr(SensorDeviceClass, "REACTIVE_POWER", None), "var", SensorStateClass.MEASUREMENT
+    if unit == "W":
+        return getattr(SensorDeviceClass, "POWER", None), "W", SensorStateClass.MEASUREMENT
+    if unit == "A":
+        return getattr(SensorDeviceClass, "CURRENT", None), "A", SensorStateClass.MEASUREMENT
+    if unit == "V":
+        return getattr(SensorDeviceClass, "VOLTAGE", None), "V", SensorStateClass.MEASUREMENT
+    if unit == "Hz":
+        return getattr(SensorDeviceClass, "FREQUENCY", None), "Hz", SensorStateClass.MEASUREMENT
+    if unit == "Cel":
+        return SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT
+    if unit == "1" and fact_id == "pv.ac.power_factor":
+        return None, "1", SensorStateClass.MEASUREMENT
+    return None, None, None
+
+
+class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
+    """One persisted canonical PV fact identity."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        *,
+        coordinator,
+        entry_id: str,
+        asset_ref: str,
+        descriptor: PVM2MDescriptor,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._asset_ref = asset_ref
+        self._descriptor = descriptor
+        self._attr_unique_id = descriptor.unique_id
+        dimension = f"{descriptor.dimension[0]} {descriptor.dimension[1]}"
+        self._attr_name = f"{descriptor.fact_id.removeprefix('pv.').replace('.', ' ').replace('_', ' ').title()} {dimension}"
+        fact = self._fact()
+        unit = fact.unit if fact is not None else _pv_expected_unit(descriptor.fact_id)
+        device_class, native_unit, state_class = _pv_sensor_metadata(
+            descriptor.fact_id, unit
+        )
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if native_unit is not None:
+            self._attr_native_unit_of_measurement = native_unit
+        if state_class is not None:
+            self._attr_state_class = state_class
+
+    def _fact(self) -> PVM2MFact | None:
+        data = self.coordinator.data
+        facts = getattr(data, "facts", {})
+        fact = facts.get(self._descriptor.key) if isinstance(facts, Mapping) else None
+        return fact if isinstance(fact, PVM2MFact) else None
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        fact = self._fact()
+        return bool(
+            getattr(super(), "available", True)
+            and getattr(self.coordinator, "last_update_success", True)
+            and getattr(data, "source_available", False)
+            and fact is not None
+            and fact.availability == "AVAILABLE"
+            and fact.freshness in {"FRESH", "STALE"}
+        )
+
+    @property
+    def native_value(self) -> Any:
+        fact = self._fact()
+        if fact is None or fact.availability != "AVAILABLE" or fact.freshness == "EXPIRED":
+            return None
+        if isinstance(fact.value, tuple):
+            return ", ".join(fact.value)
+        return fact.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        fact = self._fact()
+        if fact is None:
+            return {
+                "fact_id": self._descriptor.fact_id,
+                "dimension": {
+                    self._descriptor.dimension[0]: self._descriptor.dimension[1]
+                },
+            }
+        attributes: dict[str, Any] = {
+            "fact_id": fact.fact_id,
+            "dimension": {fact.dimension[0]: fact.dimension[1]},
+            "quality": fact.quality,
+            "availability": fact.availability,
+            "freshness": fact.freshness,
+            "freshness_policy": fact.freshness_policy,
+        }
+        if isinstance(fact.value, tuple):
+            attributes["symbols"] = list(fact.value)
+        return attributes
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={build_pv_device_identifier(self._entry_id, self._asset_ref)},
+            manufacturer="Helianthus",
+            model="Canonical PV Asset",
+            name="Solar PV",
+        )
+
+
+def _pv_expected_unit(fact_id: str) -> str:
+    if fact_id in {"pv.energy.active_export_total", "pv.dc.energy.active_total"}:
+        return "Wh"
+    if fact_id == "pv.ac.power.apparent":
+        return "VA"
+    if fact_id == "pv.ac.power.reactive":
+        return "var"
+    if fact_id in {"pv.ac.current", "pv.dc.current"}:
+        return "A"
+    if fact_id in {"pv.ac.voltage.line_to_neutral", "pv.ac.voltage.line_to_line", "pv.dc.voltage"}:
+        return "V"
+    if fact_id == "pv.ac.frequency":
+        return "Hz"
+    if fact_id == "pv.temperature":
+        return "Cel"
+    if fact_id in {"pv.ac.power_factor", "pv.operating.state", "pv.event.flags"}:
+        return "1"
+    return "W"
 
 
 class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):

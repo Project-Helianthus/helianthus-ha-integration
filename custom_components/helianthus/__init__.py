@@ -755,6 +755,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         stable_bus_identity_model,
     )
     from .subscriptions import start_subscriptions
+    from .pv_m2m import (
+        async_setup_pv_m2m_boundary,
+        pv_m2m_option_signature,
+    )
     from .eebus_admin_coordinator import (
         EEBusAdminV1Coordinator,
         close_admin_session,
@@ -2315,6 +2319,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     boiler_burner_device_id = boiler_burner_identifier(entry.entry_id)
     boiler_hydraulics_device_id = boiler_hydraulics_identifier(entry.entry_id)
 
+    pv_m2m_boundary = None
+    pv_m2m_coordinator = None
+    try:
+        pv_m2m_boundary = await async_setup_pv_m2m_boundary(
+            hass,
+            entry,
+            scan_interval=scan_interval,
+        )
+    except (OSError, TypeError, ValueError):
+        _LOGGER.warning(
+            "Canonical PV consumer configuration failed for entry %s",
+            entry.entry_id,
+        )
+    if pv_m2m_boundary is not None:
+        pv_m2m_coordinator = pv_m2m_boundary.coordinator
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
@@ -2330,6 +2350,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "eebus_admin_coordinator": admin_coordinator,
         "eebus_admin_session": admin_session,
         "eebus_admin_services_registered": admin_services_registered,
+        "pv_m2m_coordinator": pv_m2m_coordinator,
+        "pv_m2m_boundary": pv_m2m_boundary,
+        "pv_m2m_option_signature": pv_m2m_option_signature(entry.options),
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
@@ -2351,6 +2374,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "unresolved_zone_ids": unresolved_zone_ids,
         "b524_merge_targets": b524_merge_targets,
     }
+
+    async def _reload_on_pv_m2m_option_change(
+        updated_hass: HomeAssistant,
+        updated_entry: ConfigEntry,
+    ) -> None:
+        runtime = updated_hass.data.get(DOMAIN, {}).get(updated_entry.entry_id)
+        if not isinstance(runtime, dict):
+            return
+        if runtime.get("pv_m2m_option_signature") == pv_m2m_option_signature(
+            updated_entry.options
+        ):
+            return
+        await updated_hass.config_entries.async_reload(updated_entry.entry_id)
+
+    if hasattr(entry, "add_update_listener") and hasattr(entry, "async_on_unload"):
+        entry.async_on_unload(entry.add_update_listener(_reload_on_pv_m2m_option_change))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Run stale cleanup again after platform setup so registry-backed entities
@@ -2391,4 +2430,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif admin_session is not None:
             from .eebus_admin_coordinator import close_admin_session
             await close_admin_session(admin_session)
+        pv_m2m_boundary = None if data is None else data.get("pv_m2m_boundary")
+        if pv_m2m_boundary is not None:
+            await pv_m2m_boundary.async_close()
     return unload_ok

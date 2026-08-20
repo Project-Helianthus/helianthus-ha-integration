@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 import sys
 import types
 
@@ -37,6 +38,17 @@ def _ensure_homeassistant_stubs() -> None:
             PRESSURE = "pressure"
 
         sensor_module.SensorDeviceClass = _SensorDeviceClass
+    for key, value in {
+        "POWER": "power",
+        "APPARENT_POWER": "apparent_power",
+        "REACTIVE_POWER": "reactive_power",
+        "POWER_FACTOR": "power_factor",
+        "CURRENT": "current",
+        "VOLTAGE": "voltage",
+        "FREQUENCY": "frequency",
+    }.items():
+        if not hasattr(sensor_module.SensorDeviceClass, key):
+            setattr(sensor_module.SensorDeviceClass, key, value)
 
     if not hasattr(sensor_module, "SensorStateClass"):
         class _SensorStateClass:
@@ -86,6 +98,10 @@ def _ensure_homeassistant_stubs() -> None:
             def __init__(self, coordinator) -> None:  # noqa: ANN001
                 self.coordinator = coordinator
 
+            @property
+            def available(self) -> bool:
+                return bool(getattr(self.coordinator, "last_update_success", True))
+
         update_coordinator_module.CoordinatorEntity = _CoordinatorEntity
     if not hasattr(update_coordinator_module, "DataUpdateCoordinator"):
         class _DataUpdateCoordinator:
@@ -112,8 +128,9 @@ from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
-    def __init__(self, data) -> None:  # noqa: ANN001
+    def __init__(self, data, *, last_update_success: bool = True) -> None:  # noqa: ANN001
         self.data = data
+        self.last_update_success = last_update_success
 
 
 class _FakeEntry:
@@ -573,3 +590,110 @@ def test_energy_sensor_has_total_increasing_state_class() -> None:
     assert entity._attr_state_class == "total_increasing"
     assert entity._attr_device_class == "energy"
     assert entity._attr_native_unit_of_measurement == "kWh"
+
+
+def _pv_entity(
+    *,
+    fact_id: str,
+    value: Decimal,
+    unit: str,
+    freshness: str = "FRESH",
+    availability: str = "AVAILABLE",
+):
+    from custom_components.helianthus import pv_m2m
+
+    descriptor = pv_m2m.PVM2MDescriptor(
+        fact_id=fact_id,
+        dimension=("scope", "total"),
+        unique_id=f"entry-1-pv-{fact_id.replace('.', '-')}",
+    )
+    fact = pv_m2m.PVM2MFact(
+        fact_id=fact_id,
+        dimension=("scope", "total"),
+        value=value,
+        coefficient=str(value),
+        scale=0,
+        unit=unit,
+        quality="GOOD",
+        availability=availability,
+        freshness=freshness,
+        freshness_policy=(
+            "pv.accumulator.v1"
+            if fact_id == "pv.energy.active_export_total"
+            else "pv.telemetry.fast.v1"
+        ),
+        origin_ref="sha256:" + "a" * 64,
+        continuity=("BASELINE" if fact_id == "pv.energy.active_export_total" else None),
+    )
+    data = pv_m2m.PVM2MCoordinatorData(
+        descriptors=(descriptor,),
+        facts={descriptor.key: fact},
+        source_available=True,
+        error=None,
+    )
+    coordinator = _FakeCoordinator(data)
+    return sensor_platform.HelianthusPVM2MSensor(
+        coordinator=coordinator,
+        entry_id="entry-1",
+        asset_ref="pv-asset-01",
+        descriptor=descriptor,
+    )
+
+
+def test_pv_m2m_power_sensor_uses_canonical_unit_class_and_stable_descriptor_id() -> None:
+    entity = _pv_entity(
+        fact_id="pv.ac.power.active",
+        value=Decimal("7310"),
+        unit="W",
+    )
+    assert entity.native_value == Decimal("7310")
+    assert entity.available is True
+    assert entity._attr_unique_id == "entry-1-pv-pv-ac-power-active"
+    assert entity._attr_device_class == "power"
+    assert entity._attr_native_unit_of_measurement == "W"
+    assert entity._attr_state_class == "measurement"
+    assert "pv-asset-01" not in entity._attr_unique_id
+    assert entity.device_info["model"] == "Canonical PV Asset"
+
+
+def test_pv_m2m_energy_sensor_retains_exact_integer_and_total_increasing_metadata() -> None:
+    entity = _pv_entity(
+        fact_id="pv.energy.active_export_total",
+        value=Decimal("9007199254740993"),
+        unit="Wh",
+    )
+    assert entity.native_value == Decimal("9007199254740993")
+    assert entity._attr_device_class == "energy"
+    assert entity._attr_native_unit_of_measurement == "Wh"
+    assert entity._attr_state_class == "total_increasing"
+
+
+def test_pv_m2m_stale_remains_available_data_and_expired_has_no_value() -> None:
+    stale = _pv_entity(
+        fact_id="pv.ac.power.active",
+        value=Decimal("7310"),
+        unit="W",
+        freshness="STALE",
+    )
+    expired = _pv_entity(
+        fact_id="pv.ac.power.active",
+        value=Decimal("7310"),
+        unit="W",
+        freshness="EXPIRED",
+        availability="UNAVAILABLE",
+    )
+    assert stale.native_value == Decimal("7310")
+    assert stale.available is True
+    assert stale.extra_state_attributes["freshness"] == "STALE"
+    assert expired.native_value is None
+    assert expired.available is False
+
+
+def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
+    entity = _pv_entity(
+        fact_id="pv.ac.power.active",
+        value=Decimal("7310"),
+        unit="W",
+    )
+    entity.coordinator.last_update_success = False
+    assert entity.available is False
