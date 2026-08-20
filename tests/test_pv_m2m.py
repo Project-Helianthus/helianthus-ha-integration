@@ -235,6 +235,17 @@ def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() 
     assert snapshot.facts[0].coefficient == "9007199254740993"
     assert snapshot.facts[0].scale == -2
 
+    fact["value"] = {
+        "coefficient": "1234567890123456789012345678901234567890",
+        "scale": -18,
+    }
+    snapshot = pv_m2m.parse_m2m_response(
+        payload, expected_asset_ref="pv-asset-01"
+    )
+    assert snapshot.facts[0].value == Decimal(
+        "1234567890123456789012.345678901234567890"
+    )
+
 
 @pytest.mark.parametrize(
     ("mutation", "expected"),

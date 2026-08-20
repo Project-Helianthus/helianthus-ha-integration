@@ -46,9 +46,18 @@
           "scan_interval": "Scan interval",
           "use_subscriptions": "Use subscriptions",
           "zone_schedule_helpers": "Zone schedule helpers",
-          "dhw_schedule_helper": "DHW schedule helper"
+          "dhw_schedule_helper": "DHW schedule helper",
+          "pv_m2m_enabled": "Enable canonical PV M2M",
+          "pv_m2m_endpoint": "PV M2M HTTPS endpoint",
+          "pv_m2m_asset_ref": "PV asset reference",
+          "pv_m2m_ca_cert_file": "Server CA certificate file",
+          "pv_m2m_client_cert_file": "Client certificate file",
+          "pv_m2m_client_key_file": "Client key file"
         }
       }
+    },
+    "error": {
+      "pv_m2m_invalid": "Canonical PV M2M requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references."
     }
   }
 }

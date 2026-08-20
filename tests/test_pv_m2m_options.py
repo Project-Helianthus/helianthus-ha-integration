@@ -114,6 +114,18 @@ def test_valid_options_store_paths_not_certificate_or_key_bytes() -> None:
     assert "private key-----" not in rendered
 
 
+def test_disabled_options_still_reject_inline_key_material() -> None:
+    flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
+    invalid = _complete_options()
+    invalid[CONF_PV_M2M_ENABLED] = False
+    invalid[CONF_PV_M2M_CLIENT_KEY_FILE] = (
+        "-----BEGIN PRIVATE KEY-----\nnot-a-file-reference"
+    )
+    result = asyncio.run(flow.async_step_init(invalid))
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "pv_m2m_invalid"}
+
+
 def test_options_submission_preserves_hidden_restart_descriptors() -> None:
     stored = {
         "schema_version": 1,
