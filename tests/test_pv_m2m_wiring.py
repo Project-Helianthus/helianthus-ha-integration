@@ -227,6 +227,14 @@ def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it() -> None:
     assert "GraphQLClient(session=session" in source
 
 
+def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer() -> None:
+    source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+    boundary = source.index("pv_m2m_boundary = await async_setup_pv_m2m_boundary")
+    subscriptions = source.index("subscription_task = await start_subscriptions")
+    runtime_owner = source.index("hass.data.setdefault(DOMAIN, {})[entry.entry_id]")
+    assert subscriptions < boundary < runtime_owner
+
+
 def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discovery() -> None:
     source = (COMPONENT / "sensor.py").read_text(encoding="utf-8")
     assert 'data.get("pv_m2m_coordinator")' in source

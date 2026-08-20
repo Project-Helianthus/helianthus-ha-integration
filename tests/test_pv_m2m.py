@@ -335,6 +335,35 @@ def test_parser_rejects_duplicate_fact_identity_and_unknown_fields() -> None:
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda row: row.update({"originRef": "not-a-digest", "sourceObservationRef": "not-a-digest"}),
+        lambda row: row.update({"sourceRegistryRef": "sha256:" + "f" * 64}),
+        lambda row: row.update({"evidenceRef": "not-a-digest"}),
+        lambda row: row.update({"sourceProfileVersion": "2.0.0"}),
+        lambda row: row.update({"sourceProtocol": "unknown_protocol"}),
+    ],
+)
+def test_parser_rejects_unbound_or_noncanonical_provenance(mutate) -> None:  # noqa: ANN001
+    payload = _success_envelope()
+    mutate(payload["data"]["m2mCurrentSnapshot"]["provenance"][0])
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="provenance"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+
+
+def test_parser_rejects_non_digest_projection_identity() -> None:
+    payload = _success_envelope()
+    payload["data"]["m2mCurrentSnapshot"]["requestedOutputs"][0][
+        "requestedOutputRef"
+    ] = "not-a-digest"
+    payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0][
+        "requestedOutputRef"
+    ] = "not-a-digest"
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="requested output"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+
+
 def test_parser_rejects_freshness_labels_that_contradict_monotonic_deadlines() -> None:
     payload = _success_envelope()
     payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = "1281234500000"
