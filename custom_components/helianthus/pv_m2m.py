@@ -171,6 +171,7 @@ _POLICY_WINDOWS = {
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 _UNSIGNED_RE = re.compile(r"^(0|[1-9][0-9]*)$")
+_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class PVM2MError(Exception):
@@ -272,7 +273,11 @@ def _decimal_value(value: object, context: str) -> tuple[Decimal, str, int]:
     member = _closed_mapping(value, {"coefficient", "scale"}, f"{context} value")
     coefficient = member["coefficient"]
     scale = member["scale"]
-    if not isinstance(coefficient, str) or _INTEGER_RE.fullmatch(coefficient) is None:
+    if (
+        not isinstance(coefficient, str)
+        or coefficient == "-0"
+        or _INTEGER_RE.fullmatch(coefficient) is None
+    ):
         raise PVM2MProtocolError(f"invalid {context} value coefficient")
     if isinstance(scale, bool) or not isinstance(scale, int) or not -18 <= scale <= 18:
         raise PVM2MProtocolError(f"invalid {context} value scale")
@@ -281,6 +286,13 @@ def _decimal_value(value: object, context: str) -> tuple[Decimal, str, int]:
     except InvalidOperation as exc:  # pragma: no cover - guarded lexical form
         raise PVM2MProtocolError(f"invalid {context} value") from exc
     return exact, coefficient, scale
+
+
+def _digest(value: object, context: str) -> str:
+    digest = _string(value, context, maximum=71)
+    if _DIGEST_RE.fullmatch(digest) is None:
+        raise PVM2MProtocolError(f"invalid {context}")
+    return digest
 
 
 def _dimension(value: object, context: str) -> tuple[str, str]:
@@ -335,7 +347,9 @@ def _parse_continuity(value: object, *, accumulator: bool, context: str) -> str 
         return "BASELINE"
     if typename == "M2MContiguousContinuity":
         member = _closed_mapping(value, {"__typename", "delta"}, f"{context} continuity")
-        _decimal_value(member["delta"], f"{context} continuity delta")
+        delta, _, _ = _decimal_value(member["delta"], f"{context} continuity delta")
+        if delta < 0:
+            raise PVM2MProtocolError(f"invalid {context} continuity delta")
         return "CONTIGUOUS"
     if typename == "M2MRolloverContinuity":
         member = _closed_mapping(
@@ -343,15 +357,20 @@ def _parse_continuity(value: object, *, accumulator: bool, context: str) -> str 
             {"__typename", "delta", "modulus", "rolloverEvidenceRef"},
             f"{context} continuity",
         )
-        _decimal_value(member["delta"], f"{context} continuity delta")
-        _decimal_value(member["modulus"], f"{context} continuity modulus")
-        _string(member["rolloverEvidenceRef"], f"{context} rollover evidence")
+        delta, _, _ = _decimal_value(member["delta"], f"{context} continuity delta")
+        modulus, _, _ = _decimal_value(member["modulus"], f"{context} continuity modulus")
+        if delta < 0 or modulus <= 0:
+            raise PVM2MProtocolError(f"invalid {context} continuity values")
+        _digest(
+            member["rolloverEvidenceRef"],
+            f"{context} continuity rollover evidence",
+        )
         return "ROLLOVER"
     if typename == "M2MResetContinuity":
         member = _closed_mapping(
             value, {"__typename", "resetEvidenceRef"}, f"{context} continuity"
         )
-        _string(member["resetEvidenceRef"], f"{context} reset evidence")
+        _digest(member["resetEvidenceRef"], f"{context} continuity reset evidence")
         return "RESET"
     if typename == "M2MDiscontinuityContinuity":
         member = _closed_mapping(
@@ -361,7 +380,7 @@ def _parse_continuity(value: object, *, accumulator: bool, context: str) -> str 
         )
         evidence = member["discontinuityEvidenceRef"]
         if evidence is not None:
-            _string(evidence, f"{context} discontinuity evidence")
+            _digest(evidence, f"{context} continuity discontinuity evidence")
         return "DISCONTINUITY"
     raise PVM2MProtocolError(f"invalid {context} continuity")
 
@@ -426,7 +445,10 @@ def _parse_fact(value: object, index: int, *, evaluated: int) -> PVM2MFact:
         or retain_until != receipt + retain_for
     ):
         raise PVM2MProtocolError(f"invalid temporal deadlines for {fact_id}")
-    if availability != "UNSUPPORTED":
+    if availability == "UNSUPPORTED":
+        if evaluated < retain_until:
+            raise PVM2MProtocolError(f"invalid temporal state for {fact_id}")
+    else:
         expected_state = (
             ("UNAVAILABLE", "EXPIRED")
             if evaluated >= retain_until
@@ -1067,6 +1089,21 @@ class PVM2MBoundary:
             await self.client.async_close()
 
 
+async def async_first_refresh_with_cleanup(
+    coordinator: object,
+    client: PVM2MClient | object | None,
+) -> None:
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except BaseException:
+        if client is not None:
+            try:
+                await client.async_close()
+            except Exception:
+                _LOGGER.warning("Canonical PV HTTPS client cleanup failed")
+        raise
+
+
 async def async_setup_pv_m2m_boundary(
     hass: object,
     entry: object,
@@ -1131,7 +1168,7 @@ async def async_setup_pv_m2m_boundary(
         descriptors=descriptors,
         persist_descriptors=persist,
     )
-    await coordinator.async_config_entry_first_refresh()
+    await async_first_refresh_with_cleanup(coordinator, client)
     return PVM2MBoundary(coordinator=coordinator, client=client)
 
 
