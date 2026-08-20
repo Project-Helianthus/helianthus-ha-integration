@@ -120,11 +120,11 @@ def _success_envelope(*, asset_ref: str = "pv-asset-01") -> dict[str, Any]:
                 "provenance": [
                     {
                         "originRef": ORIGIN,
-                        "sourceProtocol": "opaque-source-protocol",
-                        "sourceProfileId": "opaque-profile@1.0.0",
+                        "sourceProtocol": "sunspec_modbus",
+                        "sourceProfileId": "sunspec.inverter.three_phase.monitoring@1.0.0",
                         "sourceProfileVersion": "1.0.0",
                         "sourceValidity": "terminal_verified",
-                        "sourceRegistryRef": "sha256:" + "c" * 64,
+                        "sourceRegistryRef": "sha256:e21d5d4914fba2249c68cc147243c22f89cc9e1f2be71e4565a3950f31e94750",
                         "sourceObservationRef": ORIGIN,
                         "evidenceRef": "sha256:" + "d" * 64,
                     }

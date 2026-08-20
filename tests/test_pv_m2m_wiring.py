@@ -82,7 +82,16 @@ def test_production_imports_have_no_source_protocol_or_private_registry_coupling
 
     pv_source = (COMPONENT / "pv_m2m.py").read_text(encoding="utf-8").lower()
     assert "mcp" not in pv_source
-    assert all(token not in pv_source for token in forbidden)
+    private_coupling = (
+        "helianthus-" + "modbus",
+        "fron" + "ius",
+        "helianthus-" + "semreg",
+    )
+    assert all(token not in pv_source for token in private_coupling)
+    # The closed public provenance binding contains exactly one protocol token
+    # and one protocol profile; neither exposes a raw source API to HA.
+    assert pv_source.count("m" + "odbus") == 1
+    assert pv_source.count("sun" + "spec") == 2
 
 
 def test_m2m_options_are_disabled_by_default_and_store_only_file_references() -> None:

@@ -172,6 +172,14 @@ _TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 _UNSIGNED_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SOURCE_REGISTRY_BINDINGS = {
+    (
+        "sunspec_modbus",
+        "sunspec.inverter.three_phase.monitoring@1.0.0",
+        "1.0.0",
+        "terminal_verified",
+    ): "sha256:e21d5d4914fba2249c68cc147243c22f89cc9e1f2be71e4565a3950f31e94750",
+}
 
 
 class PVM2MError(Exception):
@@ -458,7 +466,7 @@ def _parse_fact(value: object, index: int, *, evaluated: int) -> PVM2MFact:
         )
         if (availability, freshness) != expected_state:
             raise PVM2MProtocolError(f"invalid temporal state for {fact_id}")
-    origin_ref = _string(member["originRef"], f"{context} origin")
+    origin_ref = _digest(member["originRef"], f"{context} origin")
     coefficient: str | None = None
     scale: int | None = None
     if kind == "decimal":
@@ -533,15 +541,44 @@ def _validate_accounting(
             },
             f"provenance {index}",
         )
-        for field in row:
-            _string(row[field], f"provenance {index} {field}")
-        origin = row["originRef"]
+        origin = _digest(row["originRef"], f"provenance {index} origin")
+        source_protocol = _string(
+            row["sourceProtocol"], f"provenance {index} source protocol"
+        )
+        source_profile_id = _string(
+            row["sourceProfileId"], f"provenance {index} source profile id"
+        )
+        source_profile_version = _string(
+            row["sourceProfileVersion"], f"provenance {index} source profile version"
+        )
+        source_validity = _string(
+            row["sourceValidity"], f"provenance {index} source validity"
+        )
+        source_registry_ref = _digest(
+            row["sourceRegistryRef"], f"provenance {index} source registry"
+        )
+        source_observation_ref = _digest(
+            row["sourceObservationRef"], f"provenance {index} source observation"
+        )
+        _digest(row["evidenceRef"], f"provenance {index} evidence")
+        profile_name, separator, profile_version = source_profile_id.rpartition("@")
+        binding = _SOURCE_REGISTRY_BINDINGS.get(
+            (
+                source_protocol,
+                source_profile_id,
+                source_profile_version,
+                source_validity,
+            )
+        )
         if (
             origin in origins
-            or row["sourceObservationRef"] != origin
-            or row["sourceValidity"] != "terminal_verified"
+            or source_observation_ref != origin
+            or not profile_name
+            or separator != "@"
+            or profile_version != source_profile_version
+            or binding != source_registry_ref
         ):
-            raise PVM2MProtocolError("duplicate or mismatched provenance origin")
+            raise PVM2MProtocolError("duplicate, unbound, or mismatched provenance")
         origins.add(origin)
     if current_origin not in origins or any(fact.origin_ref not in origins for fact in facts):
         raise PVM2MProtocolError("unresolved provenance origin")
@@ -556,8 +593,8 @@ def _validate_accounting(
     for index, raw in enumerate(requested):
         row = _closed_mapping(raw, {"sourceRef", "requestedOutputRef"}, f"requested output {index}")
         key = (
-            _string(row["sourceRef"], f"requested output {index} source"),
-            _string(row["requestedOutputRef"], f"requested output {index} identity"),
+            _digest(row["sourceRef"], f"requested output {index} source"),
+            _digest(row["requestedOutputRef"], f"requested output {index} identity"),
         )
         if key in requested_keys:
             raise PVM2MProtocolError("duplicate requested output")
@@ -578,8 +615,9 @@ def _validate_accounting(
             fact_id = _string(row["factId"], f"projection report {index} fact")
             dimension = _dimension(row["dimension"], f"projection report {index}")
             fact_key = (fact_id, dimension[0], dimension[1])
+            source_ref = _digest(row["sourceRef"], f"projection report {index} source")
             fact = facts_by_key.get(fact_key)
-            if fact is None or fact.origin_ref != row["sourceRef"] or fact_key in mapped_fact_keys:
+            if fact is None or fact.origin_ref != source_ref or fact_key in mapped_fact_keys:
                 raise PVM2MProtocolError("invalid mapped projection report")
             mapped_fact_keys.add(fact_key)
         elif typename in {"M2MWithheldProjectionReportEntry", "M2MUnrepresentableProjectionReportEntry"}:
@@ -588,13 +626,14 @@ def _validate_accounting(
                 {"__typename", "sourceRef", "requestedOutputRef"},
                 f"projection report {index}",
             )
-            if row["sourceRef"] != current_origin:
+            source_ref = _digest(row["sourceRef"], f"projection report {index} source")
+            if source_ref != current_origin:
                 raise PVM2MProtocolError("invalid projection loss source")
         else:
             raise PVM2MProtocolError("invalid projection report type")
         key = (
-            _string(row["sourceRef"], f"projection report {index} source"),
-            _string(row["requestedOutputRef"], f"projection report {index} identity"),
+            source_ref,
+            _digest(row["requestedOutputRef"], f"projection report {index} requested output identity"),
         )
         if key in report_keys:
             raise PVM2MProtocolError("duplicate projection report")
@@ -676,7 +715,7 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     )
     if snapshot["sourceTimeState"] not in _SOURCE_TIME_STATES:
         raise PVM2MProtocolError("invalid sourceTimeState")
-    current_origin = _string(snapshot["currentSourceOriginRef"], "currentSourceOriginRef")
+    current_origin = _digest(snapshot["currentSourceOriginRef"], "currentSourceOriginRef")
     raw_facts = snapshot["facts"]
     if not isinstance(raw_facts, list) or len(raw_facts) > M2M_MAX_FACTS:
         raise PVM2MProtocolError("facts are not bounded")

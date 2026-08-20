@@ -1027,22 +1027,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await schedule_coordinator.async_config_entry_first_refresh()
     await adapter_info_coordinator.async_config_entry_first_refresh()
 
-    pv_m2m_boundary = None
-    pv_m2m_coordinator = None
-    try:
-        pv_m2m_boundary = await async_setup_pv_m2m_boundary(
-            hass,
-            entry,
-            scan_interval=scan_interval,
-        )
-    except (OSError, TypeError, ValueError):
-        _LOGGER.warning(
-            "Canonical PV consumer configuration failed for entry %s",
-            entry.entry_id,
-        )
-    if pv_m2m_boundary is not None:
-        pv_m2m_coordinator = pv_m2m_boundary.coordinator
-
     # AdminV1 is an optional, isolated diagnostic consumer.  It must not use
     # the GraphQL session or turn an unavailable admin boundary into setup
     # failure for the primary integration.
@@ -2334,6 +2318,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # HA-1 reduced profile: boiler Burner/Hydraulics sub-devices are not registered yet.
     boiler_burner_device_id = boiler_burner_identifier(entry.entry_id)
     boiler_hydraulics_device_id = boiler_hydraulics_identifier(entry.entry_id)
+
+    pv_m2m_boundary = None
+    pv_m2m_coordinator = None
+    try:
+        pv_m2m_boundary = await async_setup_pv_m2m_boundary(
+            hass,
+            entry,
+            scan_interval=scan_interval,
+        )
+    except (OSError, TypeError, ValueError):
+        _LOGGER.warning(
+            "Canonical PV consumer configuration failed for entry %s",
+            entry.entry_id,
+        )
+    if pv_m2m_boundary is not None:
+        pv_m2m_coordinator = pv_m2m_boundary.coordinator
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
