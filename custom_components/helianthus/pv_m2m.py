@@ -34,6 +34,7 @@ PUBLIC_GRAPHQL_M2M_V1 = "PUBLIC_GRAPHQL_M2M_V1"
 CANONICAL_PV_V1 = "helianthus.canonical-pv/v1"
 M2M_MAX_FACTS = 256
 M2M_MAX_RESPONSE_BYTES = 1_048_576
+M2M_MAX_JSON_DEPTH = 64
 M2M_MAX_ACCOUNTING_ROWS = 512
 _DESCRIPTOR_SCHEMA_VERSION = 1
 
@@ -745,6 +746,29 @@ def _reject_duplicate_pairs(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _validate_json_depth(raw: bytes) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+            continue
+        if byte == 0x22:
+            in_string = True
+        elif byte in (0x5B, 0x7B):  # opening bracket or brace
+            depth += 1
+            if depth > M2M_MAX_JSON_DEPTH:
+                raise PVM2MProtocolError("response exceeds bounded JSON depth")
+        elif byte in (0x5D, 0x7D) and depth > 0:  # closing bracket or brace
+            depth -= 1
+
+
 class PVM2MClient:
     """Fixed-operation client for one configured asset."""
 
@@ -781,6 +805,7 @@ class PVM2MClient:
             raise PVM2MTransportError("HTTPS request failed") from exc
         if len(raw) > M2M_MAX_RESPONSE_BYTES:
             raise PVM2MProtocolError("response exceeds bounded size")
+        _validate_json_depth(raw)
         try:
             payload = json.loads(
                 raw.decode("utf-8"),

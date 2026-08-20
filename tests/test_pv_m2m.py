@@ -268,6 +268,10 @@ def test_client_rejects_excessive_json_depth_before_decoder(monkeypatch) -> None
     assert decoder_called is False
 
 
+def test_json_depth_scanner_ignores_structural_bytes_inside_strings() -> None:
+    pv_m2m._validate_json_depth(b'{"escaped":"\\\"' + b"[" * 65 + b'"}')
+
+
 def test_client_reads_fragmented_valid_response_to_eof_within_bound() -> None:
     response = _Response(_success_envelope())
     response.content = _BodyStream(response._text.encode("utf-8"), max_chunk=17)
