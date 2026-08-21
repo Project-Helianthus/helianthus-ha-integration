@@ -192,10 +192,16 @@ async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
         request = "children" if operation == "spine_children" else "continue"
         result = await entry.client.fetch_spine_page(data.pop("partner_id"), request=request, **{key: value for key, value in data.items() if key != "view"})
         return {"state_revision": result.state_revision, "data": result.data}
-    action_broker = _action_broker(entry) if operation == "connect_selection" else None
+    action_broker = (
+        _action_broker(entry)
+        if operation in {"connect_selection", "close_pairing_window"}
+        else None
+    )
     result = await getattr(entry.client, operation)(**data)
-    if action_broker is not None:
+    if operation == "connect_selection" and action_broker is not None:
         action_broker.own(getattr(result, "action_id", None))
+    elif operation == "close_pairing_window" and action_broker is not None:
+        action_broker.clear()
     return {"state_revision": result.state_revision, "outcome": result.outcome, "replayed": result.replayed, **({"selection_id": result.selection_id} if result.selection_id else {})}
 
 
