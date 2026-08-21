@@ -592,6 +592,73 @@ def test_successful_controller_close_clears_exact_owned_action_once() -> None:
     asyncio.run(scenario())
 
 
+def test_controller_exact_close_replay_preserves_newer_action_terminal() -> None:
+    async def scenario() -> None:
+        class Client(_Client):
+            def __init__(self) -> None:
+                super().__init__()
+                self.close_calls: list[dict[str, Any]] = []
+
+            async def close_pairing_window(self, **kwargs: Any):  # noqa: ANN202
+                self.close_calls.append(dict(kwargs))
+                return SimpleNamespace(
+                    state_revision=10,
+                    outcome="pairing_closed",
+                    replayed=len(self.close_calls) == 2,
+                    selection_id=None,
+                    action_id=None,
+                )
+
+        action_b = "b" * 64
+        terminal_b = {
+            "action_id": action_b,
+            "kind": "connect",
+            "state": "terminal",
+            "outcome": "connection_completed",
+            "retryable": False,
+            "expiry": "2026-08-15T12:00:00Z",
+        }
+        client = Client()
+        broker = EEBusActionTerminalBroker()
+        broker.own(ACTION_ID)
+        original = EEBusPairingController(
+            client,
+            action_broker=broker,
+            idempotency_key=lambda _operation: "same-close-key",
+        )
+        original._state_revision = 9
+
+        await original.async_close_pairing_window()
+        assert broker.has_active_action is False
+
+        broker.own(action_b)
+        broker.observe(terminal_b)
+        replay = EEBusPairingController(
+            client,
+            action_broker=broker,
+            idempotency_key=lambda _operation: "same-close-key",
+        )
+        replay._state_revision = 9
+        replay_result = await replay.async_close_pairing_window()
+
+        assert replay_result.replayed is True
+        assert client.close_calls == [
+            {
+                "expected_state_revision": 9,
+                "idempotency_key": "same-close-key",
+            },
+            {
+                "expected_state_revision": 9,
+                "idempotency_key": "same-close-key",
+            },
+        ]
+        assert broker.action_id == action_b
+        assert broker.consume_terminal(action_b) == terminal_b
+        assert broker.consume_terminal(action_b) is None
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("stale_action", (True, False))
 def test_stale_poll_response_cannot_mutate_newer_broker_generation(
     stale_action: bool,

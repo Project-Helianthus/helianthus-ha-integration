@@ -508,7 +508,7 @@ def test_service_close_reconciles_broker_only_after_authoritative_success() -> N
             return SimpleNamespace(
                 state_revision=10,
                 outcome="pairing_closed",
-                replayed=False,
+                replayed=self.close_calls == 3,
                 selection_id=None,
                 action_id=None,
             )
@@ -582,6 +582,18 @@ def test_service_close_reconciles_broker_only_after_authoritative_success() -> N
     assert second_action_id not in repr(second_response)
     assert broker.action_id == second_action_id
 
+    replay_response = asyncio.run(
+        close(
+            {
+                "entry_id": "one",
+                "expected_state_revision": 9,
+                "idempotency_key": "key-close-success",
+            }
+        )
+    )
+    assert replay_response["replayed"] is True
+    assert broker.action_id == second_action_id
+
     status_response = asyncio.run(snapshot({"entry_id": "one"}))
     assert second_action_id not in repr(status_response)
     controller = pairing.EEBusPairingController(client, action_broker=broker)
@@ -592,7 +604,7 @@ def test_service_close_reconciles_broker_only_after_authoritative_success() -> N
         controller.async_poll_active_action(max_attempts=1, interval=0)
     ) is None
     assert client.connect_calls == 2
-    assert client.close_calls == 2
+    assert client.close_calls == 3
     assert client.status_calls == 1
 
 
