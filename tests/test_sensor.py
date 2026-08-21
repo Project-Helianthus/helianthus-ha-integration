@@ -187,16 +187,30 @@ def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts()
     coordinator = _FakeCoordinator(
         {
             "status": {
+                "readiness": {
+                    "process_readiness": "READY",
+                    "eebus_readiness": "DEGRADED",
+                    "eebus_degraded_reason": "LISTENER_UNAVAILABLE",
+                },
                 "status": "ready",
-                "pairing_window": "closed",
+                "pairing_window": "open",
                 "register": "ready",
-                "listener": "ready",
+                "listener": "unavailable",
                 "discovery": "ready",
                 "trusted_count": 2,
                 "connected_count": 1,
                 "discovered_count": 3,
+                "candidate_count": 1,
+                "active_action": {
+                    "action_id": "a" * 64,
+                    "kind": "connect",
+                    "state": "pending",
+                    "retryable": False,
+                    "expiry": "2026-08-15T12:00:00Z",
+                },
             },
             "available": True,
+            "diagnostic_error": None,
             "stale_views": frozenset(),
         }
     )
@@ -204,17 +218,47 @@ def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts()
         coordinator, "entry-1", "https://gateway.example.test:8443"
     )
 
-    assert entity.native_value == "ready"
+    assert entity.native_value == "degraded"
     assert entity.extra_state_attributes == {
+        "process_readiness": "READY",
+        "degraded_reason": "LISTENER_UNAVAILABLE",
+        "pairing_window": "open",
         "discovery": "ready",
         "trusted_count": 2,
         "connected_count": 1,
         "discovered_count": 3,
+        "candidate_count": 1,
+        "active_action_kind": "connect",
+        "active_action_state": "pending",
+        "active_action_outcome": None,
+        "active_action_retryable": False,
+        "diagnostic_error": None,
         "fresh": True,
     }
     rendered = repr(entity.extra_state_attributes).lower()
-    for forbidden in ("partner", "candidate", "remote_ski", "endpoint", "raw", "token"):
+    for forbidden in ("partner_id", "candidate_state", "remote_ski", "endpoint", "raw", "token"):
         assert forbidden not in rendered
+
+
+def test_eebus_admin_sensor_survives_admin_setup_failure_without_identity() -> None:
+    coordinator = _FakeCoordinator(
+        {
+            "status": None,
+            "available": False,
+            "diagnostic_error": "admin_boundary_unavailable",
+            "stale_views": frozenset({"status"}),
+        }
+    )
+    entity = sensor_platform.HelianthusEEBusAdminSensor(
+        coordinator, "entry-1", "https://gateway.example.test:8443"
+    )
+    assert entity.native_value == "unavailable"
+    assert entity.extra_state_attributes == {
+        "diagnostic_error": "admin_boundary_unavailable",
+        "fresh": False,
+    }
+    rendered = repr(entity.extra_state_attributes).lower()
+    assert "remote_ski" not in rendered and "partner" not in rendered
 
 
 def test_async_setup_entry_skips_address_only_bus_devices() -> None:

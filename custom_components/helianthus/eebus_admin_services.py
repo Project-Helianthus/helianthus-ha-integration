@@ -119,6 +119,7 @@ def validate_service_call(operation: str, data: Any) -> dict[str, Any] | None:
 class EntryServices:
     entry_id: str
     client: Any
+    coordinator: Any | None = None
 
 
 def _registry(hass: Any) -> dict[str, EntryServices]:
@@ -133,8 +134,36 @@ def services_for_entry(hass: Any, entry_id: str) -> EntryServices | None:
     return _registry(hass).get(entry_id)
 
 
+def bind_eebus_admin_coordinator(
+    hass: Any, *, entry_id: str, coordinator: Any
+) -> EntryServices:
+    """Bind status reads to the per-entry coordinator and terminal broker."""
+    entries = _registry(hass)
+    current = entries.get(entry_id)
+    if current is None or coordinator is None:
+        raise ValueError("unknown entry")
+    bound = EntryServices(
+        entry_id=current.entry_id,
+        client=current.client,
+        coordinator=coordinator,
+    )
+    entries[entry_id] = bound
+    return bound
+
+
 def _target(hass: Any) -> Any:
     return getattr(hass, "services", hass)
+
+
+def _action_broker(entry: EntryServices) -> Any:
+    from .eebus_admin import EEBusAdminV1Error
+    from .eebus_pairing import EEBusActionTerminalBroker
+
+    lifecycle = getattr(entry.coordinator, "lifecycle", None)
+    broker = getattr(lifecycle, "action_broker", None)
+    if not isinstance(broker, EEBusActionTerminalBroker):
+        raise EEBusAdminV1Error("admin_boundary_unavailable")
+    return broker
 
 
 async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
@@ -147,7 +176,14 @@ async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
         raise ValueError("unknown entry")
     if operation == "snapshot":
         view = data.get("view", "status")
-        result = await (entry.client.fetch_status() if view == "status" else entry.client.fetch_partners(view))
+        if view == "status":
+            if entry.coordinator is None:
+                from .eebus_admin import EEBusAdminV1Error
+
+                raise EEBusAdminV1Error("admin_boundary_unavailable")
+            state_revision, sanitized = await entry.coordinator.async_status_snapshot()
+            return {"state_revision": state_revision, "data": sanitized}
+        result = await entry.client.fetch_partners(view)
         return {"state_revision": result.state_revision, "data": result.data}
     if operation == "spine_root":
         result = await entry.client.fetch_spine_root(data["partner_id"])
@@ -156,7 +192,27 @@ async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
         request = "children" if operation == "spine_children" else "continue"
         result = await entry.client.fetch_spine_page(data.pop("partner_id"), request=request, **{key: value for key, value in data.items() if key != "view"})
         return {"state_revision": result.state_revision, "data": result.data}
-    result = await getattr(entry.client, operation)(**data)
+    if operation == "connect_selection":
+        action_broker = _action_broker(entry)
+        reservation = action_broker.reserve_connect()
+        finalized = False
+        try:
+            result = await entry.client.connect_selection(**data)
+            action_broker.finalize_connect(
+                reservation, getattr(result, "action_id", None)
+            )
+            finalized = True
+        finally:
+            if not finalized:
+                action_broker.release_connect(reservation)
+    elif operation == "close_pairing_window":
+        action_broker = _action_broker(entry)
+        broker_snapshot = action_broker.capture()
+        result = await entry.client.close_pairing_window(**data)
+        if not result.replayed:
+            action_broker.clear(snapshot=broker_snapshot)
+    else:
+        result = await getattr(entry.client, operation)(**data)
     return {"state_revision": result.state_revision, "outcome": result.outcome, "replayed": result.replayed, **({"selection_id": result.selection_id} if result.selection_id else {})}
 
 

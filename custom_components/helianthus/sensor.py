@@ -1142,20 +1142,63 @@ class HelianthusEEBusAdminSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> str:
         data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
         status = data.get("status") if isinstance(data.get("status"), dict) else {}
-        return status.get("listener") if isinstance(status.get("listener"), str) else "unavailable"
+        readiness = status.get("readiness") if isinstance(status.get("readiness"), dict) else {}
+        value = readiness.get("eebus_readiness")
+        return value.lower() if isinstance(value, str) else "unavailable"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
         status = data.get("status") if isinstance(data.get("status"), dict) else {}
+        diagnostic_error = data.get("diagnostic_error")
+        if not status:
+            return {
+                **(
+                    {"diagnostic_error": diagnostic_error}
+                    if isinstance(diagnostic_error, str)
+                    else {}
+                ),
+                "fresh": False,
+            }
+        readiness = status.get("readiness") if isinstance(status.get("readiness"), dict) else {}
         counts = {
             key: status.get(key)
-            for key in ("trusted_count", "connected_count", "discovered_count")
+            for key in (
+                "trusted_count",
+                "connected_count",
+                "discovered_count",
+                "candidate_count",
+            )
             if isinstance(status.get(key), int) and not isinstance(status.get(key), bool)
         }
+        action = status.get("active_action") if isinstance(status.get("active_action"), dict) else {}
         return {
+            "process_readiness": readiness.get("process_readiness")
+            if isinstance(readiness.get("process_readiness"), str)
+            else "NOT_READY",
+            **(
+                {"degraded_reason": readiness["eebus_degraded_reason"]}
+                if isinstance(readiness.get("eebus_degraded_reason"), str)
+                else {}
+            ),
+            "pairing_window": status.get("pairing_window")
+            if isinstance(status.get("pairing_window"), str)
+            else "unknown",
             "discovery": status.get("discovery") if isinstance(status.get("discovery"), str) else "unavailable",
             **counts,
+            **(
+                {
+                    "active_action_kind": action.get("kind"),
+                    "active_action_state": action.get("state"),
+                    "active_action_outcome": action.get("outcome"),
+                    "active_action_retryable": action.get("retryable"),
+                }
+                if action
+                else {}
+            ),
+            "diagnostic_error": diagnostic_error
+            if isinstance(diagnostic_error, str)
+            else None,
             "fresh": bool(data.get("available")) and not bool(data.get("stale_views")),
         }
 

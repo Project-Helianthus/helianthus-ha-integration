@@ -41,7 +41,12 @@
   "options": {
     "step": {
       "init": {
-        "description": "eeBUS administration is available only in the gateway [Portal](/portal/eebus).",
+        "menu_options": {
+          "settings": "Integration settings",
+          "eebus_pairing": "eeBUS pairing and repair"
+        }
+      },
+      "settings": {
         "data": {
           "scan_interval": "Scan interval",
           "use_subscriptions": "Use subscriptions",
@@ -54,10 +59,123 @@
           "pv_m2m_client_cert_file": "Client certificate file",
           "pv_m2m_client_key_file": "Client key file"
         }
+      },
+      "eebus_pairing": {
+        "description": "eeBUS readiness: {readiness}. Pairing window: {pairing_window}. Trusted: {trusted_count}; connected: {connected_count}; discovered: {discovered_count}; candidate: {candidate_count}; action: {active_action_state}.",
+        "menu_options": {
+          "eebus_open_window": "Open pairing window",
+          "eebus_close_window": "Close pairing window",
+          "eebus_discovered": "Select a discovered device",
+          "eebus_candidate": "Compare the current candidate",
+          "eebus_trusted": "Manage a trusted partner",
+          "eebus_action": "Resume current pairing action",
+          "eebus_refresh": "Refresh status",
+          "eebus_finish": "Finish"
+        }
+      },
+      "eebus_open_window": {
+        "data": {
+          "duration_seconds": "Pairing window duration (seconds)"
+        }
+      },
+      "eebus_close_window": {
+        "data": {
+          "confirm": "Close the current pairing window"
+        }
+      },
+      "eebus_discovered": {
+        "data": {
+          "observation_id": "Discovered device"
+        }
+      },
+      "eebus_compare_observation": {
+        "description": "Compare the complete certificate identifier shown on the device or independent channel: {remote_ski}",
+        "data": {
+          "expected_ski": "Complete 40-character certificate identifier"
+        }
+      },
+      "eebus_connect": {
+        "description": "The optional PIN is used only for this Connect request and is cleared immediately after submission.",
+        "data": {
+          "pin": "Optional eeBUS PIN"
+        }
+      },
+      "eebus_action": {
+        "description": "The identity-free pairing action is {action_state}. Submit to poll again."
+      },
+      "eebus_connection_completed": {
+        "description": "The SHIP connection completed. Continue to compare the complete TLS-bound candidate identifier before confirming trust."
+      },
+      "eebus_result": {
+        "description": "The pairing action reached a sanitized terminal result. Submit to return to eeBUS status."
+      },
+      "eebus_candidate": {
+        "description": "Compare the complete TLS-bound certificate identifier: {remote_ski}",
+        "menu_options": {
+          "eebus_confirm_candidate": "Confirm candidate",
+          "eebus_cancel_candidate": "Cancel candidate"
+        }
+      },
+      "eebus_confirm_candidate": {
+        "description": "Enter the complete identifier only after an independent comparison with {remote_ski}.",
+        "data": {
+          "expected_ski": "Complete 40-character certificate identifier"
+        }
+      },
+      "eebus_cancel_candidate": {
+        "data": {
+          "confirm": "Cancel the current candidate"
+        }
+      },
+      "eebus_trusted": {
+        "data": {
+          "partner_id": "Trusted partner"
+        }
+      },
+      "eebus_trusted_action": {
+        "menu_options": {
+          "eebus_retry_trusted": "Retry trusted partner",
+          "eebus_untrust": "Remove trust"
+        }
+      },
+      "eebus_untrust": {
+        "data": {
+          "confirm": "Durably revoke trust and request live withdrawal"
+        }
       }
     },
     "error": {
-      "pv_m2m_invalid": "Canonical PV M2M requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references."
+      "pv_m2m_invalid": "Canonical PV M2M requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
+      "invalid_request": "The eeBUS action request was rejected as invalid.",
+      "invalid_response": "The eeBUS admin boundary returned a malformed or unknown response.",
+      "idempotency_conflict": "This action key was already used for different input. Start a fresh action.",
+      "state_conflict": "The eeBUS state changed. Refresh and start the action again.",
+      "snapshot_expired": "The eeBUS snapshot expired. Refresh and select again.",
+      "observation_stale": "The discovery observation is no longer current. Refresh and select again.",
+      "candidate_expired": "The pairing candidate expired. Refresh and start again.",
+      "candidate_busy": "Another pairing candidate is active. Refresh before continuing.",
+      "pairing_closed": "Open a bounded pairing window before continuing.",
+      "endpoint_scope_unavailable": "The discovered link-local endpoint has no unambiguous interface scope.",
+      "listener_unavailable": "The eeBUS listener is unavailable.",
+      "discovery_unavailable": "eeBUS discovery is unavailable.",
+      "admin_boundary_unavailable": "The optional eeBUS admin boundary is unavailable; the main integration remains active.",
+      "identity_mismatch": "The complete certificate identifier did not match.",
+      "pin_required": "This action requires an eeBUS PIN. Select the device again and enter it explicitly.",
+      "pin_optional": "The peer reports an optional PIN path. Start a fresh explicit Connect action.",
+      "pin_busy": "PIN admission is busy. Start a fresh explicit action.",
+      "pin_rejected": "The peer rejected the transient PIN.",
+      "pin_unavailable": "The local PIN facility is unavailable.",
+      "pin_protocol_error": "The protocol reported a sanitized PIN failure.",
+      "trust_denied": "The current trust policy denied the action.",
+      "attempt_timeout": "The bounded eeBUS attempt timed out.",
+      "disconnected": "The eeBUS partner disconnected.",
+      "spine_topology_unavailable": "The current session has no browseable SPINE topology.",
+      "backoff_active": "Retry remains in server-controlled backoff. Refresh at the displayed deadline.",
+      "revocation_withdrawal_incomplete": "Trust was revoked durably, but live withdrawal did not complete.",
+      "terminal_quarantine": "The eeBUS association is in terminal quarantine and requires repair.",
+      "persistence_failure": "The durable eeBUS operation did not complete safely.",
+      "association_incomplete": "The eeBUS association is incomplete and requires repair.",
+      "unknown_state": "The eeBUS action failed closed with an unknown sanitized state."
     }
   }
 }

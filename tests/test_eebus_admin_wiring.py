@@ -6,6 +6,7 @@ import importlib
 import inspect
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -47,6 +48,300 @@ def test_unavailable_admin_boundary_is_diagnostic_only_and_sanitized() -> None:
     assert lifecycle.diagnostic_error == "admin_boundary_unavailable"
 
 
+def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinator() -> None:
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    broker = pairing.EEBusActionTerminalBroker()
+    broker.own("a" * 64)
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="entry-one", action_broker=broker
+    )
+    lifecycle.note_setup_failure("admin_boundary_unavailable")
+    assert broker.has_active_action is False
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = None
+    coordinator.lifecycle = lifecycle
+
+    data = asyncio.run(coordinator._async_update_data())
+    assert data == {
+        "status": None,
+        "available": False,
+        "diagnostic_error": "admin_boundary_unavailable",
+        "stale_views": frozenset({"status"}),
+    }
+    assert lifecycle.graphql_setup_failed is False
+    assert lifecycle.unload_requested is False
+
+    component_source = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "helianthus"
+        / "__init__.py"
+    ).read_text()
+    assert "create_unavailable_eebus_admin_coordinator" in component_source
+    assert "admin_coordinator.lifecycle.clear()" in component_source
+
+    broker.own("b" * 64)
+    lifecycle.clear()
+    assert broker.has_active_action is False
+
+
+def test_diagnostic_poll_brokers_one_shot_terminal_to_exact_flow_once() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    action_id = "a" * 64
+    terminal = {
+        "action_id": action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "pin_required",
+        "retryable": True,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    status = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "open",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+        "candidate_count": 0,
+        "active_action": terminal,
+    }
+    envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 9,
+            "data": status,
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    class FlowClient:
+        def __init__(self) -> None:
+            self.connect_calls = 0
+            self.status_calls = 0
+
+        async def connect_selection(self, **_kwargs):  # noqa: ANN202
+            self.connect_calls += 1
+            return SimpleNamespace(state_revision=9, action_id=action_id)
+
+        async def fetch_status(self):  # noqa: ANN202
+            self.status_calls += 1
+            raise AssertionError("cached terminal must win before another status GET")
+
+    class DiagnosticClient:
+        async def fetch_status(self):  # noqa: ANN202
+            return envelope
+
+    broker = pairing.EEBusActionTerminalBroker()
+    flow_client = FlowClient()
+    controller = pairing.EEBusPairingController(flow_client, action_broker=broker)
+    controller._state_revision = 8
+    controller._selection_id = "selection-opaque"
+    controller._selection_revision = 8
+    asyncio.run(controller.async_connect_selection())
+    assert flow_client.connect_calls == 1
+
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="entry-one", action_broker=broker
+    )
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = DiagnosticClient()
+    coordinator.lifecycle = lifecycle
+    diagnostic = asyncio.run(coordinator._async_update_data())
+    assert action_id not in repr(diagnostic)
+
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) == terminal
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) is None
+    assert flow_client.connect_calls == 1
+    assert flow_client.status_calls == 0
+
+
+def test_stale_diagnostic_status_cannot_mutate_newer_broker_generation() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    first_action_id = "a" * 64
+    second_action_id = "b" * 64
+    terminal = {
+        "action_id": first_action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 9,
+            "data": {
+                "readiness": {
+                    "process_readiness": "READY",
+                    "eebus_readiness": "READY",
+                },
+                "status": "ready",
+                "pairing_window": "open",
+                "register": "ready",
+                "listener": "ready",
+                "discovery": "ready",
+                "trusted_count": 0,
+                "connected_count": 0,
+                "discovered_count": 0,
+                "candidate_count": 1,
+                "active_action": terminal,
+            },
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    async def scenario() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client:
+            async def fetch_status(self):  # noqa: ANN202
+                started.set()
+                await release.wait()
+                return envelope
+
+        broker = pairing.EEBusActionTerminalBroker()
+        broker.own(first_action_id)
+        lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+            entry_id="entry-one", action_broker=broker
+        )
+        coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+        coordinator._client = Client()
+        coordinator.lifecycle = lifecycle
+        refresh = asyncio.create_task(coordinator._async_update_data())
+        await started.wait()
+        broker.clear(expected_action_id=first_action_id)
+        broker.own(second_action_id)
+        release.set()
+
+        await refresh
+        assert broker.action_id == second_action_id
+        assert broker.consume_terminal(second_action_id) is None
+
+    asyncio.run(scenario())
+
+
+def test_delayed_status_terminal_survives_exact_connect_replay_once() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    action_id = "a" * 64
+    terminal = {
+        "action_id": action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 10,
+            "data": {
+                "readiness": {
+                    "process_readiness": "READY",
+                    "eebus_readiness": "READY",
+                },
+                "status": "ready",
+                "pairing_window": "open",
+                "register": "ready",
+                "listener": "ready",
+                "discovery": "ready",
+                "trusted_count": 0,
+                "connected_count": 0,
+                "discovered_count": 0,
+                "candidate_count": 0,
+                "active_action": terminal,
+            },
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    async def scenario() -> None:
+        status_started = asyncio.Event()
+        release_status = asyncio.Event()
+
+        class Client:
+            def __init__(self) -> None:
+                self.connect_calls = 0
+                self.status_calls = 0
+
+            async def connect_selection(self, **_kwargs):  # noqa: ANN202
+                self.connect_calls += 1
+                return SimpleNamespace(
+                    state_revision=10,
+                    outcome="connection_started",
+                    replayed=True,
+                    selection_id=None,
+                    action_id=action_id,
+                )
+
+            async def fetch_status(self):  # noqa: ANN202
+                self.status_calls += 1
+                if self.status_calls != 1:
+                    raise AssertionError("cached replay terminal must win")
+                status_started.set()
+                await release_status.wait()
+                return envelope
+
+        broker = pairing.EEBusActionTerminalBroker()
+        broker.own(action_id)
+        client = Client()
+        lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+            entry_id="entry-one", action_broker=broker
+        )
+        coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+        coordinator._client = client
+        coordinator.lifecycle = lifecycle
+        delayed_status = asyncio.create_task(coordinator._async_update_data())
+        await status_started.wait()
+
+        broker.clear(expected_action_id=action_id)
+        controller = pairing.EEBusPairingController(client, action_broker=broker)
+        controller._state_revision = 9
+        controller._selection_id = "selection-opaque"
+        controller._selection_revision = 9
+        await controller.async_connect_selection()
+        assert client.connect_calls == 1
+
+        release_status.set()
+        await delayed_status
+        assert await controller.async_poll_active_action(
+            max_attempts=1, interval=0
+        ) == terminal
+        assert await controller.async_poll_active_action(
+            max_attempts=1, interval=0
+        ) is None
+        assert client.connect_calls == 1
+        assert client.status_calls == 1
+
+    asyncio.run(scenario())
+
+
 def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
     component = importlib.import_module("custom_components.helianthus")
     calls: list[str] = []
@@ -85,7 +380,21 @@ def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remo
 def test_periodic_refresh_fetches_only_sanitized_status_and_retains_only_status_lkg() -> None:
     admin = importlib.import_module("custom_components.helianthus.eebus_admin")
     coordinator_module = _coordinator()
-    status = {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 1, "discovered_count": 1, "candidate_count": 1}
+    status = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "closed",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 1,
+        "connected_count": 1,
+        "discovered_count": 1,
+        "candidate_count": 1,
+    }
     envelope = admin.parse_ha_admin_envelope({"contract": admin.CONTRACT, "request_id": "request-opaque", "state_revision": 7, "data": status, "error": None}, expected_view="status")
 
     class Client:
