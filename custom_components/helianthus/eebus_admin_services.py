@@ -155,6 +155,17 @@ def _target(hass: Any) -> Any:
     return getattr(hass, "services", hass)
 
 
+def _action_broker(entry: EntryServices) -> Any:
+    from .eebus_admin import EEBusAdminV1Error
+    from .eebus_pairing import EEBusActionTerminalBroker
+
+    lifecycle = getattr(entry.coordinator, "lifecycle", None)
+    broker = getattr(lifecycle, "action_broker", None)
+    if not isinstance(broker, EEBusActionTerminalBroker):
+        raise EEBusAdminV1Error("admin_boundary_unavailable")
+    return broker
+
+
 async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
     raw = dict(getattr(call, "data", call if isinstance(call, dict) else {}))
     data = validate_service_call(operation, raw)
@@ -181,7 +192,10 @@ async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
         request = "children" if operation == "spine_children" else "continue"
         result = await entry.client.fetch_spine_page(data.pop("partner_id"), request=request, **{key: value for key, value in data.items() if key != "view"})
         return {"state_revision": result.state_revision, "data": result.data}
+    action_broker = _action_broker(entry) if operation == "connect_selection" else None
     result = await getattr(entry.client, operation)(**data)
+    if action_broker is not None:
+        action_broker.own(getattr(result, "action_id", None))
     return {"state_revision": result.state_revision, "outcome": result.outcome, "replayed": result.replayed, **({"selection_id": result.selection_id} if result.selection_id else {})}
 
 

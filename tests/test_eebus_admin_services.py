@@ -147,6 +147,38 @@ def test_direct_snapshot_services_keep_all_identity_views_response_only() -> Non
     assert services.services_for_entry(hass, "one").client.identity == "one"
 
 
+def test_connect_service_fails_before_wire_without_entry_broker() -> None:
+    services = _services()
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+
+    class Client:
+        calls = 0
+
+        async def connect_selection(self, **_kwargs):  # noqa: ANN202
+            self.calls += 1
+            raise AssertionError("Connect must not run without terminal ownership")
+
+    client = Client()
+    hass = _Hass()
+    services.register_eebus_admin_services(hass, entry_id="one", client=client)
+    connect, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["connect_selection"])
+    ]
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(
+            connect(
+                {
+                    "entry_id": "one",
+                    "expected_state_revision": 8,
+                    "idempotency_key": "key-connect-service",
+                    "selection_id": "selection-opaque",
+                }
+            )
+        )
+    assert captured.value.code == "admin_boundary_unavailable"
+    assert client.calls == 0
+
+
 def test_connect_and_status_services_broker_terminal_for_flow_exactly_once() -> None:
     services = _services()
     admin = importlib.import_module("custom_components.helianthus.eebus_admin")
