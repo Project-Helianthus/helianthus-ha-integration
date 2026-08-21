@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from custom_components.helianthus.eebus_pairing import (
+    EEBusActionTerminalBroker,
     EEBusPairingController,
     pairing_error_disposition,
 )
@@ -152,10 +153,13 @@ class _Client:
         return await self.__getattr_call("untrust_partner", **kwargs)
 
 
-def _controller(client: _Client) -> EEBusPairingController:
+def _controller(
+    client: _Client, broker: EEBusActionTerminalBroker | None = None
+) -> EEBusPairingController:
     sequence = iter(range(100))
     return EEBusPairingController(
         client,
+        action_broker=broker,
         idempotency_key=lambda operation: f"ha-{operation}-{next(sequence)}",
         sleep=lambda _delay: asyncio.sleep(0),
     )
@@ -271,6 +275,35 @@ def test_mismatched_action_clears_resume_without_reconstructing_or_connecting() 
         assert sum(name == "connect_selection" for name, _data in client.calls) == 1
 
     asyncio.run(scenario())
+
+
+def test_terminal_broker_is_exact_once_bounded_and_never_adopts_wrong_action() -> None:
+    clock = [100.0]
+    broker = EEBusActionTerminalBroker(now=lambda: clock[0], ttl_seconds=120)
+    broker.own(ACTION_ID)
+    wrong = {
+        "action_id": "b" * 64,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "pin_rejected",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    broker.observe(wrong)
+    assert broker.has_active_action is False
+    assert broker.consume_terminal(ACTION_ID) is None
+
+    broker.own(ACTION_ID)
+    exact = {**wrong, "action_id": ACTION_ID}
+    broker.observe(exact)
+    assert broker.consume_terminal(ACTION_ID) == exact
+    assert broker.consume_terminal(ACTION_ID) is None
+
+    broker.own(ACTION_ID)
+    broker.observe(exact)
+    clock[0] += 121
+    assert broker.consume_terminal(ACTION_ID) is None
+    assert broker.has_active_action is False
 
 
 def test_candidate_compare_confirm_cancel_retry_untrust_and_abort_are_gateway_only() -> None:

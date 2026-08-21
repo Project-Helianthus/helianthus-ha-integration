@@ -70,6 +70,7 @@ from custom_components.helianthus.const import (
     CONF_PV_M2M_DESCRIPTORS,
     CONF_PV_M2M_ENABLED,
     CONF_PV_M2M_ENDPOINT,
+    DOMAIN,
 )
 from custom_components.helianthus.options_flow import HelianthusOptionsFlow
 
@@ -240,3 +241,22 @@ def test_owned_pairing_action_is_resumable_from_status_and_transient_poll_error(
     assert resumed["step_id"] == "eebus_result"
     assert resumed["errors"] == {"base": "connection_completed"}
     assert controller.has_active_action is False
+
+
+def test_options_controller_uses_entry_shared_terminal_broker() -> None:
+    from custom_components.helianthus.eebus_pairing import EEBusActionTerminalBroker
+
+    broker = EEBusActionTerminalBroker()
+    client = object()
+    entry = SimpleNamespace(entry_id="entry-one", options={})
+    hass = SimpleNamespace(
+        data={DOMAIN: {"entry-one": {"eebus_admin_action_broker": broker}}},
+        _helianthus_eebus_operator_entries={
+            "entry-one": SimpleNamespace(client=client)
+        },
+    )
+    flow = HelianthusOptionsFlow(entry)
+    flow.hass = hass
+    controller = flow._pairing_controller()
+    assert controller._client is client
+    assert controller._action_broker is broker

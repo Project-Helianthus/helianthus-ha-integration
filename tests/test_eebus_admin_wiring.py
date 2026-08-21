@@ -6,6 +6,7 @@ import importlib
 import inspect
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -72,6 +73,91 @@ def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinat
         / "__init__.py"
     ).read_text()
     assert "create_unavailable_eebus_admin_coordinator" in component_source
+
+
+def test_diagnostic_poll_brokers_one_shot_terminal_to_exact_flow_once() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    action_id = "a" * 64
+    terminal = {
+        "action_id": action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "pin_required",
+        "retryable": True,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    status = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "open",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+        "candidate_count": 0,
+        "active_action": terminal,
+    }
+    envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 9,
+            "data": status,
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    class FlowClient:
+        def __init__(self) -> None:
+            self.connect_calls = 0
+            self.status_calls = 0
+
+        async def connect_selection(self, **_kwargs):  # noqa: ANN202
+            self.connect_calls += 1
+            return SimpleNamespace(state_revision=9, action_id=action_id)
+
+        async def fetch_status(self):  # noqa: ANN202
+            self.status_calls += 1
+            raise AssertionError("cached terminal must win before another status GET")
+
+    class DiagnosticClient:
+        async def fetch_status(self):  # noqa: ANN202
+            return envelope
+
+    broker = pairing.EEBusActionTerminalBroker()
+    flow_client = FlowClient()
+    controller = pairing.EEBusPairingController(flow_client, action_broker=broker)
+    controller._state_revision = 8
+    controller._selection_id = "selection-opaque"
+    controller._selection_revision = 8
+    asyncio.run(controller.async_connect_selection())
+    assert flow_client.connect_calls == 1
+
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="entry-one", action_broker=broker
+    )
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = DiagnosticClient()
+    coordinator.lifecycle = lifecycle
+    diagnostic = asyncio.run(coordinator._async_update_data())
+    assert action_id not in repr(diagnostic)
+
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) == terminal
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) is None
+    assert flow_client.connect_calls == 1
+    assert flow_client.status_calls == 0
 
 
 def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
