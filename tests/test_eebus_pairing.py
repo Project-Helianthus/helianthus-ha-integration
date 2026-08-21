@@ -306,6 +306,83 @@ def test_terminal_broker_is_exact_once_bounded_and_never_adopts_wrong_action() -
     assert broker.has_active_action is False
 
 
+def test_terminal_broker_same_id_replay_preserves_cached_terminal_once() -> None:
+    broker = EEBusActionTerminalBroker()
+    terminal = {
+        "action_id": ACTION_ID,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    broker.own(ACTION_ID)
+    broker.observe(terminal)
+
+    broker.own(ACTION_ID)
+
+    assert broker.consume_terminal(ACTION_ID) == terminal
+    assert broker.consume_terminal(ACTION_ID) is None
+
+
+def test_terminal_broker_rejects_new_id_while_terminal_is_unconsumed() -> None:
+    broker = EEBusActionTerminalBroker()
+    terminal = {
+        "action_id": ACTION_ID,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    broker.own(ACTION_ID)
+    broker.observe(terminal)
+
+    with pytest.raises(EEBusAdminV1Error) as captured:
+        broker.own("b" * 64)
+
+    assert captured.value.code == "candidate_busy"
+    assert broker.consume_terminal(ACTION_ID) == terminal
+
+
+def test_controller_abort_clears_only_the_exact_action_it_started() -> None:
+    async def scenario() -> None:
+        service_broker = EEBusActionTerminalBroker()
+        service_broker.own(ACTION_ID)
+        unrelated = _controller(_Client(), service_broker)
+        unrelated.abort()
+        assert service_broker.has_active_action is True
+
+        terminal = {
+            "action_id": ACTION_ID,
+            "kind": "connect",
+            "state": "terminal",
+            "outcome": "connection_completed",
+            "retryable": False,
+            "expiry": "2026-08-15T12:00:00Z",
+        }
+        service_broker.observe(terminal)
+        resumer = _controller(_Client(), service_broker)
+        assert await resumer.async_poll_active_action(
+            max_attempts=1, interval=0
+        ) == terminal
+        assert service_broker.has_active_action is False
+
+        owned_broker = EEBusActionTerminalBroker()
+        client = _Client()
+        owner = _controller(client, owned_broker)
+        await owner.async_refresh_status()
+        await owner.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        await owner.async_connect_selection()
+        assert owned_broker.has_active_action is True
+        owner.abort()
+        assert owned_broker.has_active_action is False
+
+    asyncio.run(scenario())
+
+
 def test_status_menu_observation_caches_owned_terminal_before_resume() -> None:
     broker = EEBusActionTerminalBroker()
     broker.own(ACTION_ID)
