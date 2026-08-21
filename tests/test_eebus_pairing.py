@@ -383,6 +383,67 @@ def test_controller_abort_clears_only_the_exact_action_it_started() -> None:
     asyncio.run(scenario())
 
 
+def test_failed_controller_close_preserves_owned_action_and_terminal() -> None:
+    class Client(_Client):
+        async def close_pairing_window(self, **kwargs: Any):  # noqa: ANN202
+            self.calls.append(("close_pairing_window", dict(kwargs)))
+            raise EEBusAdminV1Error("state_conflict")
+
+    async def scenario() -> None:
+        broker = EEBusActionTerminalBroker()
+        client = Client()
+        controller = _controller(client, broker)
+        await controller.async_refresh_status()
+        await controller.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        await controller.async_connect_selection()
+
+        with pytest.raises(EEBusAdminV1Error) as captured:
+            await controller.async_close_pairing_window()
+
+        assert captured.value.code == "state_conflict"
+        assert broker.action_id == ACTION_ID
+        terminal = {
+            "action_id": ACTION_ID,
+            "kind": "connect",
+            "state": "terminal",
+            "outcome": "connection_completed",
+            "retryable": False,
+            "expiry": "2026-08-15T12:00:00Z",
+        }
+        broker.observe(terminal)
+        assert await controller.async_poll_active_action(
+            max_attempts=1, interval=0
+        ) == terminal
+        assert sum(
+            name == "close_pairing_window" for name, _data in client.calls
+        ) == 1
+
+    asyncio.run(scenario())
+
+
+def test_successful_controller_close_clears_exact_owned_action_once() -> None:
+    async def scenario() -> None:
+        broker = EEBusActionTerminalBroker()
+        client = _Client()
+        controller = _controller(client, broker)
+        await controller.async_refresh_status()
+        await controller.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        await controller.async_connect_selection()
+
+        await controller.async_close_pairing_window()
+
+        assert broker.has_active_action is False
+        assert sum(
+            name == "close_pairing_window" for name, _data in client.calls
+        ) == 1
+
+    asyncio.run(scenario())
+
+
 def test_status_menu_observation_caches_owned_terminal_before_resume() -> None:
     broker = EEBusActionTerminalBroker()
     broker.own(ACTION_ID)
