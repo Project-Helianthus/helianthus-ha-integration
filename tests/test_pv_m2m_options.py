@@ -238,9 +238,22 @@ def test_owned_pairing_action_is_resumable_from_status_and_transient_poll_error(
     assert controller.has_active_action is True
 
     resumed = asyncio.run(flow.async_step_eebus_action({}))
-    assert resumed["step_id"] == "eebus_result"
-    assert resumed["errors"] == {"base": "connection_completed"}
+    assert resumed["step_id"] == "eebus_connection_completed"
+    assert resumed["errors"] == {}
     assert controller.has_active_action is False
+
+    strings = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "custom_components"
+            / "helianthus"
+            / "strings.json"
+        ).read_text(encoding="utf-8")
+    )
+    steps = strings["options"]["step"]
+    assert "candidate" in steps["eebus_connection_completed"]["description"].lower()
+    assert steps["eebus_pairing"]["menu_options"]["eebus_action"]
+    assert "connection_completed" not in strings["options"]["error"]
 
 
 def test_options_controller_uses_entry_shared_terminal_broker() -> None:
