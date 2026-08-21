@@ -172,6 +172,7 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
                 "state_conflict",
                 "snapshot_expired",
                 "idempotency_conflict",
+                "observation_stale",
                 "backoff_active",
                 "candidate_busy",
             }
@@ -180,6 +181,7 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
             {
                 "admin_boundary_unavailable",
                 "discovery_unavailable",
+                "listener_unavailable",
                 "terminal_quarantine",
             }
         ),

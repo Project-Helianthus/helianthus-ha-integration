@@ -176,16 +176,6 @@ class EEBusActionTerminalBroker:
         snapshot: EEBusActionBrokerSnapshot | None = None,
     ) -> bool:
         self._prune()
-        if snapshot is not None and not self.is_current(snapshot):
-            if (
-                self._action_id is None
-                or not isinstance(active_action, dict)
-                or active_action.get("action_id") != self._action_id
-            ):
-                return False
-            if active_action.get("state") == "terminal":
-                self._terminal = copy.deepcopy(active_action)
-            return True
         if self._reservation is not None:
             if isinstance(active_action, dict):
                 candidate_action_id = active_action.get("action_id")
@@ -195,6 +185,16 @@ class EEBusActionTerminalBroker:
                     return True
                 if active_action.get("state") == "terminal":
                     self._terminal = copy.deepcopy(active_action)
+            return True
+        if snapshot is not None and not self.is_current(snapshot):
+            if (
+                self._action_id is None
+                or not isinstance(active_action, dict)
+                or active_action.get("action_id") != self._action_id
+            ):
+                return False
+            if active_action.get("state") == "terminal":
+                self._terminal = copy.deepcopy(active_action)
             return True
         if self._action_id is None or active_action is None:
             return True
@@ -285,7 +285,7 @@ class EEBusPairingController:
         self._selection_id: str | None = None
         self._selection_revision: int | None = None
         self._candidate: ActiveCandidateResponse | None = None
-        self._owned_action_id: str | None = None
+        self._owned_action: EEBusActionBrokerSnapshot | None = None
 
     @property
     def state_revision(self) -> int | None:
@@ -395,7 +395,7 @@ class EEBusPairingController:
             self._state_revision = result.state_revision
             self._action_broker.finalize_connect(reservation, result.action_id)
             finalized = True
-            self._owned_action_id = result.action_id
+            self._owned_action = self._action_broker.capture()
             return result
         finally:
             if reservation is not None and not finalized:
@@ -413,14 +413,13 @@ class EEBusPairingController:
         initial_snapshot = self._action_broker.capture()
         action_id = initial_snapshot.action_id
         if action_id is None:
-            self._owned_action_id = None
+            self._owned_action = None
             return None
         cached = self._action_broker.consume_terminal(
             action_id, snapshot=initial_snapshot
         )
         if cached is not None:
-            if self._owned_action_id == action_id:
-                self._owned_action_id = None
+            self._drop_owned_action(action_id)
             return cached
         last: dict[str, Any] | None = None
         for attempt in range(max_attempts):
@@ -436,18 +435,13 @@ class EEBusPairingController:
                 action_id, snapshot=request_snapshot
             )
             if cached is not None:
-                if self._owned_action_id == action_id:
-                    self._owned_action_id = None
+                self._drop_owned_action(action_id)
                 return cached
             active = status.get("active_action")
             if not isinstance(active, dict):
-                self._action_broker.clear(snapshot=request_snapshot)
-                if self._owned_action_id == action_id:
-                    self._owned_action_id = None
                 return None
             if self._action_broker.action_id != action_id:
-                if self._owned_action_id == action_id:
-                    self._owned_action_id = None
+                self._drop_owned_action(action_id)
                 return None
             last = dict(active)
             if attempt + 1 < max_attempts:
@@ -526,19 +520,26 @@ class EEBusPairingController:
         self._candidate = None
         self._selection_id = None
         self._selection_revision = None
-        owned_action_id = self._owned_action_id
-        self._owned_action_id = None
-        if owned_action_id is not None:
-            self._action_broker.clear(expected_action_id=owned_action_id)
+        owned_action = self._owned_action
+        self._owned_action = None
+        if owned_action is not None:
+            self._action_broker.clear(snapshot=owned_action)
         if clear_revision:
             self._state_revision = None
 
     def _sync_owned_action(self) -> None:
         if (
-            self._owned_action_id is not None
-            and self._action_broker.action_id != self._owned_action_id
+            self._owned_action is not None
+            and not self._action_broker.is_current(self._owned_action)
         ):
-            self._owned_action_id = None
+            self._owned_action = None
+
+    def _drop_owned_action(self, action_id: str) -> None:
+        if (
+            self._owned_action is not None
+            and self._owned_action.action_id == action_id
+        ):
+            self._owned_action = None
 
     def _require_revision(self) -> int:
         if self._state_revision is None:
