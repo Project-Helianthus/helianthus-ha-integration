@@ -154,7 +154,10 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         if self._eebus_controller is not None:
             return self._eebus_controller
         from .eebus_admin_services import services_for_entry
-        from .eebus_pairing import EEBusPairingController
+        from .eebus_pairing import (
+            EEBusActionTerminalBroker,
+            EEBusPairingController,
+        )
 
         hass = getattr(self, "hass", None)
         entry_id = getattr(self._config_entry, "entry_id", None)
@@ -163,7 +166,18 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         services = services_for_entry(hass, entry_id)
         if services is None:
             return None
-        self._eebus_controller = EEBusPairingController(services.client)
+        domain_data = getattr(hass, "data", {}).get(DOMAIN, {})
+        entry_data = domain_data.get(entry_id) if isinstance(domain_data, dict) else None
+        broker = (
+            entry_data.get("eebus_admin_action_broker")
+            if isinstance(entry_data, dict)
+            else None
+        )
+        if not isinstance(broker, EEBusActionTerminalBroker):
+            return None
+        self._eebus_controller = EEBusPairingController(
+            services.client, action_broker=broker
+        )
         return self._eebus_controller
 
     def _eebus_error(self, step_id: str, code: str) -> config_entries.FlowResult:

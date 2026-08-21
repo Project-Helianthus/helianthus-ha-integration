@@ -1055,6 +1055,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
         )
         if admin_boundary is not None:
+            admin_boundary.lifecycle.clear()
             await async_unload_eebus_admin_boundary(hass, entry_id=entry.entry_id, session=admin_boundary.session)
             admin_session = None
         elif admin_session is not None:
@@ -2356,6 +2357,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "schedule_coordinator": schedule_coordinator,
         "adapter_info_coordinator": adapter_info_coordinator,
         "eebus_admin_coordinator": admin_coordinator,
+        "eebus_admin_action_broker": admin_coordinator.lifecycle.action_broker,
         "eebus_admin_session": admin_session,
         "eebus_admin_services_registered": admin_services_registered,
         "pv_m2m_coordinator": pv_m2m_coordinator,
@@ -2431,7 +2433,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     pass
         admin_coordinator = None if data is None else data.get("eebus_admin_coordinator")
         if admin_coordinator is not None:
-            admin_coordinator.lifecycle.store.clear()
+            admin_coordinator.lifecycle.clear()
         admin_session = None if data is None else data.get("eebus_admin_session")
         if admin_session is not None and data is not None and data.get("eebus_admin_services_registered"):
             await async_unload_eebus_admin_boundary(hass, entry_id=entry.entry_id, session=admin_session)

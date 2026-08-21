@@ -18,6 +18,7 @@ except (ModuleNotFoundError, ImportError):
     aiohttp = None
 
 from .eebus_admin import EEBusAdminV1Client, EEBusAdminV1Error, HAAdminProjectionStore
+from .eebus_pairing import EEBusActionTerminalBroker
 
 _LOGGER = logging.getLogger(__name__)
 _ADMIN_TIMEOUT_TOTAL_SECONDS = 15
@@ -40,6 +41,7 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
         else:
             try:
                 envelope = await self._client.fetch_status()
+                self.lifecycle.observe_status(envelope.data)
                 self.lifecycle.store.accept("status", envelope)
                 self.lifecycle.note_view_success("status", envelope.data)
             except EEBusAdminV1Error as error:
@@ -85,9 +87,15 @@ def admin_device_info(origin: str) -> _Info:
 
 
 class EEBusAdminV1Lifecycle:
-    def __init__(self, *, entry_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        entry_id: str,
+        action_broker: EEBusActionTerminalBroker | None = None,
+    ) -> None:
         self.entry_id = entry_id
         self.store = HAAdminProjectionStore()
+        self.action_broker = action_broker or EEBusActionTerminalBroker()
         self._binding: tuple[str, str] | None = None
         self._failed: set[str] = set()
         self.diagnostic_available = True
@@ -99,6 +107,7 @@ class EEBusAdminV1Lifecycle:
         binding = (origin, instance_guid)
         if self._binding != binding:
             self.store.clear()
+            self.action_broker.clear()
             self._failed.clear()
             self.diagnostic_error = None
             self._binding = binding
@@ -107,6 +116,10 @@ class EEBusAdminV1Lifecycle:
         self._failed.discard(view)
         self.diagnostic_available = True
         self.diagnostic_error = None
+
+    def observe_status(self, data: dict[str, Any]) -> None:
+        """Cache only a terminal for the exact action owned by this entry."""
+        self.action_broker.observe(data.get("active_action"))
 
     def note_view_failure(self, view: str, error: EEBusAdminV1Error) -> None:
         self._failed.add(view)
@@ -118,6 +131,7 @@ class EEBusAdminV1Lifecycle:
     def note_setup_failure(self, code: str) -> None:
         self._failed.add("status")
         self.store.clear_active_action()
+        self.action_broker.clear()
         self.diagnostic_available = False
         self.diagnostic_error = (
             code
@@ -129,6 +143,11 @@ class EEBusAdminV1Lifecycle:
             }
             else "admin_boundary_unavailable"
         )
+
+    def clear(self) -> None:
+        self.store.clear()
+        self.action_broker.clear()
+        self._failed.clear()
 
 
 def create_unavailable_eebus_admin_coordinator(

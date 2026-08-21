@@ -50,8 +50,14 @@ def test_unavailable_admin_boundary_is_diagnostic_only_and_sanitized() -> None:
 
 def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinator() -> None:
     coordinator_module = _coordinator()
-    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-one")
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    broker = pairing.EEBusActionTerminalBroker()
+    broker.own("a" * 64)
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="entry-one", action_broker=broker
+    )
     lifecycle.note_setup_failure("admin_boundary_unavailable")
+    assert broker.has_active_action is False
     coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
     coordinator._client = None
     coordinator.lifecycle = lifecycle
@@ -73,6 +79,11 @@ def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinat
         / "__init__.py"
     ).read_text()
     assert "create_unavailable_eebus_admin_coordinator" in component_source
+    assert "admin_coordinator.lifecycle.clear()" in component_source
+
+    broker.own("b" * 64)
+    lifecycle.clear()
+    assert broker.has_active_action is False
 
 
 def test_diagnostic_poll_brokers_one_shot_terminal_to_exact_flow_once() -> None:

@@ -306,6 +306,28 @@ def test_terminal_broker_is_exact_once_bounded_and_never_adopts_wrong_action() -
     assert broker.has_active_action is False
 
 
+def test_status_menu_observation_caches_owned_terminal_before_resume() -> None:
+    broker = EEBusActionTerminalBroker()
+    broker.own(ACTION_ID)
+    terminal = {
+        "action_id": ACTION_ID,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    client = _Client()
+    client.statuses = [_envelope(_status(action=terminal), 9)]
+    controller = _controller(client, broker)
+
+    assert asyncio.run(controller.async_refresh_status())["active_action"] == terminal
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) == terminal
+    assert sum(name == "fetch_status" for name, _data in client.calls) == 1
+
+
 def test_candidate_compare_confirm_cancel_retry_untrust_and_abort_are_gateway_only() -> None:
     async def scenario() -> None:
         client = _Client()

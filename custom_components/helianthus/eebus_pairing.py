@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -74,6 +76,80 @@ def _valid_pin(value: Any) -> bool:
     )
 
 
+class EEBusActionTerminalBroker:
+    """One per-entry, process-local owner for a one-shot pairing terminal."""
+
+    def __init__(
+        self,
+        *,
+        now: Callable[[], float] = time.monotonic,
+        ttl_seconds: int = 120,
+    ) -> None:
+        if type(ttl_seconds) is not int or not 1 <= ttl_seconds <= 120:
+            raise ValueError("invalid action terminal TTL")
+        self._now = now
+        self._ttl_seconds = ttl_seconds
+        self._action_id: str | None = None
+        self._terminal: dict[str, Any] | None = None
+        self._expires_at = 0.0
+
+    @property
+    def has_active_action(self) -> bool:
+        self._prune()
+        return self._action_id is not None
+
+    @property
+    def action_id(self) -> str | None:
+        self._prune()
+        return self._action_id
+
+    def own(self, action_id: str) -> None:
+        if (
+            not isinstance(action_id, str)
+            or len(action_id) != 64
+            or any(character not in "0123456789abcdef" for character in action_id)
+        ):
+            raise EEBusAdminV1ProtocolError()
+        self.clear()
+        self._action_id = action_id
+        self._expires_at = self._now() + self._ttl_seconds
+
+    def observe(self, active_action: Any) -> None:
+        self._prune()
+        if self._action_id is None or active_action is None:
+            return
+        if not isinstance(active_action, dict):
+            self.clear()
+            return
+        if active_action.get("action_id") != self._action_id:
+            self.clear()
+            return
+        if active_action.get("state") == "terminal":
+            self._terminal = copy.deepcopy(active_action)
+
+    def consume_terminal(self, action_id: str) -> dict[str, Any] | None:
+        self._prune()
+        if self._action_id is None:
+            return None
+        if action_id != self._action_id:
+            self.clear()
+            return None
+        if self._terminal is None:
+            return None
+        terminal = copy.deepcopy(self._terminal)
+        self.clear()
+        return terminal
+
+    def clear(self) -> None:
+        self._action_id = None
+        self._terminal = None
+        self._expires_at = 0.0
+
+    def _prune(self) -> None:
+        if self._action_id is not None and self._now() >= self._expires_at:
+            self.clear()
+
+
 class EEBusPairingController:
     """Own only the current in-memory HA action; the gateway owns authority."""
 
@@ -81,16 +157,17 @@ class EEBusPairingController:
         self,
         client: Any,
         *,
+        action_broker: EEBusActionTerminalBroker | None = None,
         idempotency_key: Callable[[str], str] = _default_idempotency_key,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._client = client
         self._idempotency_key = idempotency_key
         self._sleep = sleep
+        self._action_broker = action_broker or EEBusActionTerminalBroker()
         self._state_revision: int | None = None
         self._selection_id: str | None = None
         self._selection_revision: int | None = None
-        self._action_id: str | None = None
         self._candidate: ActiveCandidateResponse | None = None
 
     @property
@@ -100,11 +177,12 @@ class EEBusPairingController:
     @property
     def has_active_action(self) -> bool:
         """Report only whether this flow owns a volatile action correlation."""
-        return self._action_id is not None
+        return self._action_broker.has_active_action
 
     async def async_refresh_status(self) -> dict[str, Any]:
         envelope = await self._client.fetch_status()
         self._state_revision = envelope.state_revision
+        self._action_broker.observe(envelope.data.get("active_action"))
         return envelope.data
 
     async def async_load_partners(self, view: str) -> list[dict[str, Any]]:
@@ -171,7 +249,8 @@ class EEBusPairingController:
         revision = self._selection_revision
         if selection_id is None or revision is None:
             raise EEBusAdminV1Error("observation_stale")
-        self._action_id = None
+        if self._action_broker.has_active_action:
+            raise EEBusAdminV1Error("candidate_busy")
         try:
             result = await self._client.connect_selection(
                 selection_id=selection_id,
@@ -182,7 +261,7 @@ class EEBusPairingController:
             if not result.action_id:
                 raise EEBusAdminV1ProtocolError()
             self._state_revision = result.state_revision
-            self._action_id = result.action_id
+            self._action_broker.own(result.action_id)
             return result
         finally:
             self._selection_id = None
@@ -195,20 +274,29 @@ class EEBusPairingController:
             raise ValueError("invalid poll bound")
         if not isinstance(interval, (int, float)) or not 0 <= interval <= 5:
             raise ValueError("invalid poll interval")
-        action_id = self._action_id
+        action_id = self._action_broker.action_id
         if action_id is None:
             return None
+        cached = self._action_broker.consume_terminal(action_id)
+        if cached is not None:
+            return cached
         last: dict[str, Any] | None = None
         for attempt in range(max_attempts):
             status = await self.async_refresh_status()
+            cached = self._action_broker.consume_terminal(action_id)
+            if cached is not None:
+                return cached
             active = status.get("active_action")
-            if not isinstance(active, dict) or active.get("action_id") != action_id:
-                self._action_id = None
+            if not isinstance(active, dict):
+                self._action_broker.clear()
                 return None
+            self._action_broker.observe(active)
+            if self._action_broker.action_id != action_id:
+                return None
+            terminal = self._action_broker.consume_terminal(action_id)
+            if terminal is not None:
+                return terminal
             last = dict(active)
-            if active.get("state") == "terminal":
-                self._action_id = None
-                return last
             if attempt + 1 < max_attempts:
                 await self._sleep(float(interval))
         return last
@@ -285,7 +373,7 @@ class EEBusPairingController:
         self._candidate = None
         self._selection_id = None
         self._selection_revision = None
-        self._action_id = None
+        self._action_broker.clear()
         if clear_revision:
             self._state_revision = None
 
