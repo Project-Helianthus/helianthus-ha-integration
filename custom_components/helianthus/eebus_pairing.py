@@ -187,15 +187,7 @@ class EEBusActionTerminalBroker:
                     self._terminal = copy.deepcopy(active_action)
             return True
         if snapshot is not None and not self.is_current(snapshot):
-            if (
-                self._action_id is None
-                or not isinstance(active_action, dict)
-                or active_action.get("action_id") != self._action_id
-            ):
-                return False
-            if active_action.get("state") == "terminal":
-                self._terminal = copy.deepcopy(active_action)
-            return True
+            return False
         if self._action_id is None or active_action is None:
             return True
         if not isinstance(active_action, dict):
