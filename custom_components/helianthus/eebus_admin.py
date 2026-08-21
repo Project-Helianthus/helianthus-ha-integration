@@ -15,12 +15,191 @@ MAX_BODY_BYTES = 64 * 1024
 _VIEWS = frozenset({"status", "trusted", "connected", "discovered", "candidate"})
 _SKI = re.compile(r"[0-9a-f]{40}")
 _OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,256}")
+_ACTION_ID = re.compile(r"[0-9a-f]{64}")
 _DATA_HASH = re.compile(r"sha256:[0-9a-f]{64}")
 _RFC3339_UTC = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z")
 _UNSET = object()
-_SPINE_HTTP_ERRORS = {
-    409: frozenset({"disconnected", "snapshot_expired"}),
-    503: frozenset({"admin_boundary_unavailable", "spine_topology_unavailable"}),
+_READINESS_REASONS = frozenset(
+    {
+        "CONFIGURATION_INVALID",
+        "LOCAL_IDENTITY_UNAVAILABLE",
+        "LISTENER_UNAVAILABLE",
+        "RUNTIME_FACTORY_UNAVAILABLE",
+        "ADMIN_BOUNDARY_UNAVAILABLE",
+        "UNKNOWN_STARTUP_FAILURE",
+    }
+)
+_ACTION_OUTCOMES = frozenset(
+    {
+        "connection_completed",
+        "attempt_timeout",
+        "disconnected",
+        "trust_denied",
+        "unknown_state",
+        "pin_required",
+        "pin_optional",
+        "pin_busy",
+        "pin_rejected",
+        "pin_unavailable",
+        "pin_protocol_error",
+    }
+)
+_HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
+    "status": {
+        503: frozenset({"admin_boundary_unavailable"}),
+        422: frozenset({"unknown_state"}),
+    },
+    "partners": {
+        400: frozenset({"invalid_request"}),
+        503: frozenset({"admin_boundary_unavailable"}),
+        422: frozenset({"unknown_state"}),
+    },
+    "spine": {
+        409: frozenset({"disconnected", "snapshot_expired"}),
+        503: frozenset(
+            {"admin_boundary_unavailable", "spine_topology_unavailable"}
+        ),
+    },
+    "open_window": {
+        400: frozenset({"invalid_request"}),
+        409: frozenset(
+            {"state_conflict", "idempotency_conflict", "pairing_closed"}
+        ),
+        503: frozenset(
+            {
+                "admin_boundary_unavailable",
+                "listener_unavailable",
+                "discovery_unavailable",
+            }
+        ),
+        422: frozenset({"unknown_state"}),
+    },
+    "close_window": {
+        400: frozenset({"invalid_request"}),
+        409: frozenset({"state_conflict", "idempotency_conflict"}),
+        503: frozenset({"admin_boundary_unavailable"}),
+        422: frozenset({"unknown_state"}),
+    },
+    "select": {
+        400: frozenset({"invalid_request", "identity_mismatch"}),
+        409: frozenset(
+            {
+                "state_conflict",
+                "idempotency_conflict",
+                "pairing_closed",
+                "observation_stale",
+            }
+        ),
+        503: frozenset(
+            {
+                "admin_boundary_unavailable",
+                "listener_unavailable",
+                "discovery_unavailable",
+            }
+        ),
+        422: frozenset({"unknown_state"}),
+    },
+    "connect": {
+        400: frozenset({"invalid_request", "identity_mismatch"}),
+        409: frozenset(
+            {
+                "state_conflict",
+                "idempotency_conflict",
+                "pairing_closed",
+                "observation_stale",
+            }
+        ),
+        503: frozenset(
+            {
+                "admin_boundary_unavailable",
+                "listener_unavailable",
+                "discovery_unavailable",
+                "pin_unavailable",
+            }
+        ),
+        422: frozenset(
+            {
+                "endpoint_scope_unavailable",
+                "association_incomplete",
+                "trust_denied",
+                "attempt_timeout",
+                "disconnected",
+                "pin_required",
+                "pin_optional",
+                "pin_busy",
+                "pin_rejected",
+                "pin_unavailable",
+                "pin_protocol_error",
+                "unknown_state",
+            }
+        ),
+    },
+    "confirm": {
+        400: frozenset({"invalid_request", "identity_mismatch"}),
+        409: frozenset(
+            {
+                "state_conflict",
+                "idempotency_conflict",
+                "candidate_expired",
+                "candidate_busy",
+                "association_incomplete",
+            }
+        ),
+        503: frozenset(
+            {"admin_boundary_unavailable", "persistence_failure"}
+        ),
+        422: frozenset({"trust_denied", "unknown_state"}),
+    },
+    "cancel": {
+        400: frozenset({"invalid_request"}),
+        409: frozenset(
+            {
+                "state_conflict",
+                "idempotency_conflict",
+                "candidate_expired",
+                "candidate_busy",
+            }
+        ),
+        503: frozenset({"admin_boundary_unavailable"}),
+        422: frozenset({"unknown_state"}),
+    },
+    "retry": {
+        400: frozenset({"invalid_request"}),
+        409: frozenset(
+            {
+                "state_conflict",
+                "snapshot_expired",
+                "idempotency_conflict",
+                "backoff_active",
+            }
+        ),
+        503: frozenset(
+            {"admin_boundary_unavailable", "terminal_quarantine"}
+        ),
+        422: frozenset(
+            {"association_incomplete", "disconnected", "unknown_state"}
+        ),
+    },
+    "untrust": {
+        400: frozenset({"invalid_request"}),
+        409: frozenset(
+            {"state_conflict", "snapshot_expired", "idempotency_conflict"}
+        ),
+        503: frozenset(
+            {
+                "admin_boundary_unavailable",
+                "terminal_quarantine",
+                "persistence_failure",
+            }
+        ),
+        422: frozenset(
+            {
+                "revocation_withdrawal_incomplete",
+                "association_incomplete",
+                "unknown_state",
+            }
+        ),
+    },
 }
 
 
@@ -35,9 +214,61 @@ class EEBusAdminV1ProtocolError(EEBusAdminV1Error):
         super().__init__("invalid_response")
 
 
+def _operation_for(method: str, suffix: str) -> str | None:
+    if method == "GET" and suffix == "/status":
+        return "status"
+    if method == "GET" and suffix.startswith("/partners?view="):
+        return "partners"
+    if method == "GET" and suffix.startswith("/partners/") and "/spine?" in suffix:
+        return "spine"
+    exact = {
+        ("POST", "/pairing-window:open"): "open_window",
+        ("POST", "/pairing-window:close"): "close_window",
+        ("POST", "/candidate:confirm"): "confirm",
+        ("POST", "/candidate:cancel"): "cancel",
+    }
+    if (method, suffix) in exact:
+        return exact[(method, suffix)]
+    if method == "POST" and suffix.startswith("/observations/") and suffix.endswith(":select"):
+        return "select"
+    if method == "POST" and suffix.startswith("/selections/") and suffix.endswith(":connect"):
+        return "connect"
+    if method == "POST" and suffix.startswith("/partners/") and suffix.endswith(":retry"):
+        return "retry"
+    if method == "DELETE" and suffix.startswith("/partners/") and suffix.endswith("/trust"):
+        return "untrust"
+    return None
+
+
 def _http_error_code(payload: Any, *, method: str, suffix: str, status: int) -> str:
-    fallback = "snapshot_expired" if method == "GET" and "/spine?" in suffix and status == 409 else {409: "state_conflict", 503: "admin_boundary_unavailable"}.get(status, "invalid_response")
-    allowed = _SPINE_HTTP_ERRORS.get(status) if method == "GET" and "/spine?" in suffix else None
+    operation = _operation_for(method, suffix)
+    if operation == "spine":
+        fallback = {
+            409: "snapshot_expired",
+            503: "admin_boundary_unavailable",
+        }.get(status, "invalid_response")
+    elif operation in {
+        "open_window",
+        "close_window",
+        "select",
+        "connect",
+        "confirm",
+        "cancel",
+        "retry",
+        "untrust",
+    }:
+        fallback = {
+            400: "invalid_request",
+            409: "state_conflict",
+            503: "admin_boundary_unavailable",
+            422: "unknown_state",
+        }.get(status, "invalid_response")
+    else:
+        fallback = {
+            503: "admin_boundary_unavailable",
+            422: "unknown_state",
+        }.get(status, "invalid_response")
+    allowed = _HTTP_ERROR_CODES.get(operation or "", {}).get(status)
     if allowed is None or not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         return fallback
     error = payload.get("error")
@@ -103,6 +334,10 @@ def _is_opaque(value: Any) -> bool:
     return isinstance(value, str) and _OPAQUE.fullmatch(value) is not None
 
 
+def _is_action_id(value: Any) -> bool:
+    return isinstance(value, str) and _ACTION_ID.fullmatch(value) is not None
+
+
 def _is_count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 65535
 
@@ -127,16 +362,45 @@ def _is_rfc3339_utc(value: Any) -> bool:
 
 def _valid_status(data: dict[str, Any]) -> bool:
     required = {
-        "status", "pairing_window", "register", "listener", "discovery", "trusted_count",
+        "readiness", "status", "pairing_window", "register", "listener", "discovery", "trusted_count",
         "connected_count", "discovered_count", "candidate_count",
     }
-    if not required <= set(data) <= required | {"pairing_window_deadline", "degraded_code"}:
+    if not required <= set(data) <= required | {"pairing_window_deadline", "degraded_code", "active_action"}:
         return False
-    return all(_is_string(data[key]) for key in ("status", "pairing_window", "register", "listener", "discovery")) and all(
+    return _valid_readiness(data["readiness"]) and all(_is_string(data[key]) for key in ("status", "pairing_window", "register", "listener", "discovery")) and all(
         _is_count(data[key]) for key in ("trusted_count", "connected_count", "discovered_count", "candidate_count")
     ) and ("degraded_code" not in data or _is_string(data["degraded_code"], 128)) and (
         "pairing_window_deadline" not in data or _is_rfc3339_utc(data["pairing_window_deadline"])
-    )
+    ) and ("active_action" not in data or _valid_active_action(data["active_action"]))
+
+
+def _valid_readiness(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    base = {"process_readiness", "eebus_readiness"}
+    if not base <= set(value) <= base | {"eebus_degraded_reason"}:
+        return False
+    if value["process_readiness"] not in {"READY", "NOT_READY"}:
+        return False
+    readiness = value["eebus_readiness"]
+    if readiness == "DEGRADED":
+        return value.get("eebus_degraded_reason") in _READINESS_REASONS
+    return readiness in {"DISABLED", "STARTING", "READY"} and "eebus_degraded_reason" not in value
+
+
+def _valid_active_action(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    required = {"action_id", "kind", "state", "retryable", "expiry"}
+    if not required <= set(value) <= required | {"outcome"}:
+        return False
+    if not _is_action_id(value["action_id"]) or value["kind"] != "connect":
+        return False
+    if value["state"] not in {"pending", "terminal"} or not isinstance(value["retryable"], bool) or not _is_rfc3339_utc(value["expiry"]):
+        return False
+    if value["state"] == "pending":
+        return "outcome" not in value
+    return value.get("outcome") in _ACTION_OUTCOMES
 
 
 def _valid_partner(view: str, row: dict[str, Any]) -> bool:
@@ -216,15 +480,19 @@ class HAAdminMutationResultV1:
     outcome: str
     replayed: bool
     selection_id: str | None = None
+    action_id: str | None = None
 
 
-def _parse_mutation(payload: Any) -> HAAdminMutationResultV1:
+def _parse_mutation(payload: Any, *, expected_extra: str | None = None) -> HAAdminMutationResultV1:
     if not isinstance(payload, dict) or set(payload) != {"contract", "request_id", "state_revision", "data", "error"}:
         raise EEBusAdminV1ProtocolError()
     data = payload.get("data")
-    if payload.get("contract") != CONTRACT or not _is_opaque(payload.get("request_id")) or not _is_state_revision(payload.get("state_revision")) or payload.get("error") is not None or not isinstance(data, dict) or not {"outcome", "replayed"} <= set(data) <= {"outcome", "replayed", "selection_id"} or not _is_string(data["outcome"], 128) or not isinstance(data["replayed"], bool) or ("selection_id" in data and not _is_opaque(data["selection_id"])):
+    if expected_extra not in {None, "selection_id", "action_id"}:
+        raise ValueError("invalid mutation shape")
+    required = {"outcome", "replayed"} | ({expected_extra} if expected_extra else set())
+    if payload.get("contract") != CONTRACT or not _is_opaque(payload.get("request_id")) or not _is_state_revision(payload.get("state_revision")) or payload.get("error") is not None or not isinstance(data, dict) or set(data) != required or not _is_string(data["outcome"], 128) or not isinstance(data["replayed"], bool) or (expected_extra == "selection_id" and not _is_opaque(data["selection_id"])) or (expected_extra == "action_id" and not _is_action_id(data["action_id"])):
         raise EEBusAdminV1ProtocolError()
-    return HAAdminMutationResultV1(payload["state_revision"], data["outcome"], data["replayed"], data.get("selection_id"))
+    return HAAdminMutationResultV1(payload["state_revision"], data["outcome"], data["replayed"], data.get("selection_id"), data.get("action_id"))
 
 
 class EEBusAdminV1Client:
@@ -297,9 +565,9 @@ class EEBusAdminV1Client:
             raise ValueError("invalid mutation precondition")
         return {**(extra or {}), "state_revision": expected_state_revision}
 
-    async def _mutate(self, method: str, suffix: str, *, expected_state_revision: int, idempotency_key: str, extra: dict[str, Any] | None = None) -> HAAdminMutationResultV1:
+    async def _mutate(self, method: str, suffix: str, *, expected_state_revision: int, idempotency_key: str, extra: dict[str, Any] | None = None, expected_result_extra: str | None = None) -> HAAdminMutationResultV1:
         body = self._mutation_body(expected_state_revision, idempotency_key, extra)
-        return _parse_mutation(await self._request(method, suffix, body=body, idempotency_key=idempotency_key))
+        return _parse_mutation(await self._request(method, suffix, body=body, idempotency_key=idempotency_key), expected_extra=expected_result_extra)
 
     async def open_pairing_window(self, *, duration_seconds: int, expected_state_revision: int, idempotency_key: str) -> HAAdminMutationResultV1:
         if not _is_count(duration_seconds) or duration_seconds == 0:
@@ -312,12 +580,19 @@ class EEBusAdminV1Client:
     async def select_observation(self, *, observation_id: str, expected_ski: str, expected_state_revision: int, idempotency_key: str) -> HAAdminMutationResultV1:
         if not _is_opaque(observation_id) or not _is_ski(expected_ski):
             raise ValueError("invalid selection")
-        return await self._mutate("POST", "/observations/" + quote(observation_id, safe="") + ":select", expected_state_revision=expected_state_revision, idempotency_key=idempotency_key, extra={"expected_ski": expected_ski})
+        return await self._mutate("POST", "/observations/" + quote(observation_id, safe="") + ":select", expected_state_revision=expected_state_revision, idempotency_key=idempotency_key, extra={"expected_ski": expected_ski}, expected_result_extra="selection_id")
 
-    async def connect_selection(self, *, selection_id: str, expected_state_revision: int, idempotency_key: str) -> HAAdminMutationResultV1:
+    async def connect_selection(self, *, selection_id: str, expected_state_revision: int, idempotency_key: str, pin: str | None = None) -> HAAdminMutationResultV1:
         if not _is_opaque(selection_id):
             raise ValueError("invalid selection")
-        return await self._mutate("POST", "/selections/" + quote(selection_id, safe="") + ":connect", expected_state_revision=expected_state_revision, idempotency_key=idempotency_key)
+        if pin is not None and (not isinstance(pin, str) or not 8 <= len(pin) <= 16 or any(character not in "0123456789abcdefABCDEF" for character in pin)):
+            raise ValueError("invalid pin")
+        extra = {"pin": pin} if pin is not None else None
+        try:
+            return await self._mutate("POST", "/selections/" + quote(selection_id, safe="") + ":connect", expected_state_revision=expected_state_revision, idempotency_key=idempotency_key, extra=extra, expected_result_extra="action_id")
+        finally:
+            if extra is not None:
+                extra.clear()
 
     async def confirm_candidate(self, *, expected_ski: str, expected_state_revision: int, idempotency_key: str) -> HAAdminMutationResultV1:
         if not _is_ski(expected_ski):
@@ -347,9 +622,16 @@ class HAAdminProjectionStore:
             raise EEBusAdminV1ProtocolError()
         if view == "candidate":
             return False
-        changed = self._data.get(view) != envelope.data
+        accepted = copy.deepcopy(envelope.data)
+        if view == "status" and isinstance(accepted.get("active_action"), dict):
+            action = accepted["active_action"]
+            accepted["active_action"] = {
+                key: action.get(key)
+                for key in ("kind", "state", "outcome", "retryable")
+            }
+        changed = self._data.get(view) != accepted
         if changed:
-            self._data[view] = copy.deepcopy(envelope.data)
+            self._data[view] = accepted
         return changed
 
     def data_for(self, view: str) -> dict[str, Any] | None:
@@ -357,3 +639,8 @@ class HAAdminProjectionStore:
 
     def clear(self) -> None:
         self._data.clear()
+
+    def clear_active_action(self) -> None:
+        status = self._data.get("status")
+        if status is not None:
+            status.pop("active_action", None)

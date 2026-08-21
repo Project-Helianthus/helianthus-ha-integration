@@ -178,7 +178,12 @@ def test_status_pairing_window_deadline_is_optional_bounded_rfc3339_scalar_and_n
             )
         retained = store.data_for("status")
         assert retained == _status()
-        assert all(not isinstance(value, (dict, list)) for value in retained.values())
+        assert retained["readiness"] == {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        }
+        assert "active_action" not in retained
+        assert SKI not in repr(retained)
 
 
 def test_status_readiness_and_identity_free_active_action_are_closed_and_bounded() -> None:
@@ -193,7 +198,19 @@ def test_status_readiness_and_identity_free_active_action_are_closed_and_bounded
         "expiry": "2026-08-15T12:00:00Z",
     }
     status = {**_status(), "active_action": active}
-    assert admin.parse_ha_admin_envelope(_envelope(status), expected_view="status").data == status
+    envelope = admin.parse_ha_admin_envelope(_envelope(status), expected_view="status")
+    assert envelope.data == status
+    store = admin.HAAdminProjectionStore()
+    assert store.accept("status", envelope) is True
+    assert store.data_for("status")["active_action"] == {
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "pin_required",
+        "retryable": True,
+    }
+    assert action_id not in repr(store.data_for("status"))
+    store.clear_active_action()
+    assert "active_action" not in store.data_for("status")
 
     invalid_statuses = (
         {**status, "readiness": {"process_readiness": "ok", "eebus_readiness": "READY"}},
@@ -235,7 +252,7 @@ def test_discovered_observation_revision_is_nonzero_uint64_and_select_uses_its_o
         _envelope({"partners": [row]}, revision=17), expected_view="discovered"
     )
     assert discovered.state_revision == 17
-    session = _Session([_Response(_envelope({"outcome": "accepted", "replayed": False}, 18))])
+    session = _Session([_Response(_envelope({"outcome": "accepted", "replayed": False, "selection_id": "selection-opaque"}, 18))])
     client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
     result = asyncio.run(
         client.select_observation(
@@ -410,7 +427,20 @@ def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies(
         ("retry_trusted_partner", "POST", f"/partners/{PARTNER_ID}:retry", {"state_revision": 7}, {"partner_id": PARTNER_ID}),
         ("untrust_partner", "DELETE", f"/partners/{PARTNER_ID}/trust", {"state_revision": 7}, {"partner_id": PARTNER_ID}),
     ]
-    session = _Session([_Response(_envelope({"outcome": "accepted", "replayed": False}, 8)) for _ in operations])
+    session = _Session([
+        _Response(
+            _envelope(
+                {
+                    "outcome": "connection_started" if name == "connect_selection" else "accepted",
+                    "replayed": False,
+                    **({"action_id": "c" * 64} if name == "connect_selection" else {}),
+                    **({"selection_id": "selection-opaque"} if name == "select_observation" else {}),
+                },
+                8,
+            )
+        )
+        for name, *_unused in operations
+    ])
     client = admin.EEBusAdminV1Client(session=session, base_url="https://gateway.example.test/graphql")
     for index, (name, method, suffix, body, arguments) in enumerate(operations):
         result = asyncio.run(getattr(client, name)(**arguments, expected_state_revision=7, idempotency_key=f"test-key-{index}"))

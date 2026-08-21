@@ -762,6 +762,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .eebus_admin_coordinator import (
         EEBusAdminV1Coordinator,
         close_admin_session,
+        create_unavailable_eebus_admin_coordinator,
         create_admin_session,
     )
     from .zone_parent import (
@@ -1061,6 +1062,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             admin_session = None
         admin_coordinator = None
         admin_services_registered = False
+        admin_coordinator = create_unavailable_eebus_admin_coordinator(
+            hass,
+            entry_id=entry.entry_id,
+            interval=scan_interval,
+            code="admin_boundary_unavailable",
+        )
+        await admin_coordinator.async_refresh()
 
     adapter_hw = adapter_info_coordinator.data
     if isinstance(adapter_hw, dict) and adapter_hw.get("firmware_version"):

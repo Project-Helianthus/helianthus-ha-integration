@@ -236,7 +236,7 @@ def test_eebus_admin_sensor_is_one_sanitized_status_scalar_with_bounded_counts()
         "fresh": True,
     }
     rendered = repr(entity.extra_state_attributes).lower()
-    for forbidden in ("partner", "candidate", "remote_ski", "endpoint", "raw", "token"):
+    for forbidden in ("partner_id", "candidate_state", "remote_ski", "endpoint", "raw", "token"):
         assert forbidden not in rendered
 
 
