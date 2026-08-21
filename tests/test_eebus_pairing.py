@@ -1,0 +1,261 @@
+"""RED behavior contract for HA-native, ephemeral eeBUS pairing."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from custom_components.helianthus.eebus_pairing import (
+    EEBusPairingController,
+    pairing_error_disposition,
+)
+
+
+SKI = "0123456789abcdef0123456789abcdef01234567"
+PIN = "A1b2C3d4"
+ACTION_ID = "a" * 64
+
+
+def _envelope(data: dict[str, Any], revision: int) -> SimpleNamespace:
+    return SimpleNamespace(data=data, state_revision=revision)
+
+
+def _status(*, action: dict[str, Any] | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "open",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 1,
+        "connected_count": 0,
+        "discovered_count": 1,
+        "candidate_count": 0,
+    }
+    if action is not None:
+        result["active_action"] = action
+    return result
+
+
+class _Client:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.statuses = [
+            _envelope(_status(), 7),
+            _envelope(
+                _status(
+                    action={
+                        "action_id": ACTION_ID,
+                        "kind": "connect",
+                        "state": "terminal",
+                        "outcome": "pin_required",
+                        "retryable": True,
+                        "expiry": "2026-08-15T12:00:00Z",
+                    }
+                ),
+                9,
+            ),
+        ]
+
+    async def fetch_status(self):  # noqa: ANN202
+        self.calls.append(("fetch_status", {}))
+        return self.statuses.pop(0)
+
+    async def fetch_partners(self, view: str):  # noqa: ANN202
+        self.calls.append(("fetch_partners", {"view": view}))
+        rows = {
+            "discovered": [
+                {
+                    "observation_id": "observation-opaque",
+                    "view": "discovered",
+                    "remote_ski": SKI,
+                    "observation_revision": 3,
+                }
+            ],
+            "candidate": [
+                {
+                    "view": "candidate",
+                    "remote_ski": SKI,
+                    "candidate_state": "tls_bound",
+                    "candidate_expires_at": "2026-08-15T12:00:00Z",
+                }
+            ],
+            "trusted": [
+                {
+                    "partner_id": "partner-opaque",
+                    "view": "trusted",
+                    "remote_ski": SKI,
+                    "trust_state": "durably_trusted",
+                }
+            ],
+        }
+        return _envelope({"partners": rows[view]}, 7)
+
+    async def select_observation(self, **kwargs: Any):  # noqa: ANN202
+        self.calls.append(("select_observation", dict(kwargs)))
+        return SimpleNamespace(
+            state_revision=8,
+            outcome="selected",
+            selection_id="selection-opaque",
+            replayed=False,
+            action_id=None,
+        )
+
+    async def connect_selection(self, **kwargs: Any):  # noqa: ANN202
+        self.calls.append(("connect_selection", dict(kwargs)))
+        return SimpleNamespace(
+            state_revision=9,
+            outcome="connection_started",
+            selection_id=None,
+            replayed=False,
+            action_id=ACTION_ID,
+        )
+
+    async def __getattr_call(self, operation: str, **kwargs: Any):
+        self.calls.append((operation, dict(kwargs)))
+        return SimpleNamespace(
+            state_revision=8,
+            outcome="accepted",
+            selection_id=None,
+            replayed=False,
+            action_id=None,
+        )
+
+    async def open_pairing_window(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("open_pairing_window", **kwargs)
+
+    async def close_pairing_window(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("close_pairing_window", **kwargs)
+
+    async def confirm_candidate(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("confirm_candidate", **kwargs)
+
+    async def cancel_candidate(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("cancel_candidate", **kwargs)
+
+    async def retry_trusted_partner(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("retry_trusted_partner", **kwargs)
+
+    async def untrust_partner(self, **kwargs: Any):  # noqa: ANN202
+        return await self.__getattr_call("untrust_partner", **kwargs)
+
+
+def _controller(client: _Client) -> EEBusPairingController:
+    sequence = iter(range(100))
+    return EEBusPairingController(
+        client,
+        idempotency_key=lambda operation: f"ha-{operation}-{next(sequence)}",
+        sleep=lambda _delay: asyncio.sleep(0),
+    )
+
+
+def test_selected_identity_and_pin_are_cleared_before_action_polling() -> None:
+    async def scenario() -> None:
+        client = _Client()
+        controller = _controller(client)
+        await controller.async_refresh_status()
+        discovered = await controller.async_load_partners("discovered")
+        assert discovered[0]["remote_ski"] == SKI
+
+        selected = await controller.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        assert selected.selection_id == "selection-opaque"
+        assert SKI not in repr(vars(controller))
+        assert "observation-opaque" not in repr(vars(controller))
+
+        connected = await controller.async_connect_selection(pin=PIN)
+        assert connected.action_id == ACTION_ID
+        assert PIN not in repr(vars(controller))
+        assert "selection-opaque" not in repr(vars(controller))
+        assert client.calls[-1][1]["pin"] == PIN
+
+        terminal = await controller.async_poll_active_action(max_attempts=1, interval=0)
+        assert terminal == {
+            "action_id": ACTION_ID,
+            "kind": "connect",
+            "state": "terminal",
+            "outcome": "pin_required",
+            "retryable": True,
+            "expiry": "2026-08-15T12:00:00Z",
+        }
+        assert ACTION_ID not in repr(vars(controller))
+
+    asyncio.run(scenario())
+
+
+def test_candidate_compare_confirm_cancel_retry_untrust_and_abort_are_gateway_only() -> None:
+    async def scenario() -> None:
+        client = _Client()
+        controller = _controller(client)
+        await controller.async_refresh_status()
+        candidate = await controller.async_load_candidate()
+        assert candidate.remote_ski == SKI
+        await controller.async_confirm_candidate(expected_ski=SKI)
+        assert SKI not in repr(vars(controller))
+
+        candidate = await controller.async_load_candidate()
+        assert candidate.remote_ski == SKI
+        await controller.async_cancel_candidate()
+        await controller.async_retry_trusted("partner-opaque")
+        await controller.async_untrust("partner-opaque")
+        controller.abort()
+        rendered = repr(vars(controller))
+        assert SKI not in rendered
+        assert "partner-opaque" not in rendered
+        assert not any(
+            token in inspect.getsource(type(controller)).lower()
+            for token in ("trust_store", "operator_socket", "async_update_entry", "issue_registry")
+        )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    (
+        ("invalid_request", "abort"),
+        ("idempotency_conflict", "abort"),
+        ("state_conflict", "restart_action"),
+        ("snapshot_expired", "restart_action"),
+        ("observation_stale", "restart_action"),
+        ("candidate_expired", "restart_action"),
+        ("candidate_busy", "restart_action"),
+        ("pairing_closed", "pairing_window"),
+        ("endpoint_scope_unavailable", "availability_repair"),
+        ("listener_unavailable", "availability_repair"),
+        ("discovery_unavailable", "availability_repair"),
+        ("admin_boundary_unavailable", "availability_repair"),
+        ("identity_mismatch", "action_form"),
+        ("pin_required", "action_form"),
+        ("pin_optional", "action_form"),
+        ("pin_busy", "action_form"),
+        ("pin_rejected", "action_form"),
+        ("pin_unavailable", "availability_repair"),
+        ("pin_protocol_error", "availability_repair"),
+        ("trust_denied", "action_form"),
+        ("attempt_timeout", "refresh_status"),
+        ("disconnected", "refresh_status"),
+        ("spine_topology_unavailable", "refresh_status"),
+        ("backoff_active", "backoff"),
+        ("revocation_withdrawal_incomplete", "fail_closed_repair"),
+        ("terminal_quarantine", "fail_closed_repair"),
+        ("persistence_failure", "fail_closed_repair"),
+        ("association_incomplete", "fail_closed_repair"),
+        ("unknown_state", "fail_closed_repair"),
+        ("future_peer_detail", "fail_closed_repair"),
+    ),
+)
+def test_closed_error_presentation_never_falls_through_to_success(
+    code: str, expected: str
+) -> None:
+    assert pairing_error_disposition(code) == expected
+

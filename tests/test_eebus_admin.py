@@ -30,7 +30,21 @@ def _error_envelope(code: str) -> dict[str, Any]:
 
 
 def _status() -> dict[str, Any]:
-    return {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 0, "connected_count": 0, "discovered_count": 0, "candidate_count": 0}
+    return {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "closed",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+        "candidate_count": 0,
+    }
 
 
 @dataclass
@@ -165,6 +179,44 @@ def test_status_pairing_window_deadline_is_optional_bounded_rfc3339_scalar_and_n
         retained = store.data_for("status")
         assert retained == _status()
         assert all(not isinstance(value, (dict, list)) for value in retained.values())
+
+
+def test_status_readiness_and_identity_free_active_action_are_closed_and_bounded() -> None:
+    admin = _admin()
+    action_id = "a" * 64
+    active = {
+        "action_id": action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "pin_required",
+        "retryable": True,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    status = {**_status(), "active_action": active}
+    assert admin.parse_ha_admin_envelope(_envelope(status), expected_view="status").data == status
+
+    invalid_statuses = (
+        {**status, "readiness": {"process_readiness": "ok", "eebus_readiness": "READY"}},
+        {**status, "readiness": {"process_readiness": "READY", "eebus_readiness": "DEGRADED"}},
+        {**status, "readiness": {"process_readiness": "READY", "eebus_readiness": "READY", "eebus_degraded_reason": "LISTENER_UNAVAILABLE"}},
+        {**status, "active_action": {**active, "action_id": "opaque-but-not-canonical"}},
+        {**status, "active_action": {**active, "remote_ski": SKI}},
+        {**status, "active_action": {**active, "state": "pending", "outcome": "pin_required"}},
+        {**status, "active_action": {**active, "outcome": "raw_peer_failure"}},
+    )
+    for invalid in invalid_statuses:
+        with pytest.raises(admin.EEBusAdminV1ProtocolError):
+            admin.parse_ha_admin_envelope(_envelope(invalid), expected_view="status")
+
+    degraded = {
+        **_status(),
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "DEGRADED",
+            "eebus_degraded_reason": "LISTENER_UNAVAILABLE",
+        },
+    }
+    assert admin.parse_ha_admin_envelope(_envelope(degraded), expected_view="status").data == degraded
 
 
 @pytest.mark.parametrize("observation_revision", (65_536, 18_446_744_073_709_551_615))
@@ -316,6 +368,36 @@ def test_spine_http_errors_preserve_only_the_closed_gateway_availability_codes()
         assert "raw_remote_ski_leak" not in repr(captured.value)
 
 
+@pytest.mark.parametrize(
+    ("method", "suffix", "status", "gateway_code", "expected"),
+    (
+        ("POST", "/pairing-window:open", 409, "pairing_closed", "pairing_closed"),
+        ("POST", "/observations/o-opaque:select", 409, "observation_stale", "observation_stale"),
+        ("POST", "/selections/s-opaque:connect", 422, "pin_required", "pin_required"),
+        ("POST", "/selections/s-opaque:connect", 503, "listener_unavailable", "listener_unavailable"),
+        ("POST", "/candidate:confirm", 400, "identity_mismatch", "identity_mismatch"),
+        ("POST", "/candidate:cancel", 409, "candidate_expired", "candidate_expired"),
+        ("POST", f"/partners/{PARTNER_ID}:retry", 409, "backoff_active", "backoff_active"),
+        ("DELETE", f"/partners/{PARTNER_ID}/trust", 422, "revocation_withdrawal_incomplete", "revocation_withdrawal_incomplete"),
+        ("DELETE", f"/partners/{PARTNER_ID}/trust", 422, "remote_ski_leak", "unknown_state"),
+        ("POST", "/candidate:confirm", 503, "pin_required", "admin_boundary_unavailable"),
+        ("GET", "/status", 409, "snapshot_expired", "invalid_response"),
+    ),
+)
+def test_every_admin_action_uses_endpoint_method_status_closed_error_codes(
+    method: str, suffix: str, status: int, gateway_code: str, expected: str
+) -> None:
+    admin = _admin()
+    session = _Session([_Response(_error_envelope(gateway_code), status=status)])
+    client = admin.EEBusAdminV1Client(
+        session=session, base_url="https://gateway.example.test/graphql"
+    )
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(client._request(method, suffix))
+    assert captured.value.code == expected
+    assert gateway_code not in repr(captured.value) or gateway_code == expected
+
+
 def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies() -> None:
     admin = _admin()
     operations = [
@@ -339,3 +421,65 @@ def test_all_typed_operations_send_exact_revision_idempotency_and_closed_bodies(
         assert actual_body == body and redirects is False
     for name, *_unused in operations:
         assert not {"route", "endpoint", "url", "path"} & set(inspect.signature(getattr(client, name)).parameters)
+
+
+def test_connect_accepts_only_exact_optional_pin_and_returns_canonical_action_id() -> None:
+    admin = _admin()
+    action_id = "b" * 64
+    session = _Session(
+        [
+            _Response(
+                _envelope(
+                    {
+                        "action_id": action_id,
+                        "outcome": "connection_started",
+                        "replayed": False,
+                    },
+                    8,
+                )
+            ),
+            _Response(
+                _envelope(
+                    {
+                        "action_id": action_id,
+                        "outcome": "connection_started",
+                        "replayed": True,
+                    },
+                    8,
+                )
+            ),
+        ]
+    )
+    client = admin.EEBusAdminV1Client(
+        session=session, base_url="https://gateway.example.test/graphql"
+    )
+    result = asyncio.run(
+        client.connect_selection(
+            selection_id="s-opaque",
+            pin="A1b2C3d4",
+            expected_state_revision=7,
+            idempotency_key="connect-pin",
+        )
+    )
+    assert result.action_id == action_id
+    assert session.calls[0][3] == {"state_revision": 7, "pin": "A1b2C3d4"}
+    replay = asyncio.run(
+        client.connect_selection(
+            selection_id="s-opaque",
+            expected_state_revision=7,
+            idempotency_key="connect-no-pin",
+        )
+    )
+    assert replay.action_id == action_id
+    assert session.calls[1][3] == {"state_revision": 7}
+
+    for invalid in ("", "1234567", "12345678901234567", " 12345678", "abcdefgh", "Ａ1234567"):
+        with pytest.raises(ValueError):
+            asyncio.run(
+                client.connect_selection(
+                    selection_id="s-opaque",
+                    pin=invalid,
+                    expected_state_revision=7,
+                    idempotency_key="invalid-pin",
+                )
+            )

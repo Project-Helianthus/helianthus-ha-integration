@@ -47,6 +47,33 @@ def test_unavailable_admin_boundary_is_diagnostic_only_and_sanitized() -> None:
     assert lifecycle.diagnostic_error == "admin_boundary_unavailable"
 
 
+def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinator() -> None:
+    coordinator_module = _coordinator()
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(entry_id="entry-one")
+    lifecycle.note_setup_failure("admin_boundary_unavailable")
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = None
+    coordinator.lifecycle = lifecycle
+
+    data = asyncio.run(coordinator._async_update_data())
+    assert data == {
+        "status": None,
+        "available": False,
+        "diagnostic_error": "admin_boundary_unavailable",
+        "stale_views": frozenset({"status"}),
+    }
+    assert lifecycle.graphql_setup_failed is False
+    assert lifecycle.unload_requested is False
+
+    component_source = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "helianthus"
+        / "__init__.py"
+    ).read_text()
+    assert "create_unavailable_eebus_admin_coordinator" in component_source
+
+
 def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
     component = importlib.import_module("custom_components.helianthus")
     calls: list[str] = []
@@ -85,7 +112,21 @@ def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remo
 def test_periodic_refresh_fetches_only_sanitized_status_and_retains_only_status_lkg() -> None:
     admin = importlib.import_module("custom_components.helianthus.eebus_admin")
     coordinator_module = _coordinator()
-    status = {"status": "ready", "pairing_window": "closed", "register": "ready", "listener": "ready", "discovery": "ready", "trusted_count": 1, "connected_count": 1, "discovered_count": 1, "candidate_count": 1}
+    status = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "closed",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 1,
+        "connected_count": 1,
+        "discovered_count": 1,
+        "candidate_count": 1,
+    }
     envelope = admin.parse_ha_admin_envelope({"contract": admin.CONTRACT, "request_id": "request-opaque", "state_revision": 7, "data": status, "error": None}, expected_view="status")
 
     class Client:
