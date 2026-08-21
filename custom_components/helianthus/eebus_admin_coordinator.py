@@ -35,17 +35,32 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
         self._client = client
         self.lifecycle = lifecycle
 
+    async def async_status_snapshot(self) -> tuple[int, dict[str, Any]]:
+        """Refresh status through the single per-entry lifecycle/broker path."""
+        if self._client is None:
+            self.lifecycle.note_setup_failure("admin_boundary_unavailable")
+            raise EEBusAdminV1Error("admin_boundary_unavailable")
+        try:
+            envelope = await self._client.fetch_status()
+            self.lifecycle.observe_status(envelope.data)
+            self.lifecycle.store.accept("status", envelope)
+            self.lifecycle.note_view_success("status", envelope.data)
+            sanitized = self.lifecycle.store.data_for("status")
+            if not isinstance(sanitized, dict):
+                raise EEBusAdminV1Error("invalid_response")
+            return envelope.state_revision, sanitized
+        except EEBusAdminV1Error as error:
+            self.lifecycle.note_view_failure("status", error)
+            raise
+
     async def _async_update_data(self) -> dict[str, Any]:
         if self._client is None:
             self.lifecycle.note_setup_failure("admin_boundary_unavailable")
         else:
             try:
-                envelope = await self._client.fetch_status()
-                self.lifecycle.observe_status(envelope.data)
-                self.lifecycle.store.accept("status", envelope)
-                self.lifecycle.note_view_success("status", envelope.data)
-            except EEBusAdminV1Error as error:
-                self.lifecycle.note_view_failure("status", error)
+                await self.async_status_snapshot()
+            except EEBusAdminV1Error:
+                pass
         return {
             "status": self.lifecycle.store.data_for("status"),
             "available": self.lifecycle.diagnostic_available,

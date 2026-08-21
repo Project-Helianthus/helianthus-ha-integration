@@ -68,6 +68,7 @@
           "eebus_discovered": "Select a discovered device",
           "eebus_candidate": "Compare the current candidate",
           "eebus_trusted": "Manage a trusted partner",
+          "eebus_action": "Resume current pairing action",
           "eebus_refresh": "Refresh status",
           "eebus_finish": "Finish"
         }
@@ -101,6 +102,9 @@
       },
       "eebus_action": {
         "description": "The identity-free pairing action is {action_state}. Submit to poll again."
+      },
+      "eebus_connection_completed": {
+        "description": "The SHIP connection completed. Continue to compare the complete TLS-bound candidate identifier before confirming trust."
       },
       "eebus_result": {
         "description": "The pairing action reached a sanitized terminal result. Submit to return to eeBUS status."

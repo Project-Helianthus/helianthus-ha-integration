@@ -409,8 +409,21 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 description_placeholders={"action_state": "pending"},
             )
         outcome = active.get("outcome", "unknown_state")
+        if outcome == "connection_completed":
+            return await self.async_step_eebus_connection_completed()
         return self._eebus_error(
             "eebus_result", outcome if isinstance(outcome, str) else "unknown_state"
+        )
+
+    async def async_step_eebus_connection_completed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        if user_input is not None:
+            return await self.async_step_eebus_candidate()
+        return self.async_show_form(
+            step_id="eebus_connection_completed",
+            data_schema=vol.Schema({}),
+            errors={},
         )
 
     async def async_step_eebus_result(
