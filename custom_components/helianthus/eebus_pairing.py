@@ -104,13 +104,17 @@ class EEBusActionTerminalBroker:
         return self._action_id
 
     def own(self, action_id: str) -> None:
+        self._prune()
         if (
             not isinstance(action_id, str)
             or len(action_id) != 64
             or any(character not in "0123456789abcdef" for character in action_id)
         ):
             raise EEBusAdminV1ProtocolError()
-        self.clear()
+        if self._action_id == action_id:
+            return
+        if self._action_id is not None:
+            raise EEBusAdminV1Error("candidate_busy")
         self._action_id = action_id
         self._expires_at = self._now() + self._ttl_seconds
 
@@ -140,10 +144,16 @@ class EEBusActionTerminalBroker:
         self.clear()
         return terminal
 
-    def clear(self) -> None:
+    def clear(self, *, expected_action_id: str | None = None) -> bool:
+        if (
+            expected_action_id is not None
+            and self._action_id != expected_action_id
+        ):
+            return False
         self._action_id = None
         self._terminal = None
         self._expires_at = 0.0
+        return True
 
     def _prune(self) -> None:
         if self._action_id is not None and self._now() >= self._expires_at:
@@ -169,6 +179,7 @@ class EEBusPairingController:
         self._selection_id: str | None = None
         self._selection_revision: int | None = None
         self._candidate: ActiveCandidateResponse | None = None
+        self._owned_action_id: str | None = None
 
     @property
     def state_revision(self) -> int | None:
@@ -183,6 +194,11 @@ class EEBusPairingController:
         envelope = await self._client.fetch_status()
         self._state_revision = envelope.state_revision
         self._action_broker.observe(envelope.data.get("active_action"))
+        if (
+            self._owned_action_id is not None
+            and self._action_broker.action_id != self._owned_action_id
+        ):
+            self._owned_action_id = None
         return envelope.data
 
     async def async_load_partners(self, view: str) -> list[dict[str, Any]]:
@@ -262,6 +278,7 @@ class EEBusPairingController:
                 raise EEBusAdminV1ProtocolError()
             self._state_revision = result.state_revision
             self._action_broker.own(result.action_id)
+            self._owned_action_id = result.action_id
             return result
         finally:
             self._selection_id = None
@@ -276,25 +293,36 @@ class EEBusPairingController:
             raise ValueError("invalid poll interval")
         action_id = self._action_broker.action_id
         if action_id is None:
+            self._owned_action_id = None
             return None
         cached = self._action_broker.consume_terminal(action_id)
         if cached is not None:
+            if self._owned_action_id == action_id:
+                self._owned_action_id = None
             return cached
         last: dict[str, Any] | None = None
         for attempt in range(max_attempts):
             status = await self.async_refresh_status()
             cached = self._action_broker.consume_terminal(action_id)
             if cached is not None:
+                if self._owned_action_id == action_id:
+                    self._owned_action_id = None
                 return cached
             active = status.get("active_action")
             if not isinstance(active, dict):
                 self._action_broker.clear()
+                if self._owned_action_id == action_id:
+                    self._owned_action_id = None
                 return None
             self._action_broker.observe(active)
             if self._action_broker.action_id != action_id:
+                if self._owned_action_id == action_id:
+                    self._owned_action_id = None
                 return None
             terminal = self._action_broker.consume_terminal(action_id)
             if terminal is not None:
+                if self._owned_action_id == action_id:
+                    self._owned_action_id = None
                 return terminal
             last = dict(active)
             if attempt + 1 < max_attempts:
@@ -373,7 +401,10 @@ class EEBusPairingController:
         self._candidate = None
         self._selection_id = None
         self._selection_revision = None
-        self._action_broker.clear()
+        owned_action_id = self._owned_action_id
+        self._owned_action_id = None
+        if owned_action_id is not None:
+            self._action_broker.clear(expected_action_id=owned_action_id)
         if clear_revision:
             self._state_revision = None
 
