@@ -444,6 +444,95 @@ def test_successful_controller_close_clears_exact_owned_action_once() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("stale_action", (True, False))
+def test_stale_poll_response_cannot_mutate_newer_broker_generation(
+    stale_action: bool,
+) -> None:
+    async def scenario() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+        old_action = {
+            "action_id": ACTION_ID,
+            "kind": "connect",
+            "state": "terminal",
+            "outcome": "connection_completed",
+            "retryable": False,
+            "expiry": "2026-08-15T12:00:00Z",
+        }
+
+        class Client:
+            async def fetch_status(self):  # noqa: ANN202
+                started.set()
+                await release.wait()
+                return _envelope(
+                    _status(action=old_action if stale_action else None), 9
+                )
+
+        broker = EEBusActionTerminalBroker()
+        broker.own(ACTION_ID)
+        controller = _controller(Client(), broker)  # type: ignore[arg-type]
+        poll = asyncio.create_task(
+            controller.async_poll_active_action(max_attempts=1, interval=0)
+        )
+        await started.wait()
+        broker.clear(expected_action_id=ACTION_ID)
+        newer_action_id = "b" * 64
+        broker.own(newer_action_id)
+        release.set()
+
+        assert await poll is None
+        assert broker.action_id == newer_action_id
+        assert broker.consume_terminal(newer_action_id) is None
+
+    asyncio.run(scenario())
+
+
+def test_controller_close_clears_captured_service_action_not_newer_generation() -> None:
+    async def scenario() -> None:
+        broker = EEBusActionTerminalBroker()
+        broker.own(ACTION_ID)
+        immediate = _controller(_Client(), broker)
+        immediate._state_revision = 8
+        await immediate.async_close_pairing_window()
+        assert broker.has_active_action is False
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client(_Client):
+            async def close_pairing_window(self, **kwargs: Any):  # noqa: ANN202
+                self.calls.append(("close_pairing_window", dict(kwargs)))
+                started.set()
+                await release.wait()
+                return SimpleNamespace(
+                    state_revision=10,
+                    outcome="pairing_closed",
+                    replayed=False,
+                    selection_id=None,
+                    action_id=None,
+                )
+
+        broker.own(ACTION_ID)
+        delayed_client = Client()
+        delayed = _controller(delayed_client, broker)
+        delayed._state_revision = 9
+        close = asyncio.create_task(delayed.async_close_pairing_window())
+        await started.wait()
+        broker.clear(expected_action_id=ACTION_ID)
+        newer_action_id = "b" * 64
+        broker.own(newer_action_id)
+        release.set()
+
+        await close
+        assert broker.action_id == newer_action_id
+        assert sum(
+            name == "close_pairing_window"
+            for name, _data in delayed_client.calls
+        ) == 1
+
+    asyncio.run(scenario())
+
+
 def test_status_menu_observation_caches_owned_terminal_before_resume() -> None:
     broker = EEBusActionTerminalBroker()
     broker.own(ACTION_ID)

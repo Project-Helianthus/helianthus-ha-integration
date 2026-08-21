@@ -171,6 +171,77 @@ def test_diagnostic_poll_brokers_one_shot_terminal_to_exact_flow_once() -> None:
     assert flow_client.status_calls == 0
 
 
+def test_stale_diagnostic_status_cannot_mutate_newer_broker_generation() -> None:
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = _coordinator()
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    first_action_id = "a" * 64
+    second_action_id = "b" * 64
+    terminal = {
+        "action_id": first_action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 9,
+            "data": {
+                "readiness": {
+                    "process_readiness": "READY",
+                    "eebus_readiness": "READY",
+                },
+                "status": "ready",
+                "pairing_window": "open",
+                "register": "ready",
+                "listener": "ready",
+                "discovery": "ready",
+                "trusted_count": 0,
+                "connected_count": 0,
+                "discovered_count": 0,
+                "candidate_count": 1,
+                "active_action": terminal,
+            },
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    async def scenario() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client:
+            async def fetch_status(self):  # noqa: ANN202
+                started.set()
+                await release.wait()
+                return envelope
+
+        broker = pairing.EEBusActionTerminalBroker()
+        broker.own(first_action_id)
+        lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+            entry_id="entry-one", action_broker=broker
+        )
+        coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+        coordinator._client = Client()
+        coordinator.lifecycle = lifecycle
+        refresh = asyncio.create_task(coordinator._async_update_data())
+        await started.wait()
+        broker.clear(expected_action_id=first_action_id)
+        broker.own(second_action_id)
+        release.set()
+
+        await refresh
+        assert broker.action_id == second_action_id
+        assert broker.consume_terminal(second_action_id) is None
+
+    asyncio.run(scenario())
+
+
 def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
     component = importlib.import_module("custom_components.helianthus")
     calls: list[str] = []

@@ -179,6 +179,141 @@ def test_connect_service_fails_before_wire_without_entry_broker() -> None:
     assert client.calls == 0
 
 
+def test_connect_service_rejects_existing_action_before_wire() -> None:
+    services = _services()
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = importlib.import_module(
+        "custom_components.helianthus.eebus_admin_coordinator"
+    )
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+
+    class Client:
+        calls = 0
+
+        async def connect_selection(self, **_kwargs):  # noqa: ANN202
+            self.calls += 1
+            return SimpleNamespace(
+                state_revision=9,
+                outcome="connection_started",
+                replayed=False,
+                selection_id=None,
+                action_id="b" * 64,
+            )
+
+    broker = pairing.EEBusActionTerminalBroker()
+    broker.own("a" * 64)
+    client = Client()
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="one", action_broker=broker
+    )
+    coordinator = SimpleNamespace(lifecycle=lifecycle)
+    hass = _Hass()
+    services.register_eebus_admin_services(hass, entry_id="one", client=client)
+    services.bind_eebus_admin_coordinator(
+        hass, entry_id="one", coordinator=coordinator
+    )
+    connect, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["connect_selection"])
+    ]
+
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(
+            connect(
+                {
+                    "entry_id": "one",
+                    "expected_state_revision": 8,
+                    "idempotency_key": "key-connect-b",
+                    "selection_id": "selection-b",
+                }
+            )
+        )
+
+    assert captured.value.code == "candidate_busy"
+    assert client.calls == 0
+    assert broker.action_id == "a" * 64
+
+
+def test_service_and_options_connect_share_one_pre_wire_reservation() -> None:
+    services = _services()
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = importlib.import_module(
+        "custom_components.helianthus.eebus_admin_coordinator"
+    )
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+
+    async def scenario() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client:
+            def __init__(self) -> None:
+                self.connect_calls = 0
+
+            async def connect_selection(self, **_kwargs):  # noqa: ANN202
+                self.connect_calls += 1
+                if self.connect_calls == 1:
+                    started.set()
+                    await release.wait()
+                    action_id = "a" * 64
+                else:
+                    action_id = "b" * 64
+                return SimpleNamespace(
+                    state_revision=9,
+                    outcome="connection_started",
+                    replayed=False,
+                    selection_id=None,
+                    action_id=action_id,
+                )
+
+        broker = pairing.EEBusActionTerminalBroker()
+        client = Client()
+        lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+            entry_id="one", action_broker=broker
+        )
+        coordinator = SimpleNamespace(lifecycle=lifecycle)
+        hass = _Hass()
+        services.register_eebus_admin_services(
+            hass, entry_id="one", client=client
+        )
+        services.bind_eebus_admin_coordinator(
+            hass, entry_id="one", coordinator=coordinator
+        )
+        connect, _, _ = hass.services.registered[
+            ("helianthus", FIXED_SERVICES["connect_selection"])
+        ]
+        service_connect = asyncio.create_task(
+            connect(
+                {
+                    "entry_id": "one",
+                    "expected_state_revision": 8,
+                    "idempotency_key": "key-connect-service",
+                    "selection_id": "selection-service",
+                }
+            )
+        )
+        await started.wait()
+        flow = pairing.EEBusPairingController(client, action_broker=broker)
+        flow._state_revision = 8
+        flow._selection_id = "selection-flow"
+        flow._selection_revision = 8
+        flow_connect = asyncio.create_task(flow.async_connect_selection())
+        await asyncio.sleep(0)
+        try:
+            assert client.connect_calls == 1
+        finally:
+            release.set()
+            service_result, flow_result = await asyncio.gather(
+                service_connect, flow_connect, return_exceptions=True
+            )
+
+        assert service_result["outcome"] == "connection_started"
+        assert isinstance(flow_result, admin.EEBusAdminV1Error)
+        assert flow_result.code == "candidate_busy"
+        assert broker.action_id == "a" * 64
+
+    asyncio.run(scenario())
+
+
 def test_connect_and_status_services_broker_terminal_for_flow_exactly_once() -> None:
     services = _services()
     admin = importlib.import_module("custom_components.helianthus.eebus_admin")
@@ -459,6 +594,72 @@ def test_service_close_reconciles_broker_only_after_authoritative_success() -> N
     assert client.connect_calls == 2
     assert client.close_calls == 2
     assert client.status_calls == 1
+
+
+def test_delayed_service_close_cannot_clear_newer_broker_generation() -> None:
+    services = _services()
+    coordinator_module = importlib.import_module(
+        "custom_components.helianthus.eebus_admin_coordinator"
+    )
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+
+    async def scenario() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client:
+            calls = 0
+
+            async def close_pairing_window(self, **_kwargs):  # noqa: ANN202
+                self.calls += 1
+                started.set()
+                await release.wait()
+                return SimpleNamespace(
+                    state_revision=10,
+                    outcome="pairing_closed",
+                    replayed=False,
+                    selection_id=None,
+                    action_id=None,
+                )
+
+        first_action_id = "a" * 64
+        second_action_id = "b" * 64
+        broker = pairing.EEBusActionTerminalBroker()
+        broker.own(first_action_id)
+        client = Client()
+        lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+            entry_id="one", action_broker=broker
+        )
+        coordinator = SimpleNamespace(lifecycle=lifecycle)
+        hass = _Hass()
+        services.register_eebus_admin_services(
+            hass, entry_id="one", client=client
+        )
+        services.bind_eebus_admin_coordinator(
+            hass, entry_id="one", coordinator=coordinator
+        )
+        close, _, _ = hass.services.registered[
+            ("helianthus", FIXED_SERVICES["close_pairing_window"])
+        ]
+        delayed_close = asyncio.create_task(
+            close(
+                {
+                    "entry_id": "one",
+                    "expected_state_revision": 9,
+                    "idempotency_key": "key-close-delayed",
+                }
+            )
+        )
+        await started.wait()
+        broker.clear(expected_action_id=first_action_id)
+        broker.own(second_action_id)
+        release.set()
+
+        await delayed_close
+        assert broker.action_id == second_action_id
+        assert client.calls == 1
+
+    asyncio.run(scenario())
 
 
 def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatch: pytest.MonkeyPatch) -> None:
