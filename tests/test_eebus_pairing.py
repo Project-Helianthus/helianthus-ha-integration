@@ -13,6 +13,7 @@ from custom_components.helianthus.eebus_pairing import (
     EEBusPairingController,
     pairing_error_disposition,
 )
+from custom_components.helianthus.eebus_admin import EEBusAdminV1Error
 
 
 SKI = "0123456789abcdef0123456789abcdef01234567"
@@ -67,7 +68,10 @@ class _Client:
 
     async def fetch_status(self):  # noqa: ANN202
         self.calls.append(("fetch_status", {}))
-        return self.statuses.pop(0)
+        result = self.statuses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     async def fetch_partners(self, view: str):  # noqa: ANN202
         self.calls.append(("fetch_partners", {"view": view}))
@@ -192,6 +196,83 @@ def test_selected_identity_and_pin_are_cleared_before_action_polling() -> None:
     asyncio.run(scenario())
 
 
+def test_transient_poll_failure_resumes_same_action_without_duplicate_connect() -> None:
+    async def scenario() -> None:
+        client = _Client()
+        client.statuses = [
+            _envelope(_status(), 7),
+            EEBusAdminV1Error("admin_boundary_unavailable"),
+            _envelope(
+                _status(
+                    action={
+                        "action_id": ACTION_ID,
+                        "kind": "connect",
+                        "state": "terminal",
+                        "outcome": "connection_completed",
+                        "retryable": False,
+                        "expiry": "2026-08-15T12:00:00Z",
+                    }
+                ),
+                9,
+            ),
+        ]
+        controller = _controller(client)
+        await controller.async_refresh_status()
+        await controller.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        await controller.async_connect_selection(pin=PIN)
+
+        with pytest.raises(EEBusAdminV1Error, match="admin_boundary_unavailable"):
+            await controller.async_poll_active_action(max_attempts=1, interval=0)
+        assert controller.has_active_action is True
+        assert sum(name == "connect_selection" for name, _data in client.calls) == 1
+
+        terminal = await controller.async_poll_active_action(
+            max_attempts=1, interval=0
+        )
+        assert terminal is not None
+        assert terminal["outcome"] == "connection_completed"
+        assert controller.has_active_action is False
+        assert sum(name == "connect_selection" for name, _data in client.calls) == 1
+
+    asyncio.run(scenario())
+
+
+def test_mismatched_action_clears_resume_without_reconstructing_or_connecting() -> None:
+    async def scenario() -> None:
+        client = _Client()
+        client.statuses = [
+            _envelope(_status(), 7),
+            _envelope(
+                _status(
+                    action={
+                        "action_id": "b" * 64,
+                        "kind": "connect",
+                        "state": "pending",
+                        "retryable": False,
+                        "expiry": "2026-08-15T12:00:00Z",
+                    }
+                ),
+                9,
+            ),
+        ]
+        controller = _controller(client)
+        await controller.async_refresh_status()
+        await controller.async_select_discovered(
+            observation_id="observation-opaque", expected_ski=SKI
+        )
+        await controller.async_connect_selection()
+        assert controller.has_active_action is True
+        assert await controller.async_poll_active_action(
+            max_attempts=1, interval=0
+        ) is None
+        assert controller.has_active_action is False
+        assert sum(name == "connect_selection" for name, _data in client.calls) == 1
+
+    asyncio.run(scenario())
+
+
 def test_candidate_compare_confirm_cancel_retry_untrust_and_abort_are_gateway_only() -> None:
     async def scenario() -> None:
         client = _Client()
@@ -258,4 +339,3 @@ def test_closed_error_presentation_never_falls_through_to_success(
     code: str, expected: str
 ) -> None:
     assert pairing_error_disposition(code) == expected
-

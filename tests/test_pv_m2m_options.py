@@ -22,6 +22,21 @@ def _ensure_options_flow_stubs() -> None:
         "homeassistant.config_entries", ModuleType("homeassistant.config_entries")
     )
     setattr(homeassistant_module, "config_entries", config_entries_module)
+    helpers_module = sys.modules.setdefault(
+        "homeassistant.helpers", ModuleType("homeassistant.helpers")
+    )
+    update_coordinator_module = sys.modules.setdefault(
+        "homeassistant.helpers.update_coordinator",
+        ModuleType("homeassistant.helpers.update_coordinator"),
+    )
+    if not hasattr(update_coordinator_module, "DataUpdateCoordinator"):
+        class _DataUpdateCoordinator:
+            @classmethod
+            def __class_getitem__(cls, _item):  # noqa: ANN202
+                return cls
+
+        update_coordinator_module.DataUpdateCoordinator = _DataUpdateCoordinator
+    setattr(homeassistant_module, "helpers", helpers_module)
 
     if not hasattr(config_entries_module, "OptionsFlow"):
         class _OptionsFlow:
@@ -171,3 +186,57 @@ def test_options_entry_is_a_native_menu_with_settings_and_ephemeral_pairing() ->
         "step_id": "init",
         "menu_options": ["settings", "eebus_pairing"],
     }
+
+
+def test_owned_pairing_action_is_resumable_from_status_and_transient_poll_error() -> None:
+    from custom_components.helianthus.eebus_admin import EEBusAdminV1Error
+
+    class Controller:
+        has_active_action = True
+
+        def __init__(self) -> None:
+            self.polls = 0
+
+        async def async_refresh_status(self) -> dict:
+            return {
+                "readiness": {
+                    "process_readiness": "READY",
+                    "eebus_readiness": "READY",
+                },
+                "pairing_window": "open",
+                "trusted_count": 0,
+                "connected_count": 0,
+                "discovered_count": 0,
+                "candidate_count": 0,
+            }
+
+        async def async_poll_active_action(self, **_kwargs):  # noqa: ANN202
+            self.polls += 1
+            if self.polls == 1:
+                raise EEBusAdminV1Error("admin_boundary_unavailable")
+            self.has_active_action = False
+            return {
+                "action_id": "a" * 64,
+                "kind": "connect",
+                "state": "terminal",
+                "outcome": "connection_completed",
+                "retryable": False,
+                "expiry": "2026-08-15T12:00:00Z",
+            }
+
+    flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
+    controller = Controller()
+    flow._eebus_controller = controller
+
+    status = asyncio.run(flow.async_step_eebus_pairing())
+    assert "eebus_action" in status["menu_options"]
+
+    first = asyncio.run(flow.async_step_eebus_action())
+    assert first["step_id"] == "eebus_action"
+    assert first["errors"] == {"base": "admin_boundary_unavailable"}
+    assert controller.has_active_action is True
+
+    resumed = asyncio.run(flow.async_step_eebus_action({}))
+    assert resumed["step_id"] == "eebus_result"
+    assert resumed["errors"] == {"base": "connection_completed"}
+    assert controller.has_active_action is False
