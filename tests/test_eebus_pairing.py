@@ -367,12 +367,14 @@ def test_connect_reservation_retains_matching_terminal_and_releases_on_failure()
     assert broker.consume_terminal(ACTION_ID) is None
 
 
-def test_stale_snapshot_may_cache_only_the_exact_newer_action() -> None:
+@pytest.mark.parametrize("newer_action_id", [ACTION_ID, "b" * 64])
+def test_stale_snapshot_cannot_cache_into_a_finalized_newer_generation(
+    newer_action_id: str,
+) -> None:
     broker = EEBusActionTerminalBroker()
     broker.own(ACTION_ID)
     stale_snapshot = broker.capture()
     broker.clear(expected_action_id=ACTION_ID)
-    newer_action_id = "b" * 64
     broker.own(newer_action_id)
     newer_terminal = {
         "action_id": newer_action_id,
@@ -383,8 +385,9 @@ def test_stale_snapshot_may_cache_only_the_exact_newer_action() -> None:
         "expiry": "2026-08-15T12:00:00Z",
     }
 
-    assert broker.observe(newer_terminal, snapshot=stale_snapshot) is True
-    assert broker.consume_terminal(newer_action_id) == newer_terminal
+    assert broker.observe(newer_terminal, snapshot=stale_snapshot) is False
+    assert broker.action_id == newer_action_id
+    assert broker.consume_terminal(newer_action_id) is None
 
 
 def test_older_snapshot_terminal_attaches_only_to_matching_reservation() -> None:
