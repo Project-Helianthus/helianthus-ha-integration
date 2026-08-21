@@ -147,7 +147,7 @@ def test_direct_snapshot_services_keep_all_identity_views_response_only() -> Non
     assert services.services_for_entry(hass, "one").client.identity == "one"
 
 
-def test_status_snapshot_service_brokers_terminal_before_sanitized_response() -> None:
+def test_connect_and_status_services_broker_terminal_for_flow_exactly_once() -> None:
     services = _services()
     admin = importlib.import_module("custom_components.helianthus.eebus_admin")
     coordinator_module = importlib.import_module(
@@ -190,54 +190,66 @@ def test_status_snapshot_service_brokers_terminal_before_sanitized_response() ->
         expected_view="status",
     )
 
-    class FlowClient:
+    class Client:
         def __init__(self) -> None:
             self.connect_calls = 0
             self.status_calls = 0
 
         async def connect_selection(self, **_kwargs):  # noqa: ANN202
             self.connect_calls += 1
-            return SimpleNamespace(state_revision=9, action_id=action_id)
+            return SimpleNamespace(
+                state_revision=9,
+                outcome="connection_started",
+                replayed=False,
+                selection_id=None,
+                action_id=action_id,
+            )
 
         async def fetch_status(self):  # noqa: ANN202
             self.status_calls += 1
-            raise AssertionError("flow must consume the service-brokered terminal")
-
-    class StatusClient:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def fetch_status(self):  # noqa: ANN202
-            self.calls += 1
             return envelope
 
     broker = pairing.EEBusActionTerminalBroker()
-    flow_client = FlowClient()
-    controller = pairing.EEBusPairingController(flow_client, action_broker=broker)
-    controller._state_revision = 8
-    controller._selection_id = "selection-opaque"
-    controller._selection_revision = 8
-    asyncio.run(controller.async_connect_selection())
-
-    status_client = StatusClient()
+    client = Client()
     lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
         entry_id="one", action_broker=broker
     )
     coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
-    coordinator._client = status_client
+    coordinator._client = client
     coordinator.lifecycle = lifecycle
 
     hass = _Hass()
-    services.register_eebus_admin_services(
-        hass, entry_id="one", client=status_client
-    )
+    services.register_eebus_admin_services(hass, entry_id="one", client=client)
     services.bind_eebus_admin_coordinator(
         hass, entry_id="one", coordinator=coordinator
     )
-    handler, _, _ = hass.services.registered[
+    connect, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["connect_selection"])
+    ]
+    connect_response = asyncio.run(
+        connect(
+            {
+                "entry_id": "one",
+                "expected_state_revision": 8,
+                "idempotency_key": "key-connect-service",
+                "selection_id": "selection-opaque",
+            }
+        )
+    )
+    assert connect_response == {
+        "state_revision": 9,
+        "outcome": "connection_started",
+        "replayed": False,
+    }
+    assert action_id not in repr(connect_response)
+    assert broker.has_active_action is True
+
+    status_snapshot, _, _ = hass.services.registered[
         ("helianthus", FIXED_SERVICES["snapshot"])
     ]
-    response = asyncio.run(handler({"entry_id": "one", "view": "status"}))
+    response = asyncio.run(
+        status_snapshot({"entry_id": "one", "view": "status"})
+    )
     assert response["state_revision"] == 9
     assert response["data"]["active_action"] == {
         "kind": "connect",
@@ -249,15 +261,15 @@ def test_status_snapshot_service_brokers_terminal_before_sanitized_response() ->
     assert "expiry" not in repr(response)
     assert "remote_ski" not in repr(response)
 
+    controller = pairing.EEBusPairingController(client, action_broker=broker)
     assert asyncio.run(
         controller.async_poll_active_action(max_attempts=1, interval=0)
     ) == terminal
     assert asyncio.run(
         controller.async_poll_active_action(max_attempts=1, interval=0)
     ) is None
-    assert flow_client.connect_calls == 1
-    assert flow_client.status_calls == 0
-    assert status_client.calls == 1
+    assert client.connect_calls == 1
+    assert client.status_calls == 1
 
 
 def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatch: pytest.MonkeyPatch) -> None:
