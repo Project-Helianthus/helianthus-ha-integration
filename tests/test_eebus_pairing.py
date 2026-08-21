@@ -367,17 +367,36 @@ def test_connect_reservation_retains_matching_terminal_and_releases_on_failure()
     assert broker.consume_terminal(ACTION_ID) is None
 
 
-@pytest.mark.parametrize("newer_action_id", [ACTION_ID, "b" * 64])
-def test_stale_snapshot_cannot_cache_into_a_finalized_newer_generation(
-    newer_action_id: str,
-) -> None:
+def test_stale_snapshot_same_action_replay_caches_terminal_once() -> None:
     broker = EEBusActionTerminalBroker()
     broker.own(ACTION_ID)
     stale_snapshot = broker.capture()
     broker.clear(expected_action_id=ACTION_ID)
+    reservation = broker.reserve_connect()
+    broker.finalize_connect(reservation, ACTION_ID)
+    terminal = {
+        "action_id": ACTION_ID,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+
+    assert broker.observe(terminal, snapshot=stale_snapshot) is True
+    assert broker.consume_terminal(ACTION_ID) == terminal
+    assert broker.consume_terminal(ACTION_ID) is None
+
+
+def test_stale_snapshot_cannot_cache_into_a_different_finalized_action() -> None:
+    broker = EEBusActionTerminalBroker()
+    broker.own(ACTION_ID)
+    stale_snapshot = broker.capture()
+    broker.clear(expected_action_id=ACTION_ID)
+    newer_action_id = "b" * 64
     broker.own(newer_action_id)
     newer_terminal = {
-        "action_id": newer_action_id,
+        "action_id": ACTION_ID,
         "kind": "connect",
         "state": "terminal",
         "outcome": "connection_completed",
