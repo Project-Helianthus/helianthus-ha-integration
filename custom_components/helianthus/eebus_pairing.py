@@ -346,8 +346,9 @@ class EEBusPairingController:
             idempotency_key=self._idempotency_key("close-window"),
         )
         self._state_revision = result.state_revision
-        self._action_broker.clear(snapshot=broker_snapshot)
-        self._clear_action_state(clear_revision=False)
+        if not result.replayed:
+            self._action_broker.clear(snapshot=broker_snapshot)
+            self._clear_action_state(clear_revision=False)
         return result
 
     async def async_select_discovered(

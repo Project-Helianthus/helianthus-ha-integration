@@ -209,7 +209,8 @@ async def _invoke(hass: Any, operation: str, call: Any) -> dict[str, Any]:
         action_broker = _action_broker(entry)
         broker_snapshot = action_broker.capture()
         result = await entry.client.close_pairing_window(**data)
-        action_broker.clear(snapshot=broker_snapshot)
+        if not result.replayed:
+            action_broker.clear(snapshot=broker_snapshot)
     else:
         result = await getattr(entry.client, operation)(**data)
     return {"state_revision": result.state_revision, "outcome": result.outcome, "replayed": result.replayed, **({"selection_id": result.selection_id} if result.selection_id else {})}
