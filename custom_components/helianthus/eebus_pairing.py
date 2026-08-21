@@ -225,15 +225,13 @@ class EEBusPairingController:
 
     async def async_close_pairing_window(self) -> HAAdminMutationResultV1:
         revision = self._require_revision()
-        try:
-            result = await self._client.close_pairing_window(
-                expected_state_revision=revision,
-                idempotency_key=self._idempotency_key("close-window"),
-            )
-            self._state_revision = result.state_revision
-            return result
-        finally:
-            self._clear_action_state(clear_revision=False)
+        result = await self._client.close_pairing_window(
+            expected_state_revision=revision,
+            idempotency_key=self._idempotency_key("close-window"),
+        )
+        self._state_revision = result.state_revision
+        self._clear_action_state(clear_revision=False)
+        return result
 
     async def async_select_discovered(
         self, *, observation_id: str, expected_ski: str
