@@ -7,6 +7,7 @@ import copy
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .eebus_admin import (
@@ -76,6 +77,12 @@ def _valid_pin(value: Any) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class EEBusActionBrokerSnapshot:
+    generation: int
+    action_id: str | None
+
+
 class EEBusActionTerminalBroker:
     """One per-entry, process-local owner for a one-shot pairing terminal."""
 
@@ -89,6 +96,8 @@ class EEBusActionTerminalBroker:
             raise ValueError("invalid action terminal TTL")
         self._now = now
         self._ttl_seconds = ttl_seconds
+        self._generation = 0
+        self._reservation: object | None = None
         self._action_id: str | None = None
         self._terminal: dict[str, Any] | None = None
         self._expires_at = 0.0
@@ -103,61 +112,158 @@ class EEBusActionTerminalBroker:
         self._prune()
         return self._action_id
 
+    def capture(self) -> EEBusActionBrokerSnapshot:
+        self._prune()
+        return EEBusActionBrokerSnapshot(self._generation, self._action_id)
+
+    def is_current(self, snapshot: EEBusActionBrokerSnapshot) -> bool:
+        self._prune()
+        return (
+            isinstance(snapshot, EEBusActionBrokerSnapshot)
+            and snapshot.generation == self._generation
+        )
+
+    def reserve_connect(self) -> object:
+        self._prune()
+        if self._action_id is not None or self._reservation is not None:
+            raise EEBusAdminV1Error("candidate_busy")
+        reservation = object()
+        self._reservation = reservation
+        self._terminal = None
+        self._generation += 1
+        return reservation
+
+    def finalize_connect(self, reservation: object, action_id: str) -> None:
+        self._validate_action_id(action_id)
+        if self._reservation is not reservation:
+            raise EEBusAdminV1Error("state_conflict")
+        terminal = self._terminal
+        if (
+            not isinstance(terminal, dict)
+            or terminal.get("action_id") != action_id
+        ):
+            terminal = None
+        self._reservation = None
+        self._action_id = action_id
+        self._terminal = terminal
+        self._expires_at = self._now() + self._ttl_seconds
+        self._generation += 1
+
+    def release_connect(self, reservation: object) -> bool:
+        if self._reservation is not reservation:
+            return False
+        self._reservation = None
+        self._terminal = None
+        self._generation += 1
+        return True
+
     def own(self, action_id: str) -> None:
         self._prune()
+        self._validate_action_id(action_id)
+        if self._action_id == action_id:
+            return
+        if self._action_id is not None or self._reservation is not None:
+            raise EEBusAdminV1Error("candidate_busy")
+        self._action_id = action_id
+        self._terminal = None
+        self._expires_at = self._now() + self._ttl_seconds
+        self._generation += 1
+
+    def observe(
+        self,
+        active_action: Any,
+        *,
+        snapshot: EEBusActionBrokerSnapshot | None = None,
+    ) -> bool:
+        self._prune()
+        if snapshot is not None and not self.is_current(snapshot):
+            if (
+                self._action_id is None
+                or not isinstance(active_action, dict)
+                or active_action.get("action_id") != self._action_id
+            ):
+                return False
+            if active_action.get("state") == "terminal":
+                self._terminal = copy.deepcopy(active_action)
+            return True
+        if self._reservation is not None:
+            if isinstance(active_action, dict):
+                candidate_action_id = active_action.get("action_id")
+                try:
+                    self._validate_action_id(candidate_action_id)
+                except EEBusAdminV1ProtocolError:
+                    return True
+                if active_action.get("state") == "terminal":
+                    self._terminal = copy.deepcopy(active_action)
+            return True
+        if self._action_id is None or active_action is None:
+            return True
+        if not isinstance(active_action, dict):
+            self.clear(snapshot=snapshot)
+            return True
+        if active_action.get("action_id") != self._action_id:
+            self.clear(snapshot=snapshot)
+            return True
+        if active_action.get("state") == "terminal":
+            self._terminal = copy.deepcopy(active_action)
+        return True
+
+    def consume_terminal(
+        self,
+        action_id: str,
+        *,
+        snapshot: EEBusActionBrokerSnapshot | None = None,
+    ) -> dict[str, Any] | None:
+        self._prune()
+        if snapshot is not None and not self.is_current(snapshot):
+            return None
+        if self._action_id is None:
+            return None
+        if action_id != self._action_id:
+            return None
+        if self._terminal is None:
+            return None
+        terminal = copy.deepcopy(self._terminal)
+        self.clear(snapshot=snapshot)
+        return terminal
+
+    def clear(
+        self,
+        *,
+        expected_action_id: str | None = None,
+        snapshot: EEBusActionBrokerSnapshot | None = None,
+    ) -> bool:
+        self._prune()
+        if snapshot is not None and not self.is_current(snapshot):
+            return False
+        if (
+            expected_action_id is not None
+            and self._action_id != expected_action_id
+        ):
+            return False
+        self._reservation = None
+        self._action_id = None
+        self._terminal = None
+        self._expires_at = 0.0
+        self._generation += 1
+        return True
+
+    def _prune(self) -> None:
+        if self._action_id is not None and self._now() >= self._expires_at:
+            self._reservation = None
+            self._action_id = None
+            self._terminal = None
+            self._expires_at = 0.0
+            self._generation += 1
+
+    @staticmethod
+    def _validate_action_id(action_id: Any) -> None:
         if (
             not isinstance(action_id, str)
             or len(action_id) != 64
             or any(character not in "0123456789abcdef" for character in action_id)
         ):
             raise EEBusAdminV1ProtocolError()
-        if self._action_id == action_id:
-            return
-        if self._action_id is not None:
-            raise EEBusAdminV1Error("candidate_busy")
-        self._action_id = action_id
-        self._expires_at = self._now() + self._ttl_seconds
-
-    def observe(self, active_action: Any) -> None:
-        self._prune()
-        if self._action_id is None or active_action is None:
-            return
-        if not isinstance(active_action, dict):
-            self.clear()
-            return
-        if active_action.get("action_id") != self._action_id:
-            self.clear()
-            return
-        if active_action.get("state") == "terminal":
-            self._terminal = copy.deepcopy(active_action)
-
-    def consume_terminal(self, action_id: str) -> dict[str, Any] | None:
-        self._prune()
-        if self._action_id is None:
-            return None
-        if action_id != self._action_id:
-            self.clear()
-            return None
-        if self._terminal is None:
-            return None
-        terminal = copy.deepcopy(self._terminal)
-        self.clear()
-        return terminal
-
-    def clear(self, *, expected_action_id: str | None = None) -> bool:
-        if (
-            expected_action_id is not None
-            and self._action_id != expected_action_id
-        ):
-            return False
-        self._action_id = None
-        self._terminal = None
-        self._expires_at = 0.0
-        return True
-
-    def _prune(self) -> None:
-        if self._action_id is not None and self._now() >= self._expires_at:
-            self.clear()
 
 
 class EEBusPairingController:
@@ -191,14 +297,23 @@ class EEBusPairingController:
         return self._action_broker.has_active_action
 
     async def async_refresh_status(self) -> dict[str, Any]:
+        return await self._async_refresh_status(self._action_broker.capture())
+
+    async def _async_refresh_status(
+        self, snapshot: EEBusActionBrokerSnapshot
+    ) -> dict[str, Any]:
         envelope = await self._client.fetch_status()
+        if not self._action_broker.is_current(snapshot):
+            self._action_broker.observe(
+                envelope.data.get("active_action"), snapshot=snapshot
+            )
+            self._sync_owned_action()
+            return envelope.data
         self._state_revision = envelope.state_revision
-        self._action_broker.observe(envelope.data.get("active_action"))
-        if (
-            self._owned_action_id is not None
-            and self._action_broker.action_id != self._owned_action_id
-        ):
-            self._owned_action_id = None
+        self._action_broker.observe(
+            envelope.data.get("active_action"), snapshot=snapshot
+        )
+        self._sync_owned_action()
         return envelope.data
 
     async def async_load_partners(self, view: str) -> list[dict[str, Any]]:
@@ -225,11 +340,13 @@ class EEBusPairingController:
 
     async def async_close_pairing_window(self) -> HAAdminMutationResultV1:
         revision = self._require_revision()
+        broker_snapshot = self._action_broker.capture()
         result = await self._client.close_pairing_window(
             expected_state_revision=revision,
             idempotency_key=self._idempotency_key("close-window"),
         )
         self._state_revision = result.state_revision
+        self._action_broker.clear(snapshot=broker_snapshot)
         self._clear_action_state(clear_revision=False)
         return result
 
@@ -263,9 +380,10 @@ class EEBusPairingController:
         revision = self._selection_revision
         if selection_id is None or revision is None:
             raise EEBusAdminV1Error("observation_stale")
-        if self._action_broker.has_active_action:
-            raise EEBusAdminV1Error("candidate_busy")
+        reservation: object | None = None
+        finalized = False
         try:
+            reservation = self._action_broker.reserve_connect()
             result = await self._client.connect_selection(
                 selection_id=selection_id,
                 pin=pin,
@@ -275,10 +393,13 @@ class EEBusPairingController:
             if not result.action_id:
                 raise EEBusAdminV1ProtocolError()
             self._state_revision = result.state_revision
-            self._action_broker.own(result.action_id)
+            self._action_broker.finalize_connect(reservation, result.action_id)
+            finalized = True
             self._owned_action_id = result.action_id
             return result
         finally:
+            if reservation is not None and not finalized:
+                self._action_broker.release_connect(reservation)
             self._selection_id = None
             self._selection_revision = None
 
@@ -289,39 +410,45 @@ class EEBusPairingController:
             raise ValueError("invalid poll bound")
         if not isinstance(interval, (int, float)) or not 0 <= interval <= 5:
             raise ValueError("invalid poll interval")
-        action_id = self._action_broker.action_id
+        initial_snapshot = self._action_broker.capture()
+        action_id = initial_snapshot.action_id
         if action_id is None:
             self._owned_action_id = None
             return None
-        cached = self._action_broker.consume_terminal(action_id)
+        cached = self._action_broker.consume_terminal(
+            action_id, snapshot=initial_snapshot
+        )
         if cached is not None:
             if self._owned_action_id == action_id:
                 self._owned_action_id = None
             return cached
         last: dict[str, Any] | None = None
         for attempt in range(max_attempts):
-            status = await self.async_refresh_status()
-            cached = self._action_broker.consume_terminal(action_id)
+            request_snapshot = self._action_broker.capture()
+            if request_snapshot.action_id != action_id:
+                self._sync_owned_action()
+                return None
+            status = await self._async_refresh_status(request_snapshot)
+            if not self._action_broker.is_current(request_snapshot):
+                self._sync_owned_action()
+                return None
+            cached = self._action_broker.consume_terminal(
+                action_id, snapshot=request_snapshot
+            )
             if cached is not None:
                 if self._owned_action_id == action_id:
                     self._owned_action_id = None
                 return cached
             active = status.get("active_action")
             if not isinstance(active, dict):
-                self._action_broker.clear()
+                self._action_broker.clear(snapshot=request_snapshot)
                 if self._owned_action_id == action_id:
                     self._owned_action_id = None
                 return None
-            self._action_broker.observe(active)
             if self._action_broker.action_id != action_id:
                 if self._owned_action_id == action_id:
                     self._owned_action_id = None
                 return None
-            terminal = self._action_broker.consume_terminal(action_id)
-            if terminal is not None:
-                if self._owned_action_id == action_id:
-                    self._owned_action_id = None
-                return terminal
             last = dict(active)
             if attempt + 1 < max_attempts:
                 await self._sleep(float(interval))
@@ -405,6 +532,13 @@ class EEBusPairingController:
             self._action_broker.clear(expected_action_id=owned_action_id)
         if clear_revision:
             self._state_revision = None
+
+    def _sync_owned_action(self) -> None:
+        if (
+            self._owned_action_id is not None
+            and self._action_broker.action_id != self._owned_action_id
+        ):
+            self._owned_action_id = None
 
     def _require_revision(self) -> int:
         if self._state_revision is None:

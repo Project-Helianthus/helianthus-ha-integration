@@ -345,6 +345,48 @@ def test_terminal_broker_rejects_new_id_while_terminal_is_unconsumed() -> None:
     assert broker.consume_terminal(ACTION_ID) == terminal
 
 
+def test_connect_reservation_retains_matching_terminal_and_releases_on_failure() -> None:
+    broker = EEBusActionTerminalBroker()
+    terminal = {
+        "action_id": ACTION_ID,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    reservation = broker.reserve_connect()
+    broker.observe(terminal, snapshot=broker.capture())
+    broker.finalize_connect(reservation, ACTION_ID)
+    assert broker.consume_terminal(ACTION_ID) == terminal
+
+    failed_reservation = broker.reserve_connect()
+    broker.observe(terminal, snapshot=broker.capture())
+    assert broker.release_connect(failed_reservation) is True
+    assert broker.has_active_action is False
+    assert broker.consume_terminal(ACTION_ID) is None
+
+
+def test_stale_snapshot_may_cache_only_the_exact_newer_action() -> None:
+    broker = EEBusActionTerminalBroker()
+    broker.own(ACTION_ID)
+    stale_snapshot = broker.capture()
+    broker.clear(expected_action_id=ACTION_ID)
+    newer_action_id = "b" * 64
+    broker.own(newer_action_id)
+    newer_terminal = {
+        "action_id": newer_action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+
+    assert broker.observe(newer_terminal, snapshot=stale_snapshot) is True
+    assert broker.consume_terminal(newer_action_id) == newer_terminal
+
+
 def test_controller_abort_clears_only_the_exact_action_it_started() -> None:
     async def scenario() -> None:
         service_broker = EEBusActionTerminalBroker()

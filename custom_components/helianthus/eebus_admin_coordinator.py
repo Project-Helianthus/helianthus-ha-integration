@@ -18,7 +18,7 @@ except (ModuleNotFoundError, ImportError):
     aiohttp = None
 
 from .eebus_admin import EEBusAdminV1Client, EEBusAdminV1Error, HAAdminProjectionStore
-from .eebus_pairing import EEBusActionTerminalBroker
+from .eebus_pairing import EEBusActionBrokerSnapshot, EEBusActionTerminalBroker
 
 _LOGGER = logging.getLogger(__name__)
 _ADMIN_TIMEOUT_TOTAL_SECONDS = 15
@@ -40,9 +40,13 @@ class EEBusAdminV1Coordinator(DataUpdateCoordinator):
         if self._client is None:
             self.lifecycle.note_setup_failure("admin_boundary_unavailable")
             raise EEBusAdminV1Error("admin_boundary_unavailable")
+        broker_snapshot = self.lifecycle.action_broker.capture()
         try:
             envelope = await self._client.fetch_status()
-            self.lifecycle.observe_status(envelope.data)
+            if not self.lifecycle.observe_status(
+                envelope.data, broker_snapshot=broker_snapshot
+            ):
+                raise EEBusAdminV1Error("state_conflict")
             self.lifecycle.store.accept("status", envelope)
             self.lifecycle.note_view_success("status", envelope.data)
             sanitized = self.lifecycle.store.data_for("status")
@@ -132,9 +136,16 @@ class EEBusAdminV1Lifecycle:
         self.diagnostic_available = True
         self.diagnostic_error = None
 
-    def observe_status(self, data: dict[str, Any]) -> None:
+    def observe_status(
+        self,
+        data: dict[str, Any],
+        *,
+        broker_snapshot: EEBusActionBrokerSnapshot | None = None,
+    ) -> bool:
         """Cache only a terminal for the exact action owned by this entry."""
-        self.action_broker.observe(data.get("active_action"))
+        return self.action_broker.observe(
+            data.get("active_action"), snapshot=broker_snapshot
+        )
 
     def note_view_failure(self, view: str, error: EEBusAdminV1Error) -> None:
         self._failed.add(view)
