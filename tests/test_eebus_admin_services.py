@@ -304,6 +304,163 @@ def test_connect_and_status_services_broker_terminal_for_flow_exactly_once() -> 
     assert client.status_calls == 1
 
 
+def test_service_close_reconciles_broker_only_after_authoritative_success() -> None:
+    services = _services()
+    admin = importlib.import_module("custom_components.helianthus.eebus_admin")
+    coordinator_module = importlib.import_module(
+        "custom_components.helianthus.eebus_admin_coordinator"
+    )
+    pairing = importlib.import_module("custom_components.helianthus.eebus_pairing")
+    first_action_id = "a" * 64
+    second_action_id = "b" * 64
+    terminal = {
+        "action_id": second_action_id,
+        "kind": "connect",
+        "state": "terminal",
+        "outcome": "connection_completed",
+        "retryable": False,
+        "expiry": "2026-08-15T12:00:00Z",
+    }
+    status = {
+        "readiness": {
+            "process_readiness": "READY",
+            "eebus_readiness": "READY",
+        },
+        "status": "ready",
+        "pairing_window": "open",
+        "register": "ready",
+        "listener": "ready",
+        "discovery": "ready",
+        "trusted_count": 0,
+        "connected_count": 0,
+        "discovered_count": 0,
+        "candidate_count": 1,
+        "active_action": terminal,
+    }
+    status_envelope = admin.parse_ha_admin_envelope(
+        {
+            "contract": admin.CONTRACT,
+            "request_id": "request-opaque",
+            "state_revision": 12,
+            "data": status,
+            "error": None,
+        },
+        expected_view="status",
+    )
+
+    class Client:
+        def __init__(self) -> None:
+            self.action_ids = [first_action_id, second_action_id]
+            self.connect_calls = 0
+            self.close_calls = 0
+            self.status_calls = 0
+
+        async def connect_selection(self, **_kwargs):  # noqa: ANN202
+            action_id = self.action_ids[self.connect_calls]
+            self.connect_calls += 1
+            return SimpleNamespace(
+                state_revision=8 + self.connect_calls,
+                outcome="connection_started",
+                replayed=False,
+                selection_id=None,
+                action_id=action_id,
+            )
+
+        async def close_pairing_window(self, **_kwargs):  # noqa: ANN202
+            self.close_calls += 1
+            if self.close_calls == 1:
+                raise admin.EEBusAdminV1Error("state_conflict")
+            return SimpleNamespace(
+                state_revision=10,
+                outcome="pairing_closed",
+                replayed=False,
+                selection_id=None,
+                action_id=None,
+            )
+
+        async def fetch_status(self):  # noqa: ANN202
+            self.status_calls += 1
+            return status_envelope
+
+    broker = pairing.EEBusActionTerminalBroker()
+    client = Client()
+    lifecycle = coordinator_module.EEBusAdminV1Lifecycle(
+        entry_id="one", action_broker=broker
+    )
+    coordinator = object.__new__(coordinator_module.EEBusAdminV1Coordinator)
+    coordinator._client = client
+    coordinator.lifecycle = lifecycle
+    hass = _Hass()
+    services.register_eebus_admin_services(hass, entry_id="one", client=client)
+    services.bind_eebus_admin_coordinator(
+        hass, entry_id="one", coordinator=coordinator
+    )
+    connect, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["connect_selection"])
+    ]
+    close, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["close_pairing_window"])
+    ]
+    snapshot, _, _ = hass.services.registered[
+        ("helianthus", FIXED_SERVICES["snapshot"])
+    ]
+    connect_call = {
+        "entry_id": "one",
+        "expected_state_revision": 8,
+        "idempotency_key": "key-connect-a",
+        "selection_id": "selection-a",
+    }
+    asyncio.run(connect(connect_call))
+    assert broker.action_id == first_action_id
+
+    with pytest.raises(admin.EEBusAdminV1Error) as captured:
+        asyncio.run(
+            close(
+                {
+                    "entry_id": "one",
+                    "expected_state_revision": 9,
+                    "idempotency_key": "key-close-failed",
+                }
+            )
+        )
+    assert captured.value.code == "state_conflict"
+    assert broker.action_id == first_action_id
+
+    close_response = asyncio.run(
+        close(
+            {
+                "entry_id": "one",
+                "expected_state_revision": 9,
+                "idempotency_key": "key-close-success",
+            }
+        )
+    )
+    assert close_response["outcome"] == "pairing_closed"
+    assert broker.has_active_action is False
+
+    connect_call.update(
+        expected_state_revision=11,
+        idempotency_key="key-connect-b",
+        selection_id="selection-b",
+    )
+    second_response = asyncio.run(connect(connect_call))
+    assert second_action_id not in repr(second_response)
+    assert broker.action_id == second_action_id
+
+    status_response = asyncio.run(snapshot({"entry_id": "one"}))
+    assert second_action_id not in repr(status_response)
+    controller = pairing.EEBusPairingController(client, action_broker=broker)
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) == terminal
+    assert asyncio.run(
+        controller.async_poll_active_action(max_attempts=1, interval=0)
+    ) is None
+    assert client.connect_calls == 2
+    assert client.close_calls == 2
+    assert client.status_calls == 1
+
+
 def test_real_schema_strict_int_validator_rejects_bool_before_handler(monkeypatch: pytest.MonkeyPatch) -> None:
     services = _services()
     strict_int = services._strict_int
