@@ -88,6 +88,7 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
                 "idempotency_conflict",
                 "pairing_closed",
                 "observation_stale",
+                "candidate_busy",
             }
         ),
         503: frozenset(
@@ -97,7 +98,7 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
                 "discovery_unavailable",
             }
         ),
-        422: frozenset({"unknown_state"}),
+        422: frozenset({"trust_denied", "unknown_state"}),
     },
     "connect": {
         400: frozenset({"invalid_request", "identity_mismatch"}),
@@ -107,6 +108,7 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
                 "idempotency_conflict",
                 "pairing_closed",
                 "observation_stale",
+                "candidate_busy",
             }
         ),
         503: frozenset(
@@ -171,13 +173,23 @@ _HTTP_ERROR_CODES: dict[str, dict[int, frozenset[str]]] = {
                 "snapshot_expired",
                 "idempotency_conflict",
                 "backoff_active",
+                "candidate_busy",
             }
         ),
         503: frozenset(
-            {"admin_boundary_unavailable", "terminal_quarantine"}
+            {
+                "admin_boundary_unavailable",
+                "discovery_unavailable",
+                "terminal_quarantine",
+            }
         ),
         422: frozenset(
-            {"association_incomplete", "disconnected", "unknown_state"}
+            {
+                "association_incomplete",
+                "disconnected",
+                "trust_denied",
+                "unknown_state",
+            }
         ),
     },
     "untrust": {
