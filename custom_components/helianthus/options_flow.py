@@ -198,6 +198,8 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             if status.get("pairing_window") == "open"
             else "eebus_open_window"
         ]
+        if controller.has_active_action:
+            menu.append("eebus_action")
         if status.get("discovered_count", 0) > 0:
             menu.append("eebus_discovered")
         if status.get("candidate_count", 0) > 0:
@@ -374,6 +376,14 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 max_attempts=4, interval=0.5
             )
         except Exception as error:
+            controller = self._pairing_controller()
+            if controller is not None and controller.has_active_action:
+                return self.async_show_form(
+                    step_id="eebus_action",
+                    data_schema=vol.Schema({}),
+                    errors={"base": self._error_code(error)},
+                    description_placeholders={"action_state": "retry"},
+                )
             return self._eebus_error("eebus_action", self._error_code(error))
         if active is None:
             return self._eebus_error("eebus_action", "unknown_state")

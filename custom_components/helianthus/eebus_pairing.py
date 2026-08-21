@@ -97,6 +97,11 @@ class EEBusPairingController:
     def state_revision(self) -> int | None:
         return self._state_revision
 
+    @property
+    def has_active_action(self) -> bool:
+        """Report only whether this flow owns a volatile action correlation."""
+        return self._action_id is not None
+
     async def async_refresh_status(self) -> dict[str, Any]:
         envelope = await self._client.fetch_status()
         self._state_revision = envelope.state_revision
@@ -288,4 +293,3 @@ class EEBusPairingController:
         if self._state_revision is None:
             raise EEBusAdminV1Error("state_conflict")
         return self._state_revision
-
