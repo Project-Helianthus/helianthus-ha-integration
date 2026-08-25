@@ -1,155 +1,47 @@
 # AGENTS
 
-This repository is part of the **Helianthus Multi-Protocol HVAC Gateway Platform**.
+## Scope
 
-## Dual-AI Operating Model
+This repository is the Home Assistant integration for Helianthus. It is a
+protocol-neutral consumer of a stable, public API and maps that API into Home
+Assistant config, devices, entities, services, and diagnostics.
 
-All development follows the dual-AI orchestrator protocol defined in the workspace-root [`AGENTS.md`](../AGENTS.md):
+Do not embed protocol-specific transport or decoding logic, infer unpublished
+API semantics, or make the integration a source of gateway API design. If a
+stable public API cannot express a required consumer behavior, stop and request
+an API decision rather than creating a private workaround.
 
-- **Role binding:** `ORCHESTRATOR` and `CO_PILOT` are portable roles. The current workspace default is Claude as orchestrator and Codex as co-pilot, but this repo must remain swap-ready.
-- **Co-Pilot use:** Use the co-pilot only for adversarial/cooperative reasoning roles such as planner, bounded developer, reviewer, and second-opinion consultant. Do not spend Claude MCP or any equivalent co-pilot runtime on file reads, globs, grep, polling, or routine repo inspection.
-- **Fallback:** If the preferred co-pilot is unavailable, throttled, or not integrated, the active orchestrator spawns fresh-context agents on the available runtime and keeps the same supervision contract.
-- Phases: Adversarial Planning → Smart Routing → Dual Code Review
-- Hard rules: one issue/PR per repo, squash+merge only, doc-gate, transport-gate, MCP-first
+## Workflow
 
-See the root AGENTS.md for the full protocol, routing tables, portable role prompts, and invariants. When running under Codex local orchestration, use the workspace-root skills `helianthus-orchestrator-supervision` and `helianthus-review-watch` as the portable supervision contract.
+1. Create one English GitHub issue for the change.
+2. Create `issue/<number>-<short-slug>` from `origin/main`.
+3. Make the smallest scoped change and add or update focused automated tests.
+4. Run `./scripts/ci_local.sh`, commit, push, and open one PR that links the
+   issue.
+5. Resolve every valid P0-P2 finding and rerun validation after each fix.
+6. Obtain a fresh exact-HEAD `NO_BLOCKING_FINDINGS` review with all required
+   checks green.
+7. Squash merge, verify remote `main`, and close the issue.
 
----
+Use public GitHub URLs in tracked documentation. Instructions must remain
+usable when this repository is checked out alone and must not depend on external
+checkout or machine state.
 
-## Repo-Specific Rules
+## Tests and deployment
 
-## Helianthus HA Integration – Agent Instructions
+- Automated tests must use mocks, fixtures, or fakes for Home Assistant and API
+  behavior; they must not require a real Home Assistant instance.
+- A real-Home-Assistant smoke test is optional supplemental evidence, never a
+  mandatory CI or PR gate.
+- Never perform a live deployment, installation write, credential change, or
+  live-system mutation without explicit operator confirmation at action time.
+- Record the command and result for every validation run in the PR.
+- Public API or externally visible entity-behavior changes require the
+  corresponding public documentation gate.
 
-### Identity & Scope
+## Review hygiene
 
-You are the development agent for the Helianthus Home Assistant integration. This repo implements a custom HA integration that consumes Helianthus GraphQL and creates the HA device/entity model.
-
-You do **not** make architectural decisions. Those are defined in `ARCHITECTURE.md`. If something is not covered there, stop and ask. You do **not** skip ahead of the milestone/issue order.
-
-### Workflow Note
-
-The bootstrap scaffolding is already in place. All changes must go through a PR; do not commit directly to `main`.
-
----
-
-### Workflow: After Bootstrap
-
-1. Create milestones and issues (all at once, in order) based on the plan below.
-2. Implement one issue at a time:
-
-```
-Loop:
-  1. Take the lowest-numbered open issue
-  2. Create a branch from main
-  3. Implement the issue
-  4. Push branch, open PR referencing the issue
-  5. CI must pass
-  6. If HA smoke test is required, it must pass locally
-  7. Merge PR (squash), close issue
-```
-
-#### Constraints
-
-- **One issue at a time.**
-- **No code changes outside issues.**
-- **Branch naming:** `issue/<number>-<short-slug>`
-- **GitHub artifacts in English.**
-- **Review comments:** react (emoji) to every review comment to signal it has been seen, and reply with status when actioned.
-
----
-
-### Issue Template
-
-```markdown
-## What
-One-sentence description of what this issue implements.
-
-## Why
-How this connects to ARCHITECTURE.md.
-
-## Acceptance Criteria
-- [ ] Specific, testable condition 1
-- [ ] Specific, testable condition 2
-- [ ] Tests updated/added if applicable
-- [ ] CI green
-- [ ] Smoke test required: YES / NO
-
-## Dependencies
-- Depends on issue #X (if any)
-```
-
----
-
-### Milestone Plan
-
-#### M1: Discovery + Config Flow
-- mDNS discovery via `_helianthus-graphql._tcp`
-- Config flow for host/port selection
-- Minimal GraphQL client (async)
-
-#### M2: Device Tree
-- Create HA device registry tree: daemon → adapter → bus devices → virtuals
-- Device ID scheme + fallback rules
-
-#### M3: Diagnostic Entities
-- Expose device inventory fields as diagnostics
-- Status + firmware + updates_available
-
-#### M4: Climate & DHW
-- Build climate entities for zones
-- Water heater (or climate fallback) for DHW
-
-#### M5: Energy
-- Expose total_increasing sensors (gas/electric/solar)
-- Indexing logic: sum(yearly) + today
-
-#### M6: Realtime Updates
-- GraphQL subscriptions (if available)
-- Polling fallback
-
----
-
-If something required by HA is missing from GraphQL, stop and open an issue in the relevant Helianthus repo before continuing.
-
-### MCP-first Policy
-
-#### Scope and ordering
-- MCP is the primary prototyping/exploration interface.
-- GraphQL is second and may reach parity only after MCP tools are deterministic and contract-solid.
-- Home Assistant and other consumers are enabled only after GraphQL parity and stability gates are met.
-
-#### Tool taxonomy and naming
-- Core stable tools use versioned names: `ebus.v<MAJOR>.<domain>.<subdomain>.<verb>`.
-- Experimental tools live under `ebus.experimental.*` and are never used by external consumers.
-- Prefer composable tools over monolithic endpoints.
-
-#### Contract envelope (required for ebus.v1.*)
-Each `ebus.v1.*` tool returns:
-- `meta` with `contract`, `consistency`, `data_timestamp`, `data_hash`
-- `data`
-- `error` (null or structured error)
-
-#### Determinism requirements
-- List ordering must be stable.
-- Snapshot mode must produce stable `data_hash` for identical snapshot + request.
-- Tool schemas and outputs must have golden snapshots.
-
-#### Invoke safety
-`ebus.v1.rpc.invoke` requires:
-- explicit `intent` (`READ_ONLY` or `MUTATE`)
-- `allow_dangerous=true` for mutating or unknown methods
-- `idempotency_key` for mutating intent
-
-#### Graduation gates (MCP -> GraphQL)
-A capability may graduate to GraphQL only if:
-1. it exists as core stable MCP (`ebus.v1.*`)
-2. it passes determinism + contract + golden tests
-3. parity tests MCP <-> GraphQL are green
-
-#### End-of-cycle cleanup
-At cycle end, each `ebus.experimental.*` tool must be promoted, deleted, or moved to internal-only with written justification.
-No temporary/junk tool may remain in the showroom surface.
-
-#### CI gates
-- Breaking changes in `ebus.v1.*` require a new major namespace.
-- Parity drift MCP vs GraphQL fails CI.
+- Keep one active issue and PR for the same repository change.
+- Reply to actionable review comments with the result and commit reference.
+- Preserve stable public API compatibility and existing entity unique IDs unless
+  an approved issue explicitly requires a migration.
