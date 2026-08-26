@@ -244,6 +244,27 @@ def test_client_bounds_decompressed_response_before_text_or_json_materialization
     assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
 
 
+def test_client_accepts_valid_response_at_exact_inclusive_size_limit() -> None:
+    raw = json.dumps(_success_envelope(), separators=(",", ":")).encode("utf-8")
+    raw += b" " * (pv_m2m.M2M_MAX_RESPONSE_BYTES - len(raw))
+    assert len(raw) == pv_m2m.M2M_MAX_RESPONSE_BYTES
+
+    response = _Response({})
+    response.content = _BodyStream(raw, max_chunk=65_536)
+    client = pv_m2m.PVM2MClient(
+        session=_Session([response]),
+        endpoint="https://pv.example.test/graphql/m2m/v1",
+        asset_ref="pv-asset-01",
+    )
+
+    snapshot = asyncio.run(client.async_current_snapshot())
+
+    assert snapshot.asset_ref == "pv-asset-01"
+    assert response.text_calls == 0
+    # The final one-byte read establishes EOF without materializing over-limit data.
+    assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
+
+
 def test_client_rejects_excessive_json_depth_before_decoder(monkeypatch) -> None:  # noqa: ANN001
     response = _Response({})
     raw = b"[" * 65 + b"0" + b"]" * 65
