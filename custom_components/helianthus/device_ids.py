@@ -127,6 +127,18 @@ def is_b524_inventory_radio_bus_key(key: str | None) -> bool:
     return bool(key and key.startswith("g0c-i"))
 
 
+def should_remove_missing_radio_bus_key(
+    key: str,
+    known_keys: set[str],
+    merged_keys: set[str],
+) -> bool:
+    """Return whether a missing radio key is safe to remove from HA registries."""
+
+    return key in merged_keys or (
+        is_b524_inventory_radio_bus_key(key) and key not in known_keys
+    )
+
+
 def exportable_radio_bus_keys(devices: Iterable[object]) -> set[str]:
     """Return radio slot keys that should participate in HA inventory decisions."""
 

@@ -23,6 +23,7 @@ from custom_components.helianthus.device_ids import (
     resolve_boiler_physical_device_id,
     resolve_boiler_via_device_id,
     resolve_bus_address,
+    should_remove_missing_radio_bus_key,
     should_export_radio_device,
     solar_identifier,
     zone_identifier,
@@ -163,6 +164,12 @@ def test_is_b524_inventory_radio_bus_key_matches_only_inventory_group() -> None:
     assert is_b524_inventory_radio_bus_key("g0c-i02")
     assert not is_b524_inventory_radio_bus_key("g09-i02")
     assert not is_b524_inventory_radio_bus_key("")
+
+
+def test_missing_radio_cleanup_is_limited_to_b524_inventory_and_merged_slots() -> None:
+    assert should_remove_missing_radio_bus_key("g0c-i02", set(), set())
+    assert should_remove_missing_radio_bus_key("g09-i02", {"g09-i01"}, {"g09-i02"})
+    assert not should_remove_missing_radio_bus_key("g09-i02", set(), set())
 
 
 def test_alias_faces_share_fallback_key_when_alias_addresses_match() -> None:
