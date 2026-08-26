@@ -752,6 +752,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
         should_export_radio_device,
+        should_remove_missing_radio_bus_key,
         stable_bus_identity_model,
     )
     from .subscriptions import start_subscriptions
@@ -1711,7 +1712,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ):
                 remove_entry = True
             elif (radio_bus_key := _radio_bus_key_from_unique_id(unique_id)) is not None:
-                remove_entry = radio_bus_key not in known_radio_bus_keys
+                remove_entry = should_remove_missing_radio_bus_key(
+                    radio_bus_key,
+                    known_radio_bus_keys,
+                    set(b524_merge_targets),
+                )
             else:
                 cylinder_match = cylinder_unique_id_re.match(unique_id)
                 if cylinder_match and int(cylinder_match.group("index")) not in known_cylinder_indexes:
@@ -1741,9 +1746,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             radio_bus_key = _radio_bus_key_from_unique_id(unique_id)
             if radio_bus_key is None:
                 continue
-            if radio_bus_key not in radio_keys_to_remove and not (
-                is_b524_inventory_radio_bus_key(radio_bus_key)
-                and radio_bus_key not in known_radio_bus_keys
+            if radio_bus_key not in radio_keys_to_remove and not should_remove_missing_radio_bus_key(
+                radio_bus_key,
+                known_radio_bus_keys,
+                set(b524_merge_targets),
             ):
                 continue
             entity_registry.async_remove(entity_entry.entity_id)
@@ -1757,9 +1763,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if identifier_domain != DOMAIN or not token.startswith(radio_prefix):
                     continue
                 radio_bus_key = token[len(radio_prefix):]
-                if radio_bus_key in radio_keys_to_remove or (
-                    is_b524_inventory_radio_bus_key(radio_bus_key)
-                    and radio_bus_key not in known_radio_bus_keys
+                if radio_bus_key in radio_keys_to_remove or should_remove_missing_radio_bus_key(
+                    radio_bus_key,
+                    known_radio_bus_keys,
+                    set(b524_merge_targets),
                 ):
                     remove_device = True
                     break
@@ -1829,7 +1836,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 radio_prefix = f"{entry.entry_id}-radio-"
                 if token.startswith(radio_prefix):
                     radio_bus_key = token[len(radio_prefix):]
-                    if radio_bus_key not in known_radio_bus_keys or radio_bus_key in b524_merge_targets:
+                    if should_remove_missing_radio_bus_key(
+                        radio_bus_key,
+                        known_radio_bus_keys,
+                        set(b524_merge_targets),
+                    ):
                         remove_device = True
                         break
             if not remove_device:
