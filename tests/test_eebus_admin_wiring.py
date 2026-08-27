@@ -32,7 +32,14 @@ def test_lifecycle_is_bound_only_to_entry_and_verified_gateway_identity() -> Non
 
 def test_candidate_and_raw_data_never_reach_hass_data_entities_storage_or_logs() -> None:
     component = Path(__file__).parents[1] / "custom_components" / "helianthus"
-    for path in (component / "__init__.py", component / "sensor.py", component / "eebus_admin_coordinator.py"):
+    for path in (
+        component / "__init__.py",
+        component / "entry_setup.py",
+        component / "entry_services.py",
+        component / "entry_cleanup.py",
+        component / "sensor.py",
+        component / "eebus_admin_coordinator.py",
+    ):
         source = path.read_text().lower()
         assert "candidate_ref" not in source
         assert "remote_ski" not in source or "active_response" in source
