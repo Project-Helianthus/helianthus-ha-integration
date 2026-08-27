@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfEnergy, UnitOfTemperature
+
 from .const import DOMAIN
 from .device_ids import (
     build_radio_bus_key,
@@ -22,7 +25,22 @@ from .device_ids import (
     solar_identifier,
     stable_bus_identity_model,
 )
-from .sensor_descriptors import *  # noqa: F403
+from .sensor_descriptors import (
+    ADAPTER_STATUS_FIELDS,
+    BOILER_DIAGNOSTICS_SENSOR_FIELDS,
+    BOILER_STATE_SENSOR_FIELDS,
+    CIRCUIT_SENSOR_FIELDS,
+    CYLINDER_CONFIG_SENSOR_FIELDS,
+    DAEMON_STATUS_FIELDS,
+    REDUCED_BOILER_TEMPERATURE_FIELDS,
+    SYSTEM_SENSOR_FIELDS,
+    _FM5_MODE_INTERPRETED,
+    _RADIO_ROOM_CLASSES,
+    _RADIO_STALE_GRACE_CYCLES,
+    _SENSOR_DEVICE_CLASS_DURATION,
+    _SENSOR_DEVICE_CLASS_HUMIDITY,
+    _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+)
 def _clean_text(value: object | None) -> str | None:
     if value is None:
         return None

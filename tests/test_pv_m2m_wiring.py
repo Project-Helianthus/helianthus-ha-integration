@@ -246,8 +246,9 @@ def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer() 
 
 
 def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discovery() -> None:
-    source = (COMPONENT / "sensor.py").read_text(encoding="utf-8")
-    assert 'data.get("pv_m2m_coordinator")' in source
-    assert "HelianthusPVM2MSensor" in source
-    assert "async_add_listener" in source
-    assert "known_pv_descriptor_keys" in source
+    facade_source = (COMPONENT / "sensor.py").read_text(encoding="utf-8")
+    factory_source = (COMPONENT / "sensor_setup.py").read_text(encoding="utf-8")
+    assert "HelianthusPVM2MSensor" in facade_source
+    assert 'data.get("pv_m2m_coordinator")' in factory_source
+    assert "async_add_listener" in factory_source
+    assert "known_pv_descriptor_keys" in factory_source

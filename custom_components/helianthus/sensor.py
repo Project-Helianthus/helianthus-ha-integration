@@ -11,6 +11,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .energy import compute_total
+from .const import DOMAIN
+from . import sensor_setup
 from .pv_m2m import (
     PVM2MDescriptor,
     PVM2MFact,
@@ -45,6 +47,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     from .sensor_setup import async_setup_entry as setup_sensor_entry
 
     await setup_sensor_entry(hass, entry, async_add_entities)
+
+
+_clean_text = sensor_setup._clean_text
+_parse_circuit_index = sensor_setup._parse_circuit_index
+_parse_optional_int = sensor_setup._parse_optional_int
+_radio_slot = sensor_setup._radio_slot
+_radio_bus_key = sensor_setup._radio_bus_key
+_radio_model_name = sensor_setup._radio_model_name
+_fm5_mode = sensor_setup._fm5_mode
+_circuit_name = sensor_setup._circuit_name
+_normalize_zone_id = sensor_setup._normalize_zone_id
+_zone_instance = sensor_setup._zone_instance
 
 
 class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
