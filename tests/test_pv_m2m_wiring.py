@@ -228,16 +228,17 @@ def test_cancelled_first_refresh_closes_untransferred_https_client() -> None:
 
 
 def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it() -> None:
-    source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
-    assert "async_setup_pv_m2m_boundary" in source
-    assert '"pv_m2m_coordinator"' in source
-    assert '"pv_m2m_boundary"' in source
-    assert "await pv_m2m_boundary.async_close()" in source
-    assert "GraphQLClient(session=session" in source
+    setup_source = (COMPONENT / "entry_setup.py").read_text(encoding="utf-8")
+    cleanup_source = (COMPONENT / "entry_cleanup.py").read_text(encoding="utf-8")
+    assert "async_setup_pv_m2m_boundary" in setup_source
+    assert '"pv_m2m_coordinator"' in setup_source
+    assert '"pv_m2m_boundary"' in setup_source
+    assert "await pv_m2m_boundary.async_close()" in cleanup_source
+    assert "GraphQLClient(session=session" in setup_source
 
 
 def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer() -> None:
-    source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+    source = (COMPONENT / "entry_setup.py").read_text(encoding="utf-8")
     boundary = source.index("pv_m2m_boundary = await async_setup_pv_m2m_boundary")
     subscriptions = source.index("subscription_task = await start_subscriptions")
     runtime_owner = source.index("hass.data.setdefault(DOMAIN, {})[entry.entry_id]")

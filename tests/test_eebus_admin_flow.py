@@ -17,11 +17,11 @@ def test_eebus_admin_has_no_config_or_reauth_password_field_or_source() -> None:
 def test_generic_graphql_config_and_ha_auth_contract_remain_present() -> None:
     component = Path(__file__).parents[1] / "custom_components" / "helianthus"
     config = (component / "config_flow.py").read_text()
-    init = (component / "__init__.py").read_text()
+    entry_setup = (component / "entry_setup.py").read_text()
     assert "_async_validate_connection" in config
     assert "verify_gateway_identity" in config
-    assert "GraphQLClient" in init
-    assert "async_start_reauth" not in init
+    assert "GraphQLClient" in entry_setup
+    assert "async_start_reauth" not in entry_setup
 
 
 def test_legacy_eebus_secret_is_removed_idempotently_without_replacing_entry_state() -> None:

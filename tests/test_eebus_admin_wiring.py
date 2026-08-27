@@ -76,10 +76,16 @@ def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinat
         Path(__file__).parents[1]
         / "custom_components"
         / "helianthus"
-        / "__init__.py"
+        / "entry_services.py"
+    ).read_text()
+    cleanup_source = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "helianthus"
+        / "entry_cleanup.py"
     ).read_text()
     assert "create_unavailable_eebus_admin_coordinator" in component_source
-    assert "admin_coordinator.lifecycle.clear()" in component_source
+    assert "admin_coordinator.lifecycle.clear()" in cleanup_source
 
     broker.own("b" * 64)
     lifecycle.clear()
