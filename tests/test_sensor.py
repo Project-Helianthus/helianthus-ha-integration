@@ -741,3 +741,31 @@ def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
     )
     entity.coordinator.last_update_success = False
     assert entity.available is False
+
+
+def test_static_sensor_descriptor_inventory_and_order_are_stable() -> None:
+    assert [field.key for field in sensor_platform.STATUS_FIELDS] == [
+        "status",
+        "firmware_version",
+        "updates_available",
+    ]
+    assert [field.key for field in sensor_platform.REDUCED_BOILER_TEMPERATURE_FIELDS] == [
+        "flow_temperature_c",
+        "return_temperature_c",
+        "dhw_temperature_c",
+        "dhw_storage_temperature_c",
+    ]
+    assert [field.key for field in sensor_platform.CIRCUIT_SENSOR_FIELDS] == [
+        "flow_temperature_c",
+        "flow_setpoint_c",
+        "calc_flow_temp_c",
+        "mixer_position_pct",
+        "circuit_state",
+        "humidity",
+        "dew_point",
+        "pump_hours",
+        "pump_starts",
+    ]
+    assert sensor_platform.CIRCUIT_SENSOR_FIELDS[0].device_class == sensor_platform.SensorDeviceClass.TEMPERATURE
+    assert sensor_platform.CIRCUIT_SENSOR_FIELDS[0].native_unit == sensor_platform.UnitOfTemperature.CELSIUS
+    assert sensor_platform.CIRCUIT_SENSOR_FIELDS[0].state_class == sensor_platform.SensorStateClass.MEASUREMENT
