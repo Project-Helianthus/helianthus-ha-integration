@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from copy import deepcopy
 from datetime import timedelta
 import logging
@@ -15,6 +14,20 @@ from .admission import (
     daemon_status_with_admission,
     schema_incompatible_admission,
     source_selection_from_status_payload,
+)
+from .coordinator_availability import (
+    hold_last_known_energy_totals,
+    next_optional_query_state,
+    optional_query_available,
+)
+from .coordinator_fetch import fetch_device_inventory
+from .coordinator_merge import (
+    build_radio_zone_candidates as _build_radio_zone_candidates,
+    is_active_radio_device as _is_active_radio_device,
+    normalize_energy_totals_payload as _normalize_energy_totals_payload,
+    normalize_radio_device as _normalize_radio_device,
+    parse_optional_int as _parse_optional_int,
+    radio_bus_key as _radio_bus_key,
 )
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
@@ -526,10 +539,27 @@ query Semantic {
 }
 """
 
-_HOLIDAY_FIELDS = ["holiday_start_date", "holiday_end_date", "holiday_setpoint", "holiday_start_time", "holiday_end_time"]
-_QV_FIELDS = ["quick_veto", "quick_veto_setpoint", "quick_veto_duration", "quick_veto_expiry"]
-_SEMANTIC_RECOVERABLE_FIELDS = _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
-_PROMOTED_SEMANTIC_FIELDS = ["operation_mode_changeable", "source_label", "overrun_active"]
+_HOLIDAY_FIELDS = [
+    "holiday_start_date",
+    "holiday_end_date",
+    "holiday_setpoint",
+    "holiday_start_time",
+    "holiday_end_time",
+]
+_QV_FIELDS = [
+    "quick_veto",
+    "quick_veto_setpoint",
+    "quick_veto_duration",
+    "quick_veto_expiry",
+]
+_SEMANTIC_RECOVERABLE_FIELDS = (
+    _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
+)
+_PROMOTED_SEMANTIC_FIELDS = [
+    "operation_mode_changeable",
+    "source_label",
+    "overrun_active",
+]
 _STATUS_SCHEMA_FIELDS = [
     "busSummary",
     "status",
@@ -734,6 +764,7 @@ _RADIO_GROUP_ZONE_VR92 = 0x0A
 _RADIO_GROUP_INVENTORY = 0x0C
 _RADIO_STALE_GRACE_CYCLES = 3
 
+
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
     """Coordinator fetching GraphQL device inventory."""
 
@@ -747,67 +778,18 @@ class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         self._client = client
 
     async def _async_update_data(self) -> list[dict[str, Any]]:
-        async def fetch(query: str) -> list[dict[str, Any]]:
-            payload = await self._client.execute(query)
-            if isinstance(payload, dict):
-                return list(payload.get("devices", []))
-            return []
-
-        async def fetch_with_addresses(
-            query_with_addresses: str, query_without_addresses: str
-        ) -> list[dict[str, Any]]:
-            try:
-                return await fetch(query_with_addresses)
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["addresses"]):
-                    return await fetch(query_without_addresses)
-                raise
-
-        async def fetch_base_devices() -> list[dict[str, Any]]:
-            try:
-                return await fetch_with_addresses(QUERY_BASE, QUERY_BASE_NO_ADDRESSES)
-            except GraphQLClientError as exc:
-                raise UpdateFailed(str(exc)) from exc
-            except GraphQLResponseError as exc:
-                raise UpdateFailed(str(exc)) from exc
-
-        async def fetch_v2_devices() -> list[dict[str, Any]]:
-            try:
-                return await fetch_with_addresses(QUERY_EXTENDED_V2, QUERY_EXTENDED_V2_NO_ADDRESSES)
-            except GraphQLClientError as exc:
-                raise UpdateFailed(str(exc)) from exc
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
-                    return await fetch_base_devices()
-                raise UpdateFailed(str(exc)) from exc
-
-        async def fetch_v3_no_part_devices() -> list[dict[str, Any]]:
-            try:
-                return await fetch_with_addresses(
-                    QUERY_EXTENDED_V3_NO_PART,
-                    QUERY_EXTENDED_V3_NO_PART_NO_ADDRESSES,
-                )
-            except GraphQLClientError as exc:
-                raise UpdateFailed(str(exc)) from exc
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["display_name", "product_family", "product_model"]):
-                    return await fetch_v2_devices()
-                if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
-                    return await fetch_base_devices()
-                raise UpdateFailed(str(exc)) from exc
-
-        try:
-            return await fetch_with_addresses(QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_ADDRESSES)
-        except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["part_number"]):
-                return await fetch_v3_no_part_devices()
-            if _is_missing_field_error(exc.errors, ["display_name", "product_family", "product_model"]):
-                return await fetch_v2_devices()
-            if _is_missing_field_error(exc.errors, ["serial_number", "mac_address"]):
-                return await fetch_base_devices()
-            raise UpdateFailed(str(exc)) from exc
-        except GraphQLClientError as exc:
-            raise UpdateFailed(str(exc)) from exc
+        return await fetch_device_inventory(
+            self._client,
+            query_v3=QUERY_EXTENDED_V3,
+            query_v3_no_addresses=QUERY_EXTENDED_V3_NO_ADDRESSES,
+            query_v3_no_part=QUERY_EXTENDED_V3_NO_PART,
+            query_v3_no_part_no_addresses=QUERY_EXTENDED_V3_NO_PART_NO_ADDRESSES,
+            query_v2=QUERY_EXTENDED_V2,
+            query_v2_no_addresses=QUERY_EXTENDED_V2_NO_ADDRESSES,
+            query_base=QUERY_BASE,
+            query_base_no_addresses=QUERY_BASE_NO_ADDRESSES,
+            is_missing_field_error=_is_missing_field_error,
+        )
 
 
 class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -874,7 +856,9 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
             if force_schema_incompatible
             else source_selection_from_status_payload(payload)
         )
-        daemon = daemon_status_with_admission(payload.get("daemon_status", {}) or {}, raw_admission)
+        daemon = daemon_status_with_admission(
+            payload.get("daemon_status", {}) or {}, raw_admission
+        )
         return {
             "daemon": daemon,
             "adapter": payload.get("adapter_status", {}) or {},
@@ -896,7 +880,13 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
 
     async def _async_update_data(self) -> dict[str, Any]:
-        queries = [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY, QUERY_SEMANTIC_NO_QV, QUERY_SEMANTIC_LEGACY]
+        queries = [
+            QUERY_SEMANTIC_PROMOTED,
+            QUERY_SEMANTIC,
+            QUERY_SEMANTIC_NO_HOLIDAY,
+            QUERY_SEMANTIC_NO_QV,
+            QUERY_SEMANTIC_LEGACY,
+        ]
         payload = None
         for query in queries:
             try:
@@ -976,11 +966,7 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(circuits, list):
             return {"circuits": []}
         return {
-            "circuits": [
-                circuit
-                for circuit in circuits
-                if isinstance(circuit, dict)
-            ]
+            "circuits": [circuit for circuit in circuits if isinstance(circuit, dict)]
         }
 
 
@@ -1230,11 +1216,11 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def system_installer_available(self) -> bool:
-        return self._system_installer_available is not False
+        return optional_query_available(self._system_installer_available)
 
     @property
     def system_sensitive_available(self) -> bool:
-        return self._system_sensitive_available is not False
+        return optional_query_available(self._system_sensitive_available)
 
     async def _async_update_data(self) -> dict[str, Any]:
         empty = {"state": {}, "config": {}, "properties": {}, "metadata": {}}
@@ -1290,7 +1276,11 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # query: older gateways must retain their system state/config payload.
         try:
             metadata_payload = await self._client.execute(QUERY_SYSTEM_GATEWAY_METADATA)
-            metadata_system = metadata_payload.get("system") if isinstance(metadata_payload, dict) else None
+            metadata_system = (
+                metadata_payload.get("system")
+                if isinstance(metadata_payload, dict)
+                else None
+            )
             if isinstance(metadata_system, dict):
                 result["metadata"] = {
                     key: metadata_system[key]
@@ -1298,7 +1288,9 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if key in metadata_system
                 }
         except GraphQLResponseError as exc:
-            if not _is_missing_field_error(exc.errors, ["gateway_brand", "gateway_vendor"]):
+            if not _is_missing_field_error(
+                exc.errors, ["gateway_brand", "gateway_vendor"]
+            ):
                 raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError:
             pass
@@ -1307,15 +1299,29 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._system_installer_available is not False:
             try:
                 inst_payload = await self._client.execute(QUERY_SYSTEM_INSTALLER)
-                inst_sys = inst_payload.get("system", {}) if isinstance(inst_payload, dict) else {}
-                inst_cfg = inst_sys.get("config", {}) if isinstance(inst_sys, dict) else {}
+                inst_sys = (
+                    inst_payload.get("system", {})
+                    if isinstance(inst_payload, dict)
+                    else {}
+                )
+                inst_cfg = (
+                    inst_sys.get("config", {}) if isinstance(inst_sys, dict) else {}
+                )
                 if isinstance(inst_cfg, dict):
                     result["config"].update(inst_cfg)
-                if self._system_installer_available is None:
-                    self._system_installer_available = True
+                self._system_installer_available = next_optional_query_state(
+                    self._system_installer_available,
+                    response_received=True,
+                )
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["maintenance_date", "installer_name", "installer_phone"]):
-                    self._system_installer_available = False
+                if _is_missing_field_error(
+                    exc.errors,
+                    ["maintenance_date", "installer_name", "installer_phone"],
+                ):
+                    self._system_installer_available = next_optional_query_state(
+                        self._system_installer_available,
+                        schema_field_missing=True,
+                    )
             except GraphQLClientError:
                 pass  # transient — retry next cycle
 
@@ -1323,15 +1329,26 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._system_sensitive_available is not False:
             try:
                 sens_payload = await self._client.execute(QUERY_SYSTEM_SENSITIVE)
-                sens_sys = sens_payload.get("system", {}) if isinstance(sens_payload, dict) else {}
-                sens_cfg = sens_sys.get("config", {}) if isinstance(sens_sys, dict) else {}
+                sens_sys = (
+                    sens_payload.get("system", {})
+                    if isinstance(sens_payload, dict)
+                    else {}
+                )
+                sens_cfg = (
+                    sens_sys.get("config", {}) if isinstance(sens_sys, dict) else {}
+                )
                 if isinstance(sens_cfg, dict):
                     result["config"].update(sens_cfg)
-                if self._system_sensitive_available is None:
-                    self._system_sensitive_available = True
+                self._system_sensitive_available = next_optional_query_state(
+                    self._system_sensitive_available,
+                    response_received=True,
+                )
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
-                    self._system_sensitive_available = False
+                    self._system_sensitive_available = next_optional_query_state(
+                        self._system_sensitive_available,
+                        schema_field_missing=True,
+                    )
             except GraphQLClientError:
                 pass  # transient — retry next cycle
 
@@ -1376,10 +1393,9 @@ class HelianthusEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {"energy_totals": deepcopy(totals)}
 
     def _hold_last_valid_energy_totals(self) -> dict[str, Any]:
-        totals = getattr(self, "_last_valid_energy_totals", None)
-        if isinstance(totals, dict):
-            return {"energy_totals": deepcopy(totals)}
-        return {"energy_totals": None}
+        return hold_last_known_energy_totals(
+            getattr(self, "_last_valid_energy_totals", None)
+        )
 
 
 QUERY_BOILER_INSTALLER = """
@@ -1425,11 +1441,11 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def boiler_installer_available(self) -> bool:
-        return self._boiler_installer_available is not False
+        return optional_query_available(self._boiler_installer_available)
 
     @property
     def boiler_sensitive_available(self) -> bool:
-        return self._boiler_sensitive_available is not False
+        return optional_query_available(self._boiler_sensitive_available)
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -1490,15 +1506,30 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._boiler_installer_available is not False:
             try:
                 inst_payload = await self._client.execute(QUERY_BOILER_INSTALLER)
-                inst_boiler = inst_payload.get("boiler_status", {}) if isinstance(inst_payload, dict) else {}
-                inst_cfg = inst_boiler.get("config", {}) if isinstance(inst_boiler, dict) else {}
+                inst_boiler = (
+                    inst_payload.get("boiler_status", {})
+                    if isinstance(inst_payload, dict)
+                    else {}
+                )
+                inst_cfg = (
+                    inst_boiler.get("config", {})
+                    if isinstance(inst_boiler, dict)
+                    else {}
+                )
                 if isinstance(inst_cfg, dict):
                     config.update(inst_cfg)
-                if self._boiler_installer_available is None:
-                    self._boiler_installer_available = True
+                self._boiler_installer_available = next_optional_query_state(
+                    self._boiler_installer_available,
+                    response_received=True,
+                )
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["phone_number", "hours_till_service"]):
-                    self._boiler_installer_available = False
+                if _is_missing_field_error(
+                    exc.errors, ["phone_number", "hours_till_service"]
+                ):
+                    self._boiler_installer_available = next_optional_query_state(
+                        self._boiler_installer_available,
+                        schema_field_missing=True,
+                    )
             except GraphQLClientError:
                 pass
 
@@ -1506,15 +1537,28 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._boiler_sensitive_available is not False:
             try:
                 sens_payload = await self._client.execute(QUERY_BOILER_SENSITIVE)
-                sens_boiler = sens_payload.get("boiler_status", {}) if isinstance(sens_payload, dict) else {}
-                sens_cfg = sens_boiler.get("config", {}) if isinstance(sens_boiler, dict) else {}
+                sens_boiler = (
+                    sens_payload.get("boiler_status", {})
+                    if isinstance(sens_payload, dict)
+                    else {}
+                )
+                sens_cfg = (
+                    sens_boiler.get("config", {})
+                    if isinstance(sens_boiler, dict)
+                    else {}
+                )
                 if isinstance(sens_cfg, dict):
                     config.update(sens_cfg)
-                if self._boiler_sensitive_available is None:
-                    self._boiler_sensitive_available = True
+                self._boiler_sensitive_available = next_optional_query_state(
+                    self._boiler_sensitive_available,
+                    response_received=True,
+                )
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
-                    self._boiler_sensitive_available = False
+                    self._boiler_sensitive_available = next_optional_query_state(
+                        self._boiler_sensitive_available,
+                        schema_field_missing=True,
+                    )
             except GraphQLClientError:
                 pass
 
@@ -1595,150 +1639,6 @@ class HelianthusScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {"programs": programs}
 
 
-def _parse_optional_int(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_optional_float(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _normalize_radio_device(raw: dict[str, Any]) -> dict[str, Any] | None:
-    group = _parse_optional_int(raw.get("group"))
-    instance = _parse_optional_int(raw.get("instance"))
-    if group is None or instance is None:
-        return None
-    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
-        return None
-
-    normalized: dict[str, Any] = {
-        "group": group,
-        "instance": instance,
-        "slot_mode": str(raw.get("slot_mode") or "").strip() or "active",
-    }
-
-    connected = raw.get("device_connected")
-    if isinstance(connected, bool):
-        normalized["device_connected"] = connected
-    class_address = _parse_optional_int(raw.get("device_class_address"))
-    if class_address is not None and 0 <= class_address <= 0xFF:
-        normalized["device_class_address"] = class_address
-
-    device_model = str(raw.get("device_model") or "").strip()
-    if device_model:
-        normalized["device_model"] = device_model
-    firmware = str(raw.get("firmware_version") or "").strip()
-    if firmware:
-        normalized["firmware_version"] = firmware
-
-    hardware_identifier = _parse_optional_int(raw.get("hardware_identifier"))
-    if hardware_identifier is not None and hardware_identifier >= 0:
-        normalized["hardware_identifier"] = hardware_identifier
-    remote_control_address = _parse_optional_int(raw.get("remote_control_address"))
-    if remote_control_address is not None and remote_control_address >= 0:
-        normalized["remote_control_address"] = remote_control_address
-    paired = raw.get("device_paired")
-    if isinstance(paired, bool):
-        normalized["device_paired"] = paired
-    reception_strength = _parse_optional_int(raw.get("reception_strength"))
-    if reception_strength is not None:
-        normalized["reception_strength"] = reception_strength
-    zone_assignment = _parse_optional_int(raw.get("zone_assignment"))
-    if zone_assignment is not None and zone_assignment >= 0:
-        normalized["zone_assignment"] = zone_assignment
-    room_temperature = _parse_optional_float(raw.get("room_temperature_c"))
-    if room_temperature is not None:
-        normalized["room_temperature_c"] = room_temperature
-    room_humidity = _parse_optional_float(raw.get("room_humidity_pct"))
-    if room_humidity is not None:
-        normalized["room_humidity_pct"] = room_humidity
-
-    return normalized
-
-
-def _has_radio_identity_evidence(device: dict[str, Any]) -> bool:
-    class_address = _parse_optional_int(device.get("device_class_address"))
-    if class_address == 0x26:
-        return True
-    if str(device.get("device_model") or "").strip():
-        return True
-    if str(device.get("firmware_version") or "").strip():
-        return True
-    hardware_identifier = _parse_optional_int(device.get("hardware_identifier"))
-    if hardware_identifier is not None and hardware_identifier > 0:
-        return True
-    return False
-
-
-def _is_active_radio_device(device: dict[str, Any]) -> bool:
-    group = _parse_optional_int(device.get("group"))
-    if group is None:
-        return False
-    connected = device.get("device_connected") is True
-    if group in (_RADIO_GROUP_ZONE_VRC, _RADIO_GROUP_ZONE_VR92):
-        return connected
-    if group == _RADIO_GROUP_INVENTORY:
-        return _has_radio_identity_evidence(device)
-    return connected or _has_radio_identity_evidence(device)
-
-
-def _radio_bus_key(group: int, instance: int) -> str:
-    return f"g{group:02x}-i{instance:02d}"
-
-
-def _build_radio_zone_candidates(
-    active_by_slot: dict[tuple[int, int], dict[str, Any]],
-) -> dict[int, list[dict[str, Any]]]:
-    by_zone: defaultdict[int, list[dict[str, Any]]] = defaultdict(list)
-    for (_, _), device in active_by_slot.items():
-        group = _parse_optional_int(device.get("group"))
-        instance = _parse_optional_int(device.get("instance"))
-        if group not in (_RADIO_GROUP_ZONE_VRC, _RADIO_GROUP_ZONE_VR92):
-            continue
-        if instance is None:
-            continue
-        if device.get("device_connected") is not True:
-            continue
-        zone_assignment = _parse_optional_int(device.get("zone_assignment"))
-        if zone_assignment is None or zone_assignment <= 0:
-            continue
-        zone_instance = zone_assignment - 1
-        by_zone[zone_instance].append(
-            {
-                "group": group,
-                "instance": instance,
-                "remote_control_address": _parse_optional_int(device.get("remote_control_address")),
-                "radio_bus_key": _radio_bus_key(group, instance),
-            }
-        )
-
-    out: dict[int, list[dict[str, Any]]] = {}
-    for zone_instance, candidates in by_zone.items():
-        candidates.sort(
-            key=lambda item: (
-                int(item.get("group") or 0),
-                (
-                    int(item["remote_control_address"])
-                    if isinstance(item.get("remote_control_address"), int)
-                    else 255
-                ),
-                int(item.get("instance") or 0),
-            )
-        )
-        out[zone_instance] = candidates
-    return out
-
-
 def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
     if not isinstance(errors, list):
         return False
@@ -1752,26 +1652,6 @@ def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
             if f'Cannot query field "{field}"' in message:
                 return True
     return False
-
-
-def _normalize_energy_totals_payload(payload: Any) -> dict[str, Any] | None:
-    if not isinstance(payload, dict):
-        return None
-    totals = payload.get("energy_totals")
-    if not isinstance(totals, dict):
-        return None
-
-    for channel_name in ("gas", "electric", "solar"):
-        channel = totals.get(channel_name)
-        if not isinstance(channel, dict):
-            return None
-        for usage in ("dhw", "climate"):
-            series = channel.get(usage)
-            if not isinstance(series, dict):
-                return None
-            if "today" not in series or "yearly" not in series:
-                return None
-    return totals
 
 
 QUERY_ADAPTER_HARDWARE_INFO = """
@@ -1854,11 +1734,16 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
         self._client = client
         self._hardware_info_supported: bool | None = None
         self._hardware_info_reprobe_at: float | None = None
-        self._hardware_info_reprobe_delay_s = _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S
+        self._hardware_info_reprobe_delay_s = (
+            _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S
+        )
 
     async def _async_update_data(self) -> dict[str, Any] | None:
         now = time.monotonic()
-        if self._hardware_info_reprobe_at is not None and now < self._hardware_info_reprobe_at:
+        if (
+            self._hardware_info_reprobe_at is not None
+            and now < self._hardware_info_reprobe_at
+        ):
             return None
 
         query = (
@@ -1879,9 +1764,13 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
                 ):
                     self._hardware_info_supported = False
                 try:
-                    payload = await self._client.execute(QUERY_ADAPTER_HARDWARE_INFO_MINIMAL)
+                    payload = await self._client.execute(
+                        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL
+                    )
                 except GraphQLResponseError as minimal_exc:
-                    if _is_missing_field_error(minimal_exc.errors, ["adapter_hardware_info"]):
+                    if _is_missing_field_error(
+                        minimal_exc.errors, ["adapter_hardware_info"]
+                    ):
                         self._schedule_hardware_info_reprobe(now)
                     return None
                 except GraphQLClientError:
@@ -1912,4 +1801,6 @@ class HelianthusAdapterInfoCoordinator(DataUpdateCoordinator[dict[str, Any] | No
 
     def _reset_hardware_info_reprobe(self) -> None:
         self._hardware_info_reprobe_at = None
-        self._hardware_info_reprobe_delay_s = _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S
+        self._hardware_info_reprobe_delay_s = (
+            _ADAPTER_HARDWARE_INFO_REPROBE_INITIAL_DELAY_S
+        )
