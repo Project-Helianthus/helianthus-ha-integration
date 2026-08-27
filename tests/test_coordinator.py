@@ -31,7 +31,9 @@ homeassistant_module = types.ModuleType("homeassistant")
 homeassistant_module.helpers = helpers_module
 sys.modules.setdefault("homeassistant", homeassistant_module)
 sys.modules.setdefault("homeassistant.helpers", helpers_module)
-sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_coordinator_module)
+sys.modules.setdefault(
+    "homeassistant.helpers.update_coordinator", update_coordinator_module
+)
 
 import custom_components.helianthus.coordinator as coordinator_module
 
@@ -57,9 +59,10 @@ from custom_components.helianthus.coordinator import (
     QUERY_STATUS,
     QUERY_STATUS_NO_INITIATOR,
     QUERY_STATUS_MINIMAL,
-    QUERY_STATUS_LEGACY,
     QUERY_SYSTEM,
     QUERY_SYSTEM_GATEWAY_METADATA,
+    QUERY_SYSTEM_INSTALLER,
+    QUERY_SYSTEM_SENSITIVE,
     UpdateFailed,
     HelianthusBoilerCoordinator,
     HelianthusCircuitCoordinator,
@@ -74,7 +77,10 @@ from custom_components.helianthus.coordinator import (
     HelianthusStatusCoordinator,
     QUERY_SCHEDULES,
 )
-from custom_components.helianthus.graphql import GraphQLClientError, GraphQLResponseError
+from custom_components.helianthus.graphql import (
+    GraphQLClientError,
+    GraphQLResponseError,
+)
 
 
 class _ScriptedClient:
@@ -104,7 +110,9 @@ def _build_status_coordinator(client: _ScriptedClient) -> HelianthusStatusCoordi
     return coordinator
 
 
-def _build_adapter_info_coordinator(client: _ScriptedClient) -> HelianthusAdapterInfoCoordinator:
+def _build_adapter_info_coordinator(
+    client: _ScriptedClient,
+) -> HelianthusAdapterInfoCoordinator:
     coordinator = object.__new__(HelianthusAdapterInfoCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator._hardware_info_supported = None  # type: ignore[attr-defined]
@@ -144,13 +152,17 @@ def _build_energy_coordinator(client: _ScriptedClient) -> HelianthusEnergyCoordi
     return coordinator
 
 
-def _build_radio_coordinator(client: _ScriptedClient) -> HelianthusRadioDeviceCoordinator:
+def _build_radio_coordinator(
+    client: _ScriptedClient,
+) -> HelianthusRadioDeviceCoordinator:
     coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator._last_by_slot = {}  # type: ignore[attr-defined]
     coordinator._stale_cycles = {}  # type: ignore[attr-defined]
     coordinator.data = {}  # type: ignore[attr-defined]
-    coordinator.async_set_updated_data = lambda payload: setattr(coordinator, "data", payload)  # type: ignore[attr-defined]
+    coordinator.async_set_updated_data = lambda payload: setattr(
+        coordinator, "data", payload
+    )  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -280,7 +292,11 @@ def test_v2_fallback_drops_addresses_when_missing() -> None:
 
     assert len(data) == 1
     assert data[0]["address"] == 21
-    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V2, QUERY_EXTENDED_V2_NO_ADDRESSES]
+    assert client.calls == [
+        QUERY_EXTENDED_V3,
+        QUERY_EXTENDED_V2,
+        QUERY_EXTENDED_V2_NO_ADDRESSES,
+    ]
 
 
 def test_status_query_uses_initiator_field_when_available() -> None:
@@ -331,7 +347,11 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "initiator_address" on type "ServiceStatus".'}]
+                [
+                    {
+                        "message": 'Cannot query field "initiator_address" on type "ServiceStatus".'
+                    }
+                ]
             ),
             {
                 "daemon_status": {
@@ -358,11 +378,17 @@ def test_status_query_falls_back_when_initiator_field_missing() -> None:
     assert client.calls == [QUERY_STATUS, QUERY_STATUS_NO_INITIATOR]
 
 
-def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error() -> None:
+def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error() -> (
+    None
+):
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "initiator_address" on type "ServiceStatus".'}]
+                [
+                    {
+                        "message": 'Cannot query field "initiator_address" on type "ServiceStatus".'
+                    }
+                ]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "busSummary" on type "Query".'}]
@@ -388,14 +414,22 @@ def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error()
     assert data["daemon"]["status"] == "running"
     assert data["admission"]["trusted"] is False
     assert data["admission"]["repair_code"] == "schema_incompatible"
-    assert client.calls == [QUERY_STATUS, QUERY_STATUS_NO_INITIATOR, QUERY_STATUS_MINIMAL]
+    assert client.calls == [
+        QUERY_STATUS,
+        QUERY_STATUS_NO_INITIATOR,
+        QUERY_STATUS_MINIMAL,
+    ]
 
 
 def test_status_query_partial_source_selection_schema_fails_closed() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "failed_source" on type "BusAdmissionSourceSelection".'}]
+                [
+                    {
+                        "message": 'Cannot query field "failed_source" on type "BusAdmissionSourceSelection".'
+                    }
+                ]
             ),
             {
                 "daemon_status": {
@@ -483,10 +517,18 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "adapter_hardware_info" on type "Query".'}]
+                [
+                    {
+                        "message": 'Cannot query field "adapter_hardware_info" on type "Query".'
+                    }
+                ]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "adapter_hardware_info" on type "Query".'}]
+                [
+                    {
+                        "message": 'Cannot query field "adapter_hardware_info" on type "Query".'
+                    }
+                ]
             ),
         ]
     )
@@ -553,7 +595,11 @@ def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() ->
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "bootloader_version" on type "AdapterHardwareInfo".'}]
+                [
+                    {
+                        "message": 'Cannot query field "bootloader_version" on type "AdapterHardwareInfo".'
+                    }
+                ]
             ),
             {
                 "adapter_hardware_info": {
@@ -636,7 +682,11 @@ def test_boiler_query_missing_nested_field_falls_back_to_none() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "central_heating_pump_active" on type "BoilerState".'}]
+                [
+                    {
+                        "message": 'Cannot query field "central_heating_pump_active" on type "BoilerState".'
+                    }
+                ]
             )
         ]
     )
@@ -768,7 +818,9 @@ def test_radio_query_builds_candidates_and_inventory_slot() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    slots = {(int(item["group"]), int(item["instance"])) for item in data["radio_devices"]}
+    slots = {
+        (int(item["group"]), int(item["instance"])) for item in data["radio_devices"]
+    }
     assert slots == {(0x09, 1), (0x0C, 1)}
     assert 1 in data["radio_zone_candidates"]
     assert data["radio_zone_candidates"][1][0]["group"] == 0x09
@@ -796,15 +848,36 @@ def test_radio_query_uses_stale_grace_cycles_for_disconnected_slot() -> None:
     first = asyncio.run(coordinator._async_update_data())
     assert len(first["radio_devices"]) == 1
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
+        [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "device_connected": False,
+                "device_class_address": 0x15,
+            }
+        ]
     )
     assert coordinator.data["radio_devices"][0]["stale_cycles"] == 1  # type: ignore[index]
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
+        [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "device_connected": False,
+                "device_class_address": 0x15,
+            }
+        ]
     )
     assert coordinator.data["radio_devices"][0]["stale_cycles"] == 2  # type: ignore[index]
     coordinator.apply_radio_update(
-        [{"group": 0x09, "instance": 1, "device_connected": False, "device_class_address": 0x15}]
+        [
+            {
+                "group": 0x09,
+                "instance": 1,
+                "device_connected": False,
+                "device_class_address": 0x15,
+            }
+        ]
     )
     assert coordinator.data["radio_devices"][0]["stale_cycles"] == 3  # type: ignore[index]
 
@@ -902,7 +975,9 @@ def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
     assert coordinator._monthly_supported is False
 
 
-def _build_schedule_coordinator(client: _ScriptedClient) -> HelianthusScheduleCoordinator:
+def _build_schedule_coordinator(
+    client: _ScriptedClient,
+) -> HelianthusScheduleCoordinator:
     coordinator = object.__new__(HelianthusScheduleCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator.schedule_supported = True  # type: ignore[attr-defined]
@@ -918,7 +993,10 @@ def test_schedule_coordinator_returns_programs() -> None:
                     "hc": "heating",
                     "config": {"max_slots": 12, "has_temperature": True},
                     "days": [
-                        {"weekday": "monday", "slots": [{"start_hour": 6, "end_hour": 22}]}
+                        {
+                            "weekday": "monday",
+                            "slots": [{"start_hour": 6, "end_hour": 22}],
+                        }
                     ],
                 }
             ]
@@ -936,11 +1014,13 @@ def test_schedule_coordinator_returns_programs() -> None:
 
 
 def test_schedule_coordinator_returns_empty_on_missing_field() -> None:
-    client = _ScriptedClient([
-        GraphQLResponseError(
-            [{"message": 'Cannot query field "schedules" on type "Query".'}]
-        ),
-    ])
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": 'Cannot query field "schedules" on type "Query".'}]
+            ),
+        ]
+    )
     coordinator = _build_schedule_coordinator(client)
 
     result = asyncio.run(coordinator._async_update_data())
@@ -961,7 +1041,9 @@ def test_schedule_coordinator_returns_empty_on_null_schedules() -> None:
 # --- Semantic coordinator quick veto fallback tests ---
 
 
-def _build_semantic_coordinator(client: _ScriptedClient) -> HelianthusSemanticCoordinator:
+def _build_semantic_coordinator(
+    client: _ScriptedClient,
+) -> HelianthusSemanticCoordinator:
     coordinator = object.__new__(HelianthusSemanticCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     return coordinator
@@ -1012,7 +1094,11 @@ def test_semantic_falls_back_to_no_holiday() -> None:
                 [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
+                [
+                    {
+                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                    }
+                ]
             ),
             _semantic_payload(),
         ]
@@ -1022,7 +1108,11 @@ def test_semantic_falls_back_to_no_holiday() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC, QUERY_SEMANTIC_NO_HOLIDAY]
+    assert client.calls == [
+        QUERY_SEMANTIC_PROMOTED,
+        QUERY_SEMANTIC,
+        QUERY_SEMANTIC_NO_HOLIDAY,
+    ]
 
 
 def test_semantic_falls_back_to_no_qv() -> None:
@@ -1032,7 +1122,11 @@ def test_semantic_falls_back_to_no_qv() -> None:
                 [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
+                [
+                    {
+                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                    }
+                ]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
@@ -1060,7 +1154,11 @@ def test_semantic_falls_back_to_legacy() -> None:
                 [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'}]
+                [
+                    {
+                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                    }
+                ]
             ),
             GraphQLResponseError(
                 [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
@@ -1104,9 +1202,14 @@ def test_semantic_returns_empty_on_zones_missing() -> None:
     assert result == {"zones": [], "dhw": None}
 
 
-def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> None:
+def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> (
+    None
+):
     payload = _semantic_payload()
-    payload["dhw"] = {"state": {"current_temp_c": 0.0}, "config": {"target_temp_c": 0.0}}
+    payload["dhw"] = {
+        "state": {"current_temp_c": 0.0},
+        "config": {"target_temp_c": 0.0},
+    }
     client = _ScriptedClient(
         [
             GraphQLResponseError(
@@ -1123,7 +1226,9 @@ def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payloa
     assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC]
 
 
-def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leaks() -> None:
+def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leaks() -> (
+    None
+):
     """Keep the 18-leaf MSP-09C contract at existing public query roots only."""
     semantic_paths = {
         "/dhw/operating_mode": "operating_mode",
@@ -1147,7 +1252,9 @@ def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leak
     }
 
     assert len(semantic_paths) == 18
-    public_queries = "\n".join([QUERY_SEMANTIC_PROMOTED, QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA])
+    public_queries = "\n".join(
+        [QUERY_SEMANTIC_PROMOTED, QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA]
+    )
     assert all(field in public_queries for field in semantic_paths.values())
     assert all(
         forbidden not in public_queries
@@ -1165,7 +1272,9 @@ def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leak
     )
 
 
-def test_system_gateway_metadata_is_optional_and_preserves_existing_system_payload() -> None:
+def test_system_gateway_metadata_is_optional_and_preserves_existing_system_payload() -> (
+    None
+):
     payload = {
         "system": {
             "state": {"outdoor_temperature": 0.0},
@@ -1192,3 +1301,48 @@ def test_system_gateway_metadata_is_optional_and_preserves_existing_system_paylo
     assert result["properties"] == {"system_scheme": 0}
     assert result["metadata"] == {}
     assert client.calls[:2] == [QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA]
+
+
+def test_system_optional_query_schema_failure_preserves_base_payload_and_other_availability() -> (
+    None
+):
+    """Characterize independent optional-schema availability after a partial fetch."""
+
+    client = _ScriptedClient(
+        [
+            {
+                "system": {
+                    "state": {"outdoor_temperature": 4.5},
+                    "config": {"max_room_humidity": 60},
+                    "properties": {"system_scheme": 3},
+                }
+            },
+            {},
+            GraphQLResponseError(
+                [
+                    {
+                        "message": 'Cannot query field "installer_name" on type "SystemConfig".'
+                    }
+                ]
+            ),
+            {"system": {"config": {"installer_menu_code": "1234"}}},
+        ]
+    )
+    coordinator = _build_system_coordinator(client)
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == {
+        "state": {"outdoor_temperature": 4.5},
+        "config": {"max_room_humidity": 60, "installer_menu_code": "1234"},
+        "properties": {"system_scheme": 3},
+        "metadata": {},
+    }
+    assert coordinator.system_installer_available is False
+    assert coordinator.system_sensitive_available is True
+    assert client.calls == [
+        QUERY_SYSTEM,
+        QUERY_SYSTEM_GATEWAY_METADATA,
+        QUERY_SYSTEM_INSTALLER,
+        QUERY_SYSTEM_SENSITIVE,
+    ]
