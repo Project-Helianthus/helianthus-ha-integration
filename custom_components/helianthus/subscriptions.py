@@ -251,7 +251,9 @@ async def _handle_message(
             if isinstance(zones, list):
                 merged_zones = _merge_zone_update(zones, zone)
                 if hasattr(semantic_coordinator, "apply_zone_subscription"):
-                    semantic_coordinator.apply_zone_subscription(merged_zones)
+                    semantic_coordinator.apply_zone_subscription(
+                        merged_zones, zone.get("id")
+                    )
                 else:
                     semantic_coordinator.async_set_updated_data(
                         {"zones": merged_zones, "dhw": current.get("dhw")}

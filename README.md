@@ -93,9 +93,11 @@ The current public query provides no completeness, tombstone, or generation sign
 distinguish cold discovery, partial failure, and native removal from `zones: []` or `dhw: null` alone. Those values use
 the same bounded grace instead of asserting immediate removal, and never preserve stale values indefinitely.
 Retained values are in memory only and do not survive config-entry reloads or identity generations. Fresh positive
-polling or subscription data restores `is_stale: false` for the updated domain. When grace expires, an existing entity
-stays registered but unavailable rather than being dynamically removed. A first positive delayed inventory reloads
-the config entry once so platform setup creates the entity with its stable ID.
+polling restores each observed zone, while a zone subscription restores only the zone named by that event. An omitted
+sibling keeps its own grace counter, `is_stale` state, and write block. DHW freshness advances independently from all
+zone counters. When grace expires, an existing entity stays registered but unavailable rather than being dynamically
+removed. A first positive delayed inventory reloads the config entry once so platform setup creates the entity with
+its stable ID.
 
 Physical-device display names remain friendly product labels. The separate technical model includes the public part
 number when present, for example `VUW (part: 0012345678; eBUS: BAI00)`. Missing or blank part numbers are omitted;

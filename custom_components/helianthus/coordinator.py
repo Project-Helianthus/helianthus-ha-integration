@@ -882,28 +882,55 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
         self._last_zones: list[Any] = []
         self._last_dhw: dict[str, Any] | None = None
-        self._zone_gap_cycles = 0
+        self._zone_gap_cycles: dict[str, int] = {}
         self._dhw_gap_cycles = 0
+        self._stale_zone_ids: set[str] = set()
         self.zones_is_stale = False
         self.dhw_is_stale = False
 
+    @staticmethod
+    def _zone_key(zone: Any) -> str | None:
+        if not isinstance(zone, dict) or zone.get("id") is None:
+            return None
+        token = str(zone.get("id")).strip().lower()
+        return token or None
+
+    def zone_is_stale(self, zone_id: object | None) -> bool:
+        """Return freshness for one zone without inheriting a sibling's state."""
+        token = str(zone_id).strip().lower() if zone_id is not None else ""
+        return bool(token and token in self._stale_zone_ids)
+
+    def _materialize_zones(self, raw_zones: Any) -> list[Any]:
+        observed = raw_zones if isinstance(raw_zones, list) else []
+        observed_ids = {
+            zone_id
+            for zone in observed
+            if (zone_id := self._zone_key(zone)) is not None
+        }
+        zones = deepcopy(observed)
+        next_gap_cycles = {
+            zone_id: 0
+            for zone_id in observed_ids
+        }
+        self._stale_zone_ids.difference_update(observed_ids)
+
+        for previous in self._last_zones:
+            zone_id = self._zone_key(previous)
+            if zone_id is None or zone_id in observed_ids:
+                continue
+            gap_cycles = self._zone_gap_cycles.get(zone_id, 0) + 1
+            self._stale_zone_ids.add(zone_id)
+            if gap_cycles <= self._TRANSIENT_GAP_LIMIT:
+                zones.append(deepcopy(previous))
+                next_gap_cycles[zone_id] = gap_cycles
+
+        self._last_zones = deepcopy(zones)
+        self._zone_gap_cycles = next_gap_cycles
+        self.zones_is_stale = bool(self._stale_zone_ids)
+        return zones
+
     def _materialize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raw_zones = payload.get("zones")
-        if isinstance(raw_zones, list) and raw_zones:
-            zones = raw_zones
-            self._last_zones = deepcopy(zones)
-            self._zone_gap_cycles = 0
-            self.zones_is_stale = False
-        elif self._last_zones and self._zone_gap_cycles < self._TRANSIENT_GAP_LIMIT:
-            self._zone_gap_cycles += 1
-            self.zones_is_stale = True
-            zones = deepcopy(self._last_zones)
-        else:
-            was_stale = self.zones_is_stale or bool(self._last_zones)
-            self._last_zones = []
-            self._zone_gap_cycles = 0
-            self.zones_is_stale = was_stale
-            zones = []
+        zones = self._materialize_zones(payload.get("zones"))
 
         raw_dhw = payload.get("dhw")
         if isinstance(raw_dhw, dict):
@@ -926,29 +953,28 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _retain_transport_gap(self) -> dict[str, Any] | None:
         """Retain positive semantic data briefly across a transport failure."""
-        has_zones = bool(self._last_zones)
-        has_dhw = self._last_dhw is not None
-        if not has_zones and not has_dhw:
-            return None
+        retained = self._materialize_payload({})
+        if retained["zones"] or retained["dhw"] is not None:
+            return retained
+        return None
 
-        if has_zones:
-            self._zone_gap_cycles += 1
-            self.zones_is_stale = True
-        if has_dhw:
-            self._dhw_gap_cycles += 1
-            self.dhw_is_stale = True
-        if (
-            self._zone_gap_cycles > self._TRANSIENT_GAP_LIMIT
-            or self._dhw_gap_cycles > self._TRANSIENT_GAP_LIMIT
-        ):
-            return None
-        return {"zones": deepcopy(self._last_zones), "dhw": deepcopy(self._last_dhw)}
-
-    def apply_zone_subscription(self, zones: list[Any]) -> None:
-        """Apply an explicit fresh zone snapshot from a subscription update."""
+    def apply_zone_subscription(self, zones: list[Any], updated_zone_id: object | None) -> None:
+        """Apply one fresh zone event without refreshing stale siblings."""
         self._last_zones = deepcopy(zones)
-        self._zone_gap_cycles = 0
-        self.zones_is_stale = False
+        current_ids = {
+            zone_id
+            for zone in zones
+            if (zone_id := self._zone_key(zone)) is not None
+        }
+        for zone_id in current_ids:
+            self._zone_gap_cycles.setdefault(zone_id, 0)
+        updated_token = (
+            str(updated_zone_id).strip().lower() if updated_zone_id is not None else ""
+        )
+        if updated_token:
+            self._zone_gap_cycles[updated_token] = 0
+            self._stale_zone_ids.discard(updated_token)
+        self.zones_is_stale = bool(self._stale_zone_ids)
         current = self.data if isinstance(self.data, dict) else {}
         self.async_set_updated_data({"zones": zones, "dhw": current.get("dhw")})
 

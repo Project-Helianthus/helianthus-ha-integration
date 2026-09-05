@@ -268,6 +268,12 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     def _zone_config(self) -> dict[str, Any]:
         return self._zone().get("config") or {}
 
+    def _zone_is_stale(self) -> bool:
+        checker = getattr(self.coordinator, "zone_is_stale", None)
+        if callable(checker):
+            return bool(checker(self._zone_id))
+        return bool(getattr(self.coordinator, "zones_is_stale", False))
+
     def _room_temperature_zone_mapping(self) -> int | None:
         return _parse_optional_int(self._zone_config().get("room_temperature_zone_mapping"))
 
@@ -393,7 +399,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {
-            "is_stale": bool(getattr(self.coordinator, "zones_is_stale", False))
+            "is_stale": self._zone_is_stale()
         }
         state = self._zone_state()
         config = self._zone_config()
@@ -559,7 +565,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             raise HomeAssistantError("Regulator address is unavailable")
         if self._zone_instance is None:
             raise HomeAssistantError(f"Invalid zone id: {self._zone_id}")
-        if bool(getattr(self.coordinator, "zones_is_stale", False)):
+        if self._zone_is_stale():
             raise HomeAssistantError("Zone semantic data is stale; write blocked")
         if not bool(getattr(self.coordinator, "last_update_success", True)) or not self._zone():
             raise HomeAssistantError("Current zone semantic data is unavailable; write blocked")

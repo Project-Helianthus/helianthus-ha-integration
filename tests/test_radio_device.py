@@ -468,8 +468,10 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                 ],
                 "dhw": None,
             }
+            self.updated_zone_ids = []
 
-        def apply_zone_subscription(self, zones) -> None:  # noqa: ANN001
+        def apply_zone_subscription(self, zones, updated_zone_id) -> None:  # noqa: ANN001
+            self.updated_zone_ids.append(updated_zone_id)
             self.data = {"zones": zones, "dhw": self.data.get("dhw")}
 
         def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
@@ -503,6 +505,7 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
     assert merged_zone["config"]["room_temperature_zone_mapping"] == 2
     assert merged_zone["config"]["target_temp_c"] == 21.0
     assert semantic.data["zones"][2]["id"] == "zone-2"
+    assert semantic.updated_zone_ids == ["zone-1"]
 
 
 def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:

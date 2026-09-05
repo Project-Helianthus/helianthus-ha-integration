@@ -58,10 +58,12 @@ The public query currently has no completeness, tombstone, or generation field t
 cold discovery, partial failure, and native removal from empty values alone. The grace window therefore applies to
 all empty shapes and expires deterministically after two consecutive gaps. This prevents indefinite retention while
 avoiding an unsupported removal claim. A new config-entry setup creates a new coordinator, so retained data never
-crosses a reload, identity change, or setup generation. Fresh positive polling or subscription data resets freshness
-for its corresponding domain. Existing HA entities are not dynamically deleted when grace expires; they remain
-registered and unavailable until fresh data returns. A first positive inventory schedules one config-entry reload so
-platform setup can create the delayed entities with their stable IDs.
+crosses a reload, identity change, or setup generation. Zone freshness and gap counters are tracked by zone ID: a
+positive poll refreshes each observed zone, while a zone subscription refreshes only the zone named by that event.
+Zones omitted from either update keep their own grace and stale write block. DHW freshness advances independently, so
+one domain expiring cannot discard the other's retained reading. Existing HA entities are not dynamically deleted
+when grace expires; they remain registered and unavailable until fresh data returns. A first positive inventory
+schedules one config-entry reload so platform setup can create the delayed entities with their stable IDs.
 
 ## MCP-first Consumer Guardrails
 
