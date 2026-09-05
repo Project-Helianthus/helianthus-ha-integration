@@ -958,6 +958,16 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return retained
         return None
 
+    def _publish_subscription_data(self, data: dict[str, Any]) -> None:
+        """Notify subscription data without postponing the pending full poll.
+
+        Home Assistant 2026.9.0 ``async_set_updated_data`` cancels and resets the
+        refresh interval. Direct listener notification preserves that deadline:
+        https://github.com/home-assistant/core/blob/dfb5a9e690daaf204b542896e4b595e61a11a401/homeassistant/helpers/update_coordinator.py#L618-L634
+        """
+        self.data = data
+        self.async_update_listeners()
+
     def apply_zone_subscription(self, zones: list[Any], updated_zone_id: object | None) -> None:
         """Apply one fresh zone event without refreshing stale siblings."""
         self._last_zones = deepcopy(zones)
@@ -976,7 +986,7 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._stale_zone_ids.discard(updated_token)
         self.zones_is_stale = bool(self._stale_zone_ids)
         current = self.data if isinstance(self.data, dict) else {}
-        self.async_set_updated_data({"zones": zones, "dhw": current.get("dhw")})
+        self._publish_subscription_data({"zones": zones, "dhw": current.get("dhw")})
 
     def apply_dhw_subscription(self, dhw: dict[str, Any] | None) -> None:
         """Apply fresh DHW data or an ambiguous unavailable update."""
@@ -997,7 +1007,7 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current_dhw = None
         current = self.data if isinstance(self.data, dict) else {}
         zones = current.get("zones")
-        self.async_set_updated_data(
+        self._publish_subscription_data(
             {"zones": zones if isinstance(zones, list) else [], "dhw": current_dhw}
         )
 

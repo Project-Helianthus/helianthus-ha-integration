@@ -1053,6 +1053,7 @@ def _build_semantic_coordinator(
     coordinator._stale_zone_ids = set()  # type: ignore[attr-defined]
     coordinator.zones_is_stale = False  # type: ignore[attr-defined]
     coordinator.dhw_is_stale = False  # type: ignore[attr-defined]
+    coordinator.async_update_listeners = lambda: None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -1426,6 +1427,76 @@ def test_semantic_partial_positive_poll_gives_missing_zone_its_own_grace() -> No
     assert [zone["id"] for zone in expired["zones"]] == ["zone-1"]
     assert coordinator.zone_is_stale("zone-1") is False
     assert coordinator.zone_is_stale("zone-2") is True
+
+
+def test_semantic_frequent_zone_subscriptions_preserve_full_poll_deadline_and_expiry() -> None:
+    payload = _semantic_payload()
+    payload["zones"].append(
+        {
+            "id": "zone-2",
+            "name": "Office",
+            "state": {"current_temp_c": 19.0},
+            "config": {"operating_mode": "auto"},
+        }
+    )
+    partial = {"zones": [payload["zones"][0]], "dhw": None}
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient([payload, partial, partial, partial])
+    )
+    pending_poll_deadline = object()
+    coordinator.pending_poll_deadline = pending_poll_deadline
+    reset_calls = 0
+    listener_calls = 0
+
+    def reset_interval(updated: dict) -> None:
+        nonlocal reset_calls
+        reset_calls += 1
+        coordinator.pending_poll_deadline = object()
+        coordinator.data = updated
+
+    def notify_listeners() -> None:
+        nonlocal listener_calls
+        listener_calls += 1
+
+    coordinator.async_set_updated_data = reset_interval
+    coordinator.async_update_listeners = notify_listeners
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+
+    for temperature in range(20):
+        zones = [dict(zone) for zone in coordinator.data["zones"]]
+        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        coordinator.apply_zone_subscription(zones, "zone-1")
+
+    assert coordinator.pending_poll_deadline is pending_poll_deadline
+    assert reset_calls == 0
+    assert listener_calls == 20
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    assert coordinator.zone_is_stale("zone-2") is True
+
+    for temperature in range(20, 40):
+        zones = [dict(zone) for zone in coordinator.data["zones"]]
+        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        coordinator.apply_zone_subscription(zones, "zone-1")
+
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+
+    assert [zone["id"] for zone in coordinator.data["zones"]] == ["zone-1"]
+    assert coordinator.zone_is_stale("zone-1") is False
+    assert coordinator.zone_is_stale("zone-2") is True
+    assert coordinator.pending_poll_deadline is pending_poll_deadline
+    assert reset_calls == 0
+
+
+def test_semantic_partial_subscription_does_not_clear_full_poll_failure() -> None:
+    coordinator = _build_semantic_coordinator(_ScriptedClient([]))
+    coordinator.data = _semantic_payload()
+    coordinator._last_zones = coordinator.data["zones"]
+    coordinator.last_update_success = False
+
+    coordinator.apply_zone_subscription(coordinator.data["zones"], "zone-1")
+
+    assert coordinator.last_update_success is False
 
 
 def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> (

@@ -18,6 +18,7 @@ from .const import DOMAIN
 from .device_ids import dhw_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+from .semantic_freshness import semantic_target_is_stale
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:JSON!){
@@ -162,7 +163,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {
-            "is_stale": bool(getattr(self.coordinator, "dhw_is_stale", False))
+            "is_stale": semantic_target_is_stale(self.coordinator, "dhw")
         }
         config = self._dhw_config()
         state = self._dhw_state()

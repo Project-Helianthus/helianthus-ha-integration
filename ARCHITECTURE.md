@@ -65,6 +65,21 @@ one domain expiring cannot discard the other's retained reading. Existing HA ent
 when grace expires; they remain registered and unavailable until fresh data returns. A first positive inventory
 schedules one config-entry reload so platform setup can create the delayed entities with their stable IDs.
 
+Semantic subscription events update coordinator data and notify listeners without calling Home Assistant's
+`async_set_updated_data`, so they do not cancel or postpone the already scheduled full poll. This follows the pinned
+[Home Assistant 2026.9.0 coordinator contract](https://github.com/home-assistant/core/blob/dfb5a9e690daaf204b542896e4b595e61a11a401/homeassistant/helpers/update_coordinator.py#L618-L634),
+where `async_set_updated_data` explicitly resets the refresh interval. Full polls therefore continue to advance grace
+for zones omitted from frequent sibling subscription events.
+
+Every zone and DHW write path, including configured schedule-helper events, requires trusted source admission, a
+successful semantic coordinator state, a current matching semantic item, and fresh data. Retained display values
+never grant write authority.
+
+Every entity backed by the zone/DHW semantic coordinator uses the same target freshness and presence rules. Climate,
+water-heater, demand, DHW-status, valve, overrun, and schedule entities expose `is_stale` while retained. Once a
+target's grace expires, its entities become unavailable and return no value instead of manufacturing a zero or `off`
+state.
+
 ## MCP-first Consumer Guardrails
 
 Consumer rollout is blocked until gateway parity artifacts report green status for parity and classification gates.

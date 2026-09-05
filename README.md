@@ -99,6 +99,13 @@ zone counters. When grace expires, an existing entity stays registered but unava
 removed. A first positive delayed inventory reloads the config entry once so platform setup creates the entity with
 its stable ID.
 
+Subscription notifications preserve the existing periodic full-poll deadline, so frequent updates from one zone
+cannot postpone missing-sibling expiry. Entity controls and configured schedule helpers require fresh current
+semantic data, a successful coordinator state, and trusted source admission before sending a write.
+
+All zone/DHW semantic entities, including demand, status, valve, overrun, and schedule sensors, expose retained
+freshness consistently. Expired targets become unavailable and do not synthesize zero or `off` states.
+
 Physical-device display names remain friendly product labels. The separate technical model includes the public part
 number when present, for example `VUW (part: 0012345678; eBUS: BAI00)`. Missing or blank part numbers are omitted;
 this metadata does not alter HA device identifiers or entity unique IDs.

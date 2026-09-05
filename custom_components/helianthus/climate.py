@@ -19,6 +19,7 @@ from .device_ids import build_radio_bus_key, radio_device_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
+from .semantic_freshness import semantic_target_is_stale
 from .zone_parent import (
     normalize_radio_slot_candidate as _normalize_radio_slot_candidate,
     parse_optional_int as _parse_optional_int,
@@ -269,10 +270,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         return self._zone().get("config") or {}
 
     def _zone_is_stale(self) -> bool:
-        checker = getattr(self.coordinator, "zone_is_stale", None)
-        if callable(checker):
-            return bool(checker(self._zone_id))
-        return bool(getattr(self.coordinator, "zones_is_stale", False))
+        return semantic_target_is_stale(self.coordinator, "zone", self._zone_id)
 
     def _room_temperature_zone_mapping(self) -> int | None:
         return _parse_optional_int(self._zone_config().get("room_temperature_zone_mapping"))

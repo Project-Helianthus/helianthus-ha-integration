@@ -92,6 +92,12 @@ from custom_components.helianthus.const import DOMAIN
 class _FakeCoordinator:
     def __init__(self, data) -> None:  # noqa: ANN001
         self.data = data
+        self.last_update_success = True
+        self.stale_zone_ids: set[str] = set()
+        self.dhw_is_stale = False
+
+    def zone_is_stale(self, zone_id: object | None) -> bool:
+        return str(zone_id) in self.stale_zone_ids
 
 
 class _FakeEntry:
@@ -295,3 +301,74 @@ def test_dhw_overrun_sensor_is_absent_when_gateway_lacks_promoted_field() -> Non
         isinstance(entity, binary_sensor_platform.HelianthusDhwOverrunBinarySensor)
         for entity in entities
     )
+
+
+def test_all_semantic_binary_sensors_expose_stale_and_expire_without_false_state() -> None:
+    coordinator = _FakeCoordinator(
+        {
+            "zones": [
+                {
+                    "id": "zone-1",
+                    "name": "Living",
+                    "state": {"valve_position_pct": 50.0},
+                    "config": {"preset": "schedule"},
+                }
+            ],
+            "dhw": {
+                "state": {"overrun_active": True},
+                "config": {"preset": "schedule"},
+            },
+        }
+    )
+    coordinator.stale_zone_ids.add("zone-1")
+    coordinator.dhw_is_stale = True
+    zone_schedule = binary_sensor_platform.HelianthusScheduleBinarySensor(
+        coordinator=coordinator,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+        target_kind="zone",
+        target_id="zone-1",
+        target_name="Living",
+        target_device_id=("helianthus", "entry-1-bus-BASV2-15"),
+        schedule_key="schedule",
+        schedule_label="Daily Schedule Active",
+    )
+    zone_valve = binary_sensor_platform.HelianthusZoneValveBinarySensor(
+        coordinator=coordinator,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+        zone_id="zone-1",
+        zone_name="Living",
+        target_device_id=("helianthus", "entry-1-bus-BASV2-15"),
+    )
+    dhw_schedule = binary_sensor_platform.HelianthusScheduleBinarySensor(
+        coordinator=coordinator,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+        target_kind="dhw",
+        target_id=None,
+        target_name="Domestic Hot Water",
+        target_device_id=None,
+        schedule_key="schedule",
+        schedule_label="Daily Schedule Active",
+    )
+    dhw_overrun = binary_sensor_platform.HelianthusDhwOverrunBinarySensor(
+        coordinator=coordinator,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+    )
+    entities = (zone_schedule, zone_valve, dhw_schedule, dhw_overrun)
+
+    assert [entity.available for entity in entities] == [True, True, True, True]
+    assert [entity.extra_state_attributes["is_stale"] for entity in entities] == [
+        True,
+        True,
+        True,
+        True,
+    ]
+    assert [entity.is_on for entity in entities] == [True, True, True, True]
+
+    coordinator.data = {"zones": [], "dhw": None}
+
+    assert [entity.available for entity in entities] == [False, False, False, False]
+    assert [entity.is_on for entity in entities] == [None, None, None, None]

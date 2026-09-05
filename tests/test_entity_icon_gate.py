@@ -420,6 +420,30 @@ def test_zone_valve_icon_dynamic() -> None:
     assert valve.icon == "mdi:valve-open"
 
 
+def test_zone_valve_semantic_freshness_and_expiry() -> None:
+    coord = _FakeCoordinator(
+        {"zones": [{"id": "zone-1", "state": {"valve_position_pct": 50}}]}
+    )
+    coord.last_update_success = True
+    coord.zone_is_stale = lambda zone_id: zone_id == "zone-1"
+    valve = HelianthusZoneValve(
+        coordinator=coord,
+        entry_id="test",
+        manufacturer="V",
+        zone_id="zone-1",
+        initial_name="Zone 1",
+    )
+
+    assert valve.available is True
+    assert valve.extra_state_attributes["is_stale"] is True
+    assert valve.current_valve_position == 50
+
+    coord.data = {"zones": []}
+
+    assert valve.available is False
+    assert valve.current_valve_position is None
+
+
 # ---------------------------------------------------------------------------
 # Boiler diagnostics counter icon tests (ADR-026)
 # ---------------------------------------------------------------------------
