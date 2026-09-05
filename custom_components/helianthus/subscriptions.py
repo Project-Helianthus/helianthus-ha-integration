@@ -249,12 +249,15 @@ async def _handle_message(
             current = semantic_coordinator.data
             zones = current.get("zones", [])
             if isinstance(zones, list):
-                semantic_coordinator.async_set_updated_data(
-                    {
-                        "zones": _merge_zone_update(zones, zone),
-                        "dhw": current.get("dhw"),
-                    }
-                )
+                merged_zones = _merge_zone_update(zones, zone)
+                if hasattr(semantic_coordinator, "apply_zone_subscription"):
+                    semantic_coordinator.apply_zone_subscription(
+                        merged_zones, zone.get("id")
+                    )
+                else:
+                    semantic_coordinator.async_set_updated_data(
+                        {"zones": merged_zones, "dhw": current.get("dhw")}
+                    )
 
     if "dhw_update" in data:
         dhw = data.get("dhw_update")
@@ -270,12 +273,15 @@ async def _handle_message(
                 else dhw if dhw is None or isinstance(dhw, dict)
                 else current_dhw
             )
-            semantic_coordinator.async_set_updated_data(
-                {
-                    "zones": zones if isinstance(zones, list) else [],
-                    "dhw": merged_dhw,
-                }
-            )
+            if hasattr(semantic_coordinator, "apply_dhw_subscription"):
+                semantic_coordinator.apply_dhw_subscription(merged_dhw)
+            else:
+                semantic_coordinator.async_set_updated_data(
+                    {
+                        "zones": zones if isinstance(zones, list) else [],
+                        "dhw": merged_dhw,
+                    }
+                )
 
     if "energy_update" in data and energy_coordinator:
         energy = data.get("energy_update")

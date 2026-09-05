@@ -127,6 +127,12 @@ class _FakeCoordinator:
     def __init__(self, data: dict) -> None:
         self.data = data
         self.refresh_requests = 0
+        self.zones_is_stale = False
+        self.last_update_success = True
+        self.stale_zone_ids: set[str] = set()
+
+    def zone_is_stale(self, zone_id: str | None) -> bool:
+        return zone_id in self.stale_zone_ids
 
     async def async_request_refresh(self) -> None:
         self.refresh_requests += 1
@@ -259,6 +265,58 @@ def test_climate_write_uses_live_admission_transition() -> None:
     with pytest.raises(HomeAssistantError, match="source admission is not trusted"):
         asyncio.run(entity.async_set_temperature(temperature=22.0))
     assert client.calls == []
+
+
+def test_climate_retained_zone_is_readable_but_not_writable() -> None:
+    entity, client, coordinator = _make_entity(preset="manual")
+    coordinator.zones_is_stale = True
+    coordinator.stale_zone_ids.add("zone-1")
+
+    assert entity.available is True
+    assert entity.current_temperature == 20.0
+    assert entity.extra_state_attributes["is_stale"] is True
+    with pytest.raises(HomeAssistantError, match="semantic data is stale"):
+        asyncio.run(entity.async_set_temperature(temperature=22.0))
+    assert client.calls == []
+
+
+def test_climate_partial_zone_refresh_does_not_authorize_stale_sibling_write() -> None:
+    entity, client, coordinator = _make_entity(preset="manual")
+    coordinator.data["zones"].append(
+        {
+            "id": "zone-2",
+            "name": "Office",
+            "state": {"current_temp_c": 19.0},
+            "config": {"operating_mode": "manual"},
+        }
+    )
+    coordinator.stale_zone_ids.add("zone-2")
+    sibling = HelianthusZoneClimate(
+        "entry-1",
+        coordinator,
+        None,
+        ("helianthus", "entry-1-bus-BASV-15"),
+        "Vaillant",
+        client,
+        21,
+        _FakeStatusCoordinator(True),
+        "zone-2",
+        "Office",
+    )
+
+    assert entity.extra_state_attributes["is_stale"] is False
+    assert sibling.extra_state_attributes["is_stale"] is True
+    with pytest.raises(HomeAssistantError, match="semantic data is stale"):
+        asyncio.run(sibling.async_set_temperature(temperature=20.0))
+    assert client.calls == []
+
+
+def test_climate_explicit_zone_absence_is_unavailable() -> None:
+    entity, _client, coordinator = _make_entity()
+    coordinator.data = {"zones": [], "dhw": None}
+
+    assert entity.available is False
+    assert entity.extra_state_attributes["is_stale"] is False
 
 
 def test_climate_setup_refreshes_state_on_admission_updates(monkeypatch: pytest.MonkeyPatch) -> None:

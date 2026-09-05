@@ -82,6 +82,34 @@ zone devices in the Home Assistant device registry.
 If a mapped zone does not yet have a resolvable physical parent after the initial coordinator refresh, the
 integration will not create a provisional zone device. Setup is retried instead.
 
+## Zone and DHW freshness
+
+Zone and DHW entities wait for their first positive semantic inventory. After creation, a short missing, empty, or
+transport window retains positive last-known-good readings for two coordinator updates. Retained values stay
+available for dashboards and automations and expose `is_stale: true`; entity writes are blocked until fresh semantic
+data returns. A third consecutive gap expires the grace window.
+
+The current public query provides no completeness, tombstone, or generation signal. The consumer therefore cannot
+distinguish cold discovery, partial failure, and native removal from `zones: []` or `dhw: null` alone. Those values use
+the same bounded grace instead of asserting immediate removal, and never preserve stale values indefinitely.
+Retained values are in memory only and do not survive config-entry reloads or identity generations. Fresh positive
+polling restores each observed zone, while a zone subscription restores only the zone named by that event. An omitted
+sibling keeps its own grace counter, `is_stale` state, and write block. DHW freshness advances independently from all
+zone counters. When grace expires, an existing entity stays registered but unavailable rather than being dynamically
+removed. A first positive delayed inventory reloads the config entry once so platform setup creates the entity with
+its stable ID.
+
+Subscription notifications preserve the existing periodic full-poll deadline, so frequent updates from one zone
+cannot postpone missing-sibling expiry. Entity controls and configured schedule helpers require fresh current
+semantic data, a successful coordinator state, and trusted source admission before sending a write.
+
+All zone/DHW semantic entities, including demand, status, valve, overrun, and schedule sensors, expose retained
+freshness consistently. Expired targets become unavailable and do not synthesize zero or `off` states.
+
+Physical-device display names remain friendly product labels. The separate technical model includes the public part
+number when present, for example `VUW (part: 0012345678; eBUS: BAI00)`. Missing or blank part numbers are omitted;
+this metadata does not alter HA device identifiers or entity unique IDs.
+
 ## Clean Reset Required For Zone Model Changes
 
 The direct-attach zone model is intentionally rolled out without a registry migration layer. When adopting this

@@ -1046,6 +1046,14 @@ def _build_semantic_coordinator(
 ) -> HelianthusSemanticCoordinator:
     coordinator = object.__new__(HelianthusSemanticCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
+    coordinator._last_zones = []  # type: ignore[attr-defined]
+    coordinator._last_dhw = None  # type: ignore[attr-defined]
+    coordinator._zone_gap_cycles = {}  # type: ignore[attr-defined]
+    coordinator._dhw_gap_cycles = 0  # type: ignore[attr-defined]
+    coordinator._stale_zone_ids = set()  # type: ignore[attr-defined]
+    coordinator.zones_is_stale = False  # type: ignore[attr-defined]
+    coordinator.dhw_is_stale = False  # type: ignore[attr-defined]
+    coordinator.async_update_listeners = lambda: None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -1200,6 +1208,295 @@ def test_semantic_returns_empty_on_zones_missing() -> None:
     result = asyncio.run(coordinator._async_update_data())
 
     assert result == {"zones": [], "dhw": None}
+
+
+def test_semantic_retains_last_known_good_for_two_transient_empty_payloads() -> None:
+    payload = _semantic_payload()
+    payload["dhw"] = {
+        "state": {"current_temp_c": 47.0},
+        "config": {"target_temp_c": 50.0},
+    }
+    coordinator = _build_semantic_coordinator(_ScriptedClient([payload, {}, {}, {}]))
+
+    first = asyncio.run(coordinator._async_update_data())
+    gap_one = asyncio.run(coordinator._async_update_data())
+    gap_two = asyncio.run(coordinator._async_update_data())
+    expired = asyncio.run(coordinator._async_update_data())
+
+    assert first == payload
+    assert gap_one == payload
+    assert gap_two == payload
+    assert expired == {"zones": [], "dhw": None}
+    assert coordinator.zones_is_stale is True
+    assert coordinator.dhw_is_stale is True
+
+
+def test_semantic_empty_values_use_bounded_grace_without_claiming_removal() -> None:
+    payload = _semantic_payload()
+    payload["dhw"] = {
+        "state": {"current_temp_c": 47.0},
+        "config": {"target_temp_c": 50.0},
+    }
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient(
+            [
+                payload,
+                {"zones": [], "dhw": None},
+                {"zones": [], "dhw": None},
+                {"zones": [], "dhw": None},
+            ]
+        )
+    )
+
+    asyncio.run(coordinator._async_update_data())
+    gap_one = asyncio.run(coordinator._async_update_data())
+    gap_two = asyncio.run(coordinator._async_update_data())
+    expired = asyncio.run(coordinator._async_update_data())
+
+    assert gap_one == payload
+    assert gap_two == payload
+    assert expired == {"zones": [], "dhw": None}
+    assert coordinator.zones_is_stale is True
+    assert coordinator.dhw_is_stale is True
+
+
+def test_semantic_fresh_payload_clears_transient_staleness() -> None:
+    payload = _semantic_payload()
+    coordinator = _build_semantic_coordinator(_ScriptedClient([payload, {}, payload]))
+
+    asyncio.run(coordinator._async_update_data())
+    asyncio.run(coordinator._async_update_data())
+    assert coordinator.zones_is_stale is True
+
+    result = asyncio.run(coordinator._async_update_data())
+
+    assert result == payload
+    assert coordinator.zones_is_stale is False
+    assert coordinator.dhw_is_stale is False
+
+
+def test_semantic_retains_readings_for_two_transport_failures_then_fails() -> None:
+    payload = _semantic_payload()
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient(
+            [
+                payload,
+                GraphQLClientError("offline"),
+                GraphQLClientError("offline"),
+                GraphQLClientError("offline"),
+            ]
+        )
+    )
+
+    asyncio.run(coordinator._async_update_data())
+    assert asyncio.run(coordinator._async_update_data()) == payload
+    assert asyncio.run(coordinator._async_update_data()) == payload
+    with pytest.raises(UpdateFailed, match="offline"):
+        asyncio.run(coordinator._async_update_data())
+
+    assert coordinator.zones_is_stale is True
+
+
+def test_semantic_transport_gap_expires_zones_without_discarding_dhw_grace() -> None:
+    payload = _semantic_payload()
+    payload["dhw"] = {
+        "state": {"current_temp_c": 47.0},
+        "config": {"target_temp_c": 50.0},
+    }
+    dhw_only = {"zones": [], "dhw": payload["dhw"]}
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient(
+            [payload, dhw_only, dhw_only, GraphQLClientError("offline")]
+        )
+    )
+
+    asyncio.run(coordinator._async_update_data())
+    asyncio.run(coordinator._async_update_data())
+    asyncio.run(coordinator._async_update_data())
+    retained = asyncio.run(coordinator._async_update_data())
+
+    assert retained == {"zones": [], "dhw": payload["dhw"]}
+    assert coordinator.zones_is_stale is True
+    assert coordinator.dhw_is_stale is True
+
+
+def test_semantic_new_coordinator_does_not_inherit_prior_generation() -> None:
+    first = _build_semantic_coordinator(_ScriptedClient([_semantic_payload()]))
+    replacement = _build_semantic_coordinator(_ScriptedClient([{}]))
+
+    asyncio.run(first._async_update_data())
+    result = asyncio.run(replacement._async_update_data())
+
+    assert result == {"zones": [], "dhw": None}
+    assert replacement.zones_is_stale is False
+    assert replacement.dhw_is_stale is False
+
+
+def test_semantic_subscription_updates_reset_only_the_updated_domain() -> None:
+    coordinator = _build_semantic_coordinator(_ScriptedClient([]))
+    coordinator.data = _semantic_payload()
+    coordinator._last_zones = coordinator.data["zones"]
+    coordinator._last_dhw = {
+        "state": {"current_temp_c": 47.0},
+        "config": {"target_temp_c": 50.0},
+    }
+    coordinator.data["dhw"] = coordinator._last_dhw
+    coordinator.zones_is_stale = True
+    coordinator.dhw_is_stale = True
+    coordinator._stale_zone_ids = {"zone-1"}
+    coordinator._zone_gap_cycles = {"zone-1": 1}
+    coordinator._dhw_gap_cycles = 1
+    coordinator.async_set_updated_data = lambda payload: setattr(coordinator, "data", payload)
+
+    coordinator.apply_zone_subscription(coordinator.data["zones"], "zone-1")
+
+    assert coordinator.zones_is_stale is False
+    assert coordinator.dhw_is_stale is True
+    assert coordinator._zone_gap_cycles == {"zone-1": 0}
+    assert coordinator._dhw_gap_cycles == 1
+    assert coordinator.data["dhw"]["state"]["current_temp_c"] == 47.0
+
+    coordinator.zones_is_stale = True
+    coordinator._stale_zone_ids = {"zone-1"}
+    coordinator._zone_gap_cycles = {"zone-1": 1}
+    coordinator.apply_dhw_subscription(coordinator.data["dhw"])
+
+    assert coordinator.zones_is_stale is True
+    assert coordinator.dhw_is_stale is False
+    assert coordinator._zone_gap_cycles == {"zone-1": 1}
+    assert coordinator._dhw_gap_cycles == 0
+
+    coordinator.apply_dhw_subscription(None)
+
+    assert coordinator.dhw_is_stale is True
+    assert coordinator.data["dhw"]["state"]["current_temp_c"] == 47.0
+
+    coordinator.apply_dhw_subscription(None)
+    coordinator.apply_dhw_subscription(None)
+
+    assert coordinator.dhw_is_stale is True
+    assert coordinator.data["dhw"] is None
+
+
+def test_semantic_partial_zone_subscription_keeps_other_zone_stale() -> None:
+    payload = _semantic_payload()
+    payload["zones"].append(
+        {
+            "id": "zone-2",
+            "name": "Office",
+            "state": {"current_temp_c": 19.0},
+            "config": {"operating_mode": "auto"},
+        }
+    )
+    coordinator = _build_semantic_coordinator(_ScriptedClient([payload, {}]))
+    coordinator.async_set_updated_data = lambda updated: setattr(coordinator, "data", updated)
+
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    updated_zones = [dict(zone) for zone in coordinator.data["zones"]]
+    updated_zones[0]["state"] = {"current_temp_c": 21.0}
+
+    coordinator.apply_zone_subscription(updated_zones, "zone-1")
+
+    assert coordinator.zone_is_stale("zone-1") is False
+    assert coordinator.zone_is_stale("zone-2") is True
+    assert coordinator.zones_is_stale is True
+
+
+def test_semantic_partial_positive_poll_gives_missing_zone_its_own_grace() -> None:
+    payload = _semantic_payload()
+    zone_two = {
+        "id": "zone-2",
+        "name": "Office",
+        "state": {"current_temp_c": 19.0},
+        "config": {"operating_mode": "auto"},
+    }
+    payload["zones"].append(zone_two)
+    partial = {"zones": [payload["zones"][0]], "dhw": None}
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient([payload, partial, partial, partial])
+    )
+
+    asyncio.run(coordinator._async_update_data())
+    gap_one = asyncio.run(coordinator._async_update_data())
+    gap_two = asyncio.run(coordinator._async_update_data())
+    expired = asyncio.run(coordinator._async_update_data())
+
+    assert [zone["id"] for zone in gap_one["zones"]] == ["zone-1", "zone-2"]
+    assert [zone["id"] for zone in gap_two["zones"]] == ["zone-1", "zone-2"]
+    assert [zone["id"] for zone in expired["zones"]] == ["zone-1"]
+    assert coordinator.zone_is_stale("zone-1") is False
+    assert coordinator.zone_is_stale("zone-2") is True
+
+
+def test_semantic_frequent_zone_subscriptions_preserve_full_poll_deadline_and_expiry() -> None:
+    payload = _semantic_payload()
+    payload["zones"].append(
+        {
+            "id": "zone-2",
+            "name": "Office",
+            "state": {"current_temp_c": 19.0},
+            "config": {"operating_mode": "auto"},
+        }
+    )
+    partial = {"zones": [payload["zones"][0]], "dhw": None}
+    coordinator = _build_semantic_coordinator(
+        _ScriptedClient([payload, partial, partial, partial])
+    )
+    pending_poll_deadline = object()
+    coordinator.pending_poll_deadline = pending_poll_deadline
+    reset_calls = 0
+    listener_calls = 0
+
+    def reset_interval(updated: dict) -> None:
+        nonlocal reset_calls
+        reset_calls += 1
+        coordinator.pending_poll_deadline = object()
+        coordinator.data = updated
+
+    def notify_listeners() -> None:
+        nonlocal listener_calls
+        listener_calls += 1
+
+    coordinator.async_set_updated_data = reset_interval
+    coordinator.async_update_listeners = notify_listeners
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+
+    for temperature in range(20):
+        zones = [dict(zone) for zone in coordinator.data["zones"]]
+        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        coordinator.apply_zone_subscription(zones, "zone-1")
+
+    assert coordinator.pending_poll_deadline is pending_poll_deadline
+    assert reset_calls == 0
+    assert listener_calls == 20
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+    assert coordinator.zone_is_stale("zone-2") is True
+
+    for temperature in range(20, 40):
+        zones = [dict(zone) for zone in coordinator.data["zones"]]
+        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        coordinator.apply_zone_subscription(zones, "zone-1")
+
+    coordinator.data = asyncio.run(coordinator._async_update_data())
+
+    assert [zone["id"] for zone in coordinator.data["zones"]] == ["zone-1"]
+    assert coordinator.zone_is_stale("zone-1") is False
+    assert coordinator.zone_is_stale("zone-2") is True
+    assert coordinator.pending_poll_deadline is pending_poll_deadline
+    assert reset_calls == 0
+
+
+def test_semantic_partial_subscription_does_not_clear_full_poll_failure() -> None:
+    coordinator = _build_semantic_coordinator(_ScriptedClient([]))
+    coordinator.data = _semantic_payload()
+    coordinator._last_zones = coordinator.data["zones"]
+    coordinator.last_update_success = False
+
+    coordinator.apply_zone_subscription(coordinator.data["zones"], "zone-1")
+
+    assert coordinator.last_update_success is False
 
 
 def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> (

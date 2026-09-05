@@ -84,12 +84,15 @@ from custom_components.helianthus.water_heater import HelianthusDhwWaterHeater
 
 
 class _FakeCoordinator:
-    data = {
-        "dhw": {
-            "state": {},
-            "config": {"target_temp_c": 50.0, "operating_mode": "auto"},
+    def __init__(self) -> None:
+        self.data = {
+            "dhw": {
+                "state": {},
+                "config": {"target_temp_c": 50.0, "operating_mode": "auto"},
+            }
         }
-    }
+        self.dhw_is_stale = False
+        self.last_update_success = True
 
     async def async_request_refresh(self) -> None:
         return None
@@ -182,6 +185,49 @@ def test_water_heater_uses_live_admission_transition() -> None:
     with pytest.raises(Exception, match="source admission is not trusted"):
         asyncio.run(entity.async_set_operation_mode("manual"))
     assert client.calls == []
+
+
+def test_water_heater_retained_data_is_readable_but_not_writable() -> None:
+    entity, client = _make_entity()
+    entity.coordinator.dhw_is_stale = True
+
+    assert entity.available is True
+    assert entity.current_temperature is None
+    assert entity.extra_state_attributes["is_stale"] is True
+    with pytest.raises(Exception, match="semantic data is stale"):
+        asyncio.run(entity.async_set_operation_mode("manual"))
+    assert client.calls == []
+
+
+def test_water_heater_explicit_absence_is_unavailable() -> None:
+    entity, _client = _make_entity()
+    entity.coordinator.data = {"zones": [], "dhw": None}
+
+    assert entity.available is False
+    assert entity.extra_state_attributes["is_stale"] is False
+
+
+def test_water_heater_setup_waits_for_first_dhw_payload() -> None:
+    coordinator = _FakeCoordinator()
+    coordinator.data = {"zones": [], "dhw": None}
+    payload = {
+        "semantic_coordinator": coordinator,
+        "status_coordinator": _FakeStatusCoordinator(True),
+        "regulator_device_id": ("helianthus", "entry-1-bus-BASV-15"),
+        "adapter_device_id": ("helianthus", "adapter-entry-1"),
+        "regulator_manufacturer": "Vaillant",
+        "graphql_client": None,
+        "regulator_bus_address": 0x15,
+        "unsub_listeners": [],
+    }
+    entities = []
+
+    asyncio.run(
+        water_heater_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend)
+    )
+
+    assert entities == []
+    assert payload["unsub_listeners"] == []
 
 
 def test_water_heater_setup_refreshes_state_on_admission_updates(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -40,6 +40,10 @@ from .sensor_descriptors import (
     InventoryField,
     SystemSensorField,
 )
+from .semantic_freshness import (
+    semantic_freshness_attributes,
+    semantic_target_available,
+)
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -938,6 +942,14 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
         )
 
     @property
+    def available(self) -> bool:
+        return semantic_target_available(self.coordinator, "zone", self._zone_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(self.coordinator, "zone", self._zone_id)
+
+    @property
     def native_value(self) -> Any:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
@@ -1011,6 +1023,18 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         return self._device_name
 
     @property
+    def available(self) -> bool:
+        return semantic_target_available(
+            self.coordinator, self._target[0], self._target[1]
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(
+            self.coordinator, self._target[0], self._target[1]
+        )
+
+    @property
     def native_value(self) -> Any:
         if not self.coordinator.data:
             return None
@@ -1056,6 +1080,14 @@ class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
             name="Domestic Hot Water",
             via_device=self._via_device,
         )
+
+    @property
+    def available(self) -> bool:
+        return semantic_target_available(self.coordinator, "dhw")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(self.coordinator, "dhw")
 
     @property
     def native_value(self) -> Any:

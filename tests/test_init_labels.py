@@ -38,14 +38,33 @@ def test_canonical_bus_display_name_maps_basv_and_vr71() -> None:
 
 
 def test_canonical_bus_model_name_includes_ebus_code() -> None:
+    basv = _canonical_bus_model_name(
+        {"device_id": "BASV2", "product_model": "VRC 720f/2", "part_number": "0020260914"}
+    )
+    vr71 = _canonical_bus_model_name(
+        {"device_id": "VR_71", "product_model": "VR 71", "part_number": "0020184844"}
+    )
+    bai = _canonical_bus_model_name({"device_id": "BAI00", "part_number": "0012345678"})
+    netx3 = _canonical_bus_model_name(
+        {"device_id": "NETX3", "part_number": "0020260962"}
+    )
+    assert basv == "VRC 720f/2 (part: 0020260914; eBUS: BASV)"
+    assert vr71 == "VR 71 (part: 0020184844; eBUS: VR_71)"
+    assert bai == "VUW (part: 0012345678; eBUS: BAI00)"
+    assert netx3 == "VR940f (part: 0020260962; eBUS: NETX3)"
+
+
+def test_canonical_bus_model_name_omits_missing_or_blank_part_number() -> None:
     basv = _canonical_bus_model_name({"device_id": "BASV2", "product_model": "VRC 720f/2"})
-    vr71 = _canonical_bus_model_name({"device_id": "VR_71", "product_model": "VR 71"})
-    bai = _canonical_bus_model_name({"device_id": "BAI00"})
+    vr71 = _canonical_bus_model_name(
+        {"device_id": "VR_71", "product_model": "VR 71", "part_number": "  "}
+    )
+    bai = _canonical_bus_model_name({"device_id": "BAI00", "part_number": None})
     netx3 = _canonical_bus_model_name({"device_id": "NETX3"})
-    assert basv == "VRC 720f/2 (eBUS: BASV)"
-    assert vr71 == "VR 71 (eBUS: VR_71)"
     assert bai == "VUW (eBUS: BAI00)"
     assert netx3 == "VR940f (eBUS: NETX3)"
+    assert basv == "VRC 720f/2 (eBUS: BASV)"
+    assert vr71 == "VR 71 (eBUS: VR_71)"
 
 
 def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_payloads() -> None:

@@ -39,11 +39,46 @@ Device IDs must be stable and deterministic.
 
 - **Physical eBUS devices:** stable key is `<model>-<addr>` (hex address), independent of volatile fields.
   - Serial numbers, MAC addresses, and software versions are treated as **metadata enrichment**, not identity.
+  - The technical model includes the public `part_number` when supplied, while the friendly display name stays
+    separate. Metadata enrichment never changes the HA device identifier or entity unique IDs.
 - **Entry scoping:** all HA device identifiers are prefixed with the config entry id to avoid collisions across multiple Helianthus daemons.
 
 ## GraphQL Model
 
 The integration consumes a semantic GraphQL layer (zones, dhw, energy, errors). If only raw device/plane/method is available, the integration uses a minimal fallback and exposes diagnostics only.
+
+### Zone and DHW lifecycle
+
+Zone climate entities and the DHW water-heater entity are created only after their first positive semantic inventory
+appears. The integration retains positive last-known-good zone and DHW readings for at most two consecutive updates
+when a response omits those fields, returns `zones: []` or `dhw: null`, or the GraphQL transport fails. Retained
+readings remain visible and report `is_stale: true`, but they cannot authorize writes.
+
+The public query currently has no completeness, tombstone, or generation field that lets this consumer distinguish
+cold discovery, partial failure, and native removal from empty values alone. The grace window therefore applies to
+all empty shapes and expires deterministically after two consecutive gaps. This prevents indefinite retention while
+avoiding an unsupported removal claim. A new config-entry setup creates a new coordinator, so retained data never
+crosses a reload, identity change, or setup generation. Zone freshness and gap counters are tracked by zone ID: a
+positive poll refreshes each observed zone, while a zone subscription refreshes only the zone named by that event.
+Zones omitted from either update keep their own grace and stale write block. DHW freshness advances independently, so
+one domain expiring cannot discard the other's retained reading. Existing HA entities are not dynamically deleted
+when grace expires; they remain registered and unavailable until fresh data returns. A first positive inventory
+schedules one config-entry reload so platform setup can create the delayed entities with their stable IDs.
+
+Semantic subscription events update coordinator data and notify listeners without calling Home Assistant's
+`async_set_updated_data`, so they do not cancel or postpone the already scheduled full poll. This follows the pinned
+[Home Assistant 2026.9.0 coordinator contract](https://github.com/home-assistant/core/blob/dfb5a9e690daaf204b542896e4b595e61a11a401/homeassistant/helpers/update_coordinator.py#L618-L634),
+where `async_set_updated_data` explicitly resets the refresh interval. Full polls therefore continue to advance grace
+for zones omitted from frequent sibling subscription events.
+
+Every zone and DHW write path, including configured schedule-helper events, requires trusted source admission, a
+successful semantic coordinator state, a current matching semantic item, and fresh data. Retained display values
+never grant write authority.
+
+Every entity backed by the zone/DHW semantic coordinator uses the same target freshness and presence rules. Climate,
+water-heater, demand, DHW-status, valve, overrun, and schedule entities expose `is_stale` while retained. Once a
+target's grace expires, its entities become unavailable and return no value instead of manufacturing a zero or `off`
+state.
 
 ## MCP-first Consumer Guardrails
 

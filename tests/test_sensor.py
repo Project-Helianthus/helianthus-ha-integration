@@ -131,6 +131,11 @@ class _FakeCoordinator:
     def __init__(self, data, *, last_update_success: bool = True) -> None:  # noqa: ANN001
         self.data = data
         self.last_update_success = last_update_success
+        self.stale_zone_ids: set[str] = set()
+        self.dhw_is_stale = False
+
+    def zone_is_stale(self, zone_id: object | None) -> bool:
+        return str(zone_id) in self.stale_zone_ids
 
 
 class _FakeEntry:
@@ -576,6 +581,82 @@ def test_sparse_demand_and_adapter_sensors_are_disabled_by_default_when_value_nu
     assert zone_demand._attr_entity_registry_enabled_default is False
     assert dhw_demand._attr_entity_registry_enabled_default is True
     assert adapter._attr_entity_registry_enabled_default is False
+
+
+def test_all_semantic_sensors_expose_retained_freshness_and_expire_unavailable() -> None:
+    semantic = _FakeCoordinator(
+        {
+            "zones": [
+                {
+                    "id": "zone-1",
+                    "name": "Living",
+                    "state": {"heating_demand_pct": 35.0, "valve_position_pct": 42.0},
+                }
+            ],
+            "dhw": {
+                "state": {"heating_demand_pct": 18.0, "special_function": "charging"}
+            },
+        }
+    )
+    semantic.stale_zone_ids.add("zone-1")
+    semantic.dhw_is_stale = True
+    zone_demand = sensor_platform.HelianthusDemandSensor(
+        semantic,
+        "entry-1",
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        "Vaillant",
+        "Living",
+        ("zone", "zone-1"),
+        target_device_id=("helianthus", "entry-1-bus-BASV2-15"),
+    )
+    valve = sensor_platform.HelianthusZoneValvePositionSensor(
+        coordinator=semantic,
+        entry_id="entry-1",
+        manufacturer="Vaillant",
+        zone_id="zone-1",
+        zone_name="Living",
+        target_device_id=("helianthus", "entry-1-bus-BASV2-15"),
+    )
+    dhw_demand = sensor_platform.HelianthusDemandSensor(
+        semantic,
+        "entry-1",
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        "Vaillant",
+        "DHW",
+        ("dhw", None),
+        target_device_id=None,
+    )
+    dhw_status = sensor_platform.HelianthusDHWStatusSensor(
+        semantic,
+        "entry-1",
+        ("helianthus", "entry-1-bus-BASV2-15"),
+        "Vaillant",
+    )
+    entities = (zone_demand, valve, dhw_demand, dhw_status)
+
+    assert [entity.available for entity in entities] == [True, True, True, True]
+    assert [entity.extra_state_attributes["is_stale"] for entity in entities] == [
+        True,
+        True,
+        True,
+        True,
+    ]
+    assert [entity.native_value for entity in entities] == [35.0, 42.0, 18.0, "charging"]
+
+    semantic.last_update_success = False
+    assert [entity.available for entity in entities] == [False, False, False, False]
+    assert [entity.extra_state_attributes["is_stale"] for entity in entities] == [
+        True,
+        True,
+        True,
+        True,
+    ]
+    semantic.last_update_success = True
+
+    semantic.data = {"zones": [], "dhw": None}
+
+    assert [entity.available for entity in entities] == [False, False, False, False]
+    assert [entity.native_value for entity in entities] == [None, None, None, None]
 
 
 def test_energy_sensor_is_unavailable_without_valid_payload() -> None:

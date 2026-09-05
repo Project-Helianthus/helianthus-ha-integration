@@ -21,6 +21,7 @@ from . import (
     DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
     PLATFORMS,
+    _INVOKE_SET_EXT_REGISTER,
     _LOGGER,
     _canonical_bus_display_name,
     _canonical_bus_model_name,
@@ -34,11 +35,136 @@ from . import (
     _parse_zone_schedule_helper_bindings,
     _select_bus_migration_target,
     _update_entry_endpoint_if_changed,
+    _zone_instance_from_id,
     async_sanitize_legacy_eebus_admin_entry,
     async_setup_eebus_admin_boundary,
     async_unload_eebus_admin_boundary,
     update_effective_admission,
+    status_admission_trusted,
 )
+from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+
+
+def _semantic_inventory_became_available(
+    payload: dict,
+    known_zones: set[str],
+    known_has_dhw: bool,
+) -> bool:
+    """Return whether delayed positive semantic inventory needs a platform reload."""
+    zones = payload.get("zones")
+    current_zone_ids = {
+        str(zone.get("id"))
+        for zone in (zones if isinstance(zones, list) else [])
+        if isinstance(zone, dict) and zone.get("id") is not None
+    }
+    has_new_zones = bool(current_zone_ids - known_zones)
+    has_new_dhw = isinstance(payload.get("dhw"), dict) and not known_has_dhw
+    return has_new_zones or has_new_dhw
+
+
+def _zone_schedule_semantic_write_ready(
+    semantic_coordinator: object,
+    zone_id: str,
+) -> bool:
+    return semantic_target_available(
+        semantic_coordinator, "zone", zone_id
+    ) and not semantic_target_is_stale(
+        semantic_coordinator, "zone", zone_id
+    )
+
+
+def _dhw_schedule_semantic_write_ready(semantic_coordinator: object) -> bool:
+    return semantic_target_available(
+        semantic_coordinator, "dhw"
+    ) and not semantic_target_is_stale(semantic_coordinator, "dhw")
+
+
+async def _async_apply_zone_schedule(
+    *,
+    client: object,
+    semantic_coordinator: object,
+    status_coordinator: object,
+    regulator_bus_address: int | None,
+    zone_id: str,
+) -> bool:
+    """Apply the configured schedule helper to one zone."""
+    if not status_admission_trusted(status_coordinator):
+        _LOGGER.warning("Zone schedule helper ignored: source admission is not trusted")
+        return False
+    if regulator_bus_address is None:
+        _LOGGER.warning("Zone schedule helper ignored: regulator address missing")
+        return False
+    if not _zone_schedule_semantic_write_ready(semantic_coordinator, zone_id):
+        _LOGGER.warning(
+            "Zone schedule helper ignored for %s: semantic data is stale or unavailable",
+            zone_id,
+        )
+        return False
+    instance = _zone_instance_from_id(zone_id)
+    if instance is None:
+        _LOGGER.warning("Zone schedule helper ignored: invalid zone id %s", zone_id)
+        return False
+    variables = {
+        "address": int(regulator_bus_address),
+        "params": {
+            "opcode": 0x02,
+            "group": 0x03,
+            "instance": int(instance),
+            "addr": 0x0006,
+            "data": [1, 0x00],
+        },
+    }
+    try:
+        payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
+        invoke = payload.get("invoke") if isinstance(payload, dict) else None
+        if not isinstance(invoke, dict) or not invoke.get("ok"):
+            _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, invoke)
+            return False
+        await semantic_coordinator.async_request_refresh()
+        return True
+    except Exception as exc:  # pragma: no cover - defensive runtime guard
+        _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, exc)
+        return False
+
+
+async def _async_apply_dhw_schedule(
+    *,
+    client: object,
+    semantic_coordinator: object,
+    status_coordinator: object,
+    regulator_bus_address: int | None,
+) -> bool:
+    """Apply the configured schedule helper to DHW."""
+    if not status_admission_trusted(status_coordinator):
+        _LOGGER.warning("DHW schedule helper ignored: source admission is not trusted")
+        return False
+    if regulator_bus_address is None:
+        _LOGGER.warning("DHW schedule helper ignored: regulator address missing")
+        return False
+    if not _dhw_schedule_semantic_write_ready(semantic_coordinator):
+        _LOGGER.warning("DHW schedule helper ignored: semantic data is stale or unavailable")
+        return False
+    variables = {
+        "address": int(regulator_bus_address),
+        "params": {
+            "opcode": 0x02,
+            "group": 0x01,
+            "instance": 0x00,
+            "addr": 0x0003,
+            "data": [1, 0x00],
+        },
+    }
+    try:
+        payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
+        invoke = payload.get("invoke") if isinstance(payload, dict) else None
+        if not isinstance(invoke, dict) or not invoke.get("ok"):
+            _LOGGER.warning("DHW schedule helper write failed: %s", invoke)
+            return False
+        await semantic_coordinator.async_request_refresh()
+        return True
+    except Exception as exc:  # pragma: no cover - defensive runtime guard
+        _LOGGER.warning("DHW schedule helper write failed: %s", exc)
+        return False
 
 
 async def _async_forward_platforms_and_finalize(
@@ -732,7 +858,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for zone in semantic_zones
         if zone.get("id") is not None
     }
-    known_has_dhw = semantic.get("dhw") is not None
+    known_has_dhw = isinstance(semantic.get("dhw"), dict)
 
     radio_sensor_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
@@ -1418,62 +1544,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ).strip()
 
     async def apply_zone_schedule(zone_id: str) -> None:
-        if not status_admission_trusted(status_coordinator):
-            _LOGGER.warning("Zone schedule helper ignored: source admission is not trusted")
-            return
-        if regulator_bus_address is None:
-            _LOGGER.warning("Zone schedule helper ignored: regulator address missing")
-            return
-        instance = _zone_instance_from_id(zone_id)
-        if instance is None:
-            _LOGGER.warning("Zone schedule helper ignored: invalid zone id %s", zone_id)
-            return
-        variables = {
-            "address": int(regulator_bus_address),
-            "params": {
-                "opcode": 0x02,
-                "group": 0x03,
-                "instance": int(instance),
-                "addr": 0x0006,
-                "data": [1, 0x00],
-            },
-        }
-        try:
-            payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
-            invoke = payload.get("invoke") if isinstance(payload, dict) else None
-            if not isinstance(invoke, dict) or not invoke.get("ok"):
-                _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, invoke)
-                return
-            await semantic_coordinator.async_request_refresh()
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
-            _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, exc)
+        await _async_apply_zone_schedule(
+            client=client,
+            semantic_coordinator=semantic_coordinator,
+            status_coordinator=status_coordinator,
+            regulator_bus_address=regulator_bus_address,
+            zone_id=zone_id,
+        )
 
     async def apply_dhw_schedule() -> None:
-        if not status_admission_trusted(status_coordinator):
-            _LOGGER.warning("DHW schedule helper ignored: source admission is not trusted")
-            return
-        if regulator_bus_address is None:
-            _LOGGER.warning("DHW schedule helper ignored: regulator address missing")
-            return
-        variables = {
-            "address": int(regulator_bus_address),
-            "params": {
-                "opcode": 0x02,
-                "group": 0x01,
-                "instance": 0x00,
-                "addr": 0x0003,
-                "data": [1, 0x00],
-            },
-        }
-        try:
-            payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
-            invoke = payload.get("invoke") if isinstance(payload, dict) else None
-            if not isinstance(invoke, dict) or not invoke.get("ok"):
-                _LOGGER.warning("DHW schedule helper write failed: %s", invoke)
-                return
-            await semantic_coordinator.async_request_refresh()
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
-            _LOGGER.warning("DHW schedule helper write failed: %s", exc)
+        await _async_apply_dhw_schedule(
+            client=client,
+            semantic_coordinator=semantic_coordinator,
+            status_coordinator=status_coordinator,
+            regulator_bus_address=regulator_bus_address,
+        )
 
     def current_bus_device_ids(current: list[dict]) -> set[str]:
         current_ids: set[str] = set()
@@ -1510,13 +1595,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def handle_semantic_update() -> None:
         payload = semantic_coordinator.data or {}
-        zones = payload.get("zones", []) or []
-        dhw = payload.get("dhw")
-        current_zone_ids: set[str] = {
-            str(zone.get("id")) for zone in zones if zone.get("id") is not None
-        }
-        has_new_zones = bool(current_zone_ids - known_zones)
-        has_new_dhw = dhw is not None and not known_has_dhw
         adopt_current_live_parent_bindings()
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
@@ -1527,7 +1605,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ):
             schedule_reload("zone parent mapping changed")
             return
-        if has_new_zones or has_new_dhw:
+        if _semantic_inventory_became_available(payload, known_zones, known_has_dhw):
             schedule_reload("semantic inventory became available")
             return
         auto_enable_sparse_entities("semantic update")

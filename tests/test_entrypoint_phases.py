@@ -6,7 +6,10 @@ import asyncio
 from types import SimpleNamespace
 
 from custom_components.helianthus import DOMAIN, PLATFORMS, async_unload_entry
-from custom_components.helianthus.entry_setup import _async_forward_platforms_and_finalize
+from custom_components.helianthus.entry_setup import (
+    _async_forward_platforms_and_finalize,
+    _semantic_inventory_became_available,
+)
 
 
 class _ConfigEntries:
@@ -63,3 +66,15 @@ def test_unload_failure_preserves_runtime_for_home_assistant_retry() -> None:
     assert asyncio.run(async_unload_entry(hass, entry)) is False
     assert hass.data[DOMAIN][entry.entry_id] is runtime
     assert events == [("unload-platforms", "entry-1", tuple(PLATFORMS))]
+
+
+def test_delayed_positive_semantic_inventory_requests_platform_reload() -> None:
+    assert _semantic_inventory_became_available(
+        {"zones": [], "dhw": {"state": {}, "config": {}}}, set(), False
+    )
+    assert _semantic_inventory_became_available(
+        {"zones": [{"id": "zone-1"}], "dhw": None}, set(), False
+    )
+    assert not _semantic_inventory_became_available(
+        {"zones": [], "dhw": None}, set(), False
+    )

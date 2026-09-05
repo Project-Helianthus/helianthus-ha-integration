@@ -17,6 +17,7 @@ from .device_ids import (
     circuit_identifier,
     zone_identifier,
 )
+from .semantic_freshness import semantic_freshness_attributes, semantic_target_available
 
 try:
     from homeassistant.components.valve import ValveEntityFeature
@@ -274,6 +275,14 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
             model="Virtual Zone",
             name=self._zone().get("name") or self._initial_name,
         )
+
+    @property
+    def available(self) -> bool:
+        return semantic_target_available(self.coordinator, "zone", self._zone_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(self.coordinator, "zone", self._zone_id)
 
     @property
     def current_valve_position(self) -> int | None:

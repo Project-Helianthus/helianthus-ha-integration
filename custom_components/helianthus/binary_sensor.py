@@ -19,6 +19,10 @@ from .device_ids import (
     should_export_radio_device,
     solar_identifier,
 )
+from .semantic_freshness import (
+    semantic_freshness_attributes,
+    semantic_target_available,
+)
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
 _RADIO_STALE_GRACE_CYCLES = 3
@@ -359,8 +363,22 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return self.coordinator.data.get("dhw") or {}
 
     @property
-    def is_on(self) -> bool:
+    def available(self) -> bool:
+        return semantic_target_available(
+            self.coordinator, self._target_kind, self._target_id
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(
+            self.coordinator, self._target_kind, self._target_id
+        )
+
+    @property
+    def is_on(self) -> bool | None:
         payload = self._target_payload()
+        if not payload:
+            return None
         config = payload.get("config") or {}
         return _normalize_preset(config.get("preset")) == self._schedule_key
 
@@ -414,6 +432,14 @@ class HelianthusDhwOverrunBinarySensor(CoordinatorEntity, BinarySensorEntity):
             model="Virtual DHW",
             name="Domestic Hot Water",
         )
+
+    @property
+    def available(self) -> bool:
+        return semantic_target_available(self.coordinator, "dhw")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(self.coordinator, "dhw")
 
     @property
     def is_on(self) -> bool | None:
@@ -781,6 +807,14 @@ class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
             identifiers={identifier},
             manufacturer=self._manufacturer,
         )
+
+    @property
+    def available(self) -> bool:
+        return semantic_target_available(self.coordinator, "zone", self._zone_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, bool]:
+        return semantic_freshness_attributes(self.coordinator, "zone", self._zone_id)
 
     @property
     def is_on(self) -> bool | None:

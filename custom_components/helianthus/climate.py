@@ -19,6 +19,7 @@ from .device_ids import build_radio_bus_key, radio_device_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
+from .semantic_freshness import semantic_target_is_stale
 from .zone_parent import (
     normalize_radio_slot_candidate as _normalize_radio_slot_candidate,
     parse_optional_int as _parse_optional_int,
@@ -249,7 +250,11 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
     @property
     def available(self) -> bool:
         base_available = getattr(super(), "available", True)
-        return bool(base_available) and status_admission_trusted(self._status_coordinator)
+        return (
+            bool(base_available)
+            and status_admission_trusted(self._status_coordinator)
+            and bool(self._zone())
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -263,6 +268,9 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     def _zone_config(self) -> dict[str, Any]:
         return self._zone().get("config") or {}
+
+    def _zone_is_stale(self) -> bool:
+        return semantic_target_is_stale(self.coordinator, "zone", self._zone_id)
 
     def _room_temperature_zone_mapping(self) -> int | None:
         return _parse_optional_int(self._zone_config().get("room_temperature_zone_mapping"))
@@ -388,7 +396,9 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attrs: dict[str, Any] = {}
+        attrs: dict[str, Any] = {
+            "is_stale": self._zone_is_stale()
+        }
         state = self._zone_state()
         config = self._zone_config()
         mapping = self._room_temperature_zone_mapping()
@@ -553,6 +563,10 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             raise HomeAssistantError("Regulator address is unavailable")
         if self._zone_instance is None:
             raise HomeAssistantError(f"Invalid zone id: {self._zone_id}")
+        if self._zone_is_stale():
+            raise HomeAssistantError("Zone semantic data is stale; write blocked")
+        if not bool(getattr(self.coordinator, "last_update_success", True)) or not self._zone():
+            raise HomeAssistantError("Current zone semantic data is unavailable; write blocked")
         try:
             assert_admission_trusted(status_admission_trusted(self._status_coordinator))
         except RuntimeError as exc:
