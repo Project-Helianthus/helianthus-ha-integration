@@ -39,11 +39,29 @@ Device IDs must be stable and deterministic.
 
 - **Physical eBUS devices:** stable key is `<model>-<addr>` (hex address), independent of volatile fields.
   - Serial numbers, MAC addresses, and software versions are treated as **metadata enrichment**, not identity.
+  - The technical model includes the public `part_number` when supplied, while the friendly display name stays
+    separate. Metadata enrichment never changes the HA device identifier or entity unique IDs.
 - **Entry scoping:** all HA device identifiers are prefixed with the config entry id to avoid collisions across multiple Helianthus daemons.
 
 ## GraphQL Model
 
 The integration consumes a semantic GraphQL layer (zones, dhw, energy, errors). If only raw device/plane/method is available, the integration uses a minimal fallback and exposes diagnostics only.
+
+### Zone and DHW lifecycle
+
+Zone climate entities and the DHW water-heater entity are created only after their first positive semantic inventory
+appears. The integration retains positive last-known-good zone and DHW readings for at most two consecutive updates
+when a response omits those fields, returns `zones: []` or `dhw: null`, or the GraphQL transport fails. Retained
+readings remain visible and report `is_stale: true`, but they cannot authorize writes.
+
+The public query currently has no completeness, tombstone, or generation field that lets this consumer distinguish
+cold discovery, partial failure, and native removal from empty values alone. The grace window therefore applies to
+all empty shapes and expires deterministically after two consecutive gaps. This prevents indefinite retention while
+avoiding an unsupported removal claim. A new config-entry setup creates a new coordinator, so retained data never
+crosses a reload, identity change, or setup generation. Fresh positive polling or subscription data resets freshness
+for its corresponding domain. Existing HA entities are not dynamically deleted when grace expires; they remain
+registered and unavailable until fresh data returns. A first positive inventory schedules one config-entry reload so
+platform setup can create the delayed entities with their stable IDs.
 
 ## MCP-first Consumer Guardrails
 

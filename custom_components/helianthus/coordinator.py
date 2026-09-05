@@ -870,6 +870,8 @@ class HelianthusStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]
 class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic zone/DHW data."""
 
+    _TRANSIENT_GAP_LIMIT = 2
+
     def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
@@ -878,6 +880,100 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._last_zones: list[Any] = []
+        self._last_dhw: dict[str, Any] | None = None
+        self._zone_gap_cycles = 0
+        self._dhw_gap_cycles = 0
+        self.zones_is_stale = False
+        self.dhw_is_stale = False
+
+    def _materialize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raw_zones = payload.get("zones")
+        if isinstance(raw_zones, list) and raw_zones:
+            zones = raw_zones
+            self._last_zones = deepcopy(zones)
+            self._zone_gap_cycles = 0
+            self.zones_is_stale = False
+        elif self._last_zones and self._zone_gap_cycles < self._TRANSIENT_GAP_LIMIT:
+            self._zone_gap_cycles += 1
+            self.zones_is_stale = True
+            zones = deepcopy(self._last_zones)
+        else:
+            was_stale = self.zones_is_stale or bool(self._last_zones)
+            self._last_zones = []
+            self._zone_gap_cycles = 0
+            self.zones_is_stale = was_stale
+            zones = []
+
+        raw_dhw = payload.get("dhw")
+        if isinstance(raw_dhw, dict):
+            dhw = raw_dhw
+            self._last_dhw = deepcopy(dhw)
+            self._dhw_gap_cycles = 0
+            self.dhw_is_stale = False
+        elif self._last_dhw is not None and self._dhw_gap_cycles < self._TRANSIENT_GAP_LIMIT:
+            self._dhw_gap_cycles += 1
+            self.dhw_is_stale = True
+            dhw = deepcopy(self._last_dhw)
+        else:
+            was_stale = self.dhw_is_stale or self._last_dhw is not None
+            self._last_dhw = None
+            self._dhw_gap_cycles = 0
+            self.dhw_is_stale = was_stale
+            dhw = None
+
+        return {"zones": zones, "dhw": dhw}
+
+    def _retain_transport_gap(self) -> dict[str, Any] | None:
+        """Retain positive semantic data briefly across a transport failure."""
+        has_zones = bool(self._last_zones)
+        has_dhw = self._last_dhw is not None
+        if not has_zones and not has_dhw:
+            return None
+
+        if has_zones:
+            self._zone_gap_cycles += 1
+            self.zones_is_stale = True
+        if has_dhw:
+            self._dhw_gap_cycles += 1
+            self.dhw_is_stale = True
+        if (
+            self._zone_gap_cycles > self._TRANSIENT_GAP_LIMIT
+            or self._dhw_gap_cycles > self._TRANSIENT_GAP_LIMIT
+        ):
+            return None
+        return {"zones": deepcopy(self._last_zones), "dhw": deepcopy(self._last_dhw)}
+
+    def apply_zone_subscription(self, zones: list[Any]) -> None:
+        """Apply an explicit fresh zone snapshot from a subscription update."""
+        self._last_zones = deepcopy(zones)
+        self._zone_gap_cycles = 0
+        self.zones_is_stale = False
+        current = self.data if isinstance(self.data, dict) else {}
+        self.async_set_updated_data({"zones": zones, "dhw": current.get("dhw")})
+
+    def apply_dhw_subscription(self, dhw: dict[str, Any] | None) -> None:
+        """Apply fresh DHW data or an ambiguous unavailable update."""
+        if isinstance(dhw, dict):
+            self._last_dhw = deepcopy(dhw)
+            self._dhw_gap_cycles = 0
+            self.dhw_is_stale = False
+            current_dhw = dhw
+        elif self._last_dhw is not None and self._dhw_gap_cycles < self._TRANSIENT_GAP_LIMIT:
+            self._dhw_gap_cycles += 1
+            self.dhw_is_stale = True
+            current_dhw = deepcopy(self._last_dhw)
+        else:
+            was_stale = self.dhw_is_stale or self._last_dhw is not None
+            self._last_dhw = None
+            self._dhw_gap_cycles = 0
+            self.dhw_is_stale = was_stale
+            current_dhw = None
+        current = self.data if isinstance(self.data, dict) else {}
+        zones = current.get("zones")
+        self.async_set_updated_data(
+            {"zones": zones if isinstance(zones, list) else [], "dhw": current_dhw}
+        )
 
     async def _async_update_data(self) -> dict[str, Any]:
         queries = [
@@ -894,21 +990,19 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 break
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
-                    return {"zones": [], "dhw": None}
+                    return self._materialize_payload({"zones": [], "dhw": None})
                 if _is_missing_field_error(exc.errors, _PROMOTED_SEMANTIC_FIELDS):
                     continue
                 if _is_missing_field_error(exc.errors, _SEMANTIC_RECOVERABLE_FIELDS):
                     continue
                 raise UpdateFailed(str(exc)) from exc
             except GraphQLClientError as exc:
+                retained = self._retain_transport_gap()
+                if retained is not None:
+                    return retained
                 raise UpdateFailed(str(exc)) from exc
 
-        if not isinstance(payload, dict):
-            return {"zones": [], "dhw": None}
-        return {
-            "zones": payload.get("zones", []) or [],
-            "dhw": payload.get("dhw"),
-        }
+        return self._materialize_payload(payload if isinstance(payload, dict) else {})
 
 
 class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):

@@ -269,11 +269,14 @@ def _canonical_bus_display_name(device: dict) -> str | None:
 
 def _canonical_bus_model_name(device: dict) -> str:
     product_model = _clean_label(device.get("product_model"))
+    part_number = _clean_label(device.get("part_number"))
     device_id = _clean_label(device.get("device_id")) or "unknown"
     ebus_code = _normalized_ebus_code(device_id)
     base_model = product_model or _KNOWN_BUS_MODELS.get(ebus_code) or str(device_id)
     if "(eBUS:" in base_model:
         return base_model
+    if part_number:
+        return f"{base_model} (part: {part_number}; eBUS: {ebus_code})"
     return f"{base_model} (eBUS: {ebus_code})"
 
 

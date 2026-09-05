@@ -469,6 +469,9 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                 "dhw": None,
             }
 
+        def apply_zone_subscription(self, zones) -> None:  # noqa: ANN001
+            self.data = {"zones": zones, "dhw": self.data.get("dhw")}
+
         def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
             self.data = payload
 
@@ -518,6 +521,9 @@ def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:
                     },
                 },
             }
+
+        def apply_dhw_subscription(self, dhw) -> None:  # noqa: ANN001
+            self.data = {"zones": self.data.get("zones", []), "dhw": dhw}
 
         def async_set_updated_data(self, payload) -> None:  # noqa: ANN001
             self.data = payload

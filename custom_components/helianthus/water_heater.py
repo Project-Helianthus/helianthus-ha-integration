@@ -52,6 +52,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     regulator_bus_address = data.get("regulator_bus_address")
     status_coordinator = data.get("status_coordinator")
 
+    current = coordinator.data if isinstance(coordinator.data, dict) else {}
+    if not isinstance(current.get("dhw"), dict):
+        return
+
     entity = HelianthusDhwWaterHeater(
         entry.entry_id,
         coordinator,
@@ -157,7 +161,9 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attrs: dict[str, Any] = {}
+        attrs: dict[str, Any] = {
+            "is_stale": bool(getattr(self.coordinator, "dhw_is_stale", False))
+        }
         config = self._dhw_config()
         state = self._dhw_state()
         preset = str(config.get("preset") or "").strip().lower()
@@ -214,6 +220,10 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             raise HomeAssistantError("GraphQL client is unavailable")
         if self._regulator_bus_address is None:
             raise HomeAssistantError("Regulator address is unavailable")
+        if bool(getattr(self.coordinator, "dhw_is_stale", False)):
+            raise HomeAssistantError("DHW semantic data is stale; write blocked")
+        if not bool(getattr(self.coordinator, "last_update_success", True)) or not self._dhw():
+            raise HomeAssistantError("Current DHW semantic data is unavailable; write blocked")
         try:
             assert_admission_trusted(status_admission_trusted(self._status_coordinator))
         except RuntimeError as exc:

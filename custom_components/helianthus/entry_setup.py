@@ -41,6 +41,23 @@ from . import (
 )
 
 
+def _semantic_inventory_became_available(
+    payload: dict,
+    known_zones: set[str],
+    known_has_dhw: bool,
+) -> bool:
+    """Return whether delayed positive semantic inventory needs a platform reload."""
+    zones = payload.get("zones")
+    current_zone_ids = {
+        str(zone.get("id"))
+        for zone in (zones if isinstance(zones, list) else [])
+        if isinstance(zone, dict) and zone.get("id") is not None
+    }
+    has_new_zones = bool(current_zone_ids - known_zones)
+    has_new_dhw = isinstance(payload.get("dhw"), dict) and not known_has_dhw
+    return has_new_zones or has_new_dhw
+
+
 async def _async_forward_platforms_and_finalize(
     hass: object,
     entry: object,
@@ -732,7 +749,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for zone in semantic_zones
         if zone.get("id") is not None
     }
-    known_has_dhw = semantic.get("dhw") is not None
+    known_has_dhw = isinstance(semantic.get("dhw"), dict)
 
     radio_sensor_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
@@ -1510,13 +1527,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def handle_semantic_update() -> None:
         payload = semantic_coordinator.data or {}
-        zones = payload.get("zones", []) or []
-        dhw = payload.get("dhw")
-        current_zone_ids: set[str] = {
-            str(zone.get("id")) for zone in zones if zone.get("id") is not None
-        }
-        has_new_zones = bool(current_zone_ids - known_zones)
-        has_new_dhw = dhw is not None and not known_has_dhw
         adopt_current_live_parent_bindings()
         current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
         if should_reload_zone_parent_state(
@@ -1527,7 +1537,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ):
             schedule_reload("zone parent mapping changed")
             return
-        if has_new_zones or has_new_dhw:
+        if _semantic_inventory_became_available(payload, known_zones, known_has_dhw):
             schedule_reload("semantic inventory became available")
             return
         auto_enable_sparse_entities("semantic update")
