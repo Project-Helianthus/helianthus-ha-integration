@@ -230,7 +230,8 @@ MAX_STARTUP_ENDPOINT_CHARS = 320
 MAX_STARTUP_TRANSITIONS = 8
 MAX_STARTUP_HTTP_HEADER_BYTES = 16 * 1024
 MAX_STARTUP_HTTP_BODY_BYTES = 256 * 1024
-HEALTHY_SERVICE_STATUSES = {"ok"}
+HEALTHY_DAEMON_STATUSES = {"running"}
+HEALTHY_ADAPTER_STATUSES = {"ok"}
 _URL_IN_EVIDENCE_RE = re.compile(r"https?://[^\s\"']+", re.IGNORECASE)
 
 
@@ -442,6 +443,10 @@ def run_startup_spotcheck_v2(
     execute = executor if executor is not None else production_execute
     assert execute is not None
     phase_a, outcomes, regulator_state, status_query = _run_startup_phase_a(execute)
+    if dual_topology is not None:
+        dual_check = _check_dual_topology_path(dual_topology, timeout, endpoint_probe)
+        phase_a.append(dual_check)
+        outcomes.append(StartupOutcome.PASS if dual_check.ok else StartupOutcome.TRANSPORT_ERROR)
     phase_b, phase_b_outcome, phase_b_samples = _check_transport_stability(
         execute, production_execute, status_query, timeout, phase_b_target_seconds, phase_b_absolute_timeout_seconds,
         phase_b_interval_seconds, clock, sleeper,
@@ -551,9 +556,9 @@ def _service_health_error(daemon: dict[str, Any], adapter: dict[str, Any]) -> st
     daemon_status = str(daemon.get("status") or "").lower()
     adapter_status = str(adapter.get("status") or "").lower()
     unhealthy = []
-    if daemon_status not in HEALTHY_SERVICE_STATUSES:
+    if daemon_status not in HEALTHY_DAEMON_STATUSES:
         unhealthy.append(f"daemon_status={daemon_status or 'missing'}")
-    if adapter_status not in HEALTHY_SERVICE_STATUSES:
+    if adapter_status not in HEALTHY_ADAPTER_STATUSES:
         unhealthy.append(f"adapter_status={adapter_status or 'missing'}")
     if unhealthy:
         return f"unhealthy service status {' '.join(unhealthy)}"
@@ -718,7 +723,7 @@ def _trusted_startup_admission(data: dict[str, Any]) -> tuple[bool, int | None, 
     outcome = str(source_selection.get("outcome") or "").lower()
     probe = source_selection.get("active_probe")
     join_capable = transport in {"enh", "ens", "udp-plain", "tcp-plain"}
-    source_is_valid = isinstance(source, int) and not isinstance(source, bool) and source >= 0
+    source_is_valid = isinstance(source, int) and not isinstance(source, bool) and 0 <= source <= 0xFF
     source_detail = _format_startup_admission_evidence(transport, state, outcome, source, source_selection.get("retryable"), source_selection.get("failed_source"), probe)
     if transport == "ebusd-tcp":
         retryable = source_selection.get("retryable")
@@ -775,7 +780,7 @@ def _startup_phase_b_sample(data: dict[str, Any], trusted: bool) -> StartupPhase
         transport_class=str(status.get("transportClass") or "missing").lower() if isinstance(status, dict) else "missing",
         state=str(source_selection.get("state") or "missing").lower() if isinstance(source_selection, dict) else "missing",
         outcome=str(source_selection.get("outcome") or "missing").lower() if isinstance(source_selection, dict) else "missing",
-        selected_source=source if isinstance(source, int) and not isinstance(source, bool) and source >= 0 else None,
+        selected_source=source if isinstance(source, int) and not isinstance(source, bool) and 0 <= source <= 0xFF else None,
         retryable=source_selection.get("retryable") if isinstance(source_selection, dict) and isinstance(source_selection.get("retryable"), bool) else None,
         failed_source=failed_source if isinstance(failed_source, int) and not isinstance(failed_source, bool) and failed_source >= 0 else None,
         active_probe=_startup_active_probe_evidence(probe),

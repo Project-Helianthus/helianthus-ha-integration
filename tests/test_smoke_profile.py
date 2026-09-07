@@ -147,7 +147,7 @@ def _startup_responses(*, regulator: bool = True) -> dict[str, dict]:
                     },
                 }
             },
-            "daemon_status": {"status": "ok"},
+            "daemon_status": {"status": "running"},
             "adapter_status": {"status": "ok"},
         }
     }
@@ -380,7 +380,7 @@ def test_startup_static_admission_rejects_retry_and_failure_evidence() -> None:
 
 
 def test_startup_v2_rejects_unhealthy_or_missing_service_statuses() -> None:
-    for daemon_status, adapter_status in (("offline", "ok"), ("ok", "failed"), (None, "ok")):
+    for daemon_status, adapter_status in (("offline", "ok"), ("running", "failed"), (None, "ok"), ("ok", "ok")):
         responses = _startup_responses()
         responses["StartupStatus"]["data"]["daemon_status"]["status"] = daemon_status
         responses["StartupStatus"]["data"]["adapter_status"]["status"] = adapter_status
@@ -389,6 +389,27 @@ def test_startup_v2_rejects_unhealthy_or_missing_service_statuses() -> None:
 
         assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
         assert result.phase_a[2].ok is False
+
+
+def test_startup_v2_runs_requested_dual_topology_checks() -> None:
+    config = smoke_profile.DualTopologyConfig("localhost", 8888, "enh", "127.0.0.1", 19001)
+    probe = FakeEndpointProbe({("localhost", 8888): "connection refused"})
+    clock = FakeClock()
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=FakeExecutor(_startup_responses()), dual_topology=config,
+        endpoint_probe=probe, phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=5,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert result.phase_a[-1].name == "dual_topology_path"
+    assert probe.calls == [("localhost", 8888, 10.0)]
+
+
+def test_startup_admission_rejects_noncanonical_source_values() -> None:
+    for source, trusted in ((255, True), (256, False), (-1, False), (True, False), ("16", False), (None, False)):
+        payload = _startup_responses()["StartupStatus"]["data"]
+        payload["busSummary"]["status"]["bus_admission"]["source_selection"]["selected_source"] = source
+        assert smoke_profile._trusted_startup_admission(payload)[0] is trusted
 
 
 def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
