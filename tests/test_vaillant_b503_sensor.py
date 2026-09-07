@@ -1,7 +1,7 @@
 """Tests for the B503 boiler_active_error diagnostic sensor.
 
 Covers plan §M4_HA + AD11 (3-poll hysteresis) + AD15 (lifecycle) + AD05
-(no F.xxx translation). GraphQL-driven: ``vaillantCapabilities.b503`` +
+(no F.xxx translation). GraphQL-driven: ``vaillantCapabilities.vaillantB503`` +
 ``vaillantErrors``.
 """
 
@@ -95,16 +95,29 @@ class _FakeGraphQLClient:
 
 
 def _payload(reason, first_active=None, slots=None):
-    """Build a canonical GraphQL reply for vaillantCapabilities.b503 + vaillantErrors."""
+    """Build an accepted gateway reply for vaillantCapabilities.vaillantB503."""
     return {
         "vaillantCapabilities": {
-            "b503": {"reason": reason},
+            "vaillantB503": {"reason": reason},
         },
         "vaillantErrors": {
             "firstActiveError": first_active,
             "slots": slots if slots is not None else [None, None, None, None, None],
         },
     }
+
+
+def test_b503_contract_uses_accepted_gateway_field_name() -> None:
+    """The integration must consume the accepted gateway field, not its old alias."""
+    assert "vaillantB503 {" in vaillant_b503.QUERY_B503_STATE
+    assert "\n    b503 {" not in vaillant_b503.QUERY_B503_STATE
+
+    client = _FakeGraphQLClient([_payload("AVAILABLE")])
+    coordinator = vaillant_b503.VaillantB503Coordinator(hass=None, client=client, scan_interval=1)
+
+    asyncio.run(coordinator.async_refresh_once())
+
+    assert coordinator.current_reason() == "AVAILABLE"
 
 
 # ---------------------------------------------------------------------------
