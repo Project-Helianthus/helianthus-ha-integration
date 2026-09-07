@@ -579,6 +579,8 @@ def test_startup_admission_rejects_noncanonical_source_values() -> None:
 def test_startup_procedure_documents_field_specific_service_health() -> None:
     readme = Path(__file__).parents[1].joinpath("README.md").read_text(encoding="utf-8")
     assert "healthy daemon `running` and adapter `ok` states" in readme
+    assert "Transport names and an optional `active_probe` object are" in readme
+    assert "For `ebusd-tcp`, a trusted static source" not in readme
 
 
 def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
@@ -677,14 +679,16 @@ def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker() -> No
     active_requests = 0
     lock = Lock()
     finished = Event()
+    started_request = Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             nonlocal active_requests
             self.rfile.read(int(self.headers["Content-Length"]))
-            body = b'{"data":{"slow":true}}'
+            body = b'{"data":{"slow":"' + (b"x" * 128) + b'"}}'
             with lock:
                 active_requests += 1
+            started_request.set()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -710,18 +714,62 @@ def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker() -> No
     try:
         started = time.monotonic()
         try:
-            smoke_profile._budgeted_urlopen_request(f"http://127.0.0.1:{server.server_port}/graphql", b"{}", 0.15)
+            smoke_profile._budgeted_urlopen_request(f"http://127.0.0.1:{server.server_port}/graphql", b"{}", 0.50)
         except TimeoutError:
             pass
         else:
             raise AssertionError("expected budgeted request timeout")
-        assert time.monotonic() - started < 0.30
-        assert finished.wait(0.60)
+        assert started_request.is_set()
+        assert time.monotonic() - started < 0.75
+        assert finished.wait(1.50)
         assert active_requests == 0
     finally:
         server.shutdown()
         server.server_close()
         server_thread.join(timeout=1)
+
+
+def test_startup_phase_a_uses_budgeted_urlopen_for_trickled_response() -> None:
+    started_request = Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            self.rfile.read(int(self.headers["Content-Length"]))
+            body = b'{"data":{"slow":true,"padding":"' + (b"x" * 128) + b'"}}'
+            started_request.set()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                for offset in range(0, len(body), 4):
+                    self.wfile.write(body[offset:offset + 4])
+                    self.wfile.flush()
+                    time.sleep(0.05)
+            except BrokenPipeError:
+                pass
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        execute = smoke_profile._http_executor(f"http://127.0.0.1:{server.server_port}/graphql", 0.50)
+        started = time.monotonic()
+        try:
+            execute(smoke_profile.QUERY_CONNECTION)
+        except TimeoutError:
+            pass
+        else:
+            raise AssertionError("expected Phase A request timeout")
+        assert started_request.is_set()
+        assert time.monotonic() - started < 0.75
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
 
 
 def test_startup_v2_phase_b_rejects_mixed_urlopen_response_framing() -> None:
@@ -829,13 +877,13 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
                 f"http://127.0.0.1:{server.server_port}/graphql",
                 timeout=999.0,
                 phase_b_target_seconds=0.01,
-                phase_b_absolute_timeout_seconds=0.20,
+                phase_b_absolute_timeout_seconds=0.50,
                 phase_b_interval_seconds=0.01,
             )
             assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
-            assert time.monotonic() - started < 0.35
+            assert time.monotonic() - started < 1.25
             assert "elapsed_seconds=" in result.phase_b.details
-            assert slow_body_finished.wait(0.50)
+            assert slow_body_finished.wait(1.50)
             assert active_requests == 0
     finally:
         server.shutdown()

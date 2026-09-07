@@ -894,32 +894,7 @@ def _http_executor(endpoint: str, timeout: float) -> BudgetedGraphQLExecutor:
     def execute(query: str, operation_timeout: float | None = None) -> dict[str, Any]:
         request_timeout = timeout if operation_timeout is None else min(timeout, operation_timeout)
         payload = json.dumps({"query": query, "variables": {}}).encode("utf-8")
-        if operation_timeout is not None:
-            return _budgeted_urlopen_request(endpoint, payload, request_timeout)
-        request = Request(
-            endpoint,
-            data=payload,
-            headers={"content-type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=request_timeout) as response:
-                raw = response.read().decode("utf-8")
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"http {exc.code}: {body}") from exc
-        except URLError as exc:
-            raise RuntimeError(f"connection error: {exc.reason}") from exc
-        except TimeoutError as exc:
-            raise RuntimeError("connection timeout") from exc
-
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"invalid json response: {exc}") from exc
-        if not isinstance(parsed, dict):
-            raise RuntimeError("graphql response must be a json object")
-        return parsed
+        return _budgeted_urlopen_request(endpoint, payload, request_timeout)
 
     return execute
 

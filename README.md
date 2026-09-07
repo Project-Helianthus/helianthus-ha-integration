@@ -201,11 +201,13 @@ Phase B GraphQL/schema failure is a required semantic failure. Phase A accepts
 only the published healthy daemon `running` and adapter `ok` states; missing,
 offline, failed, or other values cannot certify the run.
 
-For `ebusd-tcp`, a trusted static source has an active state, a valid integer
-source, explicit `retryable=false`, no failed source, and only successful
-populated outcome/probe evidence. The artifact records bounded structured Phase B
-samples for transport class, source selection, retry, failed-source, and probe
-evidence. It retains at most eight samples and eight transitions. Endpoint
+Phase B trusts the protocol-neutral canonical source-selection predicate: active
+state, `active_probe_passed` outcome, and a valid selected source. It adds the
+consumer checks `retryable=false`, no failed source, and a non-boolean integer
+source in `0..255`. Transport names and an optional `active_probe` object are
+bounded evidence only; neither is an acceptance condition. The artifact records
+bounded structured Phase B samples for transport class, source selection, retry,
+failed-source, and probe evidence. It retains at most eight samples and eight transitions. Endpoint
 user-info, query, and fragment data are removed during artifact serialization;
 every endpoint and evidence string is capped at 320 characters. Embedded HTTP(S)
 URLs are redacted case-insensitively. Each production Phase B read uses one
