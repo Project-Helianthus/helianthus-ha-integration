@@ -38,12 +38,18 @@ def _clean(value: object | None) -> str | None:
     return cleaned or None
 
 
-def _has_known_identity_text(value: object | None) -> bool:
+def has_known_identity_text(value: object | None) -> bool:
+    """Return whether text represents a usable public device identity."""
+
     cleaned = _clean(value)
     if not cleaned:
         return False
     lowered = cleaned.lower()
-    return lowered not in _UNKNOWN_IDENTITY_TOKENS and not lowered.startswith("unknown ")
+    return lowered not in _UNKNOWN_IDENTITY_TOKENS and not (
+        lowered.startswith("unknown")
+        and len(lowered) > len("unknown")
+        and lowered[len("unknown")].isspace()
+    )
 
 
 def circuit_type_display_name(value: object | None) -> str:
@@ -79,7 +85,7 @@ def has_bus_identity_evidence(device: dict) -> bool:
         "software_version",
         "part_number",
     ):
-        if _has_known_identity_text(device.get(key)):
+        if has_known_identity_text(device.get(key)):
             return True
     return False
 
@@ -91,7 +97,7 @@ def has_radio_identity_evidence(device: dict) -> bool:
     if class_address in {0x15, 0x26, 0x35}:
         return True
     for key in ("device_model", "firmware_version"):
-        if _has_known_identity_text(device.get(key)):
+        if has_known_identity_text(device.get(key)):
             return True
     hardware_identifier = _parse_bus_address(device.get("hardware_identifier"))
     return hardware_identifier is not None and hardware_identifier > 0

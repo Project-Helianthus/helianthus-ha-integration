@@ -86,6 +86,12 @@ def test_has_bus_identity_evidence_accepts_device_identity_payload() -> None:
     assert has_bus_identity_evidence({"address": 0x08, "serial_number": "ABC123"})
 
 
+def test_has_bus_identity_evidence_rejects_unicode_unknown_prefixes() -> None:
+    for device_id in ("unknown\tdevice", "unknown\ndevice", "unknown\u2003device"):
+        assert not has_bus_identity_evidence({"address": 0x31, "device_id": device_id})
+    assert has_bus_identity_evidence({"address": 0x31, "device_id": "unknown-model"})
+
+
 def test_should_export_radio_device_rejects_identityless_inventory_slot() -> None:
     assert not should_export_radio_device(
         {
