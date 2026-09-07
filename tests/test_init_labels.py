@@ -108,6 +108,20 @@ def test_canonical_bus_model_name_uses_annotated_code_for_sparse_device() -> Non
     assert _canonical_bus_model_name({**sparse, "device_id": "  "}) == expected
 
 
+def test_canonical_bus_model_name_treats_public_missing_identity_sentinels_as_sparse() -> None:
+    sparse = {
+        "product_model": "VR 71 (eBUS: VR_71)",
+        "part_number": "0020184844",
+    }
+    expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
+
+    for device_id in ("unknown", " NONE ", "NuLl", " unknown device "):
+        assert _canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
+        assert _canonical_bus_model_name(
+            {**sparse, "device_id": device_id, "product_model": expected}
+        ) == expected
+
+
 def test_canonical_bus_model_name_keeps_present_device_id_authoritative() -> None:
     assert _canonical_bus_model_name(
         {

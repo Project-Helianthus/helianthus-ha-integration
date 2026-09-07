@@ -31,6 +31,7 @@ from .const import (
     DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
 )
+from .device_ids import has_known_identity_text
 
 PLATFORMS: list[str] = [
     "sensor",
@@ -271,17 +272,18 @@ def _canonical_bus_model_name(device: dict) -> str:
     product_model = _clean_label(device.get("product_model"))
     part_number = _clean_label(device.get("part_number"))
     device_id = _clean_label(device.get("device_id"))
+    authoritative_device_id = device_id if has_known_identity_text(device_id) else None
     annotation = product_model and re.fullmatch(
         r"(?P<base>.+?)\s+\((?:part:\s*(?P<part>[^;()]*)\s*;\s*)?eBUS:\s*(?P<ebus_code>[^()]*)\s*\)",
         product_model,
         flags=re.IGNORECASE,
     )
     annotated_ebus_code = _clean_label(annotation.group("ebus_code")) if annotation else None
-    ebus_code = _normalized_ebus_code(device_id or annotated_ebus_code)
+    ebus_code = _normalized_ebus_code(authoritative_device_id or annotated_ebus_code)
     base_model = (
         _clean_label(annotation.group("base"))
         if annotation
-        else product_model or _KNOWN_BUS_MODELS.get(ebus_code) or device_id or "unknown"
+        else product_model or _KNOWN_BUS_MODELS.get(ebus_code) or authoritative_device_id or "unknown"
     )
     formatted_part_number = part_number or (
         _clean_label(annotation.group("part")) if annotation else None
