@@ -1717,10 +1717,25 @@ def _canonical_host_aliases(host: str, deadline: float) -> set[str] | None:
 
 
 def _probe_tcp_endpoint(host: str, port: int, timeout: float) -> str | None:
+    deadline = time.monotonic() + timeout
     try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return None
-    except OSError as exc:
+        addresses = _resolve_http_addresses(host, port, deadline)
+        if not addresses:
+            raise RuntimeError("DNS resolution returned no addresses")
+        last_error: OSError | None = None
+        for family, socktype, protocol, _, address in addresses:
+            connection = socket.socket(family, socktype, protocol)
+            try:
+                connection.settimeout(_remaining_http_budget(deadline))
+                connection.connect(address)
+                _remaining_http_budget(deadline)
+                return None
+            except OSError as exc:
+                last_error = exc
+            finally:
+                connection.close()
+        raise RuntimeError(f"connection failed: {last_error}")
+    except (OSError, RuntimeError, TimeoutError) as exc:
         detail = _normalize_text(str(exc))
         if detail:
             return detail
