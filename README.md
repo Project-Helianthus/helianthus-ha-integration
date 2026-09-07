@@ -210,18 +210,21 @@ bounded structured Phase B samples for transport class, source selection, retry,
 failed-source, and probe evidence. It retains at most eight samples and eight transitions. Endpoint
 user-info, query, and fragment data are removed during artifact serialization;
 every endpoint and evidence string is capped at 320 characters. Embedded HTTP(S)
-URLs are redacted case-insensitively. Each production Phase B read uses one
-deadline-aware direct HTTP(S) operation: the remaining monotonic budget bounds
-DNS resolution, connect, TLS setup, headers, body chunks, and request output.
-Hostname resolution runs in a bounded child process that is terminated and
-joined at the same deadline; literal IP endpoints avoid the resolver. The socket
-closes at terminal completion, so an oversized CLI request timeout cannot leave
-a Phase B request or body worker running after the result. The Phase B HTTP
-parser permits at most 16 KiB of headers and 256 KiB of JSON response body,
-regardless of fixed-length, chunked, or close-delimited framing.
-IPv6 endpoint literals use RFC-compliant bracketed `Host` authorities (for
-example, `[::1]:8080`); default ports are omitted from the authority while the
-socket connection and TLS SNI continue to use the unbracketed literal.
+URLs are redacted case-insensitively. Every production Phase A and Phase B
+GraphQL request runs the maintained
+`urlopen` client in a killable subprocess. This preserves configured proxy and redirect behavior
+while the parent applies the per-operation monotonic budget,
+terminates and joins a worker that exceeds it, and prevents request work from
+outliving the result. The worker rejects ambiguous framing and limits the final
+response to 16 KiB of headers and 256 KiB of JSON body. `urlopen` owns proxy
+routing, redirects, DNS, connection, TLS, and HTTP response handling; the custom
+direct socket parser is not part of this production request path.
+
+Topology endpoint probes separately use a bounded resolver subprocess, then
+connect to the returned TCP addresses within the same monotonic timeout. The
+same-port endpoint-identity comparison also uses bounded resolution. Literal IP
+probe hosts avoid DNS, and every probe socket and resolver worker is closed or
+joined before the topology check returns.
 
 The artifact uses this precedence: a transport or deadline failure is
 `DEGRADED_TRANSPORT`; a required schema or semantic mismatch is `FAIL_SEMANTIC`;

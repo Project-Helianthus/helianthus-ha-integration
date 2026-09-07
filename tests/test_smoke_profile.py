@@ -600,6 +600,10 @@ def test_startup_procedure_documents_field_specific_service_health() -> None:
     readme = Path(__file__).parents[1].joinpath("README.md").read_text(encoding="utf-8")
     assert "healthy daemon `running` and adapter `ok` states" in readme
     assert "Transport names and an optional `active_probe` object are" in readme
+    assert "`urlopen` client in a killable subprocess" in readme
+    assert "preserves configured proxy and redirect behavior" in readme
+    assert "Topology endpoint probes separately use a bounded resolver" in readme
+    assert "deadline-aware direct HTTP(S) operation" not in readme
     assert "For `ebusd-tcp`, a trusted static source" not in readme
 
 
@@ -846,6 +850,7 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
     max_active_requests = 0
     startup_calls = 0
     lock = Lock()
+    phase_b_slow_request_started = Event()
     slow_body_finished = Event()
 
     class Handler(BaseHTTPRequestHandler):
@@ -860,6 +865,7 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
                 if slow_body:
                     active_requests += 1
                     max_active_requests = max(max_active_requests, active_requests)
+                    phase_b_slow_request_started.set()
             body = json.dumps(responses[operation]).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -891,8 +897,8 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
     server_thread.start()
     try:
         for _ in range(2):
+            phase_b_slow_request_started.clear()
             slow_body_finished.clear()
-            started = time.monotonic()
             result = smoke_profile.run_startup_spotcheck_v2(
                 f"http://127.0.0.1:{server.server_port}/graphql",
                 timeout=999.0,
@@ -901,8 +907,9 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
                 phase_b_interval_seconds=0.01,
             )
             assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
-            assert time.monotonic() - started < 1.25
+            assert phase_b_slow_request_started.is_set()
             assert "elapsed_seconds=" in result.phase_b.details
+            assert "absolute timeout exceeded after operation" in result.phase_b.details
             assert slow_body_finished.wait(1.50)
             assert active_requests == 0
     finally:
@@ -1581,6 +1588,79 @@ def test_run_smoke_profile_dual_topology_bounds_stalled_alias_resolution() -> No
     assert result.checks[3].ok is False
     assert "cannot verify endpoint identity within timeout" in result.checks[3].details
     assert resolver_calls == [("stalled.example", 0, resolver_calls[0][2])]
+
+
+def test_run_smoke_profile_dual_topology_bounds_stalled_same_port_probe_resolution() -> None:
+    resolver_calls: list[tuple[str, int, float]] = []
+    original_resolver = smoke_profile._resolve_http_addresses
+    original_create_connection = socket.create_connection
+
+    def stalled_probe_resolver(host: str, port: int, deadline: float) -> list[tuple[object, ...]]:
+        resolver_calls.append((host, port, deadline))
+        assert 0 < deadline - time.monotonic() <= 0.02
+        if port == 0:
+            resolved = "192.0.2.10" if host == "gateway-a.example" else "192.0.2.11"
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (resolved, 0))]
+        raise TimeoutError("DNS resolution exceeded deadline")
+
+    def forbidden_create_connection(*_: object, **__: object) -> socket.socket:
+        raise AssertionError("production probes must not use synchronous create_connection DNS")
+
+    smoke_profile._resolve_http_addresses = stalled_probe_resolver
+    socket.create_connection = forbidden_create_connection
+    try:
+        result = smoke_profile.run_smoke_profile(
+            "http://127.0.0.1:8080/graphql",
+            executor=FakeExecutor(_success_responses()),
+            dual_topology=smoke_profile.DualTopologyConfig(
+                "gateway-a.example", 19001, "enh", "gateway-b.example", 19001
+            ),
+            timeout=0.01,
+        )
+    finally:
+        socket.create_connection = original_create_connection
+        smoke_profile._resolve_http_addresses = original_resolver
+
+    assert result.checks[3].ok is False
+    assert "DNS resolution exceeded deadline" in result.checks[3].details
+    assert [(host, port) for host, port, _ in resolver_calls] == [
+        ("gateway-a.example", 0),
+        ("gateway-b.example", 0),
+        ("gateway-a.example", 19001),
+    ]
+
+
+def test_run_smoke_profile_dual_topology_bounds_stalled_different_port_probe_resolution() -> None:
+    resolver_calls: list[tuple[str, int, float]] = []
+    original_resolver = smoke_profile._resolve_http_addresses
+    original_create_connection = socket.create_connection
+
+    def stalled_probe_resolver(host: str, port: int, deadline: float) -> list[tuple[object, ...]]:
+        resolver_calls.append((host, port, deadline))
+        assert 0 < deadline - time.monotonic() <= 0.02
+        raise TimeoutError("DNS resolution exceeded deadline")
+
+    def forbidden_create_connection(*_: object, **__: object) -> socket.socket:
+        raise AssertionError("production probes must not use synchronous create_connection DNS")
+
+    smoke_profile._resolve_http_addresses = stalled_probe_resolver
+    socket.create_connection = forbidden_create_connection
+    try:
+        result = smoke_profile.run_smoke_profile(
+            "http://127.0.0.1:8080/graphql",
+            executor=FakeExecutor(_success_responses()),
+            dual_topology=smoke_profile.DualTopologyConfig(
+                "stalled.example", 19001, "enh", "other.example", 19002
+            ),
+            timeout=0.01,
+        )
+    finally:
+        socket.create_connection = original_create_connection
+        smoke_profile._resolve_http_addresses = original_resolver
+
+    assert result.checks[3].ok is False
+    assert "DNS resolution exceeded deadline" in result.checks[3].details
+    assert [(host, port) for host, port, _ in resolver_calls] == [("stalled.example", 19001)]
 
 
 def test_run_smoke_profile_dual_topology_preserves_resolved_alias_rejection() -> None:
