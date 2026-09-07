@@ -601,6 +601,9 @@ def _check_transport_stability(
     transitions: list[str] = []
     stable_since: float | None = None
     stable_source: Any = None
+    # A later healthy sample may establish a new stability window, but it must
+    # not erase an observed service-health failure from the run verdict.
+    observed_service_error = False
     samples: list[StartupPhaseBSample] = []
     while True:
         now = clock()
@@ -623,6 +626,8 @@ def _check_transport_stability(
         if sample is None:
             if sample_outcome is StartupOutcome.SCHEMA_ERROR:
                 return _startup_phase_b_failure(attempts, started, transitions, detail, sample_outcome, clock, samples)
+            if sample_outcome is StartupOutcome.SERVICE_ERROR:
+                observed_service_error = True
             stable_since = None; stable_source = None
             transitions.append(detail)
         else:
@@ -639,7 +644,8 @@ def _check_transport_stability(
                     transitions.append(f"stable reset source flip={source}")
                 elif now - stable_since >= target_seconds:
                     elapsed = now - started
-                    return SmokeCheck("transport_stability", True, f"attempts={attempts} elapsed_seconds={elapsed:.3f} stable_seconds={now - stable_since:.3f} source={source}"), StartupOutcome.PASS, samples
+                    outcome = StartupOutcome.SERVICE_ERROR if observed_service_error else StartupOutcome.PASS
+                    return SmokeCheck("transport_stability", True, f"attempts={attempts} elapsed_seconds={elapsed:.3f} stable_seconds={now - stable_since:.3f} source={source}"), outcome, samples
             else:
                 stable_since = None; stable_source = None
                 transitions.append(detail)
@@ -649,7 +655,8 @@ def _check_transport_stability(
             break
         sleeper(min(interval_seconds, remaining))
     elapsed = clock() - started
-    return SmokeCheck("transport_stability", False, f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}"), StartupOutcome.TRANSPORT_ERROR, samples
+    outcome = StartupOutcome.SERVICE_ERROR if observed_service_error else StartupOutcome.TRANSPORT_ERROR
+    return SmokeCheck("transport_stability", False, f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}"), outcome, samples
 
 
 def _sample_startup_admission(
@@ -683,6 +690,13 @@ def _sample_startup_admission(
     data, error = _extract_data(response)
     if error or not isinstance(data, dict):
         return None, StartupOutcome.SCHEMA_ERROR, f"startup status schema failure: {error or 'startup status data must be an object'}"
+    daemon = data.get("daemon_status")
+    adapter = data.get("adapter_status")
+    if not isinstance(daemon, dict) or not isinstance(adapter, dict):
+        return None, StartupOutcome.SCHEMA_ERROR, "startup status schema failure: required daemon_status or adapter_status is missing"
+    service_error = _service_health_error(daemon, adapter)
+    if service_error is not None:
+        return None, StartupOutcome.SERVICE_ERROR, f"startup status service failure: {service_error}"
     return data, StartupOutcome.PASS, ""
 
 
@@ -1100,7 +1114,7 @@ def _deadline_tls_handshake(connection: socket.socket, host: str, deadline: floa
                 raise TimeoutError("TLS handshake exceeded deadline")
 
 
-def _read_http_response_headers(reader: _DeadlineHTTPReader) -> tuple[int, dict[str, str]]:
+def _read_http_response_headers(reader: _DeadlineHTTPReader) -> tuple[int, dict[str, str | list[str]]]:
     raw_headers = reader.read_until(b"\r\n\r\n", MAX_STARTUP_HTTP_HEADER_BYTES)
     lines = raw_headers[:-4].decode("iso-8859-1").split("\r\n")
     if not lines or not lines[0].startswith("HTTP/"):
@@ -1108,22 +1122,37 @@ def _read_http_response_headers(reader: _DeadlineHTTPReader) -> tuple[int, dict[
     parts = lines[0].split(" ", 2)
     if len(parts) < 2 or not parts[1].isdigit():
         raise RuntimeError("invalid HTTP response status line")
-    headers: dict[str, str] = {}
+    headers: dict[str, str | list[str]] = {}
     for line in lines[1:]:
         name, separator, value = line.partition(":")
         if not separator:
             raise RuntimeError("invalid HTTP response header")
         normalized_name = name.strip().lower()
-        if normalized_name in headers:
+        normalized_value = value.strip()
+        if normalized_name in {"content-length", "transfer-encoding"} and normalized_name in headers:
             raise RuntimeError("conflicting HTTP response header")
-        headers[normalized_name] = value.strip()
+        existing = headers.get(normalized_name)
+        if existing is None:
+            headers[normalized_name] = normalized_value
+        elif isinstance(existing, list):
+            existing.append(normalized_value)
+        else:
+            # Preserve repeatable fields (for example Set-Cookie) separately:
+            # joining with commas corrupts valid Set-Cookie Expires attributes.
+            headers[normalized_name] = [existing, normalized_value]
     return int(parts[1]), headers
 
 
-def _read_http_response_body(reader: _DeadlineHTTPReader, headers: dict[str, str]) -> bytes:
-    transfer_encoding = headers.get("transfer-encoding", "").lower()
-    if transfer_encoding and "content-length" in headers:
+def _read_http_response_body(reader: _DeadlineHTTPReader, headers: dict[str, str | list[str]]) -> bytes:
+    transfer_encodings = _http_header_values(headers, "transfer-encoding")
+    content_lengths = _http_header_values(headers, "content-length")
+    if len(transfer_encodings) > 1 or len(content_lengths) > 1:
+        raise RuntimeError("conflicting HTTP response header")
+    transfer_encoding = transfer_encodings[0].lower() if transfer_encodings else ""
+    if transfer_encoding and content_lengths:
         raise RuntimeError("conflicting HTTP response framing")
+    if transfer_encoding and transfer_encoding != "chunked":
+        raise RuntimeError("unsupported HTTP response transfer encoding")
     if transfer_encoding == "chunked":
         body = bytearray()
         while True:
@@ -1141,9 +1170,9 @@ def _read_http_response_body(reader: _DeadlineHTTPReader, headers: dict[str, str
             body.extend(reader.read_exact(chunk_length, MAX_STARTUP_HTTP_BODY_BYTES - len(body)))
             if reader.read_exact(2, 2) != b"\r\n":
                 raise RuntimeError("invalid HTTP chunk terminator")
-    content_length = headers.get("content-length")
-    if content_length is None:
+    if not content_lengths:
         return reader.read_to_eof(MAX_STARTUP_HTTP_BODY_BYTES)
+    content_length = content_lengths[0]
     try:
         if not content_length.isdigit():
             raise ValueError
@@ -1153,6 +1182,17 @@ def _read_http_response_body(reader: _DeadlineHTTPReader, headers: dict[str, str
         return reader.read_exact(length, MAX_STARTUP_HTTP_BODY_BYTES)
     except ValueError as exc:
         raise RuntimeError("invalid HTTP content length") from exc
+
+
+def _http_header_values(headers: dict[str, str | list[str]], name: str) -> tuple[str, ...]:
+    value = headers.get(name)
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return tuple(value)
+    raise RuntimeError("invalid HTTP response header")
 
 
 def _check_connection(execute: GraphQLExecutor) -> SmokeCheck:

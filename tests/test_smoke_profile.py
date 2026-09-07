@@ -314,6 +314,67 @@ def test_startup_v2_phase_b_schema_error_is_fail_semantic() -> None:
     assert result.phase_b.ok is False
 
 
+def test_startup_v2_phase_b_revalidates_both_services_and_keeps_recovered_failure() -> None:
+    clock = FakeClock()
+    responses = _startup_responses()
+
+    def status(*, daemon: str = "running", adapter: str = "ok") -> dict:
+        payload = _startup_responses()["StartupStatus"]
+        payload["data"]["daemon_status"]["status"] = daemon
+        payload["data"]["adapter_status"]["status"] = adapter
+        return payload
+
+    class SequencedServiceExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            # Phase A is healthy. Phase B then sees each service fail before
+            # recovering long enough to prove the stability window restarted.
+            self.statuses = [
+                status(), status(), status(daemon="offline"), status(adapter="failed"), status(daemon="unknown"),
+                status(), status(), status(),
+            ]
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatus":
+                self.calls.append("StartupStatus")
+                return self.statuses.pop(0)
+            return super().__call__(query)
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=SequencedServiceExecutor(),
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=8,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+
+    assert result.phase_b.ok is True
+    assert "attempts=7" in result.phase_b.details
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+
+
+def test_startup_v2_phase_b_missing_service_status_fails_closed() -> None:
+    responses = _startup_responses()
+
+    class MissingPhaseBServiceExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.startup_calls = 0
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatus":
+                self.startup_calls += 1
+                if self.startup_calls > 1:
+                    payload = _startup_responses()["StartupStatus"]
+                    payload["data"].pop("adapter_status")
+                    return payload
+            return super().__call__(query)
+
+    result = _run_v2_with_executor(MissingPhaseBServiceExecutor())
+
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+    assert result.phase_b.ok is False
+    assert "adapter_status" in result.phase_b.details
+
+
 def test_startup_v2_uses_legacy_status_query_for_the_full_phase_b_window() -> None:
     responses = _startup_responses(regulator=False)
     responses["StartupStatus"] = {
@@ -584,6 +645,68 @@ def test_startup_http_reader_rejects_oversized_headers_and_body_framing() -> Non
     else:
         raise AssertionError("expected EOF body cap")
     assert eof_reader.eof_limit == smoke_profile.MAX_STARTUP_HTTP_BODY_BYTES
+
+
+def test_startup_http_reader_preserves_repeatable_non_framing_headers() -> None:
+    class FakeSocket:
+        def __init__(self, response: bytes) -> None:
+            self.response = response
+
+        def settimeout(self, _: float) -> None:
+            return None
+
+        def recv(self, _: int) -> bytes:
+            response, self.response = self.response, b""
+            return response
+
+    for framing, body in ((b"Content-Length: 2", b"{}"), (b"Transfer-Encoding: chunked", b"2\r\n{}\r\n0\r\n\r\n")):
+        raw = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Set-Cookie: one=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\r\n"
+            b"Set-Cookie: two=2\r\n"
+            + framing + b"\r\n\r\n" + body
+        )
+        reader = smoke_profile._DeadlineHTTPReader(FakeSocket(raw), time.monotonic() + 1)
+        _, headers = smoke_profile._read_http_response_headers(reader)
+
+        assert headers["set-cookie"] == ["one=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT", "two=2"]
+        assert smoke_profile._read_http_response_body(reader, headers) == b"{}"
+
+
+def test_startup_http_reader_rejects_repeated_framing_headers() -> None:
+    class FakeSocket:
+        def __init__(self, response: bytes) -> None:
+            self.response = response
+
+        def settimeout(self, _: float) -> None:
+            return None
+
+        def recv(self, _: int) -> bytes:
+            response, self.response = self.response, b""
+            return response
+
+    for headers in (
+        b"Content-Length: 2\r\nContent-Length: 2\r\n",
+        b"Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n",
+    ):
+        reader = smoke_profile._DeadlineHTTPReader(FakeSocket(b"HTTP/1.1 200 OK\r\n" + headers + b"\r\n"), time.monotonic() + 1)
+        try:
+            smoke_profile._read_http_response_headers(reader)
+        except RuntimeError as exc:
+            assert "conflicting" in str(exc)
+        else:
+            raise AssertionError("expected repeated framing header rejection")
+
+    reader = smoke_profile._DeadlineHTTPReader(
+        FakeSocket(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, chunked\r\n\r\n"), time.monotonic() + 1,
+    )
+    _, headers = smoke_profile._read_http_response_headers(reader)
+    try:
+        smoke_profile._read_http_response_body(reader, headers)
+    except RuntimeError as exc:
+        assert "transfer encoding" in str(exc)
+    else:
+        raise AssertionError("expected ambiguous transfer encoding rejection")
 
 
 def test_startup_http_reader_header_limit_is_inclusive_and_preserves_coalesced_body() -> None:
