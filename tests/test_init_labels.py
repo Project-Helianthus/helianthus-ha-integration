@@ -122,6 +122,20 @@ def test_canonical_bus_model_name_treats_public_missing_identity_sentinels_as_sp
         ) == expected
 
 
+def test_canonical_bus_model_name_treats_unicode_unknown_prefixes_as_sparse() -> None:
+    sparse = {
+        "product_model": "VR 71 (eBUS: VR_71)",
+        "part_number": "0020184844",
+    }
+    expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
+
+    for device_id in ("unknown\tdevice", "unknown\ndevice", "unknown\u2003device"):
+        assert _canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
+    assert _canonical_bus_model_name({**sparse, "device_id": "unknown-model"}) == (
+        "VR 71 (part: 0020184844; eBUS: UNKNOWN-MODEL)"
+    )
+
+
 def test_canonical_bus_model_name_keeps_present_device_id_authoritative() -> None:
     assert _canonical_bus_model_name(
         {

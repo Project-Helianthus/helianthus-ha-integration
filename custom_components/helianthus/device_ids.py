@@ -45,7 +45,11 @@ def has_known_identity_text(value: object | None) -> bool:
     if not cleaned:
         return False
     lowered = cleaned.lower()
-    return lowered not in _UNKNOWN_IDENTITY_TOKENS and not lowered.startswith("unknown ")
+    return lowered not in _UNKNOWN_IDENTITY_TOKENS and not (
+        lowered.startswith("unknown")
+        and len(lowered) > len("unknown")
+        and lowered[len("unknown")].isspace()
+    )
 
 
 def circuit_type_display_name(value: object | None) -> str:
