@@ -724,6 +724,54 @@ def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker() -> No
         server_thread.join(timeout=1)
 
 
+def test_startup_v2_phase_b_rejects_mixed_urlopen_response_framing() -> None:
+    responses = _startup_responses()
+    startup_calls = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            nonlocal startup_calls
+            operation = FakeExecutor._operation_name(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["query"])
+            body = json.dumps(responses[operation]).encode("utf-8")
+            if operation == "StartupStatus":
+                startup_calls += 1
+            if operation == "StartupStatus" and startup_calls == 2:
+                chunked = f"{len(body):X}\r\n".encode() + body + b"\r\n0\r\n\r\n"
+                self.wfile.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 999\r\nTransfer-Encoding: chunked\r\n\r\n" + chunked
+                )
+                self.wfile.flush()
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        result = smoke_profile.run_startup_spotcheck_v2(
+            f"http://127.0.0.1:{server.server_port}/graphql",
+            phase_b_target_seconds=0.01,
+            phase_b_absolute_timeout_seconds=3.0,
+            phase_b_interval_seconds=0.01,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1)
+
+    assert result.phase_b.ok is True
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert result.to_dict()["phase_b_outcomes"] == ["transport_error"]
+    assert startup_calls >= 4
+
+
 def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -> None:
     responses = _startup_responses()
     active_requests = 0

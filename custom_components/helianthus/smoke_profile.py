@@ -1005,8 +1005,13 @@ def _validate_urlopen_headers(response: Any) -> None:
     size = sum(len(str(name).encode("iso-8859-1", errors="replace")) + len(str(value).encode("iso-8859-1", errors="replace")) + 4 for name, value in raw_items)
     if size > MAX_STARTUP_HTTP_HEADER_BYTES:
         raise RuntimeError("HTTP response section exceeds size limit")
-    for name in ("content-length", "transfer-encoding"):
-        values = [str(value).strip() for header, value in raw_items if str(header).lower() == name]
+    framing_values = {
+        name: [str(value).strip() for header, value in raw_items if str(header).lower() == name]
+        for name in ("content-length", "transfer-encoding")
+    }
+    if framing_values["content-length"] and framing_values["transfer-encoding"]:
+        raise RuntimeError("conflicting HTTP response framing")
+    for name, values in framing_values.items():
         if len(values) > 1:
             raise RuntimeError("conflicting HTTP response header")
         if name == "content-length" and values:
