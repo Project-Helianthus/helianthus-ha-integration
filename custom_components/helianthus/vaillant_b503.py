@@ -1,7 +1,7 @@
 """B503 boiler active-error diagnostic sensor (plan §M4_HA).
 
 Surfaces :code:`vaillantErrors.firstActiveError` as a HA sensor entity
-gated by :code:`vaillantCapabilities.b503.reason`. Follows the lifecycle
+gated by :code:`vaillantCapabilities.vaillantB503.reason`. Follows the lifecycle
 rules from plan AD11 (3-poll hysteresis on NOT_SUPPORTED flips) and
 AD15 (state transitions per capability reason). No F.xxx translation
 (AD05) — native_value is the raw decimal integer from GraphQL.
@@ -45,7 +45,7 @@ _NOT_SUPPORTED_REASON = "NOT_SUPPORTED"
 QUERY_B503_STATE = """
 query VaillantB503State {
   vaillantCapabilities {
-    b503 {
+    vaillantB503 {
       reason
     }
   }
@@ -287,7 +287,7 @@ def _extract_reason(payload: Any) -> str:
     caps = payload.get("vaillantCapabilities")
     if not isinstance(caps, dict):
         return "UNKNOWN"
-    b503 = caps.get("b503")
+    b503 = caps.get("vaillantB503")
     if not isinstance(b503, dict):
         return "UNKNOWN"
     reason = b503.get("reason")
