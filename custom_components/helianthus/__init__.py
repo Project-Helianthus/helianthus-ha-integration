@@ -270,13 +270,24 @@ def _canonical_bus_display_name(device: dict) -> str | None:
 def _canonical_bus_model_name(device: dict) -> str:
     product_model = _clean_label(device.get("product_model"))
     part_number = _clean_label(device.get("part_number"))
-    device_id = _clean_label(device.get("device_id")) or "unknown"
-    ebus_code = _normalized_ebus_code(device_id)
-    base_model = product_model or _KNOWN_BUS_MODELS.get(ebus_code) or str(device_id)
-    if "(eBUS:" in base_model:
-        return base_model
-    if part_number:
-        return f"{base_model} (part: {part_number}; eBUS: {ebus_code})"
+    device_id = _clean_label(device.get("device_id"))
+    annotation = product_model and re.fullmatch(
+        r"(?P<base>.+?)\s+\((?:part:\s*(?P<part>[^;()]*)\s*;\s*)?eBUS:\s*(?P<ebus_code>[^()]*)\s*\)",
+        product_model,
+        flags=re.IGNORECASE,
+    )
+    annotated_ebus_code = _clean_label(annotation.group("ebus_code")) if annotation else None
+    ebus_code = _normalized_ebus_code(device_id or annotated_ebus_code)
+    base_model = (
+        _clean_label(annotation.group("base"))
+        if annotation
+        else product_model or _KNOWN_BUS_MODELS.get(ebus_code) or device_id or "unknown"
+    )
+    formatted_part_number = part_number or (
+        _clean_label(annotation.group("part")) if annotation else None
+    )
+    if formatted_part_number:
+        return f"{base_model} (part: {formatted_part_number}; eBUS: {ebus_code})"
     return f"{base_model} (eBUS: {ebus_code})"
 
 

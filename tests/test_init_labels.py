@@ -67,6 +67,56 @@ def test_canonical_bus_model_name_omits_missing_or_blank_part_number() -> None:
     assert vr71 == "VR 71 (eBUS: VR_71)"
 
 
+def test_canonical_bus_model_name_adds_part_number_to_preformatted_models() -> None:
+    devices = (
+        ("BASV2", "VRC 720f/2 (eBUS: BASV)", "0020260914", "VRC 720f/2 (part: 0020260914; eBUS: BASV)"),
+        ("VR_71", "VR 71 (eBUS: VR_71)", "0020184844", "VR 71 (part: 0020184844; eBUS: VR_71)"),
+        ("BAI00", "VUW (eBUS: BAI00)", "0012345678", "VUW (part: 0012345678; eBUS: BAI00)"),
+        ("NETX3", "VR940f (eBUS: NETX3)", "0020260962", "VR940f (part: 0020260962; eBUS: NETX3)"),
+    )
+
+    for device_id, product_model, part_number, expected in devices:
+        device = {
+            "device_id": device_id,
+            "product_model": product_model,
+            "part_number": part_number,
+        }
+        assert _canonical_bus_model_name(device) == expected
+        assert _canonical_bus_model_name({**device, "product_model": expected}) == expected
+
+
+def test_canonical_bus_model_name_preserves_or_replaces_preformatted_part_number_once() -> None:
+    preformatted = "VRC 720f/2 (part: 0020260914; eBUS: BASV)"
+    base = {"device_id": "BASV2", "product_model": preformatted}
+
+    assert _canonical_bus_model_name(base) == preformatted
+    assert _canonical_bus_model_name({**base, "part_number": "  "}) == preformatted
+    assert _canonical_bus_model_name({**base, "part_number": "0099999999"}) == (
+        "VRC 720f/2 (part: 0099999999; eBUS: BASV)"
+    )
+
+
+def test_canonical_bus_model_name_uses_annotated_code_for_sparse_device() -> None:
+    sparse = {
+        "product_model": "VR 71 (eBUS: VR_71)",
+        "part_number": "0020184844",
+    }
+    expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
+
+    assert _canonical_bus_model_name(sparse) == expected
+    assert _canonical_bus_model_name({**sparse, "device_id": None}) == expected
+    assert _canonical_bus_model_name({**sparse, "device_id": "  "}) == expected
+
+
+def test_canonical_bus_model_name_keeps_present_device_id_authoritative() -> None:
+    assert _canonical_bus_model_name(
+        {
+            "device_id": "BAI00",
+            "product_model": "VR 71 (part: 0020184844; eBUS: VR_71)",
+        }
+    ) == "VR 71 (part: 0020184844; eBUS: BAI00)"
+
+
 def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_payloads() -> None:
     enriched = _stable_bus_identity_model({"device_id": "BAI00", "product_model": "VUW 32CS/1-5 (N-INT2)"})
     sparse = _stable_bus_identity_model({"device_id": "BAI00"})
