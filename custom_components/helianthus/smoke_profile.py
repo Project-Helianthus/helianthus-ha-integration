@@ -1375,14 +1375,28 @@ def _check_dual_topology_path(
 
     ebusd_endpoint = f"tcp://{ebusd_host}:{dual_topology.ebusd_port}"
     proxy_endpoint = f"{profile}://{proxy_host}:{dual_topology.proxy_port}"
-    ebusd_aliases = _canonical_host_aliases(ebusd_host)
-    proxy_aliases = _canonical_host_aliases(proxy_host)
-    if dual_topology.ebusd_port == dual_topology.proxy_port and ebusd_aliases.intersection(proxy_aliases):
-        return SmokeCheck(
-            "dual_topology_path",
-            False,
-            f"endpoints must differ ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
-        )
+    if dual_topology.ebusd_port == dual_topology.proxy_port:
+        alias_deadline = time.monotonic() + timeout
+        ebusd_aliases = _canonical_host_aliases(ebusd_host, alias_deadline)
+        if ebusd_aliases is None:
+            return SmokeCheck(
+                "dual_topology_path",
+                False,
+                f"cannot verify endpoint identity within timeout ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
+            )
+        proxy_aliases = _canonical_host_aliases(proxy_host, alias_deadline)
+        if proxy_aliases is None:
+            return SmokeCheck(
+                "dual_topology_path",
+                False,
+                f"cannot verify endpoint identity within timeout ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
+            )
+        if ebusd_aliases.intersection(proxy_aliases):
+            return SmokeCheck(
+                "dual_topology_path",
+                False,
+                f"endpoints must differ ebusd_endpoint={ebusd_endpoint} proxy_endpoint={proxy_endpoint}",
+            )
 
     probe = endpoint_probe if endpoint_probe is not None else _probe_tcp_endpoint
 
@@ -1577,7 +1591,7 @@ def _is_valid_port(port: int) -> bool:
     return isinstance(port, int) and 1 <= port <= 65535
 
 
-def _canonical_host_aliases(host: str) -> set[str]:
+def _canonical_host_aliases(host: str, deadline: float) -> set[str] | None:
     normalized = host.strip().lower()
     aliases: set[str] = set()
     if not normalized:
@@ -1599,9 +1613,9 @@ def _canonical_host_aliases(host: str) -> set[str]:
         pass
 
     try:
-        infos = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
-    except OSError:
-        return aliases
+        infos = _resolve_http_addresses(normalized, 0, deadline)
+    except (RuntimeError, TimeoutError):
+        return None
 
     for info in infos:
         sockaddr = info[4]

@@ -1300,6 +1300,54 @@ def test_run_smoke_profile_dual_topology_fails_when_endpoint_hosts_are_aliases()
     assert endpoint_probe.calls == []
 
 
+def test_run_smoke_profile_dual_topology_bounds_stalled_alias_resolution() -> None:
+    resolver_calls: list[tuple[str, int, float]] = []
+    original_resolver = smoke_profile._resolve_http_addresses
+
+    def stalled_resolver(host: str, port: int, deadline: float) -> list[tuple[object, ...]]:
+        resolver_calls.append((host, port, deadline))
+        assert 0 < deadline - time.monotonic() <= 0.02
+        raise TimeoutError("simulated stalled resolver")
+
+    smoke_profile._resolve_http_addresses = stalled_resolver
+    try:
+        result = smoke_profile.run_smoke_profile(
+            "http://127.0.0.1:8080/graphql",
+            executor=FakeExecutor(_success_responses()),
+            dual_topology=smoke_profile.DualTopologyConfig("stalled.example", 19001, "enh", "other.example", 19001),
+            endpoint_probe=FakeEndpointProbe({}),
+            timeout=0.01,
+        )
+    finally:
+        smoke_profile._resolve_http_addresses = original_resolver
+
+    assert result.checks[3].ok is False
+    assert "cannot verify endpoint identity within timeout" in result.checks[3].details
+    assert resolver_calls == [("stalled.example", 0, resolver_calls[0][2])]
+
+
+def test_run_smoke_profile_dual_topology_preserves_resolved_alias_rejection() -> None:
+    original_resolver = smoke_profile._resolve_http_addresses
+
+    def resolved_alias(host: str, port: int, _: float) -> list[tuple[object, ...]]:
+        assert port == 0
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.10", 0))]
+
+    smoke_profile._resolve_http_addresses = resolved_alias
+    try:
+        result = smoke_profile.run_smoke_profile(
+            "http://127.0.0.1:8080/graphql",
+            executor=FakeExecutor(_success_responses()),
+            dual_topology=smoke_profile.DualTopologyConfig("gateway-a.example", 19001, "enh", "gateway-b.example", 19001),
+            endpoint_probe=FakeEndpointProbe({}),
+        )
+    finally:
+        smoke_profile._resolve_http_addresses = original_resolver
+
+    assert result.checks[3].ok is False
+    assert "endpoints must differ" in result.checks[3].details
+
+
 def test_run_smoke_profile_dual_topology_fails_when_ebusd_unreachable() -> None:
     executor = FakeExecutor(_success_responses())
     endpoint_probe = FakeEndpointProbe(
