@@ -20,6 +20,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from .admission import normalize_source_selection
+
 
 QUERY_CONNECTION = """
 query SmokeConnection {
@@ -230,6 +232,7 @@ MAX_STARTUP_ENDPOINT_CHARS = 320
 MAX_STARTUP_TRANSITIONS = 8
 MAX_STARTUP_HTTP_HEADER_BYTES = 16 * 1024
 MAX_STARTUP_HTTP_BODY_BYTES = 256 * 1024
+MAX_STARTUP_HTTP_INTERIM_RESPONSES = 8
 HEALTHY_DAEMON_STATUSES = {"running"}
 HEALTHY_ADAPTER_STATUSES = {"ok"}
 _URL_IN_EVIDENCE_RE = re.compile(r"https?://[^\s\"']+", re.IGNORECASE)
@@ -607,6 +610,7 @@ def _check_transport_stability(
     # A later healthy sample may establish a new stability window, but it must
     # not erase an observed service-health failure from the result artifact.
     observed_service_error = False
+    observed_transport_error = False
     samples: list[StartupPhaseBSample] = []
     while True:
         now = clock()
@@ -629,11 +633,12 @@ def _check_transport_stability(
         if sample is None:
             if sample_outcome is StartupOutcome.SCHEMA_ERROR:
                 check, outcomes, samples = _startup_phase_b_failure(attempts, started, transitions, detail, sample_outcome, clock, samples)
-                if observed_service_error:
-                    outcomes.insert(0, StartupOutcome.SERVICE_ERROR)
+                outcomes[:0] = _observed_phase_b_outcomes(observed_service_error, observed_transport_error)
                 return check, outcomes, samples
             if sample_outcome is StartupOutcome.SERVICE_ERROR:
                 observed_service_error = True
+            if sample_outcome is StartupOutcome.TRANSPORT_ERROR:
+                observed_transport_error = True
             stable_since = None; stable_source = None
             transitions.append(detail)
         else:
@@ -641,8 +646,7 @@ def _check_transport_stability(
             _append_startup_phase_b_sample(samples, _startup_phase_b_sample(sample, trusted))
             if admission_outcome is StartupOutcome.SCHEMA_ERROR:
                 check, outcomes, samples = _startup_phase_b_failure(attempts, started, transitions, detail, admission_outcome, clock, samples)
-                if observed_service_error:
-                    outcomes.insert(0, StartupOutcome.SERVICE_ERROR)
+                outcomes[:0] = _observed_phase_b_outcomes(observed_service_error, observed_transport_error)
                 return check, outcomes, samples
             if trusted:
                 if stable_since is None:
@@ -653,7 +657,9 @@ def _check_transport_stability(
                     transitions.append(f"stable reset source flip={source}")
                 elif now - stable_since >= target_seconds:
                     elapsed = now - started
-                    outcomes = [StartupOutcome.SERVICE_ERROR] if observed_service_error else [StartupOutcome.PASS]
+                    outcomes = _observed_phase_b_outcomes(observed_service_error, observed_transport_error)
+                    if not outcomes:
+                        outcomes.append(StartupOutcome.PASS)
                     return SmokeCheck("transport_stability", True, f"attempts={attempts} elapsed_seconds={elapsed:.3f} stable_seconds={now - stable_since:.3f} source={source}"), outcomes, samples
             else:
                 stable_since = None; stable_source = None
@@ -664,8 +670,20 @@ def _check_transport_stability(
             break
         sleeper(min(interval_seconds, remaining))
     elapsed = clock() - started
-    outcomes = ([StartupOutcome.SERVICE_ERROR] if observed_service_error else []) + [StartupOutcome.TRANSPORT_ERROR]
+    outcomes = _observed_phase_b_outcomes(observed_service_error, False) + [StartupOutcome.TRANSPORT_ERROR]
     return SmokeCheck("transport_stability", False, f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}"), outcomes, samples
+
+
+def _observed_phase_b_outcomes(
+    observed_service_error: bool,
+    observed_transport_error: bool,
+) -> list[StartupOutcome]:
+    outcomes = []
+    if observed_service_error:
+        outcomes.append(StartupOutcome.SERVICE_ERROR)
+    if observed_transport_error:
+        outcomes.append(StartupOutcome.TRANSPORT_ERROR)
+    return outcomes
 
 
 def _sample_startup_admission(
@@ -741,6 +759,7 @@ def _trusted_startup_admission(data: dict[str, Any]) -> tuple[bool, int | None, 
     source_selection = admission.get("source_selection") if isinstance(admission, dict) else None
     if not isinstance(source_selection, dict):
         return False, None, "startup status schema failure: missing source_selection", StartupOutcome.SCHEMA_ERROR
+    canonical_admission = normalize_source_selection(source_selection)
     source = source_selection.get("selected_source")
     state = str(source_selection.get("state") or "").lower()
     outcome = str(source_selection.get("outcome") or "").lower()
@@ -752,14 +771,14 @@ def _trusted_startup_admission(data: dict[str, Any]) -> tuple[bool, int | None, 
         retryable = source_selection.get("retryable")
         failed_source = source_selection.get("failed_source")
         probe_ok = _active_probe_is_successful(probe)
-        outcome_ok = not outcome or outcome == "active_probe_passed"
+        outcome_ok = canonical_admission["trusted"] is True
         probe_ok_or_absent = probe is None or probe_ok
         trusted = state == "active" and source_is_valid and retryable is False and failed_source is None and outcome_ok and probe_ok_or_absent
         return trusted, source if source_is_valid else None, source_detail, StartupOutcome.PASS
     if not join_capable:
         return False, None, f"transport-blind transportClass={transport or 'missing'}", StartupOutcome.PASS
     probe_ok = _active_probe_is_successful(probe)
-    trusted = state == "active" and outcome == "active_probe_passed" and source_is_valid and probe_ok and source_selection.get("retryable") is False and source_selection.get("failed_source") is None
+    trusted = canonical_admission["trusted"] is True and source_is_valid and probe_ok and source_selection.get("retryable") is False and source_selection.get("failed_source") is None
     return trusted, source if source_is_valid else None, source_detail, StartupOutcome.PASS
 
 
@@ -1000,7 +1019,7 @@ def _deadline_http_request(endpoint: str, payload: bytes, budget: float) -> dict
         ).encode("ascii") + payload
         _send_http_request(connection, request, deadline)
         reader = _DeadlineHTTPReader(connection, deadline)
-        status, headers = _read_http_response_headers(reader)
+        status, headers = _read_final_http_response_headers(reader)
         raw = _read_http_response_body(reader, headers)
         if not 200 <= status < 300:
             raise RuntimeError(f"http {status}: {raw.decode('utf-8', errors='replace')}")
@@ -1150,6 +1169,17 @@ def _read_http_response_headers(reader: _DeadlineHTTPReader) -> tuple[int, dict[
             # joining with commas corrupts valid Set-Cookie Expires attributes.
             headers[normalized_name] = [existing, normalized_value]
     return int(parts[1]), headers
+
+
+def _read_final_http_response_headers(reader: _DeadlineHTTPReader) -> tuple[int, dict[str, str | list[str]]]:
+    """Consume bounded informational blocks and return the final HTTP response."""
+    for _ in range(MAX_STARTUP_HTTP_INTERIM_RESPONSES + 1):
+        status, headers = _read_http_response_headers(reader)
+        if not 100 <= status < 200:
+            return status, headers
+        if status == 101:
+            raise RuntimeError("unsupported HTTP protocol switch")
+    raise RuntimeError("too many interim HTTP responses")
 
 
 def _read_http_response_body(reader: _DeadlineHTTPReader, headers: dict[str, str | list[str]]) -> bytes:

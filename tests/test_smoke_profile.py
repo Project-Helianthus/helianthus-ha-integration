@@ -9,7 +9,7 @@ import socket
 from threading import Event, Lock, Thread
 import time
 
-from custom_components.helianthus import smoke_profile
+from custom_components.helianthus import admission, smoke_profile
 
 
 class FakeExecutor:
@@ -163,14 +163,17 @@ def _startup_status_with_health(*, daemon: str = "running", adapter: str = "ok")
 
 
 class StartupStatusTimelineExecutor(FakeExecutor):
-    def __init__(self, statuses: list[dict]) -> None:
+    def __init__(self, statuses: list[dict | Exception]) -> None:
         super().__init__(_startup_responses())
         self.statuses = statuses
 
     def __call__(self, query: str) -> dict:
         if self._operation_name(query) == "StartupStatus":
             self.calls.append("StartupStatus")
-            return self.statuses.pop(0)
+            status = self.statuses.pop(0)
+            if isinstance(status, Exception):
+                raise status
+            return status
         return super().__call__(query)
 
 
@@ -480,6 +483,44 @@ def test_startup_static_admission_rejects_retry_and_failure_evidence() -> None:
     }
 
 
+def test_startup_static_admission_reuses_canonical_outcome_predicate() -> None:
+    for outcome in (None, "all_candidates_failed"):
+        responses = _startup_responses()
+        payload = responses["StartupStatus"]["data"]
+        source_selection = payload["busSummary"]["status"]["bus_admission"]["source_selection"]
+        source_selection["outcome"] = outcome
+        source_selection.pop("active_probe")
+
+        assert admission.normalize_source_selection(source_selection)["trusted"] is False
+        assert smoke_profile._trusted_startup_admission(payload)[0] is False
+
+        clock = FakeClock()
+        result = smoke_profile.run_startup_spotcheck_v2(
+            "http://127.0.0.1:8080/graphql", executor=FakeExecutor(responses),
+            phase_b_target_seconds=1, phase_b_absolute_timeout_seconds=2,
+            phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+        )
+        assert result.verdict is not smoke_profile.StartupVerdict.OK
+
+
+def test_startup_v2_keeps_transient_phase_b_transport_error_after_recovery() -> None:
+    clock = FakeClock()
+    executor = StartupStatusTimelineExecutor([
+        _startup_status_with_health(), TimeoutError("transient status timeout"),
+        _startup_status_with_health(), _startup_status_with_health(), _startup_status_with_health(),
+    ])
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=executor,
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=6,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+
+    assert result.phase_b.ok is True
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert result.to_dict()["phase_b_outcomes"] == ["transport_error"]
+
+
 def test_startup_v2_rejects_unhealthy_or_missing_service_statuses() -> None:
     for daemon_status, adapter_status in (("offline", "ok"), ("running", "failed"), (None, "ok"), ("ok", "ok")):
         responses = _startup_responses()
@@ -747,6 +788,70 @@ def test_startup_http_reader_rejects_repeated_framing_headers() -> None:
         assert "transfer encoding" in str(exc)
     else:
         raise AssertionError("expected ambiguous transfer encoding rejection")
+
+
+def test_startup_http_reader_consumes_bounded_interim_responses() -> None:
+    class FakeSocket:
+        def __init__(self, response: bytes) -> None:
+            self.response = response
+
+        def settimeout(self, _: float) -> None:
+            return None
+
+        def recv(self, _: int) -> bytes:
+            response, self.response = self.response, b""
+            return response
+
+    response = b"HTTP/1.1 100 Continue\r\nX-Interim: yes\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+    reader = smoke_profile._DeadlineHTTPReader(FakeSocket(response), time.monotonic() + 1)
+    status, headers = smoke_profile._read_final_http_response_headers(reader)
+    assert status == 200
+    assert smoke_profile._read_http_response_body(reader, headers) == b"{}"
+
+    too_many = b"HTTP/1.1 100 Continue\r\n\r\n" * (smoke_profile.MAX_STARTUP_HTTP_INTERIM_RESPONSES + 1)
+    reader = smoke_profile._DeadlineHTTPReader(FakeSocket(too_many), time.monotonic() + 1)
+    try:
+        smoke_profile._read_final_http_response_headers(reader)
+    except RuntimeError as exc:
+        assert "too many interim" in str(exc)
+    else:
+        raise AssertionError("expected bounded interim response rejection")
+
+
+def test_startup_http_request_consumes_100_and_rejects_protocol_switch() -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            self.rfile.read(int(self.headers["Content-Length"]))
+            status = self.server.interim_status  # type: ignore[attr-defined]
+            self.wfile.write(f"HTTP/1.1 {status} {'Switching Protocols' if status == 101 else 'Continue'}\r\n\r\n".encode())
+            self.wfile.flush()
+            if status != 101:
+                body = b'{"data":{"ok":true}}'
+                self.wfile.write(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+                self.wfile.flush()
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.interim_status = 100  # type: ignore[attr-defined]
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}/graphql"
+        assert smoke_profile._deadline_http_request(endpoint, b"{}", 1.0) == {"data": {"ok": True}}
+
+        server.interim_status = 101  # type: ignore[attr-defined]
+        try:
+            smoke_profile._deadline_http_request(endpoint, b"{}", 1.0)
+        except RuntimeError as exc:
+            assert "protocol switch" in str(exc)
+        else:
+            raise AssertionError("expected protocol switch rejection")
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1)
 
 
 def test_startup_http_reader_header_limit_is_inclusive_and_preserves_coalesced_body() -> None:
