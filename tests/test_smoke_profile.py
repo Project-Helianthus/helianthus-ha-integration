@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socket
+from threading import Event, Lock, Thread
+import time
+
 from custom_components.helianthus import smoke_profile
 
 
@@ -39,6 +45,17 @@ class FakeEndpointProbe:
         if key not in self.responses:
             raise AssertionError(f"missing endpoint probe response for {key!r}")
         return self.responses[key]
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+    def sleep(self, seconds: float) -> None:
+        self.value += seconds
 
 
 def _success_responses() -> dict[str, dict]:
@@ -93,6 +110,642 @@ def _success_responses() -> dict[str, dict]:
             }
         },
     }
+
+
+def _startup_responses(*, regulator: bool = True) -> dict[str, dict]:
+    responses = _success_responses()
+    responses["SmokeDevicesExtended"] = {
+        "data": {
+            "devices": [
+                {
+                    "address": 21,
+                    "manufacturer": "Vaillant",
+                    "device_id": "BASV2" if regulator else "BAI00",
+                    "serial_number": "SER123",
+                    "mac_address": "AA:BB:CC:DD:EE:FF",
+                    "software_version": "0102",
+                    "hardware_version": "7603",
+                }
+            ]
+        }
+    }
+    responses["StartupStatus"] = {
+        "data": {
+            "vaillant_regulator_capability": "PRESENT" if regulator else "NONE",
+            "busSummary": {
+                "status": {
+                    "transportClass": "ebusd-tcp",
+                    "bus_admission": {
+                        "source_selection": {
+                            "state": "active",
+                            "mode": "static",
+                            "outcome": "active_probe_passed",
+                            "selected_source": 16,
+                            "active_probe": {"target": "0x10", "opcode": "read", "status": "ok"},
+                            "retryable": False,
+                        }
+                    },
+                }
+            },
+            "daemon_status": {"status": "ok"},
+            "adapter_status": {"status": "ok"},
+        }
+    }
+    return responses
+
+
+def _run_v2(responses: dict[str, dict | Exception]) -> smoke_profile.StartupSpotcheckResult:
+    clock = FakeClock()
+    return _run_v2_with_executor(FakeExecutor(responses), clock=clock)
+
+
+def _run_v2_with_executor(
+    executor: FakeExecutor,
+    *,
+    clock: FakeClock | None = None,
+) -> smoke_profile.StartupSpotcheckResult:
+    clock = clock or FakeClock()
+    return smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql",
+        executor=executor,
+        phase_b_target_seconds=2,
+        phase_b_absolute_timeout_seconds=5,
+        phase_b_interval_seconds=1,
+        clock=clock,
+        sleeper=clock.sleep,
+    )
+
+
+def test_startup_spotcheck_v2_ok_after_regulator_semantic_baseline_and_target() -> None:
+    result = _run_v2(_startup_responses())
+
+    assert result.verdict is smoke_profile.StartupVerdict.OK
+    assert result.ok is True
+    assert result.regulator_state == "present"
+    assert result.phase_b.ok is True
+    assert "attempts=3" in result.phase_b.details
+    assert result.to_dict()["verdict"] == "OK"
+
+
+def test_startup_spotcheck_v2_warns_and_skips_semantic_queries_without_regulator() -> None:
+    responses = _startup_responses(regulator=False)
+    responses.pop("SmokeSemantic")
+    responses.pop("SmokeEnergy")
+
+    result = _run_v2(responses)
+
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+    assert result.ok is False
+    assert result.regulator_state == "none"
+    assert result.phase_a[-1].name == "semantic_baseline"
+    assert result.phase_a[-1].ok is True
+    assert "SKIPPED" in result.phase_a[-1].details
+
+
+def test_startup_spotcheck_v2_warns_when_regulator_inventory_is_unknown() -> None:
+    responses = _startup_responses()
+    responses["StartupStatus"]["data"].pop("vaillant_regulator_capability")
+
+    result = _run_v2(responses)
+
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+    assert result.regulator_state == "unknown"
+    assert "UNKNOWN" in result.phase_a[3].details
+
+
+def test_startup_spotcheck_v2_marks_semantic_failure_for_present_regulator() -> None:
+    responses = _startup_responses()
+    responses["SmokeSemantic"] = {"errors": [{"message": "semantic contract rejected"}]}
+
+    result = _run_v2(responses)
+
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+    assert result.phase_a[-1].name == "semantic_baseline"
+    assert result.phase_a[-1].ok is False
+
+
+def test_startup_spotcheck_v2_marks_transport_failure_before_semantic_verdict() -> None:
+    responses = _startup_responses()
+    responses["SmokeConnection"] = RuntimeError("gateway unavailable")
+    responses["StartupStatus"] = RuntimeError("gateway unavailable")
+
+    result = _run_v2(responses)
+
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert result.phase_b.ok is False
+    assert "transport" in result.phase_b.details
+
+
+def test_startup_spotcheck_v2_rejects_unbounded_phase_b_configuration() -> None:
+    try:
+        smoke_profile.run_startup_spotcheck_v2(
+            "http://example.invalid/graphql",
+            phase_b_target_seconds=301,
+            phase_b_absolute_timeout_seconds=300,
+        )
+    except ValueError as exc:
+        assert "no greater than" in str(exc)
+    else:
+        raise AssertionError("expected phase B timing validation to fail")
+
+
+def test_startup_v2_does_not_infer_regulator_from_basv_identifier() -> None:
+    result = _run_v2(_startup_responses(regulator=False))
+    assert result.regulator_state == "none"
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+
+
+def test_startup_v2_missing_regulator_field_is_unknown_not_present() -> None:
+    responses = _startup_responses()
+    responses["StartupStatus"]["data"].pop("vaillant_regulator_capability")
+    result = _run_v2(responses)
+    assert result.regulator_state == "unknown"
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+
+
+def test_startup_v2_old_capability_field_falls_back_to_unknown() -> None:
+    responses = _startup_responses(regulator=False)
+    responses["StartupStatus"] = {"errors": [{"message": 'Cannot query field "vaillant_regulator_capability"'}]}
+    responses["StartupStatusLegacy"] = _startup_responses(regulator=False)["StartupStatus"]
+    result = _run_v2(responses)
+    assert result.regulator_state == "unknown"
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+
+
+def test_startup_v2_transport_error_precedes_semantic_mismatch() -> None:
+    responses = _startup_responses()
+    responses["SmokeSemantic"] = {"errors": [{"message": "semantic rejected"}]}
+    responses["StartupStatus"] = RuntimeError("status unavailable")
+    result = _run_v2(responses)
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+
+
+def test_startup_admission_classifies_static_and_join_paths() -> None:
+    static = _startup_responses()["StartupStatus"]["data"]
+    assert smoke_profile._trusted_startup_admission(static)[0] is True
+    joined = _startup_responses()["StartupStatus"]["data"]
+    joined["busSummary"]["status"]["transportClass"] = "enh"
+    assert smoke_profile._trusted_startup_admission(joined)[0] is True
+    joined["busSummary"]["status"]["bus_admission"]["source_selection"]["retryable"] = True
+    assert smoke_profile._trusted_startup_admission(joined)[0] is False
+    joined["busSummary"]["status"]["transportClass"] = "blind"
+    assert "transport-blind" in smoke_profile._trusted_startup_admission(joined)[2]
+
+
+def test_startup_v2_phase_b_schema_error_is_fail_semantic() -> None:
+    responses = _startup_responses()
+
+    class PhaseBSchemaExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.startup_calls = 0
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatus":
+                self.startup_calls += 1
+                if self.startup_calls > 1:
+                    return {"errors": [{"message": 'Cannot query field "busSummary" on type "Query".'}]}
+            return super().__call__(query)
+
+    result = _run_v2_with_executor(PhaseBSchemaExecutor())
+
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+    assert result.phase_b.ok is False
+
+
+def test_startup_v2_uses_legacy_status_query_for_the_full_phase_b_window() -> None:
+    responses = _startup_responses(regulator=False)
+    responses["StartupStatus"] = {
+        "errors": [{"message": 'Cannot query field "vaillant_regulator_capability" on type "Query".'}]
+    }
+    responses["StartupStatusLegacy"] = _startup_responses(regulator=False)["StartupStatus"]
+    executor = FakeExecutor(responses)
+
+    result = _run_v2_with_executor(executor)
+
+    assert result.verdict is smoke_profile.StartupVerdict.WARN_NO_REGULATOR
+    assert result.phase_b.ok is True
+    assert executor.calls.count("StartupStatusLegacy") == 4
+
+
+def test_startup_v2_legacy_phase_b_schema_error_is_fail_semantic() -> None:
+    responses = _startup_responses(regulator=False)
+    responses["StartupStatus"] = {
+        "errors": [{"message": 'Cannot query field "vaillant_regulator_capability" on type "Query".'}]
+    }
+
+    class LegacyPhaseBSchemaExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.legacy_calls = 0
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatusLegacy":
+                self.legacy_calls += 1
+                if self.legacy_calls > 1:
+                    return {"errors": [{"message": 'Cannot query field "busSummary" on type "Query".'}]}
+                return _startup_responses(regulator=False)["StartupStatus"]
+            return super().__call__(query)
+
+    result = _run_v2_with_executor(LegacyPhaseBSchemaExecutor())
+
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+    assert result.phase_b.ok is False
+
+
+def test_startup_static_admission_rejects_retry_and_failure_evidence() -> None:
+    static = _startup_responses()["StartupStatus"]["data"]
+    source = static["busSummary"]["status"]["bus_admission"]["source_selection"]
+    source["outcome"] = "all_candidates_failed"
+    source["retryable"] = True
+    source["failed_source"] = 17
+
+    trusted, _, detail, _ = smoke_profile._trusted_startup_admission(static)
+
+    assert trusted is False
+    assert "retryable=true" in detail
+    assert "failed_source=17" in detail
+
+    result = _run_v2(_startup_responses())
+    assert result.phase_b_samples[0].to_dict() == {
+        "transport_class": "ebusd-tcp",
+        "state": "active",
+        "outcome": "active_probe_passed",
+        "selected_source": 16,
+        "retryable": False,
+        "failed_source": None,
+        "active_probe": {"target": "0x10", "opcode": "read", "status": "ok"},
+        "trusted": True,
+    }
+
+
+def test_startup_v2_rejects_unhealthy_or_missing_service_statuses() -> None:
+    for daemon_status, adapter_status in (("offline", "ok"), ("ok", "failed"), (None, "ok")):
+        responses = _startup_responses()
+        responses["StartupStatus"]["data"]["daemon_status"]["status"] = daemon_status
+        responses["StartupStatus"]["data"]["adapter_status"]["status"] = adapter_status
+
+        result = _run_v2(responses)
+
+        assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+        assert result.phase_a[2].ok is False
+
+
+def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
+    oversized = "HTTPS://user:secret@example.test/graphql?token=very-secret#fragment " + ("x" * 1000)
+    result = smoke_profile.StartupSpotcheckResult(
+        endpoint="https://user:secret@example.test:8443/graphql?token=very-secret#fragment",
+        verdict=smoke_profile.StartupVerdict.FAIL_SEMANTIC,
+        regulator_state="present",
+        phase_a=[smoke_profile.SmokeCheck("service_admission", False, oversized)],
+        phase_b=smoke_profile.SmokeCheck("transport_stability", False, oversized),
+        phase_b_samples=[],
+        target_seconds=120.0,
+        absolute_timeout_seconds=300.0,
+    )
+
+    artifact = result.to_dict()
+    rendered = "\n".join(result.to_checklist_lines())
+
+    assert artifact["endpoint"] == "https://example.test:8443/graphql"
+    assert "secret" not in json.dumps(artifact)
+    assert "token=" not in json.dumps(artifact)
+    assert "secret" not in rendered
+    assert len(artifact["phase_b"]["details"]) <= smoke_profile.MAX_STARTUP_EVIDENCE_CHARS
+
+
+def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -> None:
+    responses = _startup_responses()
+    active_requests = 0
+    max_active_requests = 0
+    startup_calls = 0
+    lock = Lock()
+    slow_body_finished = Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            nonlocal active_requests, max_active_requests, startup_calls
+            content_length = int(self.headers["Content-Length"])
+            operation = FakeExecutor._operation_name(json.loads(self.rfile.read(content_length))["query"])
+            with lock:
+                if operation == "StartupStatus":
+                    startup_calls += 1
+                slow_body = operation == "StartupStatus" and startup_calls % 2 == 0
+                if slow_body:
+                    active_requests += 1
+                    max_active_requests = max(max_active_requests, active_requests)
+            body = json.dumps(responses[operation]).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                if slow_body:
+                    for offset in range(0, len(body), 8):
+                        self.wfile.write(body[offset:offset + 8])
+                        self.wfile.flush()
+                        time.sleep(0.005)
+                else:
+                    self.wfile.write(body)
+                    self.wfile.flush()
+            except BrokenPipeError:
+                pass
+            finally:
+                if slow_body:
+                    with lock:
+                        active_requests -= 1
+                    slow_body_finished.set()
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        for _ in range(2):
+            slow_body_finished.clear()
+            started = time.monotonic()
+            result = smoke_profile.run_startup_spotcheck_v2(
+                f"http://127.0.0.1:{server.server_port}/graphql",
+                timeout=999.0,
+                phase_b_target_seconds=0.01,
+                phase_b_absolute_timeout_seconds=0.03,
+                phase_b_interval_seconds=0.01,
+            )
+            assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+            assert time.monotonic() - started < 0.12
+            assert "elapsed_seconds=0.0" in result.phase_b.details
+            assert slow_body_finished.wait(0.20)
+            assert active_requests == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1)
+
+    assert startup_calls == 4
+    assert max_active_requests == 1
+
+
+def test_startup_http_reader_rejects_oversized_headers_and_body_framing() -> None:
+    class FakeSocket:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self.chunks = chunks
+
+        def settimeout(self, _: float) -> None:
+            return None
+
+        def recv(self, _: int) -> bytes:
+            return self.chunks.pop(0) if self.chunks else b""
+
+    oversized_header = b"HTTP/1.1 200 OK\r\nX-Test: " + (b"x" * smoke_profile.MAX_STARTUP_HTTP_HEADER_BYTES)
+    reader = smoke_profile._DeadlineHTTPReader(FakeSocket([oversized_header]), time.monotonic() + 1)
+    try:
+        smoke_profile._read_http_response_headers(reader)
+    except RuntimeError as exc:
+        assert "size limit" in str(exc)
+    else:
+        raise AssertionError("expected oversized header rejection")
+
+    class FramingReader:
+        def __init__(self, chunk_line: bytes | None = None) -> None:
+            self.chunk_line = chunk_line
+            self.read_exact_called = False
+            self.eof_limit: int | None = None
+
+        def read_until(self, _: bytes, __: int) -> bytes:
+            assert self.chunk_line is not None
+            return self.chunk_line
+
+        def read_exact(self, _: int, __: int) -> bytes:
+            self.read_exact_called = True
+            return b""
+
+        def read_to_eof(self, maximum: int) -> bytes:
+            self.eof_limit = maximum
+            raise RuntimeError("HTTP response body exceeds size limit")
+
+    for headers in (
+        {"content-length": str(smoke_profile.MAX_STARTUP_HTTP_BODY_BYTES + 1)},
+        {"content-length": "-1"},
+        {"content-length": "10", "transfer-encoding": "chunked"},
+    ):
+        reader = FramingReader()
+        try:
+            smoke_profile._read_http_response_body(reader, headers)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("expected malformed fixed-length framing rejection")
+        assert reader.read_exact_called is False
+
+    chunked_reader = FramingReader(f"{smoke_profile.MAX_STARTUP_HTTP_BODY_BYTES + 1:x}\r\n".encode())
+    try:
+        smoke_profile._read_http_response_body(chunked_reader, {"transfer-encoding": "chunked"})
+    except RuntimeError as exc:
+        assert "size limit" in str(exc)
+    else:
+        raise AssertionError("expected oversized chunk rejection")
+    assert chunked_reader.read_exact_called is False
+
+    eof_reader = FramingReader()
+    try:
+        smoke_profile._read_http_response_body(eof_reader, {})
+    except RuntimeError as exc:
+        assert "size limit" in str(exc)
+    else:
+        raise AssertionError("expected EOF body cap")
+    assert eof_reader.eof_limit == smoke_profile.MAX_STARTUP_HTTP_BODY_BYTES
+
+
+def test_startup_http_reader_header_limit_is_inclusive_and_preserves_coalesced_body() -> None:
+    class FakeSocket:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self.chunks = chunks
+
+        def settimeout(self, _: float) -> None:
+            return None
+
+        def recv(self, _: int) -> bytes:
+            return self.chunks.pop(0) if self.chunks else b""
+
+    prefix = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Padding: "
+
+    def exact_header(body: bytes) -> bytes:
+        return prefix + (b"x" * (smoke_profile.MAX_STARTUP_HTTP_HEADER_BYTES - len(prefix) - 4)) + b"\r\n\r\n" + body
+
+    for body, headers in (
+        (b"{}", {"content-length": "2"}),
+        (b"2\r\n{}\r\n0\r\n\r\n", {"transfer-encoding": "chunked"}),
+        (b"{}", {}),
+    ):
+        reader = smoke_profile._DeadlineHTTPReader(FakeSocket([exact_header(body)]), time.monotonic() + 1)
+        _, parsed_headers = smoke_profile._read_http_response_headers(reader)
+        assert smoke_profile._read_http_response_body(reader, {**parsed_headers, **headers}) == b"{}"
+
+    over_limit = exact_header(b"")[:-4] + b"x\r\n\r\n"
+    reader = smoke_profile._DeadlineHTTPReader(FakeSocket([over_limit]), time.monotonic() + 1)
+    try:
+        smoke_profile._read_http_response_headers(reader)
+    except RuntimeError as exc:
+        assert "size limit" in str(exc)
+    else:
+        raise AssertionError("expected header limit plus one rejection")
+
+    fragmented = exact_header(b"{}")
+    reader = smoke_profile._DeadlineHTTPReader(
+        FakeSocket([fragmented[:-3], b"\n{}"]),
+        time.monotonic() + 1,
+    )
+    _, parsed_headers = smoke_profile._read_http_response_headers(reader)
+    assert smoke_profile._read_http_response_body(reader, {**parsed_headers, "content-length": "2"}) == b"{}"
+
+
+def test_startup_dns_resolution_is_killed_at_the_deadline() -> None:
+    started = time.monotonic()
+    try:
+        smoke_profile._resolve_http_addresses("localhost", 80, started + 0.01)
+    except TimeoutError:
+        pass
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.20
+
+
+def test_startup_http_authority_brackets_ipv6_and_omits_default_ports() -> None:
+    assert smoke_profile._http_authority("::1", 8080, "http") == "[::1]:8080"
+    assert smoke_profile._http_authority("::1", None, "http") == "[::1]"
+    assert smoke_profile._http_authority("::1", 80, "http") == "[::1]"
+    assert smoke_profile._http_authority("::1", 443, "https") == "[::1]"
+    assert smoke_profile._http_authority("gateway.example", 8080, "http") == "gateway.example:8080"
+
+
+def test_startup_http_ipv6_loopback_uses_bracketed_host_header_when_available() -> None:
+    observed_authorities: list[str] = []
+
+    class IPv6Server(ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            observed_authorities.append(self.headers.get("Host", ""))
+            body = b'{"data":{"ok":true}}'
+            self.send_response(200 if self.headers.get("Host") == f"[::1]:{self.server.server_port}" else 400)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    try:
+        server = IPv6Server(("::1", 0), Handler)
+    except OSError:
+        return
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        result = smoke_profile._deadline_http_request(
+            f"http://[::1]:{server.server_port}/graphql",
+            b'{"query":"query StartupStatus { __typename }","variables":{}}',
+            1.0,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1)
+
+    assert result == {"data": {"ok": True}}
+    assert observed_authorities == [f"[::1]:{server.server_port}"]
+
+
+def test_startup_v2_hard_deadline_after_inflight_operation() -> None:
+    clock = FakeClock()
+    responses = _startup_responses()
+
+    class AdvancingExecutor(FakeExecutor):
+        def __call__(self, query: str) -> dict:
+            result = super().__call__(query)
+            if self._operation_name(query) == "StartupStatus":
+                clock.value += 6
+            return result
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=AdvancingExecutor(responses),
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=5,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert "after operation" in result.phase_b.details
+
+
+def test_startup_v2_resets_stability_on_source_flip_then_recovers() -> None:
+    clock = FakeClock()
+    responses = _startup_responses()
+
+    def status(source: int) -> dict:
+        payload = _startup_responses()["StartupStatus"]
+        payload["data"]["busSummary"]["status"]["bus_admission"]["source_selection"]["selected_source"] = source
+        return payload
+
+    class SequencedExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.statuses = [status(16), status(16), status(17), status(17), status(17)]
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatus":
+                self.calls.append("StartupStatus")
+                return self.statuses.pop(0)
+            return super().__call__(query)
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=SequencedExecutor(),
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=6,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+    assert result.verdict is smoke_profile.StartupVerdict.OK
+    assert "source=17" in result.phase_b.details
+
+
+def test_startup_v2_fails_at_exact_absolute_bound_without_stability() -> None:
+    clock = FakeClock()
+    responses = _startup_responses()
+    responses["StartupStatus"]["data"]["busSummary"]["status"]["transportClass"] = "enh"
+    responses["StartupStatus"]["data"]["busSummary"]["status"]["bus_admission"]["source_selection"]["retryable"] = True
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=FakeExecutor(responses),
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=3,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert "elapsed_seconds=3.000" in result.phase_b.details
+
+
+def test_startup_v2_returns_at_bound_when_phase_b_executor_blocks() -> None:
+    responses = _startup_responses()
+
+    class BlockingPhaseBExecutor(FakeExecutor):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.startup_calls = 0
+
+        def __call__(self, query: str) -> dict:
+            if self._operation_name(query) == "StartupStatus":
+                self.startup_calls += 1
+                if self.startup_calls > 1:
+                    time.sleep(0.15)
+                return responses["StartupStatus"]
+            return super().__call__(query)
+
+    started = time.monotonic()
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=BlockingPhaseBExecutor(), timeout=0.02,
+        phase_b_target_seconds=0.01, phase_b_absolute_timeout_seconds=0.03,
+        phase_b_interval_seconds=0.01,
+    )
+    assert time.monotonic() - started < 0.10
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
 
 
 def test_run_smoke_profile_success_with_subscription_type() -> None:
