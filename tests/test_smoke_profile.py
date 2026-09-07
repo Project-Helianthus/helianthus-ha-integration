@@ -260,6 +260,26 @@ def test_startup_spotcheck_v2_marks_transport_failure_before_semantic_verdict() 
     assert "transport" in result.phase_b.details
 
 
+def test_startup_v2_classifies_connection_graphql_failure_as_semantic() -> None:
+    responses = _startup_responses()
+    responses["SmokeConnection"] = {"errors": [{"message": "connection query rejected"}]}
+
+    result = _run_v2(responses)
+
+    assert result.phase_a[0].ok is False
+    assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+
+
+def test_startup_v2_classifies_inventory_execution_failure_as_transport() -> None:
+    responses = _startup_responses()
+    responses["SmokeDevicesExtended"] = TimeoutError("inventory timed out")
+
+    result = _run_v2(responses)
+
+    assert result.phase_a[1].ok is False
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+
+
 def test_startup_spotcheck_v2_rejects_unbounded_phase_b_configuration() -> None:
     try:
         smoke_profile.run_startup_spotcheck_v2(

@@ -500,15 +500,13 @@ def _run_startup_phase_a(execute: GraphQLExecutor) -> tuple[list[SmokeCheck], li
 
 
 def _startup_connection_check(execute: GraphQLExecutor) -> tuple[SmokeCheck, StartupOutcome]:
-    check = _check_connection(execute)
-    return check, StartupOutcome.PASS if check.ok else StartupOutcome.TRANSPORT_ERROR
+    return _connection_check_with_outcome(execute)
 
 
 def _startup_inventory_check(execute: GraphQLExecutor) -> tuple[SmokeCheck, StartupOutcome]:
-    try:
-        devices, source, error = _fetch_devices(execute)
-    except Exception as exc:
-        return SmokeCheck("inventory", False, f"inventory transport failure: {exc}"), StartupOutcome.TRANSPORT_ERROR
+    devices, source, error, outcome = _fetch_devices_with_outcome(execute)
+    if outcome is StartupOutcome.TRANSPORT_ERROR:
+        return SmokeCheck("inventory", False, error or "inventory transport failure"), outcome
     if error or not devices:
         return SmokeCheck("inventory", False, error or "inventory is empty"), StartupOutcome.SCHEMA_ERROR
     valid = all(isinstance(device, dict) and device.get("address") is not None and device.get("device_id") for device in devices)
@@ -1308,19 +1306,23 @@ def _http_header_values(headers: dict[str, str | list[str]], name: str) -> tuple
     raise RuntimeError("invalid HTTP response header")
 
 
-def _check_connection(execute: GraphQLExecutor) -> SmokeCheck:
-    try:
-        response = execute(QUERY_CONNECTION)
-    except RuntimeError as exc:
-        return SmokeCheck("connection", False, str(exc))
+def _connection_check_with_outcome(execute: GraphQLExecutor) -> tuple[SmokeCheck, StartupOutcome]:
+    response, execution_error = _execute_graphql(execute, QUERY_CONNECTION, "connection")
+    if execution_error or response is None:
+        return SmokeCheck("connection", False, execution_error or "no connection response"), StartupOutcome.TRANSPORT_ERROR
 
     data, error = _extract_data(response)
     if error:
-        return SmokeCheck("connection", False, error)
+        return SmokeCheck("connection", False, error), StartupOutcome.SCHEMA_ERROR
     typename = None if not isinstance(data, dict) else data.get("__typename")
     if not typename:
-        return SmokeCheck("connection", False, "missing __typename in response")
-    return SmokeCheck("connection", True, f"typename={typename}")
+        return SmokeCheck("connection", False, "missing __typename in response"), StartupOutcome.SCHEMA_ERROR
+    return SmokeCheck("connection", True, f"typename={typename}"), StartupOutcome.PASS
+
+
+def _check_connection(execute: GraphQLExecutor) -> SmokeCheck:
+    """Compatibility wrapper for the v1 checklist's untyped public check."""
+    return _connection_check_with_outcome(execute)[0]
 
 
 def _check_subscriptions_fallback(execute: GraphQLExecutor) -> SmokeCheck:
@@ -1498,31 +1500,38 @@ def _check_dual_topology_path(
 
 
 def _fetch_devices(execute: GraphQLExecutor) -> tuple[list[dict[str, Any]], str, str | None]:
+    devices, source, error, _ = _fetch_devices_with_outcome(execute)
+    return devices, source, error
+
+
+def _fetch_devices_with_outcome(
+    execute: GraphQLExecutor,
+) -> tuple[list[dict[str, Any]], str, str | None, StartupOutcome]:
     response, execution_error = _execute_graphql(execute, QUERY_DEVICES_EXTENDED, "devices extended")
     if execution_error:
-        return [], "", execution_error
+        return [], "", execution_error, StartupOutcome.TRANSPORT_ERROR
     if response is None:
-        return [], "", "devices extended query returned no response"
+        return [], "", "devices extended query returned no response", StartupOutcome.TRANSPORT_ERROR
     data, error, errors = _extract_data_with_errors(response)
     if error and _is_missing_field_error(errors, MISSING_DEVICE_FIELDS):
         fallback, execution_error = _execute_graphql(execute, QUERY_DEVICES_BASE, "devices base")
         if execution_error:
-            return [], "", execution_error
+            return [], "", execution_error, StartupOutcome.TRANSPORT_ERROR
         if fallback is None:
-            return [], "", "devices base query returned no response"
+            return [], "", "devices base query returned no response", StartupOutcome.TRANSPORT_ERROR
         data, error = _extract_data(fallback)
         if error:
-            return [], "", f"devices base query failed: {error}"
+            return [], "", f"devices base query failed: {error}", StartupOutcome.SCHEMA_ERROR
         devices = data.get("devices", []) if isinstance(data, dict) else []
         if not isinstance(devices, list):
-            return [], "", "devices base query returned non-list payload"
-        return devices, "base", None
+            return [], "", "devices base query returned non-list payload", StartupOutcome.SCHEMA_ERROR
+        return devices, "base", None, StartupOutcome.PASS
     if error:
-        return [], "", f"devices extended query failed: {error}"
+        return [], "", f"devices extended query failed: {error}", StartupOutcome.SCHEMA_ERROR
     devices = data.get("devices", []) if isinstance(data, dict) else []
     if not isinstance(devices, list):
-        return [], "", "devices extended query returned non-list payload"
-    return devices, "extended", None
+        return [], "", "devices extended query returned non-list payload", StartupOutcome.SCHEMA_ERROR
+    return devices, "extended", None, StartupOutcome.PASS
 
 
 def _fetch_status(execute: GraphQLExecutor) -> tuple[dict[str, Any], str | None]:
