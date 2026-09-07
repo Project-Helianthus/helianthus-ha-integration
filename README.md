@@ -183,6 +183,69 @@ Shortcut wrapper:
 ./scripts/run-ha-dual-topology-smoke.sh --proxy-profile enh --proxy-port 19001
 ```
 
+### Startup spotcheck v2 operator procedure
+
+The v2 profile is a two-phase, read-only acceptance procedure. Phase A always
+checks connection, schema, inventory, service status and source admission. It
+reads the gateway-owned `vaillant_regulator_capability` value (`PRESENT`, `NONE`,
+or `UNKNOWN`); it never infers a regulator from BASV/VRC identifiers, names, or
+roles. Strict semantic and energy checks run only for `PRESENT`; `NONE` and
+`UNKNOWN` record those checks as `SKIPPED`. Phase B samples
+`busSummary.status.transportClass` and the full source-selection admission state,
+requiring one admitted source to remain trusted for 120 continuous seconds before
+the monotonic 300-second deadline. The CLI fixes those acceptance values; shorter
+durations are available only to automated tests through the Python function.
+The narrowly recognized older-schema fallback for the missing additive regulator
+field uses the legacy startup-status query throughout both phases. Any other
+Phase B GraphQL/schema failure is a required semantic failure. Phase A accepts
+only the published healthy daemon `running` and adapter `ok` states; missing,
+offline, failed, or other values cannot certify the run.
+
+Phase B trusts the protocol-neutral canonical source-selection predicate: active
+state, `active_probe_passed` outcome, and a valid selected source. It adds the
+consumer checks `retryable=false`, no failed source, and a non-boolean integer
+source in `0..255`. Transport names and an optional `active_probe` object are
+bounded evidence only; neither is an acceptance condition. The artifact records
+bounded structured Phase B samples for transport class, source selection, retry,
+failed-source, and probe evidence. It retains at most eight samples and eight transitions. Endpoint
+user-info, query, and fragment data are removed during artifact serialization;
+every endpoint and evidence string is capped at 320 characters. Embedded HTTP(S)
+URLs are redacted case-insensitively. Each production Phase B read uses one
+deadline-aware direct HTTP(S) operation: the remaining monotonic budget bounds
+DNS resolution, connect, TLS setup, headers, body chunks, and request output.
+Hostname resolution runs in a bounded child process that is terminated and
+joined at the same deadline; literal IP endpoints avoid the resolver. The socket
+closes at terminal completion, so an oversized CLI request timeout cannot leave
+a Phase B request or body worker running after the result. The Phase B HTTP
+parser permits at most 16 KiB of headers and 256 KiB of JSON response body,
+regardless of fixed-length, chunked, or close-delimited framing.
+IPv6 endpoint literals use RFC-compliant bracketed `Host` authorities (for
+example, `[::1]:8080`); default ports are omitted from the authority while the
+socket connection and TLS SNI continue to use the unbracketed literal.
+
+The artifact uses this precedence: a transport or deadline failure is
+`DEGRADED_TRANSPORT`; a required schema or semantic mismatch is `FAIL_SEMANTIC`;
+otherwise `NONE`/`UNKNOWN` is `WARN_NO_REGULATOR`; otherwise it is `OK`.
+
+Run this only in an operator-authorized Home Assistant deployment window, after
+recording the deployment revision and choosing a redacted artifact location. It
+performs GraphQL reads only; do not provide credentials on the command line or
+include endpoint-specific output in public issue/PR text.
+
+```bash
+python3 -m custom_components.helianthus.smoke_profile \
+  --startup-spotcheck-v2 \
+  --url http://203.0.113.10:8080/graphql \
+  --json > /tmp/helianthus-startup-spotcheck-v2.json
+```
+
+Interpret the captured artifact before any follow-up action: `OK` completes the
+software procedure, `DEGRADED_TRANSPORT` requires transport investigation,
+`FAIL_SEMANTIC` requires a public API/consumer diagnosis, and
+`WARN_NO_REGULATOR` records that strict semantic acceptance was intentionally
+skipped. This command does not install, deploy, reload, or write Home Assistant,
+the gateway, or any connected device.
+
 Home Assistant inventory verifier:
 
 ```bash
