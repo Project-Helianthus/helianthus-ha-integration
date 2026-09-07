@@ -764,21 +764,14 @@ def _trusted_startup_admission(data: dict[str, Any]) -> tuple[bool, int | None, 
     state = str(source_selection.get("state") or "").lower()
     outcome = str(source_selection.get("outcome") or "").lower()
     probe = source_selection.get("active_probe")
-    join_capable = transport in {"enh", "ens", "udp-plain", "tcp-plain"}
     source_is_valid = isinstance(source, int) and not isinstance(source, bool) and 0 <= source <= 0xFF
     source_detail = _format_startup_admission_evidence(transport, state, outcome, source, source_selection.get("retryable"), source_selection.get("failed_source"), probe)
-    if transport == "ebusd-tcp":
-        retryable = source_selection.get("retryable")
-        failed_source = source_selection.get("failed_source")
-        probe_ok = _active_probe_is_successful(probe)
-        outcome_ok = canonical_admission["trusted"] is True
-        probe_ok_or_absent = probe is None or probe_ok
-        trusted = state == "active" and source_is_valid and retryable is False and failed_source is None and outcome_ok and probe_ok_or_absent
-        return trusted, source if source_is_valid else None, source_detail, StartupOutcome.PASS
-    if not join_capable:
-        return False, None, f"transport-blind transportClass={transport or 'missing'}", StartupOutcome.PASS
-    probe_ok = _active_probe_is_successful(probe)
-    trusted = canonical_admission["trusted"] is True and source_is_valid and probe_ok and source_selection.get("retryable") is False and source_selection.get("failed_source") is None
+    trusted = (
+        canonical_admission["trusted"] is True
+        and source_is_valid
+        and source_selection.get("retryable") is False
+        and source_selection.get("failed_source") is None
+    )
     return trusted, source if source_is_valid else None, source_detail, StartupOutcome.PASS
 
 
@@ -902,7 +895,7 @@ def _http_executor(endpoint: str, timeout: float) -> BudgetedGraphQLExecutor:
         request_timeout = timeout if operation_timeout is None else min(timeout, operation_timeout)
         payload = json.dumps({"query": query, "variables": {}}).encode("utf-8")
         if operation_timeout is not None:
-            return _deadline_http_request(endpoint, payload, request_timeout)
+            return _budgeted_urlopen_request(endpoint, payload, request_timeout)
         request = Request(
             endpoint,
             data=payload,
@@ -929,6 +922,107 @@ def _http_executor(endpoint: str, timeout: float) -> BudgetedGraphQLExecutor:
         return parsed
 
     return execute
+
+
+def _budgeted_urlopen_request(endpoint: str, payload: bytes, budget: float) -> dict[str, Any]:
+    """Run urllib routing/redirect semantics in a killable bounded subprocess."""
+    deadline = time.monotonic() + budget
+    context = multiprocessing.get_context("spawn")
+    receive_connection, send_connection = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_urlopen_request_worker,
+        args=(send_connection, endpoint, payload, budget),
+        daemon=True,
+    )
+    process.start()
+    send_connection.close()
+    try:
+        if not receive_connection.poll(_remaining_http_budget(deadline)):
+            raise TimeoutError("HTTP operation exceeded deadline")
+        try:
+            state, response = receive_connection.recv()
+        except EOFError as exc:
+            raise RuntimeError("HTTP request worker exited without a response") from exc
+        if state != "ok":
+            raise RuntimeError(str(response))
+        if not isinstance(response, dict):
+            raise RuntimeError("graphql response must be a json object")
+        _remaining_http_budget(deadline)
+        return response
+    finally:
+        receive_connection.close()
+        if process.is_alive():
+            process.terminate()
+        process.join()
+
+
+def _urlopen_request_worker(send_connection: Any, endpoint: str, payload: bytes, timeout: float) -> None:
+    try:
+        request = Request(
+            endpoint,
+            data=payload,
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=timeout) as response:
+            parsed = _parse_bounded_urlopen_response(response)
+        send_connection.send(("ok", parsed))
+    except HTTPError as exc:
+        try:
+            _validate_urlopen_headers(exc)
+            raw = _read_bounded_urlopen_body(exc)
+            detail = raw.decode("utf-8", errors="replace")
+        except Exception as body_exc:
+            detail = str(body_exc)
+        send_connection.send(("error", f"http {exc.code}: {detail}"))
+    except URLError as exc:
+        send_connection.send(("error", f"connection error: {exc.reason}"))
+    except TimeoutError:
+        send_connection.send(("error", "connection timeout"))
+    except Exception as exc:
+        send_connection.send(("error", str(exc)))
+    finally:
+        send_connection.close()
+
+
+def _parse_bounded_urlopen_response(response: Any) -> dict[str, Any]:
+    _validate_urlopen_headers(response)
+    raw = _read_bounded_urlopen_body(response)
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid json response: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("graphql response must be a json object")
+    return parsed
+
+
+def _validate_urlopen_headers(response: Any) -> None:
+    headers = getattr(response, "headers", None)
+    raw_items = list(headers.raw_items()) if headers is not None and hasattr(headers, "raw_items") else []
+    if not raw_items and headers is not None:
+        raw_items = list(headers.items())
+    size = sum(len(str(name).encode("iso-8859-1", errors="replace")) + len(str(value).encode("iso-8859-1", errors="replace")) + 4 for name, value in raw_items)
+    if size > MAX_STARTUP_HTTP_HEADER_BYTES:
+        raise RuntimeError("HTTP response section exceeds size limit")
+    for name in ("content-length", "transfer-encoding"):
+        values = [str(value).strip() for header, value in raw_items if str(header).lower() == name]
+        if len(values) > 1:
+            raise RuntimeError("conflicting HTTP response header")
+        if name == "content-length" and values:
+            if not values[0].isdigit():
+                raise RuntimeError("invalid HTTP content length")
+            if int(values[0]) > MAX_STARTUP_HTTP_BODY_BYTES:
+                raise RuntimeError("HTTP response body exceeds size limit")
+        if name == "transfer-encoding" and values and values[0].lower() not in {"", "chunked"}:
+            raise RuntimeError("unsupported HTTP response transfer encoding")
+
+
+def _read_bounded_urlopen_body(response: Any) -> bytes:
+    raw = response.read(MAX_STARTUP_HTTP_BODY_BYTES + 1)
+    if len(raw) > MAX_STARTUP_HTTP_BODY_BYTES:
+        raise RuntimeError("HTTP response body exceeds size limit")
+    return raw
 
 
 class _DeadlineHTTPReader:

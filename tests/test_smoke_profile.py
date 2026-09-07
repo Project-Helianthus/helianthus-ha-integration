@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 from pathlib import Path
 import socket
 from threading import Event, Lock, Thread
@@ -312,7 +313,7 @@ def test_startup_admission_classifies_static_and_join_paths() -> None:
     joined["busSummary"]["status"]["bus_admission"]["source_selection"]["retryable"] = True
     assert smoke_profile._trusted_startup_admission(joined)[0] is False
     joined["busSummary"]["status"]["transportClass"] = "blind"
-    assert "transport-blind" in smoke_profile._trusted_startup_admission(joined)[2]
+    assert "transport_class=blind" in smoke_profile._trusted_startup_admission(joined)[2]
 
 
 def test_startup_v2_phase_b_schema_error_is_fail_semantic() -> None:
@@ -503,6 +504,26 @@ def test_startup_static_admission_reuses_canonical_outcome_predicate() -> None:
         assert result.verdict is not smoke_profile.StartupVerdict.OK
 
 
+def test_startup_admission_accepts_future_transport_when_canonical_state_is_trusted() -> None:
+    payload = _startup_responses()["StartupStatus"]["data"]
+    source_selection = payload["busSummary"]["status"]["bus_admission"]["source_selection"]
+    payload["busSummary"]["status"]["transportClass"] = "future-public-transport"
+
+    assert admission.normalize_source_selection(source_selection)["trusted"] is True
+    assert smoke_profile._trusted_startup_admission(payload)[0] is True
+    result = _run_v2({**_startup_responses(), "StartupStatus": {"data": payload}})
+    assert result.verdict is smoke_profile.StartupVerdict.OK
+
+    for field, value in (("outcome", "all_candidates_failed"), ("selected_source", 256)):
+        rejected = _startup_responses()["StartupStatus"]["data"]
+        rejected["busSummary"]["status"]["transportClass"] = "future-public-transport"
+        rejected["busSummary"]["status"]["bus_admission"]["source_selection"][field] = value
+        assert admission.normalize_source_selection(
+            rejected["busSummary"]["status"]["bus_admission"]["source_selection"]
+        )["trusted"] is False
+        assert smoke_profile._trusted_startup_admission(rejected)[0] is False
+
+
 def test_startup_v2_keeps_transient_phase_b_transport_error_after_recovery() -> None:
     clock = FakeClock()
     executor = StartupStatusTimelineExecutor([
@@ -583,6 +604,126 @@ def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
     assert len(artifact["phase_b"]["details"]) <= smoke_profile.MAX_STARTUP_EVIDENCE_CHARS
 
 
+def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None:
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/final")
+            self.end_headers()
+
+        def do_GET(self) -> None:  # noqa: N802
+            body = b'{"data":{"redirected":true}}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirect_thread = Thread(target=redirect_server.serve_forever, daemon=True)
+    redirect_thread.start()
+    try:
+        redirected = smoke_profile._budgeted_urlopen_request(
+            f"http://127.0.0.1:{redirect_server.server_port}/redirect", b"{}", 1.0
+        )
+    finally:
+        redirect_server.shutdown()
+        redirect_server.server_close()
+        redirect_thread.join(timeout=1)
+    assert redirected == {"data": {"redirected": True}}
+
+    observed_proxy_paths: list[str] = []
+
+    class ProxyHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            observed_proxy_paths.append(self.path)
+            self.rfile.read(int(self.headers["Content-Length"]))
+            body = b'{"data":{"proxied":true}}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    proxy_server = ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+    proxy_thread = Thread(target=proxy_server.serve_forever, daemon=True)
+    proxy_thread.start()
+    saved_environment = {key: os.environ.get(key) for key in ("http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY")}
+    try:
+        os.environ["http_proxy"] = f"http://127.0.0.1:{proxy_server.server_port}"
+        os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{proxy_server.server_port}"
+        os.environ.pop("no_proxy", None)
+        os.environ.pop("NO_PROXY", None)
+        proxied = smoke_profile._budgeted_urlopen_request("http://example.invalid/graphql", b"{}", 1.0)
+    finally:
+        for key, value in saved_environment.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        proxy_server.shutdown()
+        proxy_server.server_close()
+        proxy_thread.join(timeout=1)
+
+    assert proxied == {"data": {"proxied": True}}
+    assert observed_proxy_paths == ["http://example.invalid/graphql"]
+
+
+def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker() -> None:
+    active_requests = 0
+    lock = Lock()
+    finished = Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            nonlocal active_requests
+            self.rfile.read(int(self.headers["Content-Length"]))
+            body = b'{"data":{"slow":true}}'
+            with lock:
+                active_requests += 1
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                for offset in range(0, len(body), 4):
+                    self.wfile.write(body[offset:offset + 4])
+                    self.wfile.flush()
+                    time.sleep(0.05)
+            except BrokenPipeError:
+                pass
+            finally:
+                with lock:
+                    active_requests -= 1
+                finished.set()
+
+        def log_message(self, *_: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        started = time.monotonic()
+        try:
+            smoke_profile._budgeted_urlopen_request(f"http://127.0.0.1:{server.server_port}/graphql", b"{}", 0.15)
+        except TimeoutError:
+            pass
+        else:
+            raise AssertionError("expected budgeted request timeout")
+        assert time.monotonic() - started < 0.30
+        assert finished.wait(0.60)
+        assert active_requests == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1)
+
+
 def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -> None:
     responses = _startup_responses()
     active_requests = 0
@@ -613,7 +754,7 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
                     for offset in range(0, len(body), 8):
                         self.wfile.write(body[offset:offset + 8])
                         self.wfile.flush()
-                        time.sleep(0.005)
+                        time.sleep(0.02)
                 else:
                     self.wfile.write(body)
                     self.wfile.flush()
@@ -640,13 +781,13 @@ def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -
                 f"http://127.0.0.1:{server.server_port}/graphql",
                 timeout=999.0,
                 phase_b_target_seconds=0.01,
-                phase_b_absolute_timeout_seconds=0.03,
+                phase_b_absolute_timeout_seconds=0.20,
                 phase_b_interval_seconds=0.01,
             )
             assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
-            assert time.monotonic() - started < 0.12
-            assert "elapsed_seconds=0.0" in result.phase_b.details
-            assert slow_body_finished.wait(0.20)
+            assert time.monotonic() - started < 0.35
+            assert "elapsed_seconds=" in result.phase_b.details
+            assert slow_body_finished.wait(0.50)
             assert active_requests == 0
     finally:
         server.shutdown()
