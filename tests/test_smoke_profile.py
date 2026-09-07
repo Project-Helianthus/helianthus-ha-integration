@@ -155,6 +155,25 @@ def _startup_responses(*, regulator: bool = True) -> dict[str, dict]:
     return responses
 
 
+def _startup_status_with_health(*, daemon: str = "running", adapter: str = "ok") -> dict:
+    payload = _startup_responses()["StartupStatus"]
+    payload["data"]["daemon_status"]["status"] = daemon
+    payload["data"]["adapter_status"]["status"] = adapter
+    return payload
+
+
+class StartupStatusTimelineExecutor(FakeExecutor):
+    def __init__(self, statuses: list[dict]) -> None:
+        super().__init__(_startup_responses())
+        self.statuses = statuses
+
+    def __call__(self, query: str) -> dict:
+        if self._operation_name(query) == "StartupStatus":
+            self.calls.append("StartupStatus")
+            return self.statuses.pop(0)
+        return super().__call__(query)
+
+
 def _run_v2(responses: dict[str, dict | Exception]) -> smoke_profile.StartupSpotcheckResult:
     clock = FakeClock()
     return _run_v2_with_executor(FakeExecutor(responses), clock=clock)
@@ -316,32 +335,14 @@ def test_startup_v2_phase_b_schema_error_is_fail_semantic() -> None:
 
 def test_startup_v2_phase_b_revalidates_both_services_and_keeps_recovered_failure() -> None:
     clock = FakeClock()
-    responses = _startup_responses()
-
-    def status(*, daemon: str = "running", adapter: str = "ok") -> dict:
-        payload = _startup_responses()["StartupStatus"]
-        payload["data"]["daemon_status"]["status"] = daemon
-        payload["data"]["adapter_status"]["status"] = adapter
-        return payload
-
-    class SequencedServiceExecutor(FakeExecutor):
-        def __init__(self) -> None:
-            super().__init__(responses)
-            # Phase A is healthy. Phase B then sees each service fail before
-            # recovering long enough to prove the stability window restarted.
-            self.statuses = [
-                status(), status(), status(daemon="offline"), status(adapter="failed"), status(daemon="unknown"),
-                status(), status(), status(),
-            ]
-
-        def __call__(self, query: str) -> dict:
-            if self._operation_name(query) == "StartupStatus":
-                self.calls.append("StartupStatus")
-                return self.statuses.pop(0)
-            return super().__call__(query)
+    executor = StartupStatusTimelineExecutor([
+        _startup_status_with_health(), _startup_status_with_health(), _startup_status_with_health(daemon="offline"),
+        _startup_status_with_health(adapter="failed"), _startup_status_with_health(daemon="unknown"),
+        _startup_status_with_health(), _startup_status_with_health(), _startup_status_with_health(),
+    ])
 
     result = smoke_profile.run_startup_spotcheck_v2(
-        "http://127.0.0.1:8080/graphql", executor=SequencedServiceExecutor(),
+        "http://127.0.0.1:8080/graphql", executor=executor,
         phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=8,
         phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
     )
@@ -349,6 +350,44 @@ def test_startup_v2_phase_b_revalidates_both_services_and_keeps_recovered_failur
     assert result.phase_b.ok is True
     assert "attempts=7" in result.phase_b.details
     assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+    assert result.to_dict()["phase_b_outcomes"] == ["service_error"]
+
+
+def test_startup_v2_phase_b_service_outage_recovery_deadline_keeps_transport_precedence() -> None:
+    clock = FakeClock()
+    executor = StartupStatusTimelineExecutor([
+        _startup_status_with_health(), _startup_status_with_health(daemon="offline"),
+        _startup_status_with_health(), _startup_status_with_health(),
+    ])
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=executor,
+        phase_b_target_seconds=3, phase_b_absolute_timeout_seconds=3,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert "service failure" in result.phase_b.details
+    assert "absolute timeout exceeded" in result.phase_b.details
+    assert result.to_dict()["phase_b_outcomes"] == ["service_error", "transport_error"]
+
+
+def test_startup_v2_phase_b_service_outage_without_recovery_keeps_deadline_precedence() -> None:
+    clock = FakeClock()
+    executor = StartupStatusTimelineExecutor([
+        _startup_status_with_health(), _startup_status_with_health(daemon="offline"),
+        _startup_status_with_health(daemon="offline"), _startup_status_with_health(daemon="offline"),
+    ])
+
+    result = smoke_profile.run_startup_spotcheck_v2(
+        "http://127.0.0.1:8080/graphql", executor=executor,
+        phase_b_target_seconds=2, phase_b_absolute_timeout_seconds=3,
+        phase_b_interval_seconds=1, clock=clock, sleeper=clock.sleep,
+    )
+
+    assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+    assert "daemon_status=offline" in result.phase_b.details
+    assert result.to_dict()["phase_b_outcomes"] == ["service_error", "transport_error"]
 
 
 def test_startup_v2_phase_b_missing_service_status_fails_closed() -> None:
@@ -449,8 +488,9 @@ def test_startup_v2_rejects_unhealthy_or_missing_service_statuses() -> None:
 
         result = _run_v2(responses)
 
-        assert result.verdict is smoke_profile.StartupVerdict.FAIL_SEMANTIC
+        assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
         assert result.phase_a[2].ok is False
+        assert result.to_dict()["phase_b_outcomes"] == ["service_error", "transport_error"]
 
 
 def test_startup_v2_runs_requested_dual_topology_checks() -> None:
@@ -870,6 +910,7 @@ def test_startup_v2_fails_at_exact_absolute_bound_without_stability() -> None:
     )
     assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
     assert "elapsed_seconds=3.000" in result.phase_b.details
+    assert result.to_dict()["phase_b_outcomes"] == ["transport_error"]
 
 
 def test_startup_v2_returns_at_bound_when_phase_b_executor_blocks() -> None:

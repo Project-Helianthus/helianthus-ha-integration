@@ -327,6 +327,7 @@ class StartupSpotcheckResult:
     target_seconds: float
     absolute_timeout_seconds: float
     phase_b_samples: list["StartupPhaseBSample"] = field(default_factory=list)
+    phase_b_outcomes: list[StartupOutcome] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -345,6 +346,7 @@ class StartupSpotcheckResult:
             ],
             "phase_b": _startup_check_to_dict(self.phase_b),
             "phase_b_samples": [sample.to_dict() for sample in self.phase_b_samples],
+            "phase_b_outcomes": [outcome.value for outcome in self.phase_b_outcomes],
             "target_seconds": self.target_seconds,
             "absolute_timeout_seconds": self.absolute_timeout_seconds,
         }
@@ -447,11 +449,11 @@ def run_startup_spotcheck_v2(
         dual_check = _check_dual_topology_path(dual_topology, timeout, endpoint_probe)
         phase_a.append(dual_check)
         outcomes.append(StartupOutcome.PASS if dual_check.ok else StartupOutcome.TRANSPORT_ERROR)
-    phase_b, phase_b_outcome, phase_b_samples = _check_transport_stability(
+    phase_b, phase_b_outcomes, phase_b_samples = _check_transport_stability(
         execute, production_execute, status_query, timeout, phase_b_target_seconds, phase_b_absolute_timeout_seconds,
         phase_b_interval_seconds, clock, sleeper,
     )
-    outcomes.append(phase_b_outcome)
+    outcomes.extend(phase_b_outcomes)
     if StartupOutcome.TRANSPORT_ERROR in outcomes:
         verdict = StartupVerdict.DEGRADED_TRANSPORT
     elif any(outcome in {StartupOutcome.SCHEMA_ERROR, StartupOutcome.SEMANTIC_MISMATCH, StartupOutcome.SERVICE_ERROR} for outcome in outcomes):
@@ -467,6 +469,7 @@ def run_startup_spotcheck_v2(
         phase_a=phase_a,
         phase_b=phase_b,
         phase_b_samples=phase_b_samples,
+        phase_b_outcomes=phase_b_outcomes,
         target_seconds=phase_b_target_seconds,
         absolute_timeout_seconds=phase_b_absolute_timeout_seconds,
     )
@@ -594,7 +597,7 @@ def _check_transport_stability(
     interval_seconds: float,
     clock: Clock,
     sleeper: Sleeper,
-) -> tuple[SmokeCheck, StartupOutcome, list[StartupPhaseBSample]]:
+) -> tuple[SmokeCheck, list[StartupOutcome], list[StartupPhaseBSample]]:
     started = clock()
     absolute_deadline = started + absolute_timeout_seconds
     attempts = 0
@@ -602,7 +605,7 @@ def _check_transport_stability(
     stable_since: float | None = None
     stable_source: Any = None
     # A later healthy sample may establish a new stability window, but it must
-    # not erase an observed service-health failure from the run verdict.
+    # not erase an observed service-health failure from the result artifact.
     observed_service_error = False
     samples: list[StartupPhaseBSample] = []
     while True:
@@ -625,7 +628,10 @@ def _check_transport_stability(
             break
         if sample is None:
             if sample_outcome is StartupOutcome.SCHEMA_ERROR:
-                return _startup_phase_b_failure(attempts, started, transitions, detail, sample_outcome, clock, samples)
+                check, outcomes, samples = _startup_phase_b_failure(attempts, started, transitions, detail, sample_outcome, clock, samples)
+                if observed_service_error:
+                    outcomes.insert(0, StartupOutcome.SERVICE_ERROR)
+                return check, outcomes, samples
             if sample_outcome is StartupOutcome.SERVICE_ERROR:
                 observed_service_error = True
             stable_since = None; stable_source = None
@@ -634,7 +640,10 @@ def _check_transport_stability(
             trusted, source, detail, admission_outcome = _trusted_startup_admission(sample)
             _append_startup_phase_b_sample(samples, _startup_phase_b_sample(sample, trusted))
             if admission_outcome is StartupOutcome.SCHEMA_ERROR:
-                return _startup_phase_b_failure(attempts, started, transitions, detail, admission_outcome, clock, samples)
+                check, outcomes, samples = _startup_phase_b_failure(attempts, started, transitions, detail, admission_outcome, clock, samples)
+                if observed_service_error:
+                    outcomes.insert(0, StartupOutcome.SERVICE_ERROR)
+                return check, outcomes, samples
             if trusted:
                 if stable_since is None:
                     stable_since, stable_source = now, source
@@ -644,8 +653,8 @@ def _check_transport_stability(
                     transitions.append(f"stable reset source flip={source}")
                 elif now - stable_since >= target_seconds:
                     elapsed = now - started
-                    outcome = StartupOutcome.SERVICE_ERROR if observed_service_error else StartupOutcome.PASS
-                    return SmokeCheck("transport_stability", True, f"attempts={attempts} elapsed_seconds={elapsed:.3f} stable_seconds={now - stable_since:.3f} source={source}"), outcome, samples
+                    outcomes = [StartupOutcome.SERVICE_ERROR] if observed_service_error else [StartupOutcome.PASS]
+                    return SmokeCheck("transport_stability", True, f"attempts={attempts} elapsed_seconds={elapsed:.3f} stable_seconds={now - stable_since:.3f} source={source}"), outcomes, samples
             else:
                 stable_since = None; stable_source = None
                 transitions.append(detail)
@@ -655,8 +664,8 @@ def _check_transport_stability(
             break
         sleeper(min(interval_seconds, remaining))
     elapsed = clock() - started
-    outcome = StartupOutcome.SERVICE_ERROR if observed_service_error else StartupOutcome.TRANSPORT_ERROR
-    return SmokeCheck("transport_stability", False, f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}"), outcome, samples
+    outcomes = ([StartupOutcome.SERVICE_ERROR] if observed_service_error else []) + [StartupOutcome.TRANSPORT_ERROR]
+    return SmokeCheck("transport_stability", False, f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}"), outcomes, samples
 
 
 def _sample_startup_admission(
@@ -762,7 +771,7 @@ def _startup_phase_b_failure(
     outcome: StartupOutcome,
     clock: Clock,
     samples: list[StartupPhaseBSample],
-) -> tuple[SmokeCheck, StartupOutcome, list[StartupPhaseBSample]]:
+) -> tuple[SmokeCheck, list[StartupOutcome], list[StartupPhaseBSample]]:
     transitions.append(detail)
     elapsed = clock() - started
     return (
@@ -771,7 +780,7 @@ def _startup_phase_b_failure(
             False,
             f"attempts={attempts} elapsed_seconds={elapsed:.3f} transitions={' | '.join(transitions[-MAX_STARTUP_TRANSITIONS:])}",
         ),
-        outcome,
+        [outcome],
         samples,
     )
 
