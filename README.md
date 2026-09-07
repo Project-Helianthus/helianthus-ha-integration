@@ -198,8 +198,8 @@ durations are available only to automated tests through the Python function.
 The narrowly recognized older-schema fallback for the missing additive regulator
 field uses the legacy startup-status query throughout both phases. Any other
 Phase B GraphQL/schema failure is a required semantic failure. Phase A accepts
-only the published healthy `ok` daemon and adapter states; missing, offline, or
-failed service status cannot certify the run.
+only the published healthy daemon `running` and adapter `ok` states; missing,
+offline, failed, or other values cannot certify the run.
 
 For `ebusd-tcp`, a trusted static source has an active state, a valid integer
 source, explicit `retryable=false`, no failed source, and only successful

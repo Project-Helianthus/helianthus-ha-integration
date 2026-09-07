@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 import socket
 from threading import Event, Lock, Thread
 import time
@@ -410,6 +411,11 @@ def test_startup_admission_rejects_noncanonical_source_values() -> None:
         payload = _startup_responses()["StartupStatus"]["data"]
         payload["busSummary"]["status"]["bus_admission"]["source_selection"]["selected_source"] = source
         assert smoke_profile._trusted_startup_admission(payload)[0] is trusted
+
+
+def test_startup_procedure_documents_field_specific_service_health() -> None:
+    readme = Path(__file__).parents[1].joinpath("README.md").read_text(encoding="utf-8")
+    assert "healthy daemon `running` and adapter `ok` states" in readme
 
 
 def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
