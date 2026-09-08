@@ -173,7 +173,10 @@ rejects duplicate keys, floating/non-finite numbers, unknown shapes, unpinned
 provenance, and prior HA wrappers before probing. Its generated v1 wrapper preserves
 the gateway evidence verbatim and replaces only producer provenance with the clean
 HA commit, source-artifact digest, and exact input SHA-256. Output is written through
-a mode-0600 temporary regular file and atomically replaced. `pass` returns zero;
+a mode-0600 temporary regular file and atomically replaced. Reusing an output path
+is allowed only for a previously validated harness-owned wrapper: it is exclusively
+claimed and removed before the current run, so a failed input, replay, identity, or
+write cannot leave a stale successful artifact. `pass` returns zero;
 `fail` and `blocked-infra` remain unchanged and return nonzero.
 
 The replay checks the canonical 180000 ms windows, 90000/120000 ms recovery limits,

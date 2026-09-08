@@ -53,6 +53,14 @@ def test_replays_exercise_restart_two_gap_partition_and_delayed_reload() -> None
         replay()
 
 
+def test_replay_uses_real_zone_and_dhw_write_methods() -> None:
+    harness._exercise_real_write_fences()
+
+
+def test_adv04_uses_production_delayed_inventory_listener_path() -> None:
+    harness._replay_actual_delayed_inventory_listener()
+
+
 @pytest.mark.parametrize("payload", [
     b"\xff",
     b'{"schema_version": 1, "schema_version": 1}',
@@ -150,6 +158,30 @@ def test_output_symlink_and_replay_failure_leave_no_pass_artifact(
     with pytest.raises(harness.HarnessError):
         harness.run(FIXTURES / "offline-all-pass.json", failed_output, identity_provider=_identity)
     assert not failed_output.exists()
+
+
+@pytest.mark.parametrize("failure", ["input", "replay", "identity", "write"])
+def test_reused_owned_output_is_removed_on_each_current_run_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    output = tmp_path / "owned-report.json"
+    harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity)
+    if failure == "input":
+        source = tmp_path / "invalid.json"
+        source.write_text("{}")
+        identity = _identity
+    else:
+        source = FIXTURES / "offline-all-pass.json"
+        identity = _identity
+    if failure == "replay":
+        monkeypatch.setattr(harness, "replay_ha_contract", lambda _report: (_ for _ in ()).throw(harness.HarnessError("replay failed")))
+    elif failure == "identity":
+        identity = lambda: (_ for _ in ()).throw(harness.HarnessError("identity failed"))
+    elif failure == "write":
+        monkeypatch.setattr(harness, "_atomic_write", lambda *_args: (_ for _ in ()).throw(harness.HarnessError("write failed")))
+    with pytest.raises(harness.HarnessError):
+        harness.run(source, output, identity_provider=identity)
+    assert not output.exists()
 
 
 def test_cli_exit_codes_and_clean_identity_boundary(

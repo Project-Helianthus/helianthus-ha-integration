@@ -9,6 +9,7 @@ gateway report and replay time is an injected monotonic value.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from copy import deepcopy
 import hashlib
 import json
@@ -329,6 +330,124 @@ def _assert_write_ready(status: object, semantic: object) -> None:
         raise HarnessError("entity write fence accepted stale or unavailable zone")
 
 
+def _install_entity_stubs() -> None:
+    """Provide only import-time HA shapes when this offline CLI has no HA package."""
+    homeassistant = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
+    components = sys.modules.setdefault("homeassistant.components", types.ModuleType("homeassistant.components"))
+    helpers = sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    homeassistant.components = components
+    homeassistant.helpers = helpers
+    const = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
+    const.ATTR_TEMPERATURE = "temperature"
+    const.UnitOfTemperature = getattr(const, "UnitOfTemperature", type("UnitOfTemperature", (), {"CELSIUS": "°C"}))
+    exceptions = sys.modules.setdefault("homeassistant.exceptions", types.ModuleType("homeassistant.exceptions"))
+    if not hasattr(exceptions, "HomeAssistantError"):
+        exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
+    device = sys.modules.setdefault("homeassistant.helpers.device_registry", types.ModuleType("homeassistant.helpers.device_registry"))
+    if not hasattr(device, "DeviceInfo"):
+        device.DeviceInfo = type("DeviceInfo", (dict,), {"__init__": lambda self, **kwargs: dict.__init__(self, **kwargs)})
+    coordinator = sys.modules.setdefault("homeassistant.helpers.update_coordinator", types.ModuleType("homeassistant.helpers.update_coordinator"))
+    if not hasattr(coordinator, "CoordinatorEntity"):
+        class CoordinatorEntity:
+            def __init__(self, value: object) -> None:
+                self.coordinator = value
+        coordinator.CoordinatorEntity = CoordinatorEntity
+    if not hasattr(coordinator, "DataUpdateCoordinator"):
+        class DataUpdateCoordinator:
+            def __class_getitem__(cls, _item: object):
+                return cls
+        coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+    if not hasattr(coordinator, "UpdateFailed"):
+        coordinator.UpdateFailed = type("UpdateFailed", (Exception,), {})
+    helpers.update_coordinator = coordinator
+    climate = sys.modules.setdefault("homeassistant.components.climate", types.ModuleType("homeassistant.components.climate"))
+    if not hasattr(climate, "ClimateEntity"):
+        climate.ClimateEntity = type("ClimateEntity", (), {})
+        climate.HVACMode = type("HVACMode", (), {"OFF": "off", "AUTO": "auto", "HEAT": "heat", "COOL": "cool", "HEAT_COOL": "heat_cool"})
+    climate_const = sys.modules.setdefault("homeassistant.components.climate.const", types.ModuleType("homeassistant.components.climate.const"))
+    climate_const.ClimateEntityFeature = getattr(climate_const, "ClimateEntityFeature", type("ClimateEntityFeature", (), {"TARGET_TEMPERATURE": 1, "PRESET_MODE": 16}))
+    water = sys.modules.setdefault("homeassistant.components.water_heater", types.ModuleType("homeassistant.components.water_heater"))
+    if not hasattr(water, "WaterHeaterEntity"):
+        water.WaterHeaterEntity = type("WaterHeaterEntity", (), {})
+        water.WaterHeaterEntityFeature = type("WaterHeaterEntityFeature", (), {"TARGET_TEMPERATURE": 1, "OPERATION_MODE": 2})
+
+
+def _exercise_real_write_fences() -> None:
+    """Call the production climate and DHW mutation paths against in-memory fakes."""
+    _install_entity_stubs()
+    from custom_components.helianthus.climate import HelianthusZoneClimate
+    from custom_components.helianthus.water_heater import HelianthusDhwWaterHeater
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def mutation(self, _query: str, variables: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append(variables)
+            return {"invoke": {"ok": True, "error": None}}
+
+    semantic = _new_semantic_replay()
+    async def request_refresh() -> None:
+        return None
+    semantic.async_request_refresh = request_refresh
+    _refresh(
+        semantic,
+        {
+            "zones": [{"id": "zone-1", "state": {}, "config": {"operating_mode": "manual", "target_temp_c": 20.0}}],
+            "dhw": {"state": {}, "config": {"operating_mode": "auto", "target_temp_c": 50.0}},
+        },
+    )
+    status = _trusted_status()
+    client = FakeClient()
+    zone = HelianthusZoneClimate("offline", semantic, None, None, "Helianthus", client, 0x15, status, "zone-1", "Zone 1")
+    dhw = HelianthusDhwWaterHeater("offline", semantic, None, "Helianthus", client, 0x15, status)
+
+    asyncio.run(zone.async_set_temperature(temperature=21.0))
+    asyncio.run(dhw.async_set_temperature(temperature=51.0))
+    if len(client.calls) != 3:
+        raise HarnessError("fresh trusted production writes did not reach fake client")
+
+    status.last_update_success = False
+    for entity, operation in ((zone, lambda: zone.async_set_temperature(temperature=21.0)), (dhw, lambda: dhw.async_set_temperature(temperature=51.0))):
+        before = len(client.calls)
+        try:
+            asyncio.run(operation())
+        except Exception:
+            pass
+        else:
+            raise HarnessError("degraded admission allowed a production write")
+        if len(client.calls) != before:
+            raise HarnessError("degraded admission contacted fake client")
+
+    status.last_update_success = True
+    _refresh(semantic, {})
+    for operation in (lambda: zone.async_set_temperature(temperature=21.0), lambda: dhw.async_set_temperature(temperature=51.0)):
+        before = len(client.calls)
+        try:
+            asyncio.run(operation())
+        except Exception:
+            pass
+        else:
+            raise HarnessError("stale semantic data allowed a production write")
+        if len(client.calls) != before:
+            raise HarnessError("stale semantic data contacted fake client")
+    _refresh(semantic, {})
+    _refresh(semantic, {})
+    for operation in (lambda: zone.async_set_temperature(temperature=21.0), lambda: dhw.async_set_temperature(temperature=51.0)):
+        try:
+            asyncio.run(operation())
+        except Exception:
+            pass
+        else:
+            raise HarnessError("unavailable semantic data allowed a production write")
+
+    _refresh(semantic, {"zones": [{"id": "zone-1", "state": {}, "config": {"operating_mode": "manual"}}], "dhw": {"state": {}, "config": {"operating_mode": "auto"}}})
+    asyncio.run(zone.async_set_temperature(temperature=21.0))
+    asyncio.run(dhw.async_set_temperature(temperature=51.0))
+    if len(client.calls) != 6:
+        raise HarnessError("recovered trusted production writes did not reach fake client")
+
+
 def _replay_adv01() -> None:
     semantic = _new_semantic_replay()
     status = _trusted_status()
@@ -363,6 +482,7 @@ def _replay_adv02() -> None:
     status.last_update_success = True
     _refresh(semantic, _positive_payload())
     _assert_write_ready(status, semantic)
+    _exercise_real_write_fences()
 
 
 def _replay_adv03() -> None:
@@ -389,10 +509,170 @@ def _replay_adv03() -> None:
     _assert_write_ready(status, semantic)
 
 
-def _inventory_became_available(payload: dict[str, Any], known_zones: set[str], known_dhw: bool) -> bool:
-    zones = payload.get("zones")
-    current = {str(zone["id"]) for zone in zones if isinstance(zone, dict) and zone.get("id") is not None} if isinstance(zones, list) else set()
-    return bool(current - known_zones) or (isinstance(payload.get("dhw"), dict) and not known_dhw)
+def _replay_actual_delayed_inventory_listener() -> None:
+    """Drive entry_setup's real semantic listener and its one-shot scheduler.
+
+    The temporary modules below only supply Home Assistant's import-time surface.
+    The listener, predicate, and ``schedule_reload`` closure are created by the
+    production ``async_setup_entry`` function itself.
+    """
+    _install_entity_stubs()
+    import importlib
+
+    entry_setup = importlib.import_module("custom_components.helianthus.entry_setup")
+    saved_modules: dict[str, types.ModuleType | None] = {}
+
+    def replace(name: str, module: types.ModuleType) -> None:
+        saved_modules.setdefault(name, sys.modules.get(name))
+        sys.modules[name] = module
+
+    class FakeCoordinator:
+        def __init__(self, _hass: object, _client: object, _interval: int) -> None:
+            self.data: Any = {"zones": [], "dhw": None}
+            self.listeners: list[Callable[[], None]] = []
+            self.boiler_supported = False
+
+        async def async_config_entry_first_refresh(self) -> None:
+            return None
+
+        def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+            self.listeners.append(listener)
+            return lambda: self.listeners.remove(listener)
+
+    semantic_instances: list[FakeCoordinator] = []
+
+    class FakeSemanticCoordinator(FakeCoordinator):
+        def __init__(self, hass: object, client: object, interval: int) -> None:
+            super().__init__(hass, client, interval)
+            semantic_instances.append(self)
+
+    class FakeDeviceCoordinator(FakeCoordinator):
+        def __init__(self, hass: object, client: object, interval: int) -> None:
+            super().__init__(hass, client, interval)
+            self.data = []
+
+    class FakeRegistry:
+        devices: dict[str, object] = {}
+        entities: dict[str, object] = {}
+
+        def async_get_or_create(self, **_kwargs: object) -> object:
+            return types.SimpleNamespace(id="fake-device")
+
+        def async_update_device(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    registry = FakeRegistry()
+    device_registry = types.ModuleType("homeassistant.helpers.device_registry")
+    device_registry.async_get = lambda _hass: registry
+    device_registry.async_entries_for_config_entry = lambda _registry, _entry_id: []
+    entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
+    entity_registry.async_get = lambda _hass: registry
+    entity_registry.async_entries_for_config_entry = lambda _registry, _entry_id: []
+    aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+    aiohttp_client.async_get_clientsession = lambda _hass: object()
+    event = types.ModuleType("homeassistant.helpers.event")
+    event.async_track_state_change_event = lambda *_args, **_kwargs: (lambda: None)
+    core = types.ModuleType("homeassistant.core")
+    core.callback = lambda function: function
+    const = sys.modules["homeassistant.const"]
+    const.CONF_HOST = "host"
+    const.CONF_PORT = "port"
+    const.CONF_SCAN_INTERVAL = "scan_interval"
+    replace("homeassistant.helpers.device_registry", device_registry)
+    replace("homeassistant.helpers.entity_registry", entity_registry)
+    replace("homeassistant.helpers.aiohttp_client", aiohttp_client)
+    replace("homeassistant.helpers.event", event)
+    replace("homeassistant.core", core)
+
+    graphql = types.ModuleType("custom_components.helianthus.graphql")
+    graphql.GraphQLClient = lambda **_kwargs: object()
+    graphql.build_graphql_url = lambda *_args, **_kwargs: "http://offline/graphql"
+    replace("custom_components.helianthus.graphql", graphql)
+    identity = types.ModuleType("custom_components.helianthus.identity")
+    identity.GatewayIdentityVerificationError = type("GatewayIdentityVerificationError", (Exception,), {})
+    identity.configured_instance_guid = lambda *_args: None
+    identity.normalize_instance_guid = lambda value: value
+    identity.updated_entry_data = lambda data, *_args, **_kwargs: data
+    async def unavailable_identity(**_kwargs: object) -> object:
+        raise identity.GatewayIdentityVerificationError("offline")
+    identity.verify_gateway_identity = unavailable_identity
+    replace("custom_components.helianthus.identity", identity)
+    coordinator_module = types.ModuleType("custom_components.helianthus.coordinator")
+    for name in (
+        "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator", "HelianthusCircuitCoordinator",
+        "HelianthusCoordinator", "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
+        "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator", "HelianthusSystemCoordinator",
+        "HelianthusStatusCoordinator",
+    ):
+        setattr(coordinator_module, name, FakeCoordinator)
+    coordinator_module.HelianthusCoordinator = FakeDeviceCoordinator
+    coordinator_module.HelianthusSemanticCoordinator = FakeSemanticCoordinator
+    replace("custom_components.helianthus.coordinator", coordinator_module)
+    subscriptions = types.ModuleType("custom_components.helianthus.subscriptions")
+    async def no_subscriptions(*_args: object, **_kwargs: object) -> None:
+        return None
+    subscriptions.start_subscriptions = no_subscriptions
+    replace("custom_components.helianthus.subscriptions", subscriptions)
+    pv_m2m = types.ModuleType("custom_components.helianthus.pv_m2m")
+    async def no_pv_m2m(*_args: object, **_kwargs: object) -> None:
+        return None
+    pv_m2m.async_setup_pv_m2m_boundary = no_pv_m2m
+    pv_m2m.pv_m2m_option_signature = lambda _options: "offline"
+    replace("custom_components.helianthus.pv_m2m", pv_m2m)
+    services = types.ModuleType("custom_components.helianthus.entry_services")
+    async def no_admin(*_args: object, **_kwargs: object) -> tuple[object, None, bool]:
+        return types.SimpleNamespace(lifecycle=types.SimpleNamespace(action_broker=None)), None, False
+    services.async_setup_optional_eebus_admin_service = no_admin
+    replace("custom_components.helianthus.entry_services", services)
+
+    original_sanitize = entry_setup.async_sanitize_legacy_eebus_admin_entry
+    original_forward = entry_setup._async_forward_platforms_and_finalize
+    async def no_sanitize(*_args: object, **_kwargs: object) -> None:
+        return None
+    async def no_forward(*_args: object, **_kwargs: object) -> None:
+        return None
+    entry_setup.async_sanitize_legacy_eebus_admin_entry = no_sanitize
+    entry_setup._async_forward_platforms_and_finalize = no_forward
+
+    reloads: list[str] = []
+    class ConfigEntries:
+        def async_entries(self, _domain: str) -> list[object]:
+            return [entry]
+        def async_update_entry(self, _entry: object, **_kwargs: object) -> None:
+            return None
+        async def async_reload(self, entry_id: str) -> None:
+            reloads.append(entry_id)
+    class Hass:
+        def __init__(self) -> None:
+            self.data: dict[str, Any] = {}
+            self.config_entries = ConfigEntries()
+            self.tasks: list[Any] = []
+        def async_create_task(self, coroutine: Any) -> None:
+            self.tasks.append(coroutine)
+    entry = types.SimpleNamespace(entry_id="offline", data={"host": "example.invalid", "port": 443}, options={"use_subscriptions": False}, unique_id=None)
+    hass = Hass()
+    try:
+        if not asyncio.run(entry_setup.async_setup_entry(hass, entry)) or len(semantic_instances) != 1:
+            raise HarnessError("production entry setup did not install semantic listener")
+        semantic = semantic_instances[0]
+        semantic.data = {"zones": [{"id": "zone-1"}], "dhw": {"state": {}, "config": {}}}
+        for listener in tuple(semantic.listeners):
+            listener()
+        for listener in tuple(semantic.listeners):
+            listener()
+        if len(hass.tasks) != 1:
+            raise HarnessError("production delayed inventory listener did not schedule exactly one reload")
+        asyncio.run(hass.tasks[0])
+        if reloads != ["offline"]:
+            raise HarnessError("production delayed inventory scheduler reloaded unexpected entry")
+    finally:
+        entry_setup.async_sanitize_legacy_eebus_admin_entry = original_sanitize
+        entry_setup._async_forward_platforms_and_finalize = original_forward
+        for name, original in saved_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 def _replay_adv04() -> None:
@@ -400,15 +680,8 @@ def _replay_adv04() -> None:
     status = _trusted_status()
     if semantic.data["zones"] or semantic.data["dhw"] is not None:
         raise HarnessError("empty bootstrap created semantic entities")
-    reloads: list[str] = []
-    payload = _positive_payload()
-    if _inventory_became_available(payload, set(), False):
-        reloads.append("delayed semantic inventory")
-    _refresh(semantic, payload)
-    if _inventory_became_available(payload, {"zone-1", "zone-2"}, True):
-        reloads.append("duplicate inventory")
-    if reloads != ["delayed semantic inventory"]:
-        raise HarnessError("delayed inventory did not schedule exactly one reload")
+    _replay_actual_delayed_inventory_listener()
+    _refresh(semantic, _positive_payload())
     _assert_write_ready(status, semantic)
 
 
@@ -465,12 +738,84 @@ def _validate_wrapper(wrapper: dict[str, Any], source: dict[str, Any], input_sha
         raise HarnessError("HA wrapper producer provenance invalid")
 
 
+class _OutputLease:
+    """Exclusive, same-directory ownership for a single publish attempt."""
+
+    def __init__(self, output: Path, lock_path: Path, lock_identity: tuple[int, int]) -> None:
+        self.output = output
+        self.lock_path = lock_path
+        self.lock_identity = lock_identity
+
+    def release(self) -> None:
+        try:
+            current = self.lock_path.lstat()
+        except FileNotFoundError:
+            return
+        if (current.st_dev, current.st_ino) == self.lock_identity:
+            self.lock_path.unlink()
+
+
+def _is_owned_ha_output(raw: bytes) -> bool:
+    try:
+        report = _parse_report(raw)
+    except HarnessError:
+        return False
+    provenance = report.get("provenance")
+    producer = provenance.get("producer") if isinstance(provenance, dict) else None
+    return bool(
+        isinstance(producer, dict)
+        and producer.get("repository") == HA_REPOSITORY
+        and producer.get("component") == "ha-adversarial-harness"
+        and producer.get("build_kind") == "ha-harness"
+        and isinstance(producer.get("input_gateway_report_sha256"), str)
+        and len(producer["input_gateway_report_sha256"]) == 64
+    )
+
+
+def _prepare_output(output: Path) -> _OutputLease:
+    """Remove only a verified prior harness artifact before this run begins.
+
+    A per-output exclusive lock serializes harness writers.  Existing content is
+    removed only after a no-follow read proves it is a prior HA-harness wrapper;
+    any failure later in the run therefore cannot leave a stale successful
+    artifact at the reused path.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = output.with_name(f".{output.name}.ha-adversarial.lock")
+    try:
+        descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError as exc:
+        raise HarnessError("output is already owned by another harness run") from exc
+    except OSError as exc:
+        raise HarnessError(f"cannot claim output safely: {exc}") from exc
+    lock_info = os.fstat(descriptor)
+    os.close(descriptor)
+    try:
+        if output.exists() or output.is_symlink():
+            before = output.lstat()
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+                raise HarnessError("output must be absent or a regular non-symlink file")
+            raw = _read_one_regular_file(output)
+            if not _is_owned_ha_output(raw):
+                raise HarnessError("refusing to remove an output not owned by this harness")
+            after = output.lstat()
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                raise HarnessError("output changed while being claimed")
+            output.unlink()
+        return _OutputLease(output, lock_path, (lock_info.st_dev, lock_info.st_ino))
+    except Exception:
+        try:
+            current = lock_path.lstat()
+        except FileNotFoundError:
+            current = None
+        if current is not None and (current.st_dev, current.st_ino) == (lock_info.st_dev, lock_info.st_ino):
+            lock_path.unlink()
+        raise
+
+
 def _atomic_write(output: Path, wrapper: dict[str, Any], source: dict[str, Any], input_sha256: str) -> None:
     if output.exists() or output.is_symlink():
-        info = output.lstat()
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-            raise HarnessError("output must be absent or a regular non-symlink file")
-    output.parent.mkdir(parents=True, exist_ok=True)
+        raise HarnessError("claimed output path was replaced during publication")
     descriptor = -1
     temporary_name = ""
     try:
@@ -498,17 +843,23 @@ def run(
     *,
     identity_provider: Callable[[], str] | None = None,
 ) -> str:
-    report, input_sha256 = load_gateway_report(input_path)
-    replay_ha_contract(report)
-    verdict = report["summary"]["verdict"]
-    if output_path is not None:
-        commit = (identity_provider or (lambda: _clean_identity(Path(__file__).resolve().parents[1])))()
-        if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
-            raise HarnessError("test identity provider returned invalid commit")
-        wrapper = build_ha_wrapper(report, input_sha256, commit)
-        _validate_wrapper(wrapper, report, input_sha256)
-        _atomic_write(output_path, wrapper, report, input_sha256)
-    return verdict
+    lease = _prepare_output(output_path) if output_path is not None else None
+    try:
+        report, input_sha256 = load_gateway_report(input_path)
+        replay_ha_contract(report)
+        verdict = report["summary"]["verdict"]
+        if output_path is not None:
+            assert lease is not None
+            commit = (identity_provider or (lambda: _clean_identity(Path(__file__).resolve().parents[1])))()
+            if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
+                raise HarnessError("test identity provider returned invalid commit")
+            wrapper = build_ha_wrapper(report, input_sha256, commit)
+            _validate_wrapper(wrapper, report, input_sha256)
+            _atomic_write(output_path, wrapper, report, input_sha256)
+        return verdict
+    finally:
+        if lease is not None:
+            lease.release()
 
 
 def main(argv: list[str] | None = None) -> int:
