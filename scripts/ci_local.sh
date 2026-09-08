@@ -13,6 +13,9 @@ fi
 echo "==> python tests (includes ADR-026 entity icon gate)"
 pytest
 
+echo "==> offline adversarial HA harness fixtures"
+python3 scripts/ha_adversarial_harness.py --verify-fixtures
+
 echo "==> gateway parity gate readiness"
 python3 scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json
 
