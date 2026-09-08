@@ -675,7 +675,9 @@ def _replay_actual_delayed_inventory_listener() -> None:
         if not asyncio.run(entry_setup.async_setup_entry(hass, entry)) or len(semantic_instances) != 1:
             raise HarnessError("production entry setup did not install semantic listener")
         semantic = semantic_instances[0]
-        semantic.data = {"zones": [{"id": "zone-1"}], "dhw": {"state": {}, "config": {}}}
+        # A delayed DHW inventory is production-valid without introducing a zone
+        # whose unresolved parent mapping would schedule a different reload first.
+        semantic.data = {"zones": [], "dhw": {"state": {}, "config": {}}}
         for listener in tuple(semantic.listeners):
             listener()
         for listener in tuple(semantic.listeners):
