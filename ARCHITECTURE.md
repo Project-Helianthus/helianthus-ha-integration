@@ -47,6 +47,24 @@ Device IDs must be stable and deterministic.
 
 The integration consumes a semantic GraphQL layer (zones, dhw, energy, errors). If only raw device/plane/method is available, the integration uses a minimal fallback and exposes diagnostics only.
 
+### Offline adversarial evidence boundary
+
+`scripts/ha_adversarial_harness.py` is a replaceable southbound evidence adapter,
+not a GraphQL or Home Assistant runtime path. It consumes only the four byte-pinned
+gateway reports from `helianthus-ebusgateway` revision
+[`25b96a0593357ff63de8315b803ec1262479c3df`](https://github.com/Project-Helianthus/helianthus-ebusgateway/tree/25b96a0593357ff63de8315b803ec1262479c3df)
+under the public v1 contract from `helianthus-docs-ebus` revision
+[`2e290480b7fbb9a0895b77a04d6c3634512b212e`](https://github.com/Project-Helianthus/helianthus-docs-ebus/tree/2e290480b7fbb9a0895b77a04d6c3634512b212e).
+The deterministic replay validates HA admission, semantic freshness, delayed
+inventory reload, availability, and write fencing with injected monotonic time.
+It proves offline consumer behavior only; report counters, epochs, startup phase,
+and collision totals remain gateway-native evidence rather than HA-derived facts.
+
+When an accepted public SemReg contract supersedes this gateway report reader, move
+all mappable semantic inputs in one scoped cutover and remove this adapter. There is
+no pre-cutover gateway/SemReg compatibility layer: HA must not infer a second,
+private semantic contract while both endpoints exist.
+
 ### Zone and DHW lifecycle
 
 Zone climate entities and the DHW water-heater entity are created only after their first positive semantic inventory

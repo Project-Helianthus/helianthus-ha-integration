@@ -143,6 +143,45 @@ scan_interval: 60
 use_subscriptions: true
 ```
 
+## Offline adversarial consumer harness
+
+Issue #105 adds a deterministic, fixture-only consumer gate for the accepted
+`adversarial-runtime-report-v1` contract at
+[helianthus-docs-ebus `2e290480b7fbb9a0895b77a04d6c3634512b212e`](https://github.com/Project-Helianthus/helianthus-docs-ebus/tree/2e290480b7fbb9a0895b77a04d6c3634512b212e).
+The four gateway inputs are copied byte-for-byte from
+[helianthus-ebusgateway `25b96a0593357ff63de8315b803ec1262479c3df`](https://github.com/Project-Helianthus/helianthus-ebusgateway/tree/25b96a0593357ff63de8315b803ec1262479c3df).
+It is an offline regression gate; it does not contact a gateway, start Home
+Assistant, sleep, parse cache bytes, or establish physical acceptance.
+
+Run all pinned fixtures locally:
+
+```bash
+python3 scripts/ha_adversarial_harness.py --verify-fixtures
+```
+
+From a clean, committed checkout, publish a locally generated HA wrapper for a
+single report:
+
+```bash
+python3 scripts/ha_adversarial_harness.py \
+  --input-gateway-report tests/fixtures/adversarial-runtime/v1/gateway/offline-all-pass.json \
+  --output /tmp/helianthus-ha-adversarial-report.json
+```
+
+The reader accepts only one regular, non-symlink UTF-8 input no larger than 1 MiB,
+rejects duplicate keys, floating/non-finite numbers, unknown shapes, unpinned
+provenance, and prior HA wrappers before probing. Its generated v1 wrapper preserves
+the gateway evidence verbatim and replaces only producer provenance with the clean
+HA commit, source-artifact digest, and exact input SHA-256. Output is written through
+a mode-0600 temporary regular file and atomically replaced. `pass` returns zero;
+`fail` and `blocked-infra` remain unchanged and return nonzero.
+
+The replay checks the canonical 180000 ms windows, 90000/120000 ms recovery limits,
+the 60000 ms partition, and 1000 ms timing uncertainty. It exercises HA admission,
+two-gap semantic grace/expiry, delayed single reload, entity availability, and write
+fences using injected time. A real HA restart, adapter reset, partition, or corrupt
+cache smoke remains a separately authorized live procedure.
+
 ## Local Smoke-Test Configuration Examples
 
 Standard smoke check against local gateway:
