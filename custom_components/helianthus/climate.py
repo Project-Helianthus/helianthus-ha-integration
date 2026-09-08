@@ -19,7 +19,7 @@ from .device_ids import build_radio_bus_key, radio_device_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_tokens import normalize_allowed_mode_tokens, normalize_preset_token
-from .semantic_freshness import semantic_target_is_stale
+from .semantic_freshness import semantic_target_available, semantic_target_is_stale
 from .zone_parent import (
     normalize_radio_slot_candidate as _normalize_radio_slot_candidate,
     parse_optional_int as _parse_optional_int,
@@ -253,6 +253,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         return (
             bool(base_available)
             and status_admission_trusted(self._status_coordinator)
+            and semantic_target_available(self.coordinator, "zone", self._zone_id)
             and bool(self._zone())
         )
 

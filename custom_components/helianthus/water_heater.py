@@ -18,7 +18,7 @@ from .const import DOMAIN
 from .device_ids import dhw_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
-from .semantic_freshness import semantic_target_is_stale
+from .semantic_freshness import semantic_target_available, semantic_target_is_stale
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:JSON!){
@@ -122,6 +122,7 @@ class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         return (
             bool(base_available)
             and status_admission_trusted(self._status_coordinator)
+            and semantic_target_available(self.coordinator, "dhw")
             and bool(self._dhw())
         )
 
