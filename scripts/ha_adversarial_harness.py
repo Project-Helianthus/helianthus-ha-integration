@@ -738,84 +738,17 @@ def _validate_wrapper(wrapper: dict[str, Any], source: dict[str, Any], input_sha
         raise HarnessError("HA wrapper producer provenance invalid")
 
 
-class _OutputLease:
-    """Exclusive, same-directory ownership for a single publish attempt."""
-
-    def __init__(self, output: Path, lock_path: Path, lock_identity: tuple[int, int]) -> None:
-        self.output = output
-        self.lock_path = lock_path
-        self.lock_identity = lock_identity
-
-    def release(self) -> None:
-        try:
-            current = self.lock_path.lstat()
-        except FileNotFoundError:
-            return
-        if (current.st_dev, current.st_ino) == self.lock_identity:
-            self.lock_path.unlink()
-
-
-def _is_owned_ha_output(raw: bytes) -> bool:
-    try:
-        report = _parse_report(raw)
-    except HarnessError:
-        return False
-    provenance = report.get("provenance")
-    producer = provenance.get("producer") if isinstance(provenance, dict) else None
-    return bool(
-        isinstance(producer, dict)
-        and producer.get("repository") == HA_REPOSITORY
-        and producer.get("component") == "ha-adversarial-harness"
-        and producer.get("build_kind") == "ha-harness"
-        and isinstance(producer.get("input_gateway_report_sha256"), str)
-        and len(producer["input_gateway_report_sha256"]) == 64
-    )
-
-
-def _prepare_output(output: Path) -> _OutputLease:
-    """Remove only a verified prior harness artifact before this run begins.
-
-    A per-output exclusive lock serializes harness writers.  Existing content is
-    removed only after a no-follow read proves it is a prior HA-harness wrapper;
-    any failure later in the run therefore cannot leave a stale successful
-    artifact at the reused path.
-    """
+def _prepare_output(output: Path) -> None:
+    """Require a new output pathname without inspecting, moving, or removing it."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = output.with_name(f".{output.name}.ha-adversarial.lock")
     try:
-        descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    except FileExistsError as exc:
-        raise HarnessError("output is already owned by another harness run") from exc
-    except OSError as exc:
-        raise HarnessError(f"cannot claim output safely: {exc}") from exc
-    lock_info = os.fstat(descriptor)
-    os.close(descriptor)
-    try:
-        if output.exists() or output.is_symlink():
-            before = output.lstat()
-            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
-                raise HarnessError("output must be absent or a regular non-symlink file")
-            raw = _read_one_regular_file(output)
-            if not _is_owned_ha_output(raw):
-                raise HarnessError("refusing to remove an output not owned by this harness")
-            after = output.lstat()
-            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-                raise HarnessError("output changed while being claimed")
-            output.unlink()
-        return _OutputLease(output, lock_path, (lock_info.st_dev, lock_info.st_ino))
-    except Exception:
-        try:
-            current = lock_path.lstat()
-        except FileNotFoundError:
-            current = None
-        if current is not None and (current.st_dev, current.st_ino) == (lock_info.st_dev, lock_info.st_ino):
-            lock_path.unlink()
-        raise
+        output.lstat()
+    except FileNotFoundError:
+        return
+    raise HarnessError("output path must be initially absent")
 
 
 def _atomic_write(output: Path, wrapper: dict[str, Any], source: dict[str, Any], input_sha256: str) -> None:
-    if output.exists() or output.is_symlink():
-        raise HarnessError("claimed output path was replaced during publication")
     descriptor = -1
     temporary_name = ""
     try:
@@ -828,7 +761,12 @@ def _atomic_write(output: Path, wrapper: dict[str, Any], source: dict[str, Any],
         descriptor = -1
         parsed = _parse_report(Path(temporary_name).read_bytes())
         _validate_wrapper(parsed, source, input_sha256)
-        os.replace(temporary_name, output)
+        try:
+            os.link(temporary_name, output)
+        except FileExistsError as exc:
+            raise HarnessError("output path became occupied before publication") from exc
+        Path(temporary_name).unlink()
+        temporary_name = ""
     except Exception:
         if descriptor >= 0:
             os.close(descriptor)
@@ -843,23 +781,19 @@ def run(
     *,
     identity_provider: Callable[[], str] | None = None,
 ) -> str:
-    lease = _prepare_output(output_path) if output_path is not None else None
-    try:
-        report, input_sha256 = load_gateway_report(input_path)
-        replay_ha_contract(report)
-        verdict = report["summary"]["verdict"]
-        if output_path is not None:
-            assert lease is not None
-            commit = (identity_provider or (lambda: _clean_identity(Path(__file__).resolve().parents[1])))()
-            if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
-                raise HarnessError("test identity provider returned invalid commit")
-            wrapper = build_ha_wrapper(report, input_sha256, commit)
-            _validate_wrapper(wrapper, report, input_sha256)
-            _atomic_write(output_path, wrapper, report, input_sha256)
-        return verdict
-    finally:
-        if lease is not None:
-            lease.release()
+    if output_path is not None:
+        _prepare_output(output_path)
+    report, input_sha256 = load_gateway_report(input_path)
+    replay_ha_contract(report)
+    verdict = report["summary"]["verdict"]
+    if output_path is not None:
+        commit = (identity_provider or (lambda: _clean_identity(Path(__file__).resolve().parents[1])))()
+        if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
+            raise HarnessError("test identity provider returned invalid commit")
+        wrapper = build_ha_wrapper(report, input_sha256, commit)
+        _validate_wrapper(wrapper, report, input_sha256)
+        _atomic_write(output_path, wrapper, report, input_sha256)
+    return verdict
 
 
 def main(argv: list[str] | None = None) -> int:

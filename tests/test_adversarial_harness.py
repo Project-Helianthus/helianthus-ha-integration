@@ -161,11 +161,12 @@ def test_output_symlink_and_replay_failure_leave_no_pass_artifact(
 
 
 @pytest.mark.parametrize("failure", ["input", "replay", "identity", "write"])
-def test_reused_owned_output_is_removed_on_each_current_run_failure(
+def test_existing_owned_output_is_refused_and_preserved_on_each_current_run_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     output = tmp_path / "owned-report.json"
     harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity)
+    original = output.read_bytes()
     if failure == "input":
         source = tmp_path / "invalid.json"
         source.write_text("{}")
@@ -181,7 +182,26 @@ def test_reused_owned_output_is_removed_on_each_current_run_failure(
         monkeypatch.setattr(harness, "_atomic_write", lambda *_args: (_ for _ in ()).throw(harness.HarnessError("write failed")))
     with pytest.raises(harness.HarnessError):
         harness.run(source, output, identity_provider=identity)
-    assert not output.exists()
+    assert output.read_bytes() == original
+
+
+def test_unrelated_file_inserted_before_no_replace_publication_survives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "report.json"
+    unrelated = tmp_path / "unrelated.json"
+    unrelated.write_bytes(b"unrelated evidence")
+    original_link = harness.os.link
+
+    def insert_then_link(source: str | bytes | os.PathLike[str] | os.PathLike[bytes], destination: str | bytes | os.PathLike[str] | os.PathLike[bytes], *args, **kwargs) -> None:
+        if Path(destination) == output:
+            original_link(unrelated, output)
+        original_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(harness.os, "link", insert_then_link)
+    with pytest.raises(harness.HarnessError):
+        harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity)
+    assert output.read_bytes() == b"unrelated evidence"
 
 
 def test_cli_exit_codes_and_clean_identity_boundary(
