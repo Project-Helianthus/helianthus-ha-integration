@@ -83,6 +83,37 @@ def test_replay_reads_real_zone_and_dhw_availability_properties(
     assert reads["dhw"] >= 4
 
 
+def test_replay_rejects_retained_payload_after_failed_semantic_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real entities must fail closed when a semantic refresh fails in place."""
+    harness._install_entity_stubs()
+    from custom_components.helianthus.climate import HelianthusZoneClimate
+    from custom_components.helianthus.water_heater import HelianthusDhwWaterHeater
+
+    failed_refresh_availability: dict[str, list[bool]] = {"zone": [], "dhw": []}
+    zone_available = HelianthusZoneClimate.available
+    dhw_available = HelianthusDhwWaterHeater.available
+
+    def observe_zone(entity: object) -> bool:
+        result = zone_available.__get__(entity, type(entity))
+        if entity.coordinator.last_update_success is False:
+            failed_refresh_availability["zone"].append(result)
+        return result
+
+    def observe_dhw(entity: object) -> bool:
+        result = dhw_available.__get__(entity, type(entity))
+        if entity.coordinator.last_update_success is False:
+            failed_refresh_availability["dhw"].append(result)
+        return result
+
+    monkeypatch.setattr(HelianthusZoneClimate, "available", property(observe_zone))
+    monkeypatch.setattr(HelianthusDhwWaterHeater, "available", property(observe_dhw))
+    harness._exercise_real_write_fences()
+
+    assert failed_refresh_availability == {"zone": [False], "dhw": [False]}
+
+
 def test_adv04_uses_production_delayed_inventory_listener_path() -> None:
     harness._replay_actual_delayed_inventory_listener()
 

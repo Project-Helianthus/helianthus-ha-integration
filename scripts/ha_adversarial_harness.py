@@ -399,13 +399,11 @@ def _exercise_real_write_fences() -> None:
     async def request_refresh() -> None:
         return None
     semantic.async_request_refresh = request_refresh
-    _refresh(
-        semantic,
-        {
-            "zones": [{"id": "zone-1", "state": {}, "config": {"operating_mode": "manual", "target_temp_c": 20.0}}],
-            "dhw": {"state": {}, "config": {"operating_mode": "auto", "target_temp_c": 50.0}},
-        },
-    )
+    fresh_payload = {
+        "zones": [{"id": "zone-1", "state": {}, "config": {"operating_mode": "manual", "target_temp_c": 20.0}}],
+        "dhw": {"state": {}, "config": {"operating_mode": "auto", "target_temp_c": 50.0}},
+    }
+    _refresh(semantic, fresh_payload)
     status = _trusted_status()
     client = FakeClient()
     zone = HelianthusZoneClimate("offline", semantic, None, None, "Helianthus", client, 0x15, status, "zone-1", "Zone 1")
@@ -420,6 +418,29 @@ def _exercise_real_write_fences() -> None:
     asyncio.run(dhw.async_set_temperature(temperature=51.0))
     if len(client.calls) != 3:
         raise HarnessError("fresh trusted production writes did not reach fake client")
+
+    # A failed semantic refresh retains the last payload, independently of a
+    # healthy/recovered admission status. Real entities and write paths must
+    # fail closed until a successful semantic refresh restores this generation.
+    semantic.last_update_success = False
+    assert_availability(False, "failed semantic refresh with retained inventory")
+    for operation in (lambda: zone.async_set_temperature(temperature=21.0), lambda: dhw.async_set_temperature(temperature=51.0)):
+        before = len(client.calls)
+        try:
+            asyncio.run(operation())
+        except Exception:
+            pass
+        else:
+            raise HarnessError("failed semantic refresh allowed a production write")
+        if len(client.calls) != before:
+            raise HarnessError("failed semantic refresh contacted fake client")
+
+    _refresh(semantic, fresh_payload)
+    assert_availability(True, "recovered semantic refresh")
+    asyncio.run(zone.async_set_temperature(temperature=21.0))
+    asyncio.run(dhw.async_set_temperature(temperature=51.0))
+    if len(client.calls) != 6:
+        raise HarnessError("recovered semantic refresh did not restore production writes")
 
     status.last_update_success = False
     assert_availability(False, "degraded admission")
@@ -464,7 +485,7 @@ def _exercise_real_write_fences() -> None:
     assert_availability(True, "recovered trusted inventory")
     asyncio.run(zone.async_set_temperature(temperature=21.0))
     asyncio.run(dhw.async_set_temperature(temperature=51.0))
-    if len(client.calls) != 6:
+    if len(client.calls) != 9:
         raise HarnessError("recovered trusted production writes did not reach fake client")
 
 
