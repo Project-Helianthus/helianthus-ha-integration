@@ -402,12 +402,18 @@ def _exercise_real_write_fences() -> None:
     zone = HelianthusZoneClimate("offline", semantic, None, None, "Helianthus", client, 0x15, status, "zone-1", "Zone 1")
     dhw = HelianthusDhwWaterHeater("offline", semantic, None, "Helianthus", client, 0x15, status)
 
+    def assert_availability(expected: bool, state: str) -> None:
+        if zone.available is not expected or dhw.available is not expected:
+            raise HarnessError(f"production entity availability mismatch during {state}")
+
+    assert_availability(True, "fresh trusted inventory")
     asyncio.run(zone.async_set_temperature(temperature=21.0))
     asyncio.run(dhw.async_set_temperature(temperature=51.0))
     if len(client.calls) != 3:
         raise HarnessError("fresh trusted production writes did not reach fake client")
 
     status.last_update_success = False
+    assert_availability(False, "degraded admission")
     for entity, operation in ((zone, lambda: zone.async_set_temperature(temperature=21.0)), (dhw, lambda: dhw.async_set_temperature(temperature=51.0))):
         before = len(client.calls)
         try:
@@ -421,6 +427,9 @@ def _exercise_real_write_fences() -> None:
 
     status.last_update_success = True
     _refresh(semantic, {})
+    # Production entities keep retained semantic values visible while stale; that
+    # visibility is deliberately distinct from the write fence below.
+    assert_availability(True, "retained stale inventory")
     for operation in (lambda: zone.async_set_temperature(temperature=21.0), lambda: dhw.async_set_temperature(temperature=51.0)):
         before = len(client.calls)
         try:
@@ -433,6 +442,7 @@ def _exercise_real_write_fences() -> None:
             raise HarnessError("stale semantic data contacted fake client")
     _refresh(semantic, {})
     _refresh(semantic, {})
+    assert_availability(False, "expired semantic inventory")
     for operation in (lambda: zone.async_set_temperature(temperature=21.0), lambda: dhw.async_set_temperature(temperature=51.0)):
         try:
             asyncio.run(operation())
@@ -442,6 +452,7 @@ def _exercise_real_write_fences() -> None:
             raise HarnessError("unavailable semantic data allowed a production write")
 
     _refresh(semantic, {"zones": [{"id": "zone-1", "state": {}, "config": {"operating_mode": "manual"}}], "dhw": {"state": {}, "config": {"operating_mode": "auto"}}})
+    assert_availability(True, "recovered trusted inventory")
     asyncio.run(zone.async_set_temperature(temperature=21.0))
     asyncio.run(dhw.async_set_temperature(temperature=51.0))
     if len(client.calls) != 6:
@@ -740,39 +751,55 @@ def _validate_wrapper(wrapper: dict[str, Any], source: dict[str, Any], input_sha
 
 def _prepare_output(output: Path) -> None:
     """Require a new output pathname without inspecting, moving, or removing it."""
-    output.parent.mkdir(parents=True, exist_ok=True)
     try:
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.lstat()
     except FileNotFoundError:
         return
+    except OSError as exc:
+        raise HarnessError(f"cannot prepare output path: {exc}") from exc
     raise HarnessError("output path must be initially absent")
 
 
 def _atomic_write(output: Path, wrapper: dict[str, Any], source: dict[str, Any], input_sha256: str) -> None:
-    descriptor = -1
-    temporary_name = ""
+    encoded = (json.dumps(wrapper, indent=2) + "\n").encode("utf-8")
+    parsed = _parse_report(encoded)
+    _validate_wrapper(parsed, source, input_sha256)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor, temporary_name = tempfile.mkstemp(prefix=".ha-adversarial-", suffix=".tmp", dir=output.parent)
+        descriptor = os.open(output, flags, 0o600)
+    except FileExistsError as exc:
+        raise HarnessError("output path became occupied before publication") from exc
+    except OSError as exc:
+        raise HarnessError(f"cannot create output safely: {exc}") from exc
+    failure: HarnessError | None = None
+    try:
         os.fchmod(descriptor, 0o600)
-        encoded = (json.dumps(wrapper, indent=2) + "\n").encode("utf-8")
-        os.write(descriptor, encoded)
+        offset = 0
+        while offset < len(encoded):
+            written = os.write(descriptor, encoded[offset:])
+            if written <= 0:
+                raise HarnessError("output write made no progress")
+            offset += written
         os.fsync(descriptor)
-        os.close(descriptor)
-        descriptor = -1
-        parsed = _parse_report(Path(temporary_name).read_bytes())
-        _validate_wrapper(parsed, source, input_sha256)
+        written_file = os.fstat(descriptor)
+        visible_file = output.lstat()
+        if (
+            not stat.S_ISREG(visible_file.st_mode)
+            or (written_file.st_dev, written_file.st_ino)
+            != (visible_file.st_dev, visible_file.st_ino)
+        ):
+            raise HarnessError("output path changed during publication")
+    except OSError as exc:
+        failure = HarnessError(f"output publication failed: {exc}")
+    finally:
         try:
-            os.link(temporary_name, output)
-        except FileExistsError as exc:
-            raise HarnessError("output path became occupied before publication") from exc
-        Path(temporary_name).unlink()
-        temporary_name = ""
-    except Exception:
-        if descriptor >= 0:
             os.close(descriptor)
-        if temporary_name:
-            Path(temporary_name).unlink(missing_ok=True)
-        raise
+        except OSError as exc:
+            if failure is None:
+                failure = HarnessError(f"cannot finalize output safely: {exc}")
+    if failure is not None:
+        raise failure
 
 
 def run(
@@ -819,7 +846,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--input-gateway-report and --output are required")
     try:
         verdict = run(args.input_gateway_report, args.output)
-    except HarnessError as exc:
+    except (HarnessError, OSError) as exc:
         print(f"ha-adversarial-harness: {exc}", file=sys.stderr)
         return 2
     return 0 if verdict == "pass" else 1

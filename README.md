@@ -181,9 +181,12 @@ final link, publication fails and that file remains untouched. `pass` returns ze
 
 The replay checks the canonical 180000 ms windows, 90000/120000 ms recovery limits,
 the 60000 ms partition, and 1000 ms timing uncertainty. It exercises HA admission,
-two-gap semantic grace/expiry, delayed single reload, entity availability, and write
-fences using injected time. A real HA restart, adapter reset, partition, or corrupt
-cache smoke remains a separately authorized live procedure.
+two-gap semantic grace/expiry, delayed single reload, and the production entity
+availability properties. Fresh trusted inventory is available; degraded admission
+and expired/missing inventory are unavailable; retained stale values remain visible
+and marked stale but still fail the production write fences. A real HA restart,
+adapter reset, partition, or corrupt-cache smoke remains a separately authorized
+live procedure.
 
 ## Local Smoke-Test Configuration Examples
 

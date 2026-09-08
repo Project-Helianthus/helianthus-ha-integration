@@ -57,6 +57,32 @@ def test_replay_uses_real_zone_and_dhw_write_methods() -> None:
     harness._exercise_real_write_fences()
 
 
+def test_replay_reads_real_zone_and_dhw_availability_properties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness._install_entity_stubs()
+    from custom_components.helianthus.climate import HelianthusZoneClimate
+    from custom_components.helianthus.water_heater import HelianthusDhwWaterHeater
+
+    reads = {"zone": 0, "dhw": 0}
+    zone_available = HelianthusZoneClimate.available
+    dhw_available = HelianthusDhwWaterHeater.available
+
+    def read_zone(entity: object) -> bool:
+        reads["zone"] += 1
+        return zone_available.__get__(entity, type(entity))
+
+    def read_dhw(entity: object) -> bool:
+        reads["dhw"] += 1
+        return dhw_available.__get__(entity, type(entity))
+
+    monkeypatch.setattr(HelianthusZoneClimate, "available", property(read_zone))
+    monkeypatch.setattr(HelianthusDhwWaterHeater, "available", property(read_dhw))
+    harness._exercise_real_write_fences()
+    assert reads["zone"] >= 4
+    assert reads["dhw"] >= 4
+
+
 def test_adv04_uses_production_delayed_inventory_listener_path() -> None:
     harness._replay_actual_delayed_inventory_listener()
 
@@ -191,17 +217,100 @@ def test_unrelated_file_inserted_before_no_replace_publication_survives(
     output = tmp_path / "report.json"
     unrelated = tmp_path / "unrelated.json"
     unrelated.write_bytes(b"unrelated evidence")
-    original_link = harness.os.link
+    original_open = harness.os.open
 
-    def insert_then_link(source: str | bytes | os.PathLike[str] | os.PathLike[bytes], destination: str | bytes | os.PathLike[str] | os.PathLike[bytes], *args, **kwargs) -> None:
-        if Path(destination) == output:
-            original_link(unrelated, output)
-        original_link(source, destination, *args, **kwargs)
+    def insert_then_open(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        if Path(path) == output:
+            descriptor = original_open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.write(descriptor, unrelated.read_bytes())
+            finally:
+                os.close(descriptor)
+        return original_open(path, flags, mode)
 
-    monkeypatch.setattr(harness.os, "link", insert_then_link)
+    monkeypatch.setattr(harness.os, "open", insert_then_open)
     with pytest.raises(harness.HarnessError):
         harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity)
     assert output.read_bytes() == b"unrelated evidence"
+
+
+def test_direct_output_has_no_staging_substitution_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "report.json"
+    unrelated = tmp_path / "unrelated.json"
+    unrelated.write_bytes(b"unrelated evidence")
+    monkeypatch.setattr(
+        harness.tempfile,
+        "mkstemp",
+        lambda *_args, **_kwargs: pytest.fail("staging path must not be created"),
+    )
+    monkeypatch.setattr(
+        harness.os,
+        "link",
+        lambda *_args, **_kwargs: pytest.fail("publication must not link a staging path"),
+    )
+    assert harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity) == "pass"
+    assert unrelated.read_bytes() == b"unrelated evidence"
+    assert json.loads(output.read_text())["summary"]["verdict"] == "pass"
+
+
+def test_output_inode_substitution_before_finalize_fails_without_unlinking_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "report.json"
+    unrelated = tmp_path / "unrelated.json"
+    unrelated.write_bytes(b"unrelated evidence")
+    original_fsync = harness.os.fsync
+    original_unlink = harness.os.unlink
+    original_link = harness.os.link
+
+    def substitute_then_sync(descriptor: int) -> None:
+        original_unlink(output)
+        original_link(unrelated, output)
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(harness.os, "fsync", substitute_then_sync)
+    with pytest.raises(harness.HarnessError):
+        harness.run(FIXTURES / "offline-all-pass.json", output, identity_provider=_identity)
+    assert output.read_bytes() == b"unrelated evidence"
+    assert unrelated.read_bytes() == b"unrelated evidence"
+
+
+def test_cli_output_io_failure_is_bounded_contract_error(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(harness, "_clean_identity", lambda _root: TEST_COMMIT)
+    code = harness.main([
+        "--input-gateway-report", str(FIXTURES / "offline-all-pass.json"),
+        "--output", "/dev/null/ha-adversarial-report.json",
+    ])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+
+
+def test_cli_output_permission_failure_is_bounded_contract_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "report.json"
+    original_open = harness.os.open
+    monkeypatch.setattr(harness, "_clean_identity", lambda _root: TEST_COMMIT)
+
+    def deny_output(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        if Path(path) == output:
+            raise PermissionError("denied by hostile test")
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr(harness.os, "open", deny_output)
+    code = harness.main([
+        "--input-gateway-report", str(FIXTURES / "offline-all-pass.json"),
+        "--output", str(output),
+    ])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+    assert not output.exists()
 
 
 def test_cli_exit_codes_and_clean_identity_boundary(
