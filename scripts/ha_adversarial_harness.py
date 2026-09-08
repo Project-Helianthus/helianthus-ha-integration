@@ -716,6 +716,16 @@ def replay_ha_contract(report: dict[str, Any]) -> None:
         replay()
 
 
+def _run_production_replay(report: dict[str, Any]) -> None:
+    """Normalize ordinary production-seam failures without swallowing control flow."""
+    try:
+        replay_ha_contract(report)
+    except HarnessError:
+        raise
+    except Exception as exc:
+        raise HarnessError(f"production replay failed: {type(exc).__name__}") from exc
+
+
 def _clean_identity(repo_root: Path) -> str:
     try:
         status = subprocess.run(
@@ -820,7 +830,7 @@ def run(
     if output_path is not None:
         _prepare_output(output_path)
     report, input_sha256 = load_gateway_report(input_path)
-    replay_ha_contract(report)
+    _run_production_replay(report)
     verdict = report["summary"]["verdict"]
     if output_path is not None:
         commit = (identity_provider or (lambda: _clean_identity(Path(__file__).resolve().parents[1])))()

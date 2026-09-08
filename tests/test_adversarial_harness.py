@@ -367,6 +367,41 @@ def test_cli_input_permission_failure_is_bounded_contract_error(
     assert not output.exists()
 
 
+@pytest.mark.parametrize("error_type", [TypeError, AttributeError])
+def test_cli_production_replay_exception_is_bounded_contract_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+) -> None:
+    output = tmp_path / "report.json"
+
+    def broken_replay(_report: dict) -> None:
+        raise error_type("hostile production seam")
+
+    monkeypatch.setattr(harness, "replay_ha_contract", broken_replay)
+    code = harness.main([
+        "--input-gateway-report", str(FIXTURES / "offline-all-pass.json"),
+        "--output", str(output),
+    ])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+    assert not output.exists()
+
+
+def test_verify_fixtures_production_replay_exception_is_bounded_contract_error(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        harness,
+        "replay_ha_contract",
+        lambda _report: (_ for _ in ()).throw(TypeError("hostile production seam")),
+    )
+    assert harness.main(["--verify-fixtures"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
 def test_cli_exit_codes_and_clean_identity_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
