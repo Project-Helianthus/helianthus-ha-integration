@@ -172,12 +172,14 @@ The reader accepts only one regular, non-symlink UTF-8 input no larger than 1 Mi
 rejects duplicate keys, floating/non-finite numbers, unknown shapes, unpinned
 provenance, and prior HA wrappers before probing. Its generated v1 wrapper preserves
 the gateway evidence verbatim and replaces only producer provenance with the clean
-HA commit, source-artifact digest, and exact input SHA-256. Output is written through
-a mode-0600 temporary regular file and atomically linked into an initially absent
-destination. Existing paths, including prior harness wrappers, are refused and are
-never unlinked or overwritten. If another process occupies the path before the
-final link, publication fails and that file remains untouched. `pass` returns zero;
-`fail` and `blocked-infra` remain unchanged and return nonzero.
+HA commit, source-artifact digest, and exact input SHA-256. After in-memory wrapper
+validation, output is created directly at an initially absent destination with a
+mode-0600 `O_CREAT|O_EXCL|O_NOFOLLOW` descriptor. The harness performs bounded
+writes, `fsync`, and an output-path inode check before it returns success. The path
+can be visible before that final success check; existing paths are refused and never
+unlinked or overwritten. Only exit 0, followed by the public report validation,
+is successful evidence. `fail` and `blocked-infra` remain unchanged and return
+nonzero.
 
 The replay checks the canonical 180000 ms windows, 90000/120000 ms recovery limits,
 the 60000 ms partition, and 1000 ms timing uncertainty. It exercises HA admission,

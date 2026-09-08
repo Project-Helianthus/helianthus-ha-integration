@@ -168,6 +168,36 @@ def test_path_size_and_symlink_fail_without_output(tmp_path: Path) -> None:
         harness.load_gateway_report(symlink)
 
 
+def test_regular_input_swapped_to_fifo_is_nonblocking_and_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "input.json"
+    source.write_bytes((FIXTURES / "offline-all-pass.json").read_bytes())
+    original_open = harness.os.open
+    observed_flags: list[int] = []
+
+    def swap_then_open(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        observed_flags.append(flags)
+        if not flags & getattr(os, "O_NONBLOCK", 0):
+            raise OSError("reader would block on swapped FIFO")
+        source.unlink()
+        os.mkfifo(source)
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr(harness.os, "open", swap_then_open)
+    with pytest.raises(harness.HarnessError):
+        harness.load_gateway_report(source)
+    assert observed_flags[-1] & getattr(os, "O_NONBLOCK", 0)
+
+
+def test_readme_documents_direct_descriptor_publication_contract() -> None:
+    readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "O_CREAT|O_EXCL|O_NOFOLLOW" in readme
+    assert "only exit 0" in readme.lower()
+    assert "temporary regular file" not in readme
+    assert "atomically linked" not in readme
+
+
 def test_output_symlink_and_replay_failure_leave_no_pass_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -305,6 +335,30 @@ def test_cli_output_permission_failure_is_bounded_contract_error(
     monkeypatch.setattr(harness.os, "open", deny_output)
     code = harness.main([
         "--input-gateway-report", str(FIXTURES / "offline-all-pass.json"),
+        "--output", str(output),
+    ])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+    assert not output.exists()
+
+
+def test_cli_input_permission_failure_is_bounded_contract_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "report.json"
+    source = FIXTURES / "offline-all-pass.json"
+    original_open = harness.os.open
+    monkeypatch.setattr(harness, "_clean_identity", lambda _root: TEST_COMMIT)
+
+    def deny_input(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        if Path(path) == source:
+            raise PermissionError("denied by hostile test")
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr(harness.os, "open", deny_input)
+    code = harness.main([
+        "--input-gateway-report", str(source),
         "--output", str(output),
     ])
     captured = capsys.readouterr()

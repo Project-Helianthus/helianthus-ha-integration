@@ -93,23 +93,32 @@ def _reject_float(value: str) -> None:
 
 
 def _read_one_regular_file(path: Path) -> bytes:
-    try:
-        info = path.lstat()
-    except OSError as exc:
-        raise HarnessError(f"cannot inspect input: {exc}") from exc
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        raise HarnessError("input must be one regular non-symlink file")
-    if info.st_size > MAX_INPUT_BYTES:
-        raise HarnessError("input exceeds 1 MiB limit")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
         raise HarnessError(f"cannot open input safely: {exc}") from exc
+    payload = b""
+    failure: HarnessError | None = None
     try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise HarnessError("input must be one regular non-symlink file")
+        if info.st_size > MAX_INPUT_BYTES:
+            raise HarnessError("input exceeds 1 MiB limit")
         payload = os.read(descriptor, MAX_INPUT_BYTES + 1)
+    except HarnessError as exc:
+        failure = exc
+    except OSError as exc:
+        failure = HarnessError(f"cannot read input safely: {exc}")
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            if failure is None:
+                failure = HarnessError(f"cannot close input safely: {exc}")
+    if failure is not None:
+        raise failure
     if len(payload) > MAX_INPUT_BYTES:
         raise HarnessError("input exceeds 1 MiB limit")
     return payload
