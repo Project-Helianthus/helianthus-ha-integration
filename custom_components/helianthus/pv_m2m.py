@@ -181,7 +181,14 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
         if isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1:
             key = _key(disposition["source_keys"][0], "projection source")
             expected = _OUTPUTS.get(key)
-            if expected is not None and key in published and (pair[1], disposition["outcome"]) == expected[:2] and isinstance(disposition["loss"], list) and all(isinstance(loss, Mapping) for loss in disposition["loss"]) and ((expected[2] is None and disposition["loss"] == []) or any(loss.get("kind") == expected[2] for loss in disposition["loss"])): accounted.add(key)
+            losses = disposition["loss"]
+            if not isinstance(losses, list) or len(losses) > M2M_MAX_FACTS: raise PVM2MProtocolError("invalid projection loss")
+            loss_kinds = []
+            for loss in losses:
+                loss_kinds.append(_text(_map(loss, {"kind"}, "projection loss", {"source_items", "description", "reversible"})["kind"], "projection loss kind", 96))
+            if len(loss_kinds) != len(set(loss_kinds)): raise PVM2MProtocolError("duplicate projection loss")
+            expected_losses = set() if expected is None or expected[2] is None else {expected[2]}
+            if expected is not None and key in published and pair[0] == "fact" and (pair[1], disposition["outcome"]) == expected[:2] and set(loss_kinds) == expected_losses: accounted.add(key)
         if disposition["item_id"] == "inverter.ac.energy_lifetime":
             energy_loss = pair == ("fact", "inverter.ac.energy_lifetime") and isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1 and _key(disposition["source_keys"][0], "energy projection source") == energy_key and disposition["outcome"] == "transformed" and disposition.get("reason") == "counter_continuity_unavailable" and isinstance(disposition["loss"], list) and any(isinstance(loss, Mapping) and loss.get("kind") == "policy" for loss in disposition["loss"])
     if dispositions != requested: raise PVM2MProtocolError("incomplete projection disposition")
