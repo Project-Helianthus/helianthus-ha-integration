@@ -49,6 +49,21 @@ def test_parser_rejects_inner_fact_asset_mismatch() -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["asset_id"] = "pv-asset-other"
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="asset"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("value", ["inverter", "phase:L1"])
+def test_parser_rejects_crossed_energy_dimension_value(value) -> None:
+    payload = _payload(); key = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["key"]
+    key["dimensions"][0]["value"]["text"] = value
+    payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["key"] = deepcopy(key)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="dimension"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("mutate", [
+    lambda payload: payload["data"]["semanticPVCurrent"]["projection"].update({"requested":[]}),
+    lambda payload: payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0].update({"source_keys":[_key("pv.ac.frequency", "pv.dimension.inverter", "inverter")]}),
+])
+def test_parser_rejects_unbound_energy_projection_loss(mutate) -> None:
+    payload = _payload(); mutate(payload)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="projection"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("version, row", [
     (1, {"fact_id":"pv.ac.power.active", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
     (0, {"fact_id":"pv.ac.power.active", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
