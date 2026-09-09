@@ -748,7 +748,6 @@ def _pv_entity(
             else "pv.telemetry.fast.v1"
         ),
         origin_ref="sha256:" + "a" * 64,
-        continuity=("BASELINE" if fact_id == "pv.energy.active_export_total" else None),
     )
     data = pv_m2m.PVM2MCoordinatorData(
         descriptors=(descriptor,),

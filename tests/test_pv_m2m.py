@@ -1,735 +1,199 @@
-"""Contract tests for the dedicated canonical PV M2M consumer."""
-
+"""SemReg public-PV contract tests."""
 from __future__ import annotations
-
 import asyncio
 from copy import deepcopy
-from decimal import Decimal
 import json
 import sys
 from types import ModuleType
-from typing import Any
-
 import pytest
 
-
-def _ensure_coordinator_stubs() -> None:
-    homeassistant_module = sys.modules.setdefault(
-        "homeassistant", ModuleType("homeassistant")
-    )
-    helpers_module = sys.modules.setdefault(
-        "homeassistant.helpers", ModuleType("homeassistant.helpers")
-    )
-    setattr(homeassistant_module, "helpers", helpers_module)
-    coordinator_module = sys.modules.setdefault(
-        "homeassistant.helpers.update_coordinator",
-        ModuleType("homeassistant.helpers.update_coordinator"),
-    )
-
-    if not hasattr(coordinator_module, "DataUpdateCoordinator"):
-        class _DataUpdateCoordinator:
-            def __class_getitem__(cls, _item):  # noqa: ANN206
-                return cls
-
-            def __init__(self, *_args: object, **_kwargs: object) -> None:
-                self.data = None
-                self._listeners: list[Any] = []
-
-            async def async_config_entry_first_refresh(self) -> None:
-                self.data = await self._async_update_data()
-
-            async def async_refresh(self) -> None:
-                self.data = await self._async_update_data()
-
-            def async_set_updated_data(self, data: object) -> None:
-                self.data = data
-                for listener in tuple(self._listeners):
-                    listener()
-
-            def async_add_listener(self, listener):  # noqa: ANN001, ANN202
-                self._listeners.append(listener)
-                return lambda: self._listeners.remove(listener)
-
-        coordinator_module.DataUpdateCoordinator = _DataUpdateCoordinator
-
-    if not hasattr(coordinator_module, "UpdateFailed"):
-        class _UpdateFailed(Exception):
-            pass
-
-        coordinator_module.UpdateFailed = _UpdateFailed
-
-    setattr(helpers_module, "update_coordinator", coordinator_module)
-
-
-_ensure_coordinator_stubs()
+homeassistant = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
+helpers = sys.modules.setdefault("homeassistant.helpers", ModuleType("homeassistant.helpers")); homeassistant.helpers = helpers
+coordinator = sys.modules.setdefault("homeassistant.helpers.update_coordinator", ModuleType("homeassistant.helpers.update_coordinator")); helpers.update_coordinator = coordinator
+if not hasattr(coordinator, "DataUpdateCoordinator"):
+    class DataUpdateCoordinator:
+        def __class_getitem__(cls, _item): return cls
+        def __init__(self, *_args, **_kwargs): self.data = None
+        def async_set_updated_data(self, value): self.data = value
+    coordinator.DataUpdateCoordinator = DataUpdateCoordinator
 
 from custom_components.helianthus import pv_m2m
 
+DIGEST = "sha256:" + "a" * 64
+REVISIONS = {"semantic": "1", "identity": "1", "facts": "1", "services": "1", "capabilities": "1"}
+def _key(fact="pv.energy.generated", dimension="pv.dimension.system", value="system"):
+    return {"pack_id":"helianthus.pack.pv", "pack_version":"1.0.0", "fact_id":fact, "dimensions":[{"id":dimension,"value":{"kind":"text","text":value}}]}
+def _candidate(fact="pv.energy.generated", dimension="pv.dimension.system", value="system", *, coefficient="9007199254740993", exponent=-2, unit="unit.kilowatt_hour"):
+    key = _key(fact, dimension, value)
+    return {"asset_id":"pv-asset-01","key":key,"candidates":[{"candidate_id":"candidate:one","key":deepcopy(key),"value":{"kind":"quantity","quantity":{"number":{"coefficient":coefficient,"exponent10":exponent},"unit":unit}},"quality":{"assertion":"observed","qualification":"qualified","promotion":"promoted","validity":"good","availability":"available","freshness":"fresh","reasons":[]},"times":{},"freshness_policy":{"policy_id":"pv.accumulator.v1","version":"1.0.0","fresh_for_ns":"1","retain_for_ns":"2","max_wall_uncertainty_ns":"0"},"origin":{"origin_id":"origin:one","kind":"native_observation","evidence":[{"owner":"test","kind":"test","digest":DIGEST,"contract":"test/v1","access":"public","redaction":"none"}]},"evidence":[{}],"revision":"1"}],"conflicts":[],"revision":"1"}
+def _payload(*, freshness="fresh", availability="available", selected=True):
+    fact = _candidate(); snapshot = {"contract":"helianthus.semantic.kernel/v1","snapshot_id":"snapshot:one","asset_id":"pv-asset-01","revisions":REVISIONS,"evaluated_at":{},"evaluate_monotonic":{},"sources":[],"bindings":[],"identity_links":[],"facts":[fact],"services":[],"capabilities":[],"fences":[],"cursors":[]}
+    evaluation = {"contract":"helianthus.semantic.evaluation/v1","snapshot_id":"snapshot:one","revisions":REVISIONS,"context":{},"facts":[{"candidate_id":"candidate:one","candidate_revision":"1","freshness":freshness,"effective_availability":availability}],"evaluation_digest":DIGEST}
+    selections = [] if not selected else [{"contract":"helianthus.semantic.selection/v1","snapshot_id":"snapshot:one","revisions":REVISIONS,"evaluation_digest":DIGEST,"context":{},"key":_key(),"policy_id":"policy:gateway-pv-single-qualified","policy_version":"1.0.0","selected_candidate":"candidate:one","candidate_revision":"1","presentation_only":True}]
+    projection = {"contract":"helianthus.semantic.projection/v1","manifest":{"target_id":"target:gateway-semantic-pv","target_version":"1.0.0","kernel_version":"helianthus.semantic.kernel/v1","pack_versions":[{"id":"helianthus.pack.pv","version":"1.0.0"}],"mapping_revision":"1"},"snapshot_id":"snapshot:one","revisions":REVISIONS,"requested":[{"item_id":"inverter.ac.energy_lifetime","kind":"fact"}],"dispositions":[{"kind":"fact","item_id":"inverter.ac.energy_lifetime","outcome":"transformed","source_keys":[_key()],"loss":[{"kind":"policy"}],"reason":"counter_continuity_unavailable"}]}
+    return {"data":{"semanticPVCurrent":{"snapshot":snapshot,"evaluation":evaluation,"selections":selections,"projection":projection}}}
 
-ORIGIN = "sha256:" + "a" * 64
-
-
-def _decimal_fact(
-    *,
-    fact_id: str = "pv.ac.power.active",
-    coefficient: str = "7310",
-    scale: int = 0,
-    unit: str = "W",
-    dimension: dict[str, str] | None = None,
-    availability: str = "AVAILABLE",
-    freshness: str = "FRESH",
-) -> dict[str, Any]:
-    return {
-        "factId": fact_id,
-        "dimension": dimension or {"scope": "total"},
-        "value": {"coefficient": coefficient, "scale": scale},
-        "unit": unit,
-        "quality": "GOOD",
-        "availability": availability,
-        "freshness": freshness,
-        "receiptMonotonicNs": "981234500000",
-        "freshUntilMonotonicNs": "1011234500000",
-        "retainUntilMonotonicNs": "1281234500000",
-        "freshnessPolicy": "pv.telemetry.fast.v1",
-        "originRef": ORIGIN,
-        "continuity": None,
-    }
-
-
-def _success_envelope(*, asset_ref: str = "pv-asset-01") -> dict[str, Any]:
-    fact = _decimal_fact()
-    requested_ref = "sha256:" + "b" * 64
-    return {
-        "data": {
-            "m2mCurrentSnapshot": {
-                "contractId": "PUBLIC_GRAPHQL_M2M_V1",
-                "canonicalContractId": "helianthus.canonical-pv/v1",
-                "assetRef": asset_ref,
-                "generation": "8",
-                "producedAt": "2026-08-17T13:46:00Z",
-                "evaluatedMonotonicNs": "990000000000",
-                "sourceTimeState": "VALID",
-                "currentSourceOriginRef": ORIGIN,
-                "facts": [fact],
-                "capabilities": [
-                    {
-                        "id": "helianthus.pv.inverter.three_phase.telemetry.v1",
-                        "outcome": "NOT_SATISFIED",
-                    }
-                ],
-                "provenance": [
-                    {
-                        "originRef": ORIGIN,
-                        "sourceProtocol": "sunspec_modbus",
-                        "sourceProfileId": "sunspec.inverter.three_phase.monitoring@1.0.0",
-                        "sourceProfileVersion": "1.0.0",
-                        "sourceValidity": "terminal_verified",
-                        "sourceRegistryRef": "sha256:e21d5d4914fba2249c68cc147243c22f89cc9e1f2be71e4565a3950f31e94750",
-                        "sourceObservationRef": ORIGIN,
-                        "evidenceRef": "sha256:" + "d" * 64,
-                    }
-                ],
-                "requestedOutputs": [
-                    {"sourceRef": ORIGIN, "requestedOutputRef": requested_ref}
-                ],
-                "projectionReport": [
-                    {
-                        "__typename": "M2MMappedProjectionReportEntry",
-                        "sourceRef": ORIGIN,
-                        "requestedOutputRef": requested_ref,
-                        "factId": fact["factId"],
-                        "dimension": fact["dimension"],
-                    }
-                ],
-            }
-        }
-    }
-
-
-class _Response:
-    def __init__(self, payload: object, *, status: int = 200) -> None:
-        self._text = json.dumps(payload, separators=(",", ":"))
-        self.status = status
-        self.text_calls = 0
-        self.content = _BodyStream(self._text.encode("utf-8"))
-
-    async def __aenter__(self) -> "_Response":
-        return self
-
-    async def __aexit__(self, *_args: object) -> None:
-        return None
-
-    async def text(self) -> str:
-        self.text_calls += 1
-        return self._text
-
-
-class _BodyStream:
-    def __init__(self, body: bytes, *, max_chunk: int | None = None) -> None:
-        self._body = body
-        self._offset = 0
-        self._max_chunk = max_chunk
-        self.read_sizes: list[int] = []
-
-    async def read(self, size: int) -> bytes:
-        self.read_sizes.append(size)
-        bounded = size if self._max_chunk is None else min(size, self._max_chunk)
-        chunk = self._body[self._offset : self._offset + bounded]
-        self._offset += len(chunk)
-        return chunk
-
-
-class _Session:
-    def __init__(self, responses: list[_Response]) -> None:
-        self.responses = responses
-        self.calls: list[tuple[str, dict[str, Any]]] = []
-        self.closed = False
-
-    def post(self, url: str, **kwargs: Any) -> _Response:
-        self.calls.append((url, kwargs))
-        return self.responses.pop(0)
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-def test_client_posts_only_the_fixed_single_asset_operation_without_auth_or_cookies() -> None:
-    session = _Session([_Response(_success_envelope())])
-    client = pv_m2m.PVM2MClient(
-        session=session,
-        endpoint="https://pv.example.test/graphql/m2m/v1",
-        asset_ref="pv-asset-01",
-    )
-
-    snapshot = asyncio.run(client.async_current_snapshot())
-
-    assert snapshot.asset_ref == "pv-asset-01"
-    assert len(session.calls) == 1
-    url, kwargs = session.calls[0]
-    assert url == "https://pv.example.test/graphql/m2m/v1"
-    assert kwargs["allow_redirects"] is False
-    assert kwargs["headers"] == {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    assert kwargs["json"] == {
-        "operationName": "M2MCurrentSnapshot",
-        "query": pv_m2m.M2M_CURRENT_SNAPSHOT_QUERY,
-        "variables": {
-            "request": {
-                "contractId": "PUBLIC_GRAPHQL_M2M_V1",
-                "assetRef": "pv-asset-01",
-            }
-        },
-    }
-    rendered = repr(kwargs).lower()
-    assert "authorization" not in rendered
-    assert "cookie" not in rendered
-
-
-def test_client_bounds_decompressed_response_before_text_or_json_materialization() -> None:
-    response = _Response({"padding": "x" * pv_m2m.M2M_MAX_RESPONSE_BYTES})
-    session = _Session([response])
-    client = pv_m2m.PVM2MClient(
-        session=session,
-        endpoint="https://pv.example.test/graphql/m2m/v1",
-        asset_ref="pv-asset-01",
-    )
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="bounded size"):
-        asyncio.run(client.async_current_snapshot())
-
-    assert response.text_calls == 0
-    assert max(response.content.read_sizes) <= 65_536
-    assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
-
-
-def test_client_accepts_valid_response_at_exact_inclusive_size_limit() -> None:
-    raw = json.dumps(_success_envelope(), separators=(",", ":")).encode("utf-8")
-    raw += b" " * (pv_m2m.M2M_MAX_RESPONSE_BYTES - len(raw))
-    assert len(raw) == pv_m2m.M2M_MAX_RESPONSE_BYTES
-
-    response = _Response({})
-    response.content = _BodyStream(raw, max_chunk=65_536)
-    client = pv_m2m.PVM2MClient(
-        session=_Session([response]),
-        endpoint="https://pv.example.test/graphql/m2m/v1",
-        asset_ref="pv-asset-01",
-    )
-
-    snapshot = asyncio.run(client.async_current_snapshot())
-
-    assert snapshot.asset_ref == "pv-asset-01"
-    assert response.text_calls == 0
-    # The final one-byte read establishes EOF without materializing over-limit data.
-    assert sum(response.content.read_sizes) == pv_m2m.M2M_MAX_RESPONSE_BYTES + 1
-
-
-def test_client_rejects_excessive_json_depth_before_decoder(monkeypatch) -> None:  # noqa: ANN001
-    response = _Response({})
-    raw = b"[" * 65 + b"0" + b"]" * 65
-    response.content = _BodyStream(raw)
-    client = pv_m2m.PVM2MClient(
-        session=_Session([response]),
-        endpoint="https://pv.example.test/graphql/m2m/v1",
-        asset_ref="pv-asset-01",
-    )
-    decoder_called = False
-
-    def forbidden_decoder(*_args: object, **_kwargs: object) -> object:
-        nonlocal decoder_called
-        decoder_called = True
-        raise AssertionError("JSON decoder must not receive an over-depth payload")
-
-    monkeypatch.setattr(pv_m2m.json, "loads", forbidden_decoder)
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="depth"):
-        asyncio.run(client.async_current_snapshot())
-
-    assert decoder_called is False
-
-
-def test_json_depth_scanner_ignores_structural_bytes_inside_strings() -> None:
-    pv_m2m._validate_json_depth(b'{"escaped":"\\\"' + b"[" * 65 + b'"}')
-
-
-def test_client_reads_fragmented_valid_response_to_eof_within_bound() -> None:
-    response = _Response(_success_envelope())
-    response.content = _BodyStream(response._text.encode("utf-8"), max_chunk=17)
-    client = pv_m2m.PVM2MClient(
-        session=_Session([response]),
-        endpoint="https://pv.example.test/graphql/m2m/v1",
-        asset_ref="pv-asset-01",
-    )
-
-    snapshot = asyncio.run(client.async_current_snapshot())
-
-    assert snapshot.asset_ref == "pv-asset-01"
-    assert len(response.content.read_sizes) > 1
-    assert response.text_calls == 0
-
-
-def test_success_parser_preserves_exact_decimal_beyond_binary_float_precision() -> None:
-    payload = _success_envelope()
-    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
-    fact.update(
-        {
-            "factId": "pv.energy.active_export_total",
-            "value": {"coefficient": "9007199254740993", "scale": -2},
-            "unit": "Wh",
-            "freshnessPolicy": "pv.accumulator.v1",
-            "freshUntilMonotonicNs": "1881234500000",
-            "retainUntilMonotonicNs": "87381234500000",
-            "continuity": {
-                "__typename": "M2MBaselineContinuity",
-                "baseline": "BASELINE",
-            },
-        }
-    )
-    payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0]["factId"] = fact[
-        "factId"
-    ]
-
+def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
+    snapshot = pv_m2m.parse_m2m_response(_payload(), expected_asset_ref="pv-asset-01")
+    fact = snapshot.facts[0]
+    assert fact.fact_id == "pv.energy.active_export_total"
+    assert fact.unit == "Wh" and str(fact.value) == "9.007199254740993E+16"
+    assert not hasattr(fact, "continuity")
+@pytest.mark.parametrize("coefficient, exponent, expected", [("0", 0, "0E+3"), ("900719925474099312345678901234567890", -18, "900719925474099312345.678901234567890")])
+def test_energy_wh_conversion_is_context_independent(coefficient, exponent, expected) -> None:
+    payload = _payload(); number = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"]
+    number["coefficient"], number["exponent10"] = coefficient, exponent
+    assert str(pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01").facts[0].value) == expected
+def test_non_energy_publishes_when_energy_is_validly_withheld() -> None:
+    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    fact = current["snapshot"]["facts"][0]; key = _key("pv.ac.frequency", "pv.dimension.inverter", "inverter")
+    fact["key"] = key; candidate = fact["candidates"][0]; candidate["key"] = deepcopy(key)
+    candidate["value"] = {"kind":"quantity","quantity":{"number":{"coefficient":"50","exponent10":0},"unit":"unit.hertz"}}
+    candidate["freshness_policy"] = {"policy_id":"pv.telemetry.fast.v1","version":"1.0.0","fresh_for_ns":"1","retain_for_ns":"2","max_wall_uncertainty_ns":"0"}
+    current["selections"][0]["key"] = deepcopy(key)
+    projection = current["projection"]; projection["requested"][0] = {"item_id":"inverter.ac.frequency","kind":"fact"}
+    projection["dispositions"][0] = {"kind":"fact","item_id":"inverter.ac.frequency","outcome":"exact","source_keys":[deepcopy(key)],"loss":[]}
+    projection["requested"].append({"item_id":"inverter.ac.energy_lifetime","kind":"fact"})
+    projection["dispositions"].append({"kind":"fact","item_id":"inverter.ac.energy_lifetime","outcome":"withheld","source_keys":[],"loss":[],"reason":"mapping.native_fact_missing"})
     snapshot = pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-    assert snapshot.facts[0].value == Decimal("90071992547409.93")
-    assert isinstance(snapshot.facts[0].value, Decimal)
-    assert snapshot.facts[0].coefficient == "9007199254740993"
-    assert snapshot.facts[0].scale == -2
-
-    fact["value"] = {
-        "coefficient": "1234567890123456789012345678901234567890",
-        "scale": -18,
-    }
-    snapshot = pv_m2m.parse_m2m_response(
-        payload, expected_asset_ref="pv-asset-01"
-    )
-    assert snapshot.facts[0].value == Decimal(
-        "1234567890123456789012.345678901234567890"
-    )
-
-
-@pytest.mark.parametrize(
-    ("mutation", "expected"),
-    [
-        (lambda fact: fact.update({"factId": "pv.future.fact"}), "fact"),
-        (lambda fact: fact.update({"unit": "kW"}), "unit"),
-        (lambda fact: fact.update({"dimension": {"phase": "L4"}}), "dimension"),
-        (lambda fact: fact.update({"value": {"coefficient": 7310, "scale": 0}}), "value"),
-        (lambda fact: fact.update({"value": {"coefficient": "-0", "scale": 0}}), "value"),
-        (lambda fact: fact.update({"quality": "UNKNOWN"}), "quality"),
-        (lambda fact: fact.update({"availability": "DEGRADED"}), "availability"),
-        (lambda fact: fact.update({"freshness": "WARM"}), "freshness"),
-    ],
-)
-def test_parser_rejects_unknown_catalog_or_closed_fact_shapes(
-    mutation, expected: str  # noqa: ANN001
-) -> None:
-    payload = _success_envelope()
-    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
-    mutation(fact)
-    projection = payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0]
-    projection["factId"] = fact["factId"]
-    projection["dimension"] = fact["dimension"]
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match=expected):
+    assert [fact.fact_id for fact in snapshot.facts] == ["pv.ac.frequency"]
+def test_parser_preserves_stale_value_without_presentation_selection() -> None:
+    snapshot = pv_m2m.parse_m2m_response(_payload(freshness="stale", selected=False), expected_asset_ref="pv-asset-01")
+    assert snapshot.facts[0].freshness == "STALE" and snapshot.facts[0].availability == "AVAILABLE"
+def test_parser_rejects_fresh_available_fact_without_selection() -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
+        pv_m2m.parse_m2m_response(_payload(selected=False), expected_asset_ref="pv-asset-01")
+def test_parser_rejects_inner_fact_asset_mismatch() -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["asset_id"] = "pv-asset-other"
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="asset"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-def test_parser_rejects_duplicate_fact_identity_and_unknown_fields() -> None:
-    payload = _success_envelope()
-    snapshot = payload["data"]["m2mCurrentSnapshot"]
-    snapshot["facts"].append(deepcopy(snapshot["facts"][0]))
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="duplicate fact"):
+@pytest.mark.parametrize("value", ["inverter", "phase:L1"])
+def test_parser_rejects_crossed_energy_dimension_value(value) -> None:
+    payload = _payload(); key = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["key"]
+    key["dimensions"][0]["value"]["text"] = value
+    payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["key"] = deepcopy(key)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="dimension"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-@pytest.mark.parametrize(
-    "mutate",
-    [
-        lambda row: row.update({"originRef": "not-a-digest", "sourceObservationRef": "not-a-digest"}),
-        lambda row: row.update({"sourceRegistryRef": "sha256:" + "f" * 64}),
-        lambda row: row.update({"evidenceRef": "not-a-digest"}),
-        lambda row: row.update({"sourceProfileVersion": "2.0.0"}),
-        lambda row: row.update({"sourceProtocol": "unknown_protocol"}),
-    ],
-)
-def test_parser_rejects_unbound_or_noncanonical_provenance(mutate) -> None:  # noqa: ANN001
-    payload = _success_envelope()
-    mutate(payload["data"]["m2mCurrentSnapshot"]["provenance"][0])
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="provenance"):
+@pytest.mark.parametrize("mutate", [
+    lambda payload: payload["data"]["semanticPVCurrent"]["projection"].update({"requested":[]}),
+    lambda payload: payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0].update({"source_keys":[_key("pv.ac.frequency", "pv.dimension.inverter", "inverter")]}),
+])
+def test_parser_rejects_unbound_energy_projection_loss(mutate) -> None:
+    payload = _payload(); mutate(payload)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="projection"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-def test_parser_rejects_non_digest_projection_identity() -> None:
-    payload = _success_envelope()
-    payload["data"]["m2mCurrentSnapshot"]["requestedOutputs"][0][
-        "requestedOutputRef"
-    ] = "not-a-digest"
-    payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0][
-        "requestedOutputRef"
-    ] = "not-a-digest"
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="requested output"):
+@pytest.mark.parametrize("mutate", [
+    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
+    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
+])
+def test_parser_rejects_duplicate_or_missing_projection_disposition(mutate) -> None:
+    payload = _payload(); mutate(payload)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="disposition"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-def test_parser_rejects_freshness_labels_that_contradict_monotonic_deadlines() -> None:
-    payload = _success_envelope()
-    payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = "1281234500000"
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="temporal"):
+@pytest.mark.parametrize("version, row", [
+    (1, {"fact_id":"pv.ac.power.active", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
+    (0, {"fact_id":"pv.ac.power.active", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
+])
+def test_descriptor_storage_migration_retains_published_id(version, row) -> None:
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert descriptors[0].unique_id == "entry-1-pv-saved"
+    assert pv_m2m.serialize_pv_descriptor_store("pv-asset-01", descriptors)["descriptors"][0]["unique_id"] == "entry-1-pv-saved"
+@pytest.mark.parametrize("wire, internal, fact_id, value", [("sensorId", "sensor_id", "pv.temperature", "sensor-1"), ("phasePair", "phase_pair", "pv.ac.voltage.line_to_line", "L1_L2")])
+def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal, fact_id, value) -> None:
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":[{"fact_id":fact_id,"dimension":{wire:value},"unique_id":"entry-1-pv-saved"}]}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert descriptors[0].dimension == (internal, value) and descriptors[0].unique_id == "entry-1-pv-saved"
+@pytest.mark.parametrize("path", [("requested", 0, "item_id"), ("dispositions", 0, "kind")])
+def test_parser_rejects_unhashable_projection_pair_members(path) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["projection"][path[0]][path[1]][path[2]] = []
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("field", ["freshness", "effective_availability"])
+def test_parser_rejects_non_scalar_evaluation_state(field) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["evaluation"]["facts"][0][field] = []
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("field, value", [("availability", []), ("freshness", {}), ("availability", "invalid")])
+def test_parser_rejects_invalid_candidate_quality_lifecycle(field, value) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"][field] = value
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+def test_parser_accepts_observed_candidate_assertion() -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = "observed"
+    assert pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("assertion", [None, "", [], {}, "inferred", "unknown"])
+def test_parser_rejects_invalid_candidate_assertion(assertion) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+def test_parser_rejects_duplicate_semantic_key_before_publication() -> None:
+    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    duplicate = deepcopy(current["snapshot"]["facts"][0]); candidate = duplicate["candidates"][0]
+    candidate["candidate_id"], candidate["revision"] = "candidate:two", "2"
+    candidate["quality"]["availability"] = "degraded"
+    duplicate["revision"] = "2"; current["snapshot"]["facts"].append(duplicate)
+    current["evaluation"]["facts"].append({"candidate_id":"candidate:two","candidate_revision":"2","freshness":"fresh","effective_availability":"degraded"})
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="duplicate semantic fact key"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-def test_parser_rejects_unsupported_expiry_before_retention_deadline() -> None:
-    payload = _success_envelope()
-    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
-    fact["availability"] = "UNSUPPORTED"
-    fact["freshness"] = "EXPIRED"
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="temporal"):
+@pytest.mark.parametrize("version", [[], {}])
+def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
+@pytest.mark.parametrize("revision", [None, "", [], {}, "x" * 33])
+def test_parser_rejects_malformed_fact_envelope_revision(revision) -> None:
+    payload = _payload(); fact = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]
+    if revision is None: del fact["revision"]
+    else: fact["revision"] = revision
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("version, row", [
+    (0, {"fact_id":"pv.unknown", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
+    (1, {"fact_id":"pv.unknown", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
+    (0, {"fact_id":"pv.ac.frequency", "dimension_key":"phase", "dimension_value":"L1", "unique_id":"entry-1-pv-saved"}),
+    (1, {"fact_id":"pv.ac.frequency", "dimension":{"phase":"L1"}, "unique_id":"entry-1-pv-saved"}),
+])
+def test_descriptor_store_rejects_unknown_or_incompatible_identity(version, row) -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
+def test_every_supported_descriptor_identity_retains_saved_unique_id() -> None:
+    wire = {"phase_pair":"phasePair", "input_id":"inputId", "sensor_id":"sensorId"}
+    rows = []
+    for index, (fact_id, dimensions) in enumerate(pv_m2m._DESCRIPTOR_DIMENSIONS.items()):
+        for dimension in dimensions:
+            key = wire.get(dimension, dimension)
+            value = {"scope":"total", "phase":"L1", "phase_pair":"L1_L2", "input_id":"input-1", "sensor_id":"sensor-1"}[dimension]
+            rows.append({"fact_id":fact_id,"dimension":{key:value},"unique_id":f"entry-1-pv-{index}-{dimension}"})
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":rows}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert {item.unique_id for item in descriptors} == {row["unique_id"] for row in rows}
+@pytest.mark.parametrize("version, dimension", [(0, ("phase", "L4")), (1, ("scope", "wrong")), (0, ("input_id", "192.0.2.1")), (1, ("sensor_id", "host:443")), (1, ("sensor_id", "https://host"))])
+def test_descriptor_store_rejects_invalid_dimension_values(version, dimension) -> None:
+    kind, value = dimension
+    if version == 0: row = {"fact_id":"pv.ac.current" if kind == "phase" else "pv.dc.current" if kind == "input_id" else "pv.temperature" if kind == "sensor_id" else "pv.ac.frequency", "dimension_key":kind,"dimension_value":value,"unique_id":"entry-1-pv-saved"}
+    else:
+        wire = {"input_id":"inputId", "sensor_id":"sensorId"}.get(kind, kind); row = {"fact_id":"pv.ac.current" if kind == "phase" else "pv.dc.current" if kind == "input_id" else "pv.temperature" if kind == "sensor_id" else "pv.ac.frequency", "dimension":{wire:value},"unique_id":"entry-1-pv-saved"}
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
+@pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
+def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-@pytest.mark.parametrize(
-    ("evaluated", "availability", "freshness"),
-    [
-        ("1011234500000", "AVAILABLE", "STALE"),
-        ("1281234500000", "UNAVAILABLE", "EXPIRED"),
-    ],
-)
-def test_parser_accepts_exact_fresh_and_retain_boundaries(
-    evaluated: str,
-    availability: str,
-    freshness: str,
-) -> None:
-    payload = _success_envelope()
-    payload["data"]["m2mCurrentSnapshot"]["evaluatedMonotonicNs"] = evaluated
-    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
-    fact["availability"] = availability
-    fact["freshness"] = freshness
-    snapshot = pv_m2m.parse_m2m_response(
-        payload,
-        expected_asset_ref="pv-asset-01",
-    )
-    assert snapshot.facts[0].availability == availability
-    assert snapshot.facts[0].freshness == freshness
-
-
-@pytest.mark.parametrize(
-    "continuity",
-    [
-        {
-            "__typename": "M2MContiguousContinuity",
-            "delta": {"coefficient": "-1", "scale": 0},
-        },
-        {
-            "__typename": "M2MRolloverContinuity",
-            "delta": {"coefficient": "1", "scale": 0},
-            "modulus": {"coefficient": "0", "scale": 0},
-            "rolloverEvidenceRef": "sha256:" + "e" * 64,
-        },
-        {
-            "__typename": "M2MResetContinuity",
-            "resetEvidenceRef": "not-a-digest",
-        },
-        {
-            "__typename": "M2MDiscontinuityContinuity",
-            "discontinuityEvidenceRef": "not-a-digest",
-        },
-    ],
-)
-def test_parser_rejects_noncanonical_counter_continuity(continuity: dict) -> None:
-    payload = _success_envelope()
-    fact = payload["data"]["m2mCurrentSnapshot"]["facts"][0]
-    fact.update(
-        {
-            "factId": "pv.energy.active_export_total",
-            "unit": "Wh",
-            "freshnessPolicy": "pv.accumulator.v1",
-            "freshUntilMonotonicNs": "1881234500000",
-            "retainUntilMonotonicNs": "87381234500000",
-            "continuity": continuity,
-        }
-    )
-    payload["data"]["m2mCurrentSnapshot"]["projectionReport"][0]["factId"] = fact[
-        "factId"
-    ]
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="continuity"):
-        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-    payload = _success_envelope()
-    payload["data"]["m2mCurrentSnapshot"]["facts"][0]["source"] = "private"
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="fields"):
-        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-@pytest.mark.parametrize(
-    "mutate",
-    [
-        lambda body: body["data"]["m2mCurrentSnapshot"].update(
-            {"contractId": "PUBLIC_GRAPHQL_M2M_V2"}
-        ),
-        lambda body: body["data"]["m2mCurrentSnapshot"].update(
-            {"canonicalContractId": "helianthus.canonical-pv/v2"}
-        ),
-        lambda body: body["data"]["m2mCurrentSnapshot"].update(
-            {"assetRef": "different-asset"}
-        ),
-        lambda body: body.update(
-            {
-                "errors": [
-                    {
-                        "message": "M2M request failed",
-                        "path": ["m2mCurrentSnapshot"],
-                        "extensions": {"code": "SOURCE_UNAVAILABLE"},
-                    }
-                ]
-            }
-        ),
-        lambda body: body["data"].update({"extra": None}),
-    ],
-)
-def test_parser_rejects_contract_mismatch_partial_or_surplus_envelopes(mutate) -> None:  # noqa: ANN001
-    payload = _success_envelope()
-    mutate(payload)
-    with pytest.raises(pv_m2m.PVM2MProtocolError):
-        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-
-
-def test_closed_error_envelope_is_terminal_and_never_returns_partial_data() -> None:
-    error = {
-        "data": None,
-        "errors": [
-            {
-                "message": "M2M request failed",
-                "path": ["m2mCurrentSnapshot"],
-                "extensions": {"code": "SOURCE_UNAVAILABLE"},
-            }
-        ],
-    }
-    with pytest.raises(pv_m2m.PVM2MRemoteError) as exc_info:
-        pv_m2m.parse_m2m_response(error, expected_asset_ref="pv-asset-01")
-    assert exc_info.value.code == "SOURCE_UNAVAILABLE"
-
-
-def test_descriptor_migration_preserves_published_id_and_store_is_bounded() -> None:
-    published_id = "entry-1-pv-published-before-schema-v1"
-    legacy = {
-        "schema_version": 0,
-        "asset_ref": "pv-asset-01",
-        "descriptors": [
-            {
-                "fact_id": "pv.ac.power.active",
-                "dimension_key": "scope",
-                "dimension_value": "total",
-                "unique_id": published_id,
-            }
-        ],
-    }
-
-    descriptors = pv_m2m.load_pv_descriptor_store(
-        legacy,
-        entry_id="entry-1",
-        asset_ref="pv-asset-01",
-    )
-    assert descriptors[0].unique_id == published_id
-    assert descriptors[0].dimension == ("scope", "total")
-    serialized = pv_m2m.serialize_pv_descriptor_store("pv-asset-01", descriptors)
-    assert serialized["schema_version"] == 1
-    assert serialized["descriptors"][0]["unique_id"] == published_id
-
-    too_many = tuple(descriptors[0] for _ in range(pv_m2m.M2M_MAX_FACTS + 1))
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="bounded"):
-        pv_m2m.serialize_pv_descriptor_store("pv-asset-01", too_many)
-
-
-def test_descriptor_store_rejects_unique_id_aliasing_across_fact_keys() -> None:
-    shared_unique_id = "entry-1-pv-published"
-    raw = {
-        "schema_version": 1,
-        "asset_ref": "pv-asset-01",
-        "descriptors": [
-            {
-                "fact_id": "pv.ac.power.active",
-                "dimension": {"scope": "total"},
-                "unique_id": shared_unique_id,
-            },
-            {
-                "fact_id": "pv.ac.frequency",
-                "dimension": {"scope": "total"},
-                "unique_id": shared_unique_id,
-            },
-        ],
-    }
-
-    with pytest.raises(pv_m2m.PVM2MProtocolError, match="unique id"):
-        pv_m2m.load_pv_descriptor_store(
-            raw,
-            entry_id="entry-1",
-            asset_ref="pv-asset-01",
-        )
-
-
-def test_unique_id_is_stable_and_excludes_endpoint_or_source_metadata() -> None:
-    first = pv_m2m.build_pv_unique_id(
-        "entry-1",
-        "pv-asset-01",
-        "pv.ac.current",
-        ("phase", "L1"),
-    )
-    same = pv_m2m.build_pv_unique_id(
-        "entry-1",
-        "pv-asset-01",
-        "pv.ac.current",
-        ("phase", "L1"),
-    )
-    other_phase = pv_m2m.build_pv_unique_id(
-        "entry-1",
-        "pv-asset-01",
-        "pv.ac.current",
-        ("phase", "L2"),
-    )
-    assert first == same
-    assert first != other_phase
-    assert first.startswith("entry-1-pv-")
-    rendered = first.lower()
-    for forbidden in ("https", "vendor", "profile", "endpoint"):
-        assert forbidden not in rendered
-
-
-def test_coordinator_keeps_descriptors_and_last_snapshot_atomic_on_transport_failure() -> None:
-    snapshot = pv_m2m.parse_m2m_response(
-        _success_envelope(), expected_asset_ref="pv-asset-01"
-    )
-
-    class Client:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def async_current_snapshot(self):  # noqa: ANN202
-            self.calls += 1
-            if self.calls == 1:
-                return snapshot
-            raise pv_m2m.PVM2MTransportError("offline")
-
-    persisted: list[tuple[pv_m2m.PVM2MDescriptor, ...]] = []
-
-    async def persist(descriptors: tuple[pv_m2m.PVM2MDescriptor, ...]) -> None:
-        persisted.append(descriptors)
-
-    coordinator = pv_m2m.HelianthusPVM2MCoordinator(
-        hass=None,
-        client=Client(),
-        scan_interval=60,
-        entry_id="entry-1",
-        asset_ref="pv-asset-01",
-        descriptors=(),
-        persist_descriptors=persist,
-    )
-
-    first = asyncio.run(coordinator._async_update_data())
-    second = asyncio.run(coordinator._async_update_data())
-
-    assert first.source_available is True
-    assert len(first.descriptors) == 1
-    assert persisted == [first.descriptors]
-    assert second.source_available is False
-    assert second.descriptors == first.descriptors
-    assert second.facts == first.facts
-    assert second.error == "transport_failure"
-
-
-def test_coordinator_never_evicts_published_descriptors_at_discovery_bound() -> None:
-    descriptors = tuple(
-        pv_m2m.PVM2MDescriptor(
-            fact_id="pv.dc.current",
-            dimension=("input_id", f"old-{index:03d}"),
-            unique_id=f"entry-1-pv-old-{index:03d}",
-        )
-        for index in range(pv_m2m.M2M_MAX_FACTS)
-    )
-    new_fact = pv_m2m.PVM2MFact(
-        fact_id="pv.dc.current",
-        dimension=("input_id", "new-input"),
-        value=Decimal("1"),
-        coefficient="1",
-        scale=0,
-        unit="A",
-        quality="GOOD",
-        availability="AVAILABLE",
-        freshness="FRESH",
-        freshness_policy="pv.telemetry.fast.v1",
-        origin_ref=ORIGIN,
-        continuity=None,
-    )
-
-    class Client:
-        async def async_current_snapshot(self) -> pv_m2m.PVM2MSnapshot:
-            return pv_m2m.PVM2MSnapshot(
-                asset_ref="pv-asset-01",
-                generation="9",
-                produced_at="2026-08-17T13:46:00Z",
-                facts=(new_fact,),
-            )
-
-    persisted: list[tuple[pv_m2m.PVM2MDescriptor, ...]] = []
-
-    async def persist(updated: tuple[pv_m2m.PVM2MDescriptor, ...]) -> None:
-        persisted.append(updated)
-
-    coordinator = pv_m2m.HelianthusPVM2MCoordinator(
-        hass=None,
-        client=Client(),
-        scan_interval=60,
-        entry_id="entry-1",
-        asset_ref="pv-asset-01",
-        descriptors=descriptors,
-        persist_descriptors=persist,
-    )
-
-    updated = asyncio.run(coordinator._async_update_data())
-
-    assert updated.descriptors == descriptors
-    assert persisted == []
+@pytest.mark.parametrize("mutate", [
+    lambda value: value["data"]["semanticPVCurrent"].update({"legacy":True}),
+    lambda value: value["data"]["semanticPVCurrent"]["snapshot"].update({"asset_id":"other"}),
+    lambda value: value["data"]["semanticPVCurrent"]["evaluation"].update({"evaluation_digest":"bad"}),
+    lambda value: value["data"]["semanticPVCurrent"]["projection"]["dispositions"][0].update({"reason":"other"}),
+])
+def test_parser_rejects_contract_drift(mutate) -> None:
+    value = _payload(); mutate(value)
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(value, expected_asset_ref="pv-asset-01")
+def test_closed_error_is_terminal() -> None:
+    with pytest.raises(pv_m2m.PVM2MRemoteError): pv_m2m.parse_m2m_response({"data":None,"errors":[{"message":"M2M request failed","path":["semanticPVCurrent"],"extensions":{"code":"SOURCE_UNAVAILABLE"}}]}, expected_asset_ref="pv-asset-01")
+class _Content:
+    def __init__(self, raw): self.raw, self.offset = raw, 0
+    async def read(self, size):
+        result = self.raw[self.offset:self.offset+size]; self.offset += len(result); return result
+class _Response:
+    status = 200
+    def __init__(self, payload): self.content = _Content(json.dumps(payload).encode())
+    async def __aenter__(self): return self
+    async def __aexit__(self, *_args): pass
+class _Session:
+    def __init__(self): self.kwargs = None
+    def post(self, _url, **kwargs): self.kwargs = kwargs; return _Response(_payload())
+    async def close(self): pass
+def test_client_uses_exact_fixed_gateway_operation() -> None:
+    session = _Session(); client = pv_m2m.PVM2MClient(session=session, endpoint="https://pv.example.test/graphql/m2m/v1", asset_ref="pv-asset-01")
+    asyncio.run(client.async_current_snapshot())
+    assert session.kwargs["json"] == {"operationName":"SemanticPVCurrent","query":pv_m2m.SEMANTIC_PV_CURRENT_QUERY,"variables":{"request":{"contractId":"PUBLIC_GRAPHQL_SEMANTIC_PV_V1","assetRef":"pv-asset-01"}}}
