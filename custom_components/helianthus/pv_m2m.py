@@ -140,6 +140,9 @@ def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MF
     if mapping is None: return None, candidate_id, semantic_key, revision
     legacy, dimension_kind, fixed_dimension, kind, semantic_unit, unit, policy = mapping
     quality = _map(candidate["quality"], {"assertion", "qualification", "promotion", "validity", "availability", "freshness", "reasons"}, context)
+    candidate_availability = _text(quality["availability"], f"{context} quality availability", 32)
+    candidate_freshness = _text(quality["freshness"], f"{context} quality freshness", 32)
+    if candidate_availability not in {"available", "degraded", "unavailable", "withdrawn"} or candidate_freshness not in {"fresh", "stale", "expired", "unknown"}: raise PVM2MProtocolError(f"invalid {context} quality lifecycle")
     freshness_policy = _map(candidate["freshness_policy"], {"policy_id", "version", "fresh_for_ns", "retain_for_ns", "max_wall_uncertainty_ns"}, context)
     if freshness_policy["policy_id"] != policy or freshness_policy["version"] != "1.0.0" or not isinstance(quality["reasons"], list): raise PVM2MProtocolError(f"invalid {context} policy")
     parsed, coefficient, scale = _value(candidate["value"], kind, semantic_unit, context)
