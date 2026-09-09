@@ -1164,7 +1164,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
 
 def _pv_sensor_metadata(fact_id: str, unit: str) -> tuple[str | None, str | None, str | None]:
     if fact_id in {"pv.energy.active_export_total", "pv.dc.energy.active_total"}:
-        return SensorDeviceClass.ENERGY, "Wh", _SENSOR_STATE_CLASS_TOTAL_INCREASING
+        return SensorDeviceClass.ENERGY, "kWh", _SENSOR_STATE_CLASS_TOTAL_INCREASING
     if fact_id == "pv.ac.power.apparent":
         return getattr(SensorDeviceClass, "APPARENT_POWER", None), "VA", SensorStateClass.MEASUREMENT
     if fact_id == "pv.ac.power.reactive":
@@ -1278,7 +1278,7 @@ class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
 
 def _pv_expected_unit(fact_id: str) -> str:
     if fact_id in {"pv.energy.active_export_total", "pv.dc.energy.active_total"}:
-        return "Wh"
+        return "kWh"
     if fact_id == "pv.ac.power.apparent":
         return "VA"
     if fact_id == "pv.ac.power.reactive":
