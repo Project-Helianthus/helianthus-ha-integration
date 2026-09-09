@@ -114,14 +114,22 @@ def test_parser_rejects_non_scalar_evaluation_state(field) -> None:
 def test_parser_rejects_invalid_candidate_quality_lifecycle(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"][field] = value
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-@pytest.mark.parametrize("assertion", ["observed", "inferred"])
-def test_parser_accepts_public_candidate_assertions(assertion) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
+def test_parser_accepts_observed_candidate_assertion() -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = "observed"
     assert pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
-@pytest.mark.parametrize("assertion", [None, "", [], {}, "unknown"])
+@pytest.mark.parametrize("assertion", [None, "", [], {}, "inferred", "unknown"])
 def test_parser_rejects_invalid_candidate_assertion(assertion) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+def test_parser_rejects_duplicate_semantic_key_before_publication() -> None:
+    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    duplicate = deepcopy(current["snapshot"]["facts"][0]); candidate = duplicate["candidates"][0]
+    candidate["candidate_id"], candidate["revision"] = "candidate:two", "2"
+    candidate["quality"]["availability"] = "degraded"
+    duplicate["revision"] = "2"; current["snapshot"]["facts"].append(duplicate)
+    current["evaluation"]["facts"].append({"candidate_id":"candidate:two","candidate_revision":"2","freshness":"fresh","effective_availability":"degraded"})
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="duplicate semantic fact key"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("version", [[], {}])
 def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
