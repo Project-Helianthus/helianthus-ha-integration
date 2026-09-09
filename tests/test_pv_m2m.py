@@ -117,6 +117,29 @@ def test_parser_rejects_invalid_candidate_quality_lifecycle(field, value) -> Non
 @pytest.mark.parametrize("version", [[], {}])
 def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
+@pytest.mark.parametrize("revision", [None, "", [], {}, "x" * 33])
+def test_parser_rejects_malformed_fact_envelope_revision(revision) -> None:
+    payload = _payload(); fact = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]
+    if revision is None: del fact["revision"]
+    else: fact["revision"] = revision
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("version, row", [
+    (0, {"fact_id":"pv.unknown", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
+    (1, {"fact_id":"pv.unknown", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
+    (0, {"fact_id":"pv.ac.frequency", "dimension_key":"phase", "dimension_value":"L1", "unique_id":"entry-1-pv-saved"}),
+    (1, {"fact_id":"pv.ac.frequency", "dimension":{"phase":"L1"}, "unique_id":"entry-1-pv-saved"}),
+])
+def test_descriptor_store_rejects_unknown_or_incompatible_identity(version, row) -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
+def test_every_supported_descriptor_identity_retains_saved_unique_id() -> None:
+    wire = {"phase_pair":"phasePair", "input_id":"inputId", "sensor_id":"sensorId"}
+    rows = []
+    for index, (fact_id, dimensions) in enumerate(pv_m2m._DESCRIPTOR_DIMENSIONS.items()):
+        for dimension in dimensions:
+            key = wire.get(dimension, dimension)
+            rows.append({"fact_id":fact_id,"dimension":{key:"saved"},"unique_id":f"entry-1-pv-{index}-{dimension}"})
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":rows}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert {item.unique_id for item in descriptors} == {row["unique_id"] for row in rows}
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
