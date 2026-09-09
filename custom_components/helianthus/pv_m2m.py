@@ -161,6 +161,7 @@ def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MF
     if mapping is None: return None, candidate_id, semantic_key, revision
     legacy, dimension_kind, fixed_dimension, kind, semantic_unit, unit, policy = mapping
     quality = _map(candidate["quality"], {"assertion", "qualification", "promotion", "validity", "availability", "freshness", "reasons"}, context)
+    if _text(quality["assertion"], f"{context} quality assertion", 32) not in {"observed", "inferred"}: raise PVM2MProtocolError(f"invalid {context} quality assertion")
     candidate_availability = _text(quality["availability"], f"{context} quality availability", 32)
     candidate_freshness = _text(quality["freshness"], f"{context} quality freshness", 32)
     if candidate_availability not in {"available", "degraded", "unavailable", "withdrawn"} or candidate_freshness not in {"fresh", "stale", "expired", "unknown"}: raise PVM2MProtocolError(f"invalid {context} quality lifecycle")
@@ -231,6 +232,7 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     if snapshot["contract"] != "helianthus.semantic.kernel/v1" or snapshot["asset_id"] != expected_asset_ref or not isinstance(snapshot["facts"], list) or len(snapshot["facts"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("invalid snapshot")
     snapshot_id, revisions = _text(snapshot["snapshot_id"], "snapshot id", 255), _revisions(snapshot["revisions"], "snapshot revisions")
     candidates = [_candidate(raw, index, expected_asset_ref) for index, raw in enumerate(snapshot["facts"])]
+    if len({key for _, _, key, _ in candidates}) != len(candidates): raise PVM2MProtocolError("duplicate semantic fact key")
     bindings = {candidate_id: (key, revision) for _, candidate_id, key, revision in candidates}
     ids = set(bindings)
     if len(ids) != len(candidates): raise PVM2MProtocolError("duplicate candidate")

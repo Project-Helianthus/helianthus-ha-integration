@@ -114,6 +114,14 @@ def test_parser_rejects_non_scalar_evaluation_state(field) -> None:
 def test_parser_rejects_invalid_candidate_quality_lifecycle(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"][field] = value
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("assertion", ["observed", "inferred"])
+def test_parser_accepts_public_candidate_assertions(assertion) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
+    assert pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("assertion", [None, "", [], {}, "unknown"])
+def test_parser_rejects_invalid_candidate_assertion(assertion) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("version", [[], {}])
 def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
