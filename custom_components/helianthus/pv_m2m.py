@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 import hashlib
+import ipaddress
 import json
 import logging
 import re
@@ -31,6 +32,7 @@ M2M_MAX_JSON_DEPTH = 64
 _DESCRIPTOR_SCHEMA_VERSION = 1
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
 # SemReg fact/dimension -> stable HA identity, dimension, type, semantic unit,
 # HA unit, and SemReg freshness policy.
@@ -71,6 +73,16 @@ class PVM2MTransportError(PVM2MError): pass
 class PVM2MRemoteError(PVM2MError):
     def __init__(self, code: str) -> None:
         super().__init__(code); self.code = code
+def _validate_descriptor_dimension(dimension: tuple[str, str]) -> None:
+    kind, value = dimension
+    if kind == "scope" and value == "total": return
+    if kind == "phase" and value in {"L1", "L2", "L3"}: return
+    if kind == "phase_pair" and value in {"L1_L2", "L2_L3", "L3_L1"}: return
+    if kind in {"input_id", "sensor_id"} and _TOKEN_RE.fullmatch(value):
+        try: ipaddress.ip_address(value)
+        except ValueError:
+            if "://" not in value and re.fullmatch(r"[A-Za-z0-9.-]+:[0-9]+", value) is None: return
+    raise PVM2MProtocolError("invalid descriptor dimension")
 
 @dataclass(frozen=True)
 class PVM2MConfig:
@@ -345,6 +357,7 @@ def load_pv_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> t
                 dimension = (kind, _text(value, "descriptor"))
             else: raise PVM2MProtocolError("invalid descriptor dimension")
         descriptor = PVM2MDescriptor(_text(item["fact_id"], "descriptor"), dimension, _text(item["unique_id"], "descriptor", 255))
+        _validate_descriptor_dimension(descriptor.dimension)
         if descriptor.fact_id not in _DESCRIPTOR_DIMENSIONS or descriptor.dimension[0] not in _DESCRIPTOR_DIMENSIONS[descriptor.fact_id]: raise PVM2MProtocolError("unsupported descriptor identity")
         if not descriptor.unique_id.startswith(f"{entry_id}-pv-"): raise PVM2MProtocolError("descriptor unique id belongs to another entry")
         result.append(descriptor)

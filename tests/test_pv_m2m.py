@@ -98,10 +98,10 @@ def test_descriptor_storage_migration_retains_published_id(version, row) -> None
     descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
     assert descriptors[0].unique_id == "entry-1-pv-saved"
     assert pv_m2m.serialize_pv_descriptor_store("pv-asset-01", descriptors)["descriptors"][0]["unique_id"] == "entry-1-pv-saved"
-@pytest.mark.parametrize("wire, internal, fact_id", [("sensorId", "sensor_id", "pv.temperature"), ("phasePair", "phase_pair", "pv.ac.voltage.line_to_line")])
-def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal, fact_id) -> None:
-    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":[{"fact_id":fact_id,"dimension":{wire:"saved"},"unique_id":"entry-1-pv-saved"}]}, entry_id="entry-1", asset_ref="pv-asset-01")
-    assert descriptors[0].dimension == (internal, "saved") and descriptors[0].unique_id == "entry-1-pv-saved"
+@pytest.mark.parametrize("wire, internal, fact_id, value", [("sensorId", "sensor_id", "pv.temperature", "sensor-1"), ("phasePair", "phase_pair", "pv.ac.voltage.line_to_line", "L1_L2")])
+def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal, fact_id, value) -> None:
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":[{"fact_id":fact_id,"dimension":{wire:value},"unique_id":"entry-1-pv-saved"}]}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert descriptors[0].dimension == (internal, value) and descriptors[0].unique_id == "entry-1-pv-saved"
 @pytest.mark.parametrize("path", [("requested", 0, "item_id"), ("dispositions", 0, "kind")])
 def test_parser_rejects_unhashable_projection_pair_members(path) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["projection"][path[0]][path[1]][path[2]] = []
@@ -137,9 +137,17 @@ def test_every_supported_descriptor_identity_retains_saved_unique_id() -> None:
     for index, (fact_id, dimensions) in enumerate(pv_m2m._DESCRIPTOR_DIMENSIONS.items()):
         for dimension in dimensions:
             key = wire.get(dimension, dimension)
-            rows.append({"fact_id":fact_id,"dimension":{key:"saved"},"unique_id":f"entry-1-pv-{index}-{dimension}"})
+            value = {"scope":"total", "phase":"L1", "phase_pair":"L1_L2", "input_id":"input-1", "sensor_id":"sensor-1"}[dimension]
+            rows.append({"fact_id":fact_id,"dimension":{key:value},"unique_id":f"entry-1-pv-{index}-{dimension}"})
     descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":rows}, entry_id="entry-1", asset_ref="pv-asset-01")
     assert {item.unique_id for item in descriptors} == {row["unique_id"] for row in rows}
+@pytest.mark.parametrize("version, dimension", [(0, ("phase", "L4")), (1, ("scope", "wrong")), (0, ("input_id", "192.0.2.1")), (1, ("sensor_id", "host:443")), (1, ("sensor_id", "https://host"))])
+def test_descriptor_store_rejects_invalid_dimension_values(version, dimension) -> None:
+    kind, value = dimension
+    if version == 0: row = {"fact_id":"pv.ac.current" if kind == "phase" else "pv.dc.current" if kind == "input_id" else "pv.temperature" if kind == "sensor_id" else "pv.ac.frequency", "dimension_key":kind,"dimension_value":value,"unique_id":"entry-1-pv-saved"}
+    else:
+        wire = {"input_id":"inputId", "sensor_id":"sensorId"}.get(kind, kind); row = {"fact_id":"pv.ac.current" if kind == "phase" else "pv.dc.current" if kind == "input_id" else "pv.temperature" if kind == "sensor_id" else "pv.ac.frequency", "dimension":{wire:value},"unique_id":"entry-1-pv-saved"}
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
