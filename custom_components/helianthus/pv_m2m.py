@@ -155,13 +155,13 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
     requested = set()
     for raw in item["requested"]:
         request = _map(raw, {"item_id", "kind"}, "projection request")
-        pair = (request["kind"], request["item_id"])
+        pair = (_text(request["kind"], "projection request kind", 96), _text(request["item_id"], "projection request item", 96))
         if pair in requested: raise PVM2MProtocolError("duplicate projection request")
         requested.add(pair)
     energy_loss = energy_key is None; dispositions = set()
     for raw in item["dispositions"]:
         disposition = _map(raw, {"kind", "item_id", "outcome", "source_keys", "loss"}, "projection disposition", {"reason"})
-        pair = (disposition["kind"], disposition["item_id"])
+        pair = (_text(disposition["kind"], "projection disposition kind", 96), _text(disposition["item_id"], "projection disposition item", 96))
         if pair in dispositions: raise PVM2MProtocolError("duplicate projection disposition")
         if pair not in requested: raise PVM2MProtocolError("unrequested projection disposition")
         dispositions.add(pair)
@@ -296,7 +296,10 @@ def load_pv_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> t
                 dimension = (_text(raw_dimension["kind"], "descriptor"), _text(raw_dimension["value"], "descriptor"))
             elif isinstance(raw_dimension, Mapping) and len(raw_dimension) == 1:
                 kind, value = next(iter(raw_dimension.items()))
-                dimension = (_text(kind, "descriptor"), _text(value, "descriptor"))
+                wire_kind = _text(kind, "descriptor")
+                kind = {"scope": "scope", "phase": "phase", "phasePair": "phase_pair", "inputId": "input_id", "sensorId": "sensor_id"}.get(wire_kind)
+                if kind is None: raise PVM2MProtocolError("invalid descriptor dimension")
+                dimension = (kind, _text(value, "descriptor"))
             else: raise PVM2MProtocolError("invalid descriptor dimension")
         descriptor = PVM2MDescriptor(_text(item["fact_id"], "descriptor"), dimension, _text(item["unique_id"], "descriptor", 255))
         if not descriptor.unique_id.startswith(f"{entry_id}-pv-"): raise PVM2MProtocolError("descriptor unique id belongs to another entry")

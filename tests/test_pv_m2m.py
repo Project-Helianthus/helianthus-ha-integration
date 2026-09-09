@@ -80,6 +80,14 @@ def test_descriptor_storage_migration_retains_published_id(version, row) -> None
     descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
     assert descriptors[0].unique_id == "entry-1-pv-saved"
     assert pv_m2m.serialize_pv_descriptor_store("pv-asset-01", descriptors)["descriptors"][0]["unique_id"] == "entry-1-pv-saved"
+@pytest.mark.parametrize("wire, internal", [("sensorId", "sensor_id"), ("phasePair", "phase_pair")])
+def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal) -> None:
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":1,"asset_ref":"pv-asset-01","descriptors":[{"fact_id":"pv.temperature","dimension":{wire:"saved"},"unique_id":"entry-1-pv-saved"}]}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert descriptors[0].dimension == (internal, "saved") and descriptors[0].unique_id == "entry-1-pv-saved"
+@pytest.mark.parametrize("path", [("requested", 0, "item_id"), ("dispositions", 0, "kind")])
+def test_parser_rejects_unhashable_projection_pair_members(path) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["projection"][path[0]][path[1]][path[2]] = []
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
