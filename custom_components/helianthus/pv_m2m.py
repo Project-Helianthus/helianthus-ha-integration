@@ -56,6 +56,14 @@ _OUTPUTS = {
     ("pv.ac.voltage", "pv.dimension.phase", "phase:L2"): ("inverter.ac.voltage.phase_b", "exact", None),
     ("pv.ac.voltage", "pv.dimension.phase", "phase:L3"): ("inverter.ac.voltage.phase_c", "exact", None),
 }
+_DESCRIPTOR_DIMENSIONS = {
+    "pv.ac.power.active": {"scope"}, "pv.ac.frequency": {"scope"}, "pv.energy.active_export_total": {"scope"},
+    "pv.temperature": {"sensor_id"}, "pv.operating.state": {"scope"}, "pv.ac.current": {"phase"},
+    "pv.ac.voltage.line_to_neutral": {"phase"}, "pv.ac.voltage.line_to_line": {"phase_pair"},
+    "pv.ac.power.apparent": {"scope"}, "pv.ac.power.reactive": {"scope"}, "pv.ac.power_factor": {"scope"},
+    "pv.dc.current": {"input_id"}, "pv.dc.voltage": {"input_id"}, "pv.dc.power.active": {"input_id"},
+    "pv.dc.energy.active_total": {"input_id"}, "pv.event.flags": {"scope"}, "pv.rating.ac.active_power": {"scope"},
+}
 
 class PVM2MError(Exception): pass
 class PVM2MProtocolError(PVM2MError): pass
@@ -130,6 +138,7 @@ def _origin(value: object, context: str) -> str:
 def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MFact | None, str, tuple[str, str, str], str]:
     context = f"snapshot fact {index}"; envelope = _map(raw, {"asset_id", "key", "candidates", "conflicts", "revision"}, context)
     if envelope["asset_id"] != expected_asset_ref: raise PVM2MProtocolError(f"invalid {context} asset")
+    _text(envelope["revision"], f"{context} revision", 32)
     semantic_key = _key(envelope["key"], context); mapping = _FACTS.get(semantic_key[:2])
     if not isinstance(envelope["candidates"], list) or len(envelope["candidates"]) != 1 or envelope["conflicts"] != []: raise PVM2MProtocolError(f"invalid {context}")
     candidate = _map(envelope["candidates"][0], {"candidate_id", "key", "value", "quality", "times", "freshness_policy", "origin", "evidence", "revision"}, context, {"binding_id", "source_epoch_id", "driver_generation", "causal", "derivation"})
@@ -336,6 +345,7 @@ def load_pv_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> t
                 dimension = (kind, _text(value, "descriptor"))
             else: raise PVM2MProtocolError("invalid descriptor dimension")
         descriptor = PVM2MDescriptor(_text(item["fact_id"], "descriptor"), dimension, _text(item["unique_id"], "descriptor", 255))
+        if descriptor.fact_id not in _DESCRIPTOR_DIMENSIONS or descriptor.dimension[0] not in _DESCRIPTOR_DIMENSIONS[descriptor.fact_id]: raise PVM2MProtocolError("unsupported descriptor identity")
         if not descriptor.unique_id.startswith(f"{entry_id}-pv-"): raise PVM2MProtocolError("descriptor unique id belongs to another entry")
         result.append(descriptor)
     if len({item.key for item in result}) != len(result) or len({item.unique_id for item in result}) != len(result): raise PVM2MProtocolError("duplicate descriptor")
