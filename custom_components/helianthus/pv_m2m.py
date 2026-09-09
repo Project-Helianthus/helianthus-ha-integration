@@ -158,13 +158,16 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
         pair = (request["kind"], request["item_id"])
         if pair in requested: raise PVM2MProtocolError("duplicate projection request")
         requested.add(pair)
-    energy_loss = energy_key is None
+    energy_loss = energy_key is None; dispositions = set()
     for raw in item["dispositions"]:
         disposition = _map(raw, {"kind", "item_id", "outcome", "source_keys", "loss"}, "projection disposition", {"reason"})
         pair = (disposition["kind"], disposition["item_id"])
+        if pair in dispositions: raise PVM2MProtocolError("duplicate projection disposition")
         if pair not in requested: raise PVM2MProtocolError("unrequested projection disposition")
+        dispositions.add(pair)
         if disposition["item_id"] == "inverter.ac.energy_lifetime":
             energy_loss = pair == ("fact", "inverter.ac.energy_lifetime") and isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1 and _key(disposition["source_keys"][0], "energy projection source") == energy_key and disposition["outcome"] == "transformed" and disposition.get("reason") == "counter_continuity_unavailable" and isinstance(disposition["loss"], list) and any(isinstance(loss, Mapping) and loss.get("kind") == "policy" for loss in disposition["loss"])
+    if dispositions != requested: raise PVM2MProtocolError("incomplete projection disposition")
     if not energy_loss: raise PVM2MProtocolError("missing counter continuity projection loss")
 
 def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnapshot:

@@ -64,6 +64,14 @@ def test_parser_rejects_unbound_energy_projection_loss(mutate) -> None:
     payload = _payload(); mutate(payload)
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="projection"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("mutate", [
+    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
+    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
+])
+def test_parser_rejects_duplicate_or_missing_projection_disposition(mutate) -> None:
+    payload = _payload(); mutate(payload)
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="disposition"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("version, row", [
     (1, {"fact_id":"pv.ac.power.active", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
     (0, {"fact_id":"pv.ac.power.active", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
