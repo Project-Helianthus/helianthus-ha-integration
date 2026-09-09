@@ -784,11 +784,11 @@ def test_pv_m2m_energy_sensor_retains_exact_integer_and_total_increasing_metadat
     entity = _pv_entity(
         fact_id="pv.energy.active_export_total",
         value=Decimal("9007199254740993"),
-        unit="kWh",
+        unit="Wh",
     )
     assert entity.native_value == Decimal("9007199254740993")
     assert entity._attr_device_class == "energy"
-    assert entity._attr_native_unit_of_measurement == "kWh"
+    assert entity._attr_native_unit_of_measurement == "Wh"
     assert entity._attr_state_class == "total_increasing"
 
 

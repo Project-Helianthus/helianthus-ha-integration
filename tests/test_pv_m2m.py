@@ -37,7 +37,7 @@ def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(), expected_asset_ref="pv-asset-01")
     fact = snapshot.facts[0]
     assert fact.fact_id == "pv.energy.active_export_total"
-    assert fact.unit == "kWh" and str(fact.value) == "90071992547409.93"
+    assert fact.unit == "Wh" and str(fact.value) == "90071992547409930.00"
     assert not hasattr(fact, "continuity")
 def test_parser_preserves_stale_value_without_presentation_selection() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(freshness="stale", selected=False), expected_asset_ref="pv-asset-01")

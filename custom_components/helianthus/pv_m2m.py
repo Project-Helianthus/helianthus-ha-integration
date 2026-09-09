@@ -146,6 +146,10 @@ def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MF
     freshness_policy = _map(candidate["freshness_policy"], {"policy_id", "version", "fresh_for_ns", "retain_for_ns", "max_wall_uncertainty_ns"}, context)
     if freshness_policy["policy_id"] != policy or freshness_policy["version"] != "1.0.0" or not isinstance(quality["reasons"], list): raise PVM2MProtocolError(f"invalid {context} policy")
     parsed, coefficient, scale = _value(candidate["value"], kind, semantic_unit, context)
+    if legacy == "pv.energy.active_export_total":
+        if not isinstance(parsed, Decimal) or coefficient is None or scale is None: raise PVM2MProtocolError(f"invalid {context} energy")
+        parsed, coefficient = parsed * Decimal(1000), coefficient + "000"
+        unit = "Wh"
     dimension_value = semantic_key[2]
     if fixed_dimension is None:
         if not dimension_value.startswith("phase:") or dimension_value[6:] not in {"L1", "L2", "L3"}: raise PVM2MProtocolError(f"invalid {context} dimension")
