@@ -114,8 +114,9 @@ def _origin(value: object, context: str) -> str:
     for evidence in item["evidence"]: _digest(_map(evidence, {"owner", "kind", "digest", "contract", "access", "redaction"}, context)["digest"], context)
     return _text(item["origin_id"], context, 255)
 
-def _candidate(raw: object, index: int) -> tuple[PVM2MFact | None, str, tuple[str, str, str], str]:
+def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MFact | None, str, tuple[str, str, str], str]:
     context = f"snapshot fact {index}"; envelope = _map(raw, {"asset_id", "key", "candidates", "conflicts", "revision"}, context)
+    if envelope["asset_id"] != expected_asset_ref: raise PVM2MProtocolError(f"invalid {context} asset")
     semantic_key = _key(envelope["key"], context); mapping = _FACTS.get(semantic_key[:2])
     if not isinstance(envelope["candidates"], list) or len(envelope["candidates"]) != 1 or envelope["conflicts"] != []: raise PVM2MProtocolError(f"invalid {context}")
     candidate = _map(envelope["candidates"][0], {"candidate_id", "key", "value", "quality", "times", "freshness_policy", "origin", "evidence", "revision"}, context, {"binding_id", "source_epoch_id", "driver_generation", "causal", "derivation"})
@@ -165,7 +166,7 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     snapshot = _map(current["snapshot"], {"contract", "snapshot_id", "asset_id", "revisions", "evaluated_at", "evaluate_monotonic", "sources", "bindings", "identity_links", "facts", "services", "capabilities", "fences", "cursors"}, "snapshot", {"retained_observations"})
     if snapshot["contract"] != "helianthus.semantic.kernel/v1" or snapshot["asset_id"] != expected_asset_ref or not isinstance(snapshot["facts"], list) or len(snapshot["facts"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("invalid snapshot")
     snapshot_id, revisions = _text(snapshot["snapshot_id"], "snapshot id", 255), _revisions(snapshot["revisions"], "snapshot revisions")
-    candidates = [_candidate(raw, index) for index, raw in enumerate(snapshot["facts"])]
+    candidates = [_candidate(raw, index, expected_asset_ref) for index, raw in enumerate(snapshot["facts"])]
     bindings = {candidate_id: (key, revision) for _, candidate_id, key, revision in candidates}
     ids = set(bindings)
     if len(ids) != len(candidates): raise PVM2MProtocolError("duplicate candidate")
@@ -271,11 +272,22 @@ def load_pv_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> t
     if raw is None: return ()
     store = _map(raw, {"schema_version", "asset_ref", "descriptors"}, "descriptor store")
     if store["asset_ref"] != asset_ref: return ()
-    if store["schema_version"] != _DESCRIPTOR_SCHEMA_VERSION or not isinstance(store["descriptors"], list) or len(store["descriptors"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("unsupported descriptor store")
+    if store["schema_version"] not in {0, _DESCRIPTOR_SCHEMA_VERSION} or not isinstance(store["descriptors"], list) or len(store["descriptors"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("unsupported descriptor store")
     result = []
     for raw_descriptor in store["descriptors"]:
-        item = _map(raw_descriptor, {"fact_id", "dimension", "unique_id"}, "descriptor"); dimension = _map(item["dimension"], {"kind", "value"}, "descriptor dimension")
-        descriptor = PVM2MDescriptor(_text(item["fact_id"], "descriptor"), (_text(dimension["kind"], "descriptor"), _text(dimension["value"], "descriptor")), _text(item["unique_id"], "descriptor", 255))
+        if store["schema_version"] == 0:
+            item = _map(raw_descriptor, {"fact_id", "dimension_key", "dimension_value", "unique_id"}, "legacy descriptor")
+            dimension = (_text(item["dimension_key"], "legacy descriptor"), _text(item["dimension_value"], "legacy descriptor"))
+        else:
+            item = _map(raw_descriptor, {"fact_id", "dimension", "unique_id"}, "descriptor")
+            raw_dimension = item["dimension"]
+            if isinstance(raw_dimension, Mapping) and set(raw_dimension) == {"kind", "value"}:
+                dimension = (_text(raw_dimension["kind"], "descriptor"), _text(raw_dimension["value"], "descriptor"))
+            elif isinstance(raw_dimension, Mapping) and len(raw_dimension) == 1:
+                kind, value = next(iter(raw_dimension.items()))
+                dimension = (_text(kind, "descriptor"), _text(value, "descriptor"))
+            else: raise PVM2MProtocolError("invalid descriptor dimension")
+        descriptor = PVM2MDescriptor(_text(item["fact_id"], "descriptor"), dimension, _text(item["unique_id"], "descriptor", 255))
         if not descriptor.unique_id.startswith(f"{entry_id}-pv-"): raise PVM2MProtocolError("descriptor unique id belongs to another entry")
         result.append(descriptor)
     if len({item.key for item in result}) != len(result) or len({item.unique_id for item in result}) != len(result): raise PVM2MProtocolError("duplicate descriptor")

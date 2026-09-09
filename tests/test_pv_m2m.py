@@ -45,6 +45,18 @@ def test_parser_preserves_stale_value_without_presentation_selection() -> None:
 def test_parser_rejects_fresh_available_fact_without_selection() -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
         pv_m2m.parse_m2m_response(_payload(selected=False), expected_asset_ref="pv-asset-01")
+def test_parser_rejects_inner_fact_asset_mismatch() -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["asset_id"] = "pv-asset-other"
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="asset"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("version, row", [
+    (1, {"fact_id":"pv.ac.power.active", "dimension":{"scope":"total"}, "unique_id":"entry-1-pv-saved"}),
+    (0, {"fact_id":"pv.ac.power.active", "dimension_key":"scope", "dimension_value":"total", "unique_id":"entry-1-pv-saved"}),
+])
+def test_descriptor_storage_migration_retains_published_id(version, row) -> None:
+    descriptors = pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
+    assert descriptors[0].unique_id == "entry-1-pv-saved"
+    assert pv_m2m.serialize_pv_descriptor_store("pv-asset-01", descriptors)["descriptors"][0]["unique_id"] == "entry-1-pv-saved"
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
