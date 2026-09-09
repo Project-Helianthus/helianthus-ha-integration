@@ -44,6 +44,19 @@ def test_energy_wh_conversion_is_context_independent(coefficient, exponent, expe
     payload = _payload(); number = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"]
     number["coefficient"], number["exponent10"] = coefficient, exponent
     assert str(pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01").facts[0].value) == expected
+def test_non_energy_publishes_when_energy_is_validly_withheld() -> None:
+    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    fact = current["snapshot"]["facts"][0]; key = _key("pv.ac.frequency", "pv.dimension.inverter", "inverter")
+    fact["key"] = key; candidate = fact["candidates"][0]; candidate["key"] = deepcopy(key)
+    candidate["value"] = {"kind":"quantity","quantity":{"number":{"coefficient":"50","exponent10":0},"unit":"unit.hertz"}}
+    candidate["freshness_policy"] = {"policy_id":"pv.telemetry.fast.v1","version":"1.0.0","fresh_for_ns":"1","retain_for_ns":"2","max_wall_uncertainty_ns":"0"}
+    current["selections"][0]["key"] = deepcopy(key)
+    projection = current["projection"]; projection["requested"][0] = {"item_id":"inverter.ac.frequency","kind":"fact"}
+    projection["dispositions"][0] = {"kind":"fact","item_id":"inverter.ac.frequency","outcome":"exact","source_keys":[deepcopy(key)],"loss":[]}
+    projection["requested"].append({"item_id":"inverter.ac.energy_lifetime","kind":"fact"})
+    projection["dispositions"].append({"kind":"fact","item_id":"inverter.ac.energy_lifetime","outcome":"withheld","source_keys":[],"loss":[],"reason":"mapping.native_fact_missing"})
+    snapshot = pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+    assert [fact.fact_id for fact in snapshot.facts] == ["pv.ac.frequency"]
 def test_parser_preserves_stale_value_without_presentation_selection() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(freshness="stale", selected=False), expected_asset_ref="pv-asset-01")
     assert snapshot.facts[0].freshness == "STALE" and snapshot.facts[0].availability == "AVAILABLE"
