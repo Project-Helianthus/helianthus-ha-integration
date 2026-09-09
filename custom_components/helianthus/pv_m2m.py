@@ -44,17 +44,17 @@ _FACTS = {
     ("pv.ac.voltage", "pv.dimension.phase"): ("pv.ac.voltage.line_to_neutral", "phase", None, "quantity", "unit.volt", "V", "pv.telemetry.fast.v1"),
 }
 _OUTPUTS = {
-    ("pv.ac.aggregate_active_power", "pv.dimension.inverter", "inverter"): ("inverter.ac.power.active", "exact"),
-    ("pv.ac.frequency", "pv.dimension.inverter", "inverter"): ("inverter.ac.frequency", "exact"),
-    ("pv.energy.generated", "pv.dimension.system", "system"): ("inverter.ac.energy_lifetime", "transformed"),
-    ("pv.temperature.inverter", "pv.dimension.inverter", "inverter"): ("inverter.temperature.cabinet", "transformed"),
-    ("pv.status.operating", "pv.dimension.inverter", "inverter"): ("inverter.operating_state", "transformed"),
-    ("pv.ac.current", "pv.dimension.phase", "phase:L1"): ("inverter.ac.current.phase_a", "exact"),
-    ("pv.ac.current", "pv.dimension.phase", "phase:L2"): ("inverter.ac.current.phase_b", "exact"),
-    ("pv.ac.current", "pv.dimension.phase", "phase:L3"): ("inverter.ac.current.phase_c", "exact"),
-    ("pv.ac.voltage", "pv.dimension.phase", "phase:L1"): ("inverter.ac.voltage.phase_a", "exact"),
-    ("pv.ac.voltage", "pv.dimension.phase", "phase:L2"): ("inverter.ac.voltage.phase_b", "exact"),
-    ("pv.ac.voltage", "pv.dimension.phase", "phase:L3"): ("inverter.ac.voltage.phase_c", "exact"),
+    ("pv.ac.aggregate_active_power", "pv.dimension.inverter", "inverter"): ("inverter.ac.power.active", "exact", None),
+    ("pv.ac.frequency", "pv.dimension.inverter", "inverter"): ("inverter.ac.frequency", "exact", None),
+    ("pv.energy.generated", "pv.dimension.system", "system"): ("inverter.ac.energy_lifetime", "transformed", "policy"),
+    ("pv.temperature.inverter", "pv.dimension.inverter", "inverter"): ("inverter.temperature.cabinet", "transformed", "provenance"),
+    ("pv.status.operating", "pv.dimension.inverter", "inverter"): ("inverter.operating_state", "transformed", "symbol"),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L1"): ("inverter.ac.current.phase_a", "exact", None),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L2"): ("inverter.ac.current.phase_b", "exact", None),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L3"): ("inverter.ac.current.phase_c", "exact", None),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L1"): ("inverter.ac.voltage.phase_a", "exact", None),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L2"): ("inverter.ac.voltage.phase_b", "exact", None),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L3"): ("inverter.ac.voltage.phase_c", "exact", None),
 }
 
 class PVM2MError(Exception): pass
@@ -180,7 +180,8 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
         dispositions.add(pair)
         if isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1:
             key = _key(disposition["source_keys"][0], "projection source")
-            if key in published and _OUTPUTS.get(key) == (pair[1], disposition["outcome"]): accounted.add(key)
+            expected = _OUTPUTS.get(key)
+            if expected is not None and key in published and (pair[1], disposition["outcome"]) == expected[:2] and isinstance(disposition["loss"], list) and all(isinstance(loss, Mapping) for loss in disposition["loss"]) and ((expected[2] is None and disposition["loss"] == []) or any(loss.get("kind") == expected[2] for loss in disposition["loss"])): accounted.add(key)
         if disposition["item_id"] == "inverter.ac.energy_lifetime":
             energy_loss = pair == ("fact", "inverter.ac.energy_lifetime") and isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1 and _key(disposition["source_keys"][0], "energy projection source") == energy_key and disposition["outcome"] == "transformed" and disposition.get("reason") == "counter_continuity_unavailable" and isinstance(disposition["loss"], list) and any(isinstance(loss, Mapping) and loss.get("kind") == "policy" for loss in disposition["loss"])
     if dispositions != requested: raise PVM2MProtocolError("incomplete projection disposition")
