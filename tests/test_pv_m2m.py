@@ -42,6 +42,14 @@ def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
 def test_parser_preserves_stale_value_without_presentation_selection() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(freshness="stale", selected=False), expected_asset_ref="pv-asset-01")
     assert snapshot.facts[0].freshness == "STALE" and snapshot.facts[0].availability == "AVAILABLE"
+def test_parser_rejects_fresh_available_fact_without_selection() -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
+        pv_m2m.parse_m2m_response(_payload(selected=False), expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
+def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
+    with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
+        pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("mutate", [
     lambda value: value["data"]["semanticPVCurrent"].update({"legacy":True}),
     lambda value: value["data"]["semanticPVCurrent"]["snapshot"].update({"asset_id":"other"}),

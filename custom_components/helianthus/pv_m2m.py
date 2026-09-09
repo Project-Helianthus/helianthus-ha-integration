@@ -114,7 +114,7 @@ def _origin(value: object, context: str) -> str:
     for evidence in item["evidence"]: _digest(_map(evidence, {"owner", "kind", "digest", "contract", "access", "redaction"}, context)["digest"], context)
     return _text(item["origin_id"], context, 255)
 
-def _candidate(raw: object, index: int) -> tuple[PVM2MFact | None, str, tuple[str, str, str]]:
+def _candidate(raw: object, index: int) -> tuple[PVM2MFact | None, str, tuple[str, str, str], str]:
     context = f"snapshot fact {index}"; envelope = _map(raw, {"asset_id", "key", "candidates", "conflicts", "revision"}, context)
     semantic_key = _key(envelope["key"], context); mapping = _FACTS.get(semantic_key[:2])
     if not isinstance(envelope["candidates"], list) or len(envelope["candidates"]) != 1 or envelope["conflicts"] != []: raise PVM2MProtocolError(f"invalid {context}")
@@ -122,7 +122,8 @@ def _candidate(raw: object, index: int) -> tuple[PVM2MFact | None, str, tuple[st
     candidate_id = _text(candidate["candidate_id"], context, 255)
     if _key(candidate["key"], context) != semantic_key or not isinstance(candidate["evidence"], list) or not candidate["evidence"]: raise PVM2MProtocolError(f"invalid {context}")
     origin = _origin(candidate["origin"], f"{context} provenance")
-    if mapping is None: return None, candidate_id, semantic_key
+    revision = _text(candidate["revision"], f"{context} revision", 32)
+    if mapping is None: return None, candidate_id, semantic_key, revision
     legacy, dimension_kind, fixed_dimension, kind, semantic_unit, unit, policy = mapping
     quality = _map(candidate["quality"], {"assertion", "qualification", "promotion", "validity", "availability", "freshness", "reasons"}, context)
     freshness_policy = _map(candidate["freshness_policy"], {"policy_id", "version", "fresh_for_ns", "retain_for_ns", "max_wall_uncertainty_ns"}, context)
@@ -134,8 +135,8 @@ def _candidate(raw: object, index: int) -> tuple[PVM2MFact | None, str, tuple[st
         dimension_value = dimension_value[6:]
     elif dimension_value not in {"inverter", "system"}: raise PVM2MProtocolError(f"invalid {context} dimension")
     else: dimension_value = fixed_dimension
-    if quality["qualification"] != "qualified" or quality["promotion"] != "promoted" or quality["validity"] != "good": return None, candidate_id, semantic_key
-    return PVM2MFact(legacy, (dimension_kind, dimension_value), parsed, coefficient, scale, unit, "GOOD", "PENDING", "PENDING", policy, origin), candidate_id, semantic_key
+    if quality["qualification"] != "qualified" or quality["promotion"] != "promoted" or quality["validity"] != "good": return None, candidate_id, semantic_key, revision
+    return PVM2MFact(legacy, (dimension_kind, dimension_value), parsed, coefficient, scale, unit, "GOOD", "PENDING", "PENDING", policy, origin), candidate_id, semantic_key, revision
 
 def _error(payload: Mapping[str, Any]) -> None:
     item = _map(payload, {"data", "errors"}, "error envelope")
@@ -165,7 +166,8 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     if snapshot["contract"] != "helianthus.semantic.kernel/v1" or snapshot["asset_id"] != expected_asset_ref or not isinstance(snapshot["facts"], list) or len(snapshot["facts"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("invalid snapshot")
     snapshot_id, revisions = _text(snapshot["snapshot_id"], "snapshot id", 255), _revisions(snapshot["revisions"], "snapshot revisions")
     candidates = [_candidate(raw, index) for index, raw in enumerate(snapshot["facts"])]
-    ids = {candidate_id for _, candidate_id, _ in candidates}
+    bindings = {candidate_id: (key, revision) for _, candidate_id, key, revision in candidates}
+    ids = set(bindings)
     if len(ids) != len(candidates): raise PVM2MProtocolError("duplicate candidate")
     evaluation = _map(current["evaluation"], {"contract", "snapshot_id", "revisions", "context", "facts", "evaluation_digest"}, "evaluation", {"retained_observations"})
     if evaluation["contract"] != "helianthus.semantic.evaluation/v1" or evaluation["snapshot_id"] != snapshot_id or _revisions(evaluation["revisions"], "evaluation revisions") != revisions or not isinstance(evaluation["facts"], list) or len(evaluation["facts"]) != len(candidates): raise PVM2MProtocolError("invalid evaluation")
@@ -173,19 +175,20 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     for raw in evaluation["facts"]:
         item = _map(raw, {"candidate_id", "candidate_revision", "freshness", "effective_availability"}, "evaluated fact")
         cid = _text(item["candidate_id"], "evaluated candidate", 255)
-        if cid in states or cid not in ids or item["freshness"] not in {"fresh", "stale", "expired"} or item["effective_availability"] not in {"available", "degraded", "unavailable", "withdrawn"}: raise PVM2MProtocolError("invalid evaluated fact")
+        if cid in states or cid not in ids or item["candidate_revision"] != bindings[cid][1] or item["freshness"] not in {"fresh", "stale", "expired"} or item["effective_availability"] not in {"available", "degraded", "unavailable", "withdrawn"}: raise PVM2MProtocolError("invalid evaluated fact")
         states[cid] = (item["freshness"], item["effective_availability"])
     if set(states) != ids or not isinstance(current["selections"], list): raise PVM2MProtocolError("partial evaluation")
     selected: set[str] = set()
     for raw in current["selections"]:
         item = _map(raw, {"contract", "snapshot_id", "revisions", "evaluation_digest", "context", "key", "policy_id", "policy_version", "selected_candidate", "candidate_revision", "presentation_only"}, "selection")
         cid = _text(item["selected_candidate"], "selected candidate", 255)
-        if item["contract"] != "helianthus.semantic.selection/v1" or item["snapshot_id"] != snapshot_id or _revisions(item["revisions"], "selection revisions") != revisions or item["evaluation_digest"] != digest or item["policy_id"] != "policy:gateway-pv-single-qualified" or item["policy_version"] != "1.0.0" or item["presentation_only"] is not True or cid in selected or cid not in states or states[cid] != ("fresh", "available"): raise PVM2MProtocolError("invalid selection")
+        if item["contract"] != "helianthus.semantic.selection/v1" or item["snapshot_id"] != snapshot_id or _revisions(item["revisions"], "selection revisions") != revisions or item["evaluation_digest"] != digest or item["policy_id"] != "policy:gateway-pv-single-qualified" or item["policy_version"] != "1.0.0" or item["presentation_only"] is not True or cid in selected or cid not in states or _key(item["key"], "selection key") != bindings[cid][0] or item["candidate_revision"] != bindings[cid][1] or states[cid] != ("fresh", "available"): raise PVM2MProtocolError("invalid selection")
         selected.add(cid)
     facts: list[PVM2MFact] = []; has_energy = False
-    for fact, cid, _ in candidates:
+    for fact, cid, _, _ in candidates:
         if fact is None: continue
         freshness, availability = states[cid]
+        if (freshness, availability) == ("fresh", "available") and cid not in selected: raise PVM2MProtocolError("missing selection for current fact")
         if fact.fact_id == "pv.energy.active_export_total": has_energy = True
         if availability in {"degraded", "withdrawn"}: continue
         facts.append(PVM2MFact(fact.fact_id, fact.dimension, fact.value, fact.coefficient, fact.scale, fact.unit, fact.quality, "AVAILABLE" if availability == "available" else "UNAVAILABLE", freshness.upper(), fact.freshness_policy, fact.origin_ref))
