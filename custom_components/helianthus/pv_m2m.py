@@ -43,6 +43,19 @@ _FACTS = {
     ("pv.ac.current", "pv.dimension.phase"): ("pv.ac.current", "phase", None, "quantity", "unit.ampere", "A", "pv.telemetry.fast.v1"),
     ("pv.ac.voltage", "pv.dimension.phase"): ("pv.ac.voltage.line_to_neutral", "phase", None, "quantity", "unit.volt", "V", "pv.telemetry.fast.v1"),
 }
+_OUTPUTS = {
+    ("pv.ac.aggregate_active_power", "pv.dimension.inverter", "inverter"): ("inverter.ac.power.active", "exact"),
+    ("pv.ac.frequency", "pv.dimension.inverter", "inverter"): ("inverter.ac.frequency", "exact"),
+    ("pv.energy.generated", "pv.dimension.system", "system"): ("inverter.ac.energy_lifetime", "transformed"),
+    ("pv.temperature.inverter", "pv.dimension.inverter", "inverter"): ("inverter.temperature.cabinet", "transformed"),
+    ("pv.status.operating", "pv.dimension.inverter", "inverter"): ("inverter.operating_state", "transformed"),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L1"): ("inverter.ac.current.phase_a", "exact"),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L2"): ("inverter.ac.current.phase_b", "exact"),
+    ("pv.ac.current", "pv.dimension.phase", "phase:L3"): ("inverter.ac.current.phase_c", "exact"),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L1"): ("inverter.ac.voltage.phase_a", "exact"),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L2"): ("inverter.ac.voltage.phase_b", "exact"),
+    ("pv.ac.voltage", "pv.dimension.phase", "phase:L3"): ("inverter.ac.voltage.phase_c", "exact"),
+}
 
 class PVM2MError(Exception): pass
 class PVM2MProtocolError(PVM2MError): pass
@@ -146,7 +159,7 @@ def _error(payload: Mapping[str, Any]) -> None:
     code = _map(error["extensions"], {"code"}, "error")["code"]
     if error["message"] != "M2M request failed" or error["path"] != ["semanticPVCurrent"] or not isinstance(code, str): raise PVM2MProtocolError("invalid error envelope")
     raise PVM2MRemoteError(code)
-def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], energy_key: tuple[str, str, str] | None) -> None:
+def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], energy_key: tuple[str, str, str] | None, published: set[tuple[str, str, str]]) -> None:
     item = _map(value, {"contract", "manifest", "snapshot_id", "revisions", "requested", "dispositions"}, "projection")
     if item["contract"] != "helianthus.semantic.projection/v1" or item["snapshot_id"] != snapshot_id or _revisions(item["revisions"], "projection revisions") != revisions: raise PVM2MProtocolError("invalid projection binding")
     manifest = _map(item["manifest"], {"target_id", "target_version", "kernel_version", "pack_versions", "mapping_revision"}, "projection manifest")
@@ -158,17 +171,21 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
         pair = (_text(request["kind"], "projection request kind", 96), _text(request["item_id"], "projection request item", 96))
         if pair in requested: raise PVM2MProtocolError("duplicate projection request")
         requested.add(pair)
-    energy_loss = energy_key is None; dispositions = set()
+    energy_loss = energy_key is None; dispositions = set(); accounted = set()
     for raw in item["dispositions"]:
         disposition = _map(raw, {"kind", "item_id", "outcome", "source_keys", "loss"}, "projection disposition", {"reason"})
         pair = (_text(disposition["kind"], "projection disposition kind", 96), _text(disposition["item_id"], "projection disposition item", 96))
         if pair in dispositions: raise PVM2MProtocolError("duplicate projection disposition")
         if pair not in requested: raise PVM2MProtocolError("unrequested projection disposition")
         dispositions.add(pair)
+        if isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1:
+            key = _key(disposition["source_keys"][0], "projection source")
+            if key in published and _OUTPUTS.get(key) == (pair[1], disposition["outcome"]): accounted.add(key)
         if disposition["item_id"] == "inverter.ac.energy_lifetime":
             energy_loss = pair == ("fact", "inverter.ac.energy_lifetime") and isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1 and _key(disposition["source_keys"][0], "energy projection source") == energy_key and disposition["outcome"] == "transformed" and disposition.get("reason") == "counter_continuity_unavailable" and isinstance(disposition["loss"], list) and any(isinstance(loss, Mapping) and loss.get("kind") == "policy" for loss in disposition["loss"])
     if dispositions != requested: raise PVM2MProtocolError("incomplete projection disposition")
     if not energy_loss: raise PVM2MProtocolError("missing counter continuity projection loss")
+    if accounted != published: raise PVM2MProtocolError("missing projection accounting for published fact")
 
 def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnapshot:
     if not isinstance(payload, Mapping): raise PVM2MProtocolError("response envelope must be an object")
@@ -187,8 +204,9 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
     for raw in evaluation["facts"]:
         item = _map(raw, {"candidate_id", "candidate_revision", "freshness", "effective_availability"}, "evaluated fact")
         cid = _text(item["candidate_id"], "evaluated candidate", 255)
-        if cid in states or cid not in ids or item["candidate_revision"] != bindings[cid][1] or item["freshness"] not in {"fresh", "stale", "expired"} or item["effective_availability"] not in {"available", "degraded", "unavailable", "withdrawn"}: raise PVM2MProtocolError("invalid evaluated fact")
-        states[cid] = (item["freshness"], item["effective_availability"])
+        freshness, availability = _text(item["freshness"], "evaluated freshness", 32), _text(item["effective_availability"], "evaluated availability", 32)
+        if cid in states or cid not in ids or item["candidate_revision"] != bindings[cid][1] or freshness not in {"fresh", "stale", "expired"} or availability not in {"available", "degraded", "unavailable", "withdrawn"}: raise PVM2MProtocolError("invalid evaluated fact")
+        states[cid] = (freshness, availability)
     if set(states) != ids or not isinstance(current["selections"], list): raise PVM2MProtocolError("partial evaluation")
     selected: set[str] = set()
     for raw in current["selections"]:
@@ -196,16 +214,17 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnap
         cid = _text(item["selected_candidate"], "selected candidate", 255)
         if item["contract"] != "helianthus.semantic.selection/v1" or item["snapshot_id"] != snapshot_id or _revisions(item["revisions"], "selection revisions") != revisions or item["evaluation_digest"] != digest or item["policy_id"] != "policy:gateway-pv-single-qualified" or item["policy_version"] != "1.0.0" or item["presentation_only"] is not True or cid in selected or cid not in states or _key(item["key"], "selection key") != bindings[cid][0] or item["candidate_revision"] != bindings[cid][1] or states[cid] != ("fresh", "available"): raise PVM2MProtocolError("invalid selection")
         selected.add(cid)
-    facts: list[PVM2MFact] = []; energy_key = None
+    facts: list[PVM2MFact] = []; energy_key = None; published = set()
     for fact, cid, semantic_key, _ in candidates:
         if fact is None: continue
         freshness, availability = states[cid]
         if (freshness, availability) == ("fresh", "available") and cid not in selected: raise PVM2MProtocolError("missing selection for current fact")
         if fact.fact_id == "pv.energy.active_export_total": energy_key = semantic_key
         if availability in {"degraded", "withdrawn"}: continue
+        published.add(semantic_key)
         facts.append(PVM2MFact(fact.fact_id, fact.dimension, fact.value, fact.coefficient, fact.scale, fact.unit, fact.quality, "AVAILABLE" if availability == "available" else "UNAVAILABLE", freshness.upper(), fact.freshness_policy, fact.origin_ref))
     if len({fact.key for fact in facts}) != len(facts): raise PVM2MProtocolError("duplicate mapped fact")
-    _projection(current["projection"], snapshot_id, revisions, energy_key)
+    _projection(current["projection"], snapshot_id, revisions, energy_key, published)
     return PVM2MSnapshot(expected_asset_ref, snapshot_id, revisions, digest, tuple(facts))
 
 def _reject_duplicate_pairs(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
@@ -283,7 +302,7 @@ def load_pv_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> t
     if raw is None: return ()
     store = _map(raw, {"schema_version", "asset_ref", "descriptors"}, "descriptor store")
     if store["asset_ref"] != asset_ref: return ()
-    if store["schema_version"] not in {0, _DESCRIPTOR_SCHEMA_VERSION} or not isinstance(store["descriptors"], list) or len(store["descriptors"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("unsupported descriptor store")
+    if isinstance(store["schema_version"], bool) or not isinstance(store["schema_version"], int) or store["schema_version"] not in {0, _DESCRIPTOR_SCHEMA_VERSION} or not isinstance(store["descriptors"], list) or len(store["descriptors"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("unsupported descriptor store")
     result = []
     for raw_descriptor in store["descriptors"]:
         if store["schema_version"] == 0:

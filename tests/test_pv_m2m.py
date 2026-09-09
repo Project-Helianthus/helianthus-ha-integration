@@ -88,6 +88,13 @@ def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal) -> None:
 def test_parser_rejects_unhashable_projection_pair_members(path) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["projection"][path[0]][path[1]][path[2]] = []
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("field", ["freshness", "effective_availability"])
+def test_parser_rejects_non_scalar_evaluation_state(field) -> None:
+    payload = _payload(); payload["data"]["semanticPVCurrent"]["evaluation"]["facts"][0][field] = []
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
+@pytest.mark.parametrize("version", [[], {}])
+def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
+    with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
     payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
