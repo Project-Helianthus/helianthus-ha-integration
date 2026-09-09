@@ -37,8 +37,13 @@ def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(), expected_asset_ref="pv-asset-01")
     fact = snapshot.facts[0]
     assert fact.fact_id == "pv.energy.active_export_total"
-    assert fact.unit == "Wh" and str(fact.value) == "90071992547409930.00"
+    assert fact.unit == "Wh" and str(fact.value) == "9.007199254740993E+16"
     assert not hasattr(fact, "continuity")
+@pytest.mark.parametrize("coefficient, exponent, expected", [("0", 0, "0E+3"), ("900719925474099312345678901234567890", -18, "900719925474099312345.678901234567890")])
+def test_energy_wh_conversion_is_context_independent(coefficient, exponent, expected) -> None:
+    payload = _payload(); number = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"]
+    number["coefficient"], number["exponent10"] = coefficient, exponent
+    assert str(pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01").facts[0].value) == expected
 def test_parser_preserves_stale_value_without_presentation_selection() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(freshness="stale", selected=False), expected_asset_ref="pv-asset-01")
     assert snapshot.facts[0].freshness == "STALE" and snapshot.facts[0].availability == "AVAILABLE"

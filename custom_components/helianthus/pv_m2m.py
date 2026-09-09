@@ -148,7 +148,7 @@ def _candidate(raw: object, index: int, expected_asset_ref: str) -> tuple[PVM2MF
     parsed, coefficient, scale = _value(candidate["value"], kind, semantic_unit, context)
     if legacy == "pv.energy.active_export_total":
         if not isinstance(parsed, Decimal) or coefficient is None or scale is None: raise PVM2MProtocolError(f"invalid {context} energy")
-        parsed, coefficient = parsed * Decimal(1000), coefficient + "000"
+        parsed, coefficient = Decimal(f"{coefficient}e{scale + 3}"), coefficient + "000"
         unit = "Wh"
     dimension_value = semantic_key[2]
     if fixed_dimension is None:
@@ -196,7 +196,7 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
             if len(loss_kinds) != len(set(loss_kinds)): raise PVM2MProtocolError("duplicate projection loss")
             expected_losses = set() if expected is None or expected[2] is None else {expected[2]}
             if expected is not None and key in published and pair[0] == "fact" and (pair[1], disposition["outcome"]) == expected[:2] and set(loss_kinds) == expected_losses: accounted.add(key)
-        if disposition["item_id"] == "inverter.ac.energy_lifetime":
+        if energy_key is not None and disposition["item_id"] == "inverter.ac.energy_lifetime":
             energy_loss = pair == ("fact", "inverter.ac.energy_lifetime") and isinstance(disposition["source_keys"], list) and len(disposition["source_keys"]) == 1 and _key(disposition["source_keys"][0], "energy projection source") == energy_key and disposition["outcome"] == "transformed" and disposition.get("reason") == "counter_continuity_unavailable" and isinstance(disposition["loss"], list) and any(isinstance(loss, Mapping) and loss.get("kind") == "policy" for loss in disposition["loss"])
     if dispositions != requested: raise PVM2MProtocolError("incomplete projection disposition")
     if not energy_loss: raise PVM2MProtocolError("missing counter continuity projection loss")
