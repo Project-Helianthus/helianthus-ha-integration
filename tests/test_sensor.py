@@ -825,6 +825,49 @@ def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
     assert entity.available is False
 
 
+def _evse_allocated_current_entity(connector: str):
+    from custom_components.helianthus import evse_m2m
+
+    descriptor = evse_m2m.EVSEM2MDescriptor(
+        fact_id="evse.limit.allocated_current",
+        dimension=("connector", connector),
+        unique_id=f"entry-1-evse-allocated-{connector}",
+    )
+    fact = evse_m2m.EVSEM2MFact(
+        fact_id=descriptor.fact_id,
+        dimension=descriptor.dimension,
+        value=Decimal("16"),
+        coefficient="16",
+        scale=0,
+        unit="A",
+        quality="GOOD",
+        availability="AVAILABLE",
+        freshness="FRESH",
+        freshness_policy="policy:evse-public-receipt",
+        origin_ref="sha256:" + "a" * 64,
+    )
+    data = evse_m2m.EVSEM2MCoordinatorData(
+        descriptors=(descriptor,),
+        facts={descriptor.key: fact},
+        source_available=True,
+        error=None,
+    )
+    return sensor_platform.HelianthusEVSEM2MSensor(
+        coordinator=_FakeCoordinator(data),
+        entry_id="entry-1",
+        asset_ref="asset:evse-01",
+        descriptor=descriptor,
+    )
+
+
+def test_evse_allocated_current_name_identifies_its_connector_dimension() -> None:
+    connector_a = _evse_allocated_current_entity("connector-a")
+    connector_b = _evse_allocated_current_entity("connector-b")
+    assert connector_a._attr_name == "Allocated Current (Connector: connector-a)"
+    assert connector_b._attr_name == "Allocated Current (Connector: connector-b)"
+    assert connector_a._attr_unique_id != connector_b._attr_unique_id
+
+
 def _storage_entity(*, fact_id: str, value: Decimal | str, unit: str):
     from custom_components.helianthus import storage_m2m
 

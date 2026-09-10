@@ -76,6 +76,13 @@ from custom_components.helianthus.const import (
     CONF_STORAGE_M2M_CLIENT_KEY_FILE,
     CONF_STORAGE_M2M_ENABLED,
     CONF_STORAGE_M2M_ENDPOINT,
+    CONF_EVSE_M2M_ASSET_REF,
+    CONF_EVSE_M2M_CA_CERT_FILE,
+    CONF_EVSE_M2M_CLIENT_CERT_FILE,
+    CONF_EVSE_M2M_CLIENT_KEY_FILE,
+    CONF_EVSE_M2M_DESCRIPTORS,
+    CONF_EVSE_M2M_ENABLED,
+    CONF_EVSE_M2M_ENDPOINT,
     DOMAIN,
 )
 from custom_components.helianthus.options_flow import HelianthusOptionsFlow
@@ -96,6 +103,17 @@ def _complete_options() -> dict:
     }
 
 
+def _complete_evse_options() -> dict:
+    return {
+        CONF_EVSE_M2M_ENABLED: True,
+        CONF_EVSE_M2M_ENDPOINT: "https://evse.example.test/graphql/m2m/v1",
+        CONF_EVSE_M2M_ASSET_REF: "asset:tesla-wc3-a",
+        CONF_EVSE_M2M_CA_CERT_FILE: "/config/pki/ca.pem",
+        CONF_EVSE_M2M_CLIENT_CERT_FILE: "/config/pki/client.pem",
+        CONF_EVSE_M2M_CLIENT_KEY_FILE: "/config/pki/client.key",
+    }
+
+
 def test_options_form_contains_dedicated_mtls_file_reference_fields() -> None:
     flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
     result = asyncio.run(flow.async_step_settings())
@@ -109,6 +127,37 @@ def test_options_form_contains_dedicated_mtls_file_reference_fields() -> None:
         CONF_PV_M2M_CLIENT_KEY_FILE,
     }.issubset(schema)
     assert CONF_PV_M2M_DESCRIPTORS not in schema
+
+
+def test_options_form_contains_all_six_evse_mtls_fields() -> None:
+    flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
+    result = asyncio.run(flow.async_step_settings())
+    schema = result["data_schema"]
+    assert {
+        CONF_EVSE_M2M_ENABLED,
+        CONF_EVSE_M2M_ENDPOINT,
+        CONF_EVSE_M2M_ASSET_REF,
+        CONF_EVSE_M2M_CA_CERT_FILE,
+        CONF_EVSE_M2M_CLIENT_CERT_FILE,
+        CONF_EVSE_M2M_CLIENT_KEY_FILE,
+    }.issubset(schema)
+    assert CONF_EVSE_M2M_DESCRIPTORS not in schema
+
+
+def test_evse_options_reject_invalid_url_ports() -> None:
+    for endpoint in (
+        "https://evse.example.test:bad/graphql/m2m/v1",
+        "https://evse.example.test:99999/graphql/m2m/v1",
+    ):
+        invalid = _complete_evse_options()
+        invalid[CONF_EVSE_M2M_ENDPOINT] = endpoint
+        result = asyncio.run(
+            HelianthusOptionsFlow(SimpleNamespace(options={})).async_step_settings(
+                invalid
+            )
+        )
+        assert result["type"] == "form"
+        assert result["errors"] == {"base": "semantic_m2m_invalid"}
 
 
 def test_enabled_options_require_https_asset_and_all_certificate_references() -> None:
@@ -203,6 +252,22 @@ def test_strings_describe_only_dedicated_m2m_configuration_fields() -> None:
     assert "certificate" in data[CONF_PV_M2M_CLIENT_CERT_FILE].lower()
     assert "key file" in data[CONF_PV_M2M_CLIENT_KEY_FILE].lower()
     assert CONF_PV_M2M_DESCRIPTORS not in data
+
+
+def test_strings_label_all_evse_options_without_exposing_descriptor_store() -> None:
+    strings = json.loads(
+        (Path(__file__).parents[1] / "custom_components/helianthus/strings.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    data = strings["options"]["step"]["settings"]["data"]
+    assert data[CONF_EVSE_M2M_ENABLED] == "Enable SemReg EVSE current limits"
+    assert data[CONF_EVSE_M2M_ENDPOINT] == "EVSE M2M HTTPS endpoint"
+    assert data[CONF_EVSE_M2M_ASSET_REF] == "EVSE asset reference"
+    assert "ca certificate" in data[CONF_EVSE_M2M_CA_CERT_FILE].lower()
+    assert "client certificate" in data[CONF_EVSE_M2M_CLIENT_CERT_FILE].lower()
+    assert "client key" in data[CONF_EVSE_M2M_CLIENT_KEY_FILE].lower()
+    assert CONF_EVSE_M2M_DESCRIPTORS not in data
 
 
 def test_options_entry_is_a_native_menu_with_settings_and_ephemeral_pairing() -> None:

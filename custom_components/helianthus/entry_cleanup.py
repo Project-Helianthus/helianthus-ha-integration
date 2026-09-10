@@ -37,4 +37,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         storage_m2m_boundary = None if data is None else data.get("storage_m2m_boundary")
         if storage_m2m_boundary is not None:
             await storage_m2m_boundary.async_close()
+        evse_m2m_boundary = None if data is None else data.get("evse_m2m_boundary")
+        if evse_m2m_boundary is not None:
+            await evse_m2m_boundary.async_close()
     return unload_ok

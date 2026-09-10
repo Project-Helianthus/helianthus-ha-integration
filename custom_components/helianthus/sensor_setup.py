@@ -168,6 +168,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusSolarSensor,
         HelianthusStatusSensor,
         HelianthusStorageM2MSensor,
+        HelianthusEVSEM2MSensor,
         HelianthusSystemSensor,
         HelianthusZoneValvePositionSensor,
     )
@@ -676,6 +677,43 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             storage_m2m_coordinator.async_add_listener(
                 _add_discovered_storage_entities
             )
+        )
+
+    evse_m2m_coordinator = data.get("evse_m2m_coordinator")
+    if evse_m2m_coordinator is not None:
+        evse_data = evse_m2m_coordinator.data
+        descriptors = tuple(getattr(evse_data, "descriptors", ()) or ())
+        known_evse_descriptor_keys = {descriptor.key for descriptor in descriptors}
+        sensors.extend(
+            HelianthusEVSEM2MSensor(
+                coordinator=evse_m2m_coordinator,
+                entry_id=entry.entry_id,
+                asset_ref=evse_m2m_coordinator.asset_ref,
+                descriptor=descriptor,
+            )
+            for descriptor in descriptors
+        )
+
+        def _add_discovered_evse_entities() -> None:
+            current = evse_m2m_coordinator.data
+            new_descriptors = [
+                descriptor for descriptor in tuple(getattr(current, "descriptors", ()) or ())
+                if descriptor.key not in known_evse_descriptor_keys
+            ]
+            if not new_descriptors:
+                return
+            known_evse_descriptor_keys.update(descriptor.key for descriptor in new_descriptors)
+            async_add_entities([
+                HelianthusEVSEM2MSensor(
+                    coordinator=evse_m2m_coordinator,
+                    entry_id=entry.entry_id,
+                    asset_ref=evse_m2m_coordinator.asset_ref,
+                    descriptor=descriptor,
+                ) for descriptor in new_descriptors
+            ])
+
+        data.setdefault("unsub_listeners", []).append(
+            evse_m2m_coordinator.async_add_listener(_add_discovered_evse_entities)
         )
 
     adapter_info_coordinator = data.get("adapter_info_coordinator")

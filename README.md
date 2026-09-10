@@ -54,6 +54,25 @@ remains Ah without a `total_increasing` state class: SemReg explicitly retains
 counter reset/wrap continuity as native evidence. This integration has no
 native Modbus/Growatt query, fallback, dual publication, control, or write path.
 
+## SemReg EVSE current limits
+
+The optional EVSE boundary uses mTLS and only `SemanticEVSECurrent` with
+`PUBLIC_GRAPHQL_SEMANTIC_EVSE_V1`. It accepts the fixed
+`helianthus.pack.evse@1.0.0` projection after validating the configured asset,
+source/binding/link identity, revision vector, evaluation digest, manifest,
+selection, disposition, explicit loss, provenance, quality, availability, and
+freshness. It creates stable read-only entities for configured current and,
+when independently promoted, allocated current.
+
+Missing, malformed, inhibited, correlation-mismatched, zero-timeout, or expired
+provisional evidence withholds allocated current while retaining an independently
+valid configured current. There is no native Tesla/Modbus query, fallback,
+shadow, dual publication, charging-state inference, topology inference, control,
+or write path. Gateway https://github.com/Project-Helianthus/helianthus-ebusgateway/issues/965
+owns one Tesla production-acquisition producer; it does not constrain this
+protocol-neutral consumer's SemReg lifecycle or loss policy. This consumer
+does not perform acquisition, credential, device, or Home Assistant actions.
+
 ## Quickstart (copy/paste)
 
 ### 0) Prerequisites
