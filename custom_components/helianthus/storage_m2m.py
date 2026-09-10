@@ -50,6 +50,7 @@ _FACTS = {
     "storage.capacity.discharge": ("quantity", "unit.ampere_hour", "Ah", "transformed", "policy"),
     "storage.status.operating": ("symbol", "", "1", "transformed", "symbol"),
 }
+_DESCRIPTOR_DIMENSIONS = {fact_id: {"pack"} for fact_id in _FACTS}
 _WITHHELD_OPERATING_REASON = "unsupported_or_withheld"
 _NATIVE_LOSS_IDS = {
     "storage.pack.current": "native.growatt.bms.rs485.v202.pack_current_amps",
@@ -183,8 +184,9 @@ def _identity(snapshot: Mapping[str, Any], expected_asset_ref: str) -> tuple[str
     source_id = _text(source["source_id"], "storage source id", 256)
     epoch_id = _text(source["source_epoch_id"], "storage source epoch", 256)
     binding_id = _text(binding["binding_id"], "storage binding id", 256)
-    if source["protocol_id"] != "modbus_rtu" or source["state"] != "current" or binding["asset_id"] != expected_asset_ref or binding["source_id"] != source_id or binding["source_epoch_id"] != epoch_id or binding["state"] != "current" or link["asset_id"] != expected_asset_ref or link["binding_id"] != binding_id or link["state"] != "qualified":
+    if source["state"] != "current" or binding["asset_id"] != expected_asset_ref or binding["source_id"] != source_id or binding["source_epoch_id"] != epoch_id or binding["state"] != "current" or link["asset_id"] != expected_asset_ref or link["binding_id"] != binding_id or link["state"] != "qualified":
         raise StorageM2MProtocolError("invalid storage identity")
+    _text(source["protocol_id"], "storage protocol", 256)
     _text(source["profile_id"], "storage profile", 256)
     _text(source["profile_version"], "storage profile version", 64)
     _text(source["revision"], "storage source revision", 32)

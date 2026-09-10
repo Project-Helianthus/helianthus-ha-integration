@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -143,6 +143,90 @@ def test_candidate_provenance_must_match_the_verified_binding() -> None:
     candidate["origin"]["binding_id"] = "binding:other"
     with pytest.raises(storage_m2m.StorageM2MProtocolError, match="provenance"):
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
+
+
+def test_qualified_non_modbus_source_uses_the_same_public_storage_contract() -> None:
+    payload = _payload()
+    source = payload["data"]["semanticStorageCurrent"]["snapshot"]["sources"][0]
+    source["protocol_id"] = "canbus"
+    source["profile_id"] = "example.storage.public.v1"
+    assert storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET).facts
+
+
+def test_persisted_descriptor_survives_enabled_boundary_restart_with_its_stable_id(monkeypatch) -> None:
+    stored = {
+        "schema_version": 1,
+        "asset_ref": ASSET,
+        "descriptors": [{
+            "fact_id": "storage.state.soc",
+            "dimension": {"kind": "pack", "value": ASSET},
+            "unique_id": "entry-1-storage-persisted-soc",
+        }],
+    }
+    first = storage_m2m.load_storage_descriptor_store(
+        stored, entry_id="entry-1", asset_ref=ASSET
+    )
+    persisted = storage_m2m.serialize_storage_descriptor_store(ASSET, first)
+    restarted = storage_m2m.load_storage_descriptor_store(
+        persisted, entry_id="entry-1", asset_ref=ASSET
+    )
+    assert restarted[0].unique_id == "entry-1-storage-persisted-soc"
+    assert restarted[0].key == ("storage.state.soc", "pack", ASSET)
+
+    class Entry:
+        entry_id = "entry-1"
+        options = {
+            "storage_m2m_enabled": True,
+            "storage_m2m_endpoint": "https://storage.example.test/graphql/m2m/v1",
+            "storage_m2m_asset_ref": ASSET,
+            "storage_m2m_ca_cert_file": "/config/pki/ca.pem",
+            "storage_m2m_client_cert_file": "/config/pki/client.pem",
+            "storage_m2m_client_key_file": "/config/pki/client.key",
+            "storage_m2m_descriptors": persisted,
+        }
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def async_close(self):
+            return None
+
+    async def no_network_refresh(_coordinator, _client):
+        return None
+
+    async def tls(_hass, _config):
+        return object()
+
+    monkeypatch.setattr(storage_m2m, "StorageM2MClient", Client)
+    monkeypatch.setattr(storage_m2m, "async_first_refresh_with_cleanup", no_network_refresh)
+    monkeypatch.setattr(storage_m2m, "async_build_storage_ssl_context", tls)
+    monkeypatch.setitem(
+        sys.modules,
+        "aiohttp",
+        SimpleNamespace(
+            ClientSession=lambda **_kwargs: object(),
+            TCPConnector=lambda **_kwargs: object(),
+            DummyCookieJar=lambda: object(),
+            ClientTimeout=lambda **_kwargs: object(),
+        ),
+    )
+    boundary = asyncio.run(storage_m2m.async_setup_storage_m2m_boundary(object(), Entry(), scan_interval=60))
+    assert boundary is not None
+    assert boundary.coordinator.data.descriptors[0].unique_id == "entry-1-storage-persisted-soc"
+
+
+@pytest.mark.parametrize("descriptor", [
+    {"fact_id": "storage.unknown", "dimension": {"kind": "pack", "value": ASSET}, "unique_id": "entry-1-storage-invalid"},
+    {"fact_id": "storage.state.soc", "dimension": {"kind": "scope", "value": "total"}, "unique_id": "entry-1-storage-invalid"},
+])
+def test_invalid_persisted_descriptor_fails_closed(descriptor) -> None:
+    with pytest.raises(storage_m2m.StorageM2MProtocolError):
+        storage_m2m.load_storage_descriptor_store(
+            {"schema_version": 1, "asset_ref": ASSET, "descriptors": [descriptor]},
+            entry_id="entry-1",
+            asset_ref=ASSET,
+        )
 
 
 @pytest.mark.parametrize("mutate", [
