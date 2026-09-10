@@ -364,7 +364,7 @@ def storage_m2m_config_from_options(options: Mapping[str, object]) -> StorageM2M
     for name in names:
         value = options.get(name, "")
         if not isinstance(value, str) or len(value) > 4096 or any(char in value for char in ("\x00", "\r", "\n")) or "-----BEGIN" in value.upper(): raise ValueError(f"invalid {name}")
-        values.append(value.strip())
+        values.append(value if name == CONF_STORAGE_M2M_ASSET_REF else value.strip())
     if options.get(CONF_STORAGE_M2M_ENABLED, DEFAULT_STORAGE_M2M_ENABLED) is not True:
         if values[0]: _validate_endpoint(values[0])
         return None

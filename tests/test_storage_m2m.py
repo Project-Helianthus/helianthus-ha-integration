@@ -145,7 +145,7 @@ def _enabled_options(asset_ref: str) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("asset_ref", ["a" * 257, "a" * 512, "a" * 513, "asset with space"])
+@pytest.mark.parametrize("asset_ref", ["a" * 257, "a" * 512, "a" * 513, "asset with space", f" {ASSET}", f"{ASSET} "])
 def test_config_and_response_reject_noncanonical_or_oversize_semreg_asset_ids(
     asset_ref: str,
 ) -> None:
