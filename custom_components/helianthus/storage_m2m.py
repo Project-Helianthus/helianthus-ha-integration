@@ -37,6 +37,7 @@ M2M_MAX_JSON_DEPTH = 64
 _DESCRIPTOR_SCHEMA_VERSION = 1
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
+_UINT64_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 
 # The seven accepted facts in the public Storage projection.  The dimension is
 # deliberately the configured SemReg asset ID, never a vendor, transport, or
@@ -103,6 +104,11 @@ def _digest(value: object, context: str) -> str:
     value = _text(value, context, 71)
     if _DIGEST_RE.fullmatch(value) is None: raise StorageM2MProtocolError(f"invalid {context}")
     return value
+def _driver_generation(value: object, context: str) -> str:
+    value = _text(value, context, 20)
+    if _UINT64_RE.fullmatch(value) is None or value == "0" or int(value) > 18_446_744_073_709_551_615:
+        raise StorageM2MProtocolError(f"invalid {context}")
+    return value
 def _revisions(value: object, context: str) -> tuple[str, ...]:
     item = _map(value, {"semantic", "identity", "facts", "services", "capabilities"}, context)
     return tuple(_text(item[k], f"{context} {k}", 32) for k in ("semantic", "identity", "facts", "services", "capabilities"))
@@ -132,7 +138,7 @@ def _origin(value: object, context: str) -> str:
     for evidence in item["evidence"]: _digest(_map(evidence, {"owner", "kind", "digest", "contract", "access", "redaction"}, context)["digest"], context)
     return _text(item["origin_id"], context, 255)
 
-def _candidate(raw: object, index: int, expected_asset_ref: str, source_identity: tuple[str, str, str]) -> tuple[StorageM2MFact | None, str, tuple[str, str, str], str]:
+def _candidate(raw: object, index: int, expected_asset_ref: str, source_identity: tuple[str, str, str, str]) -> tuple[StorageM2MFact | None, str, tuple[str, str, str], str]:
     context = f"snapshot fact {index}"; envelope = _map(raw, {"asset_id", "key", "candidates", "conflicts", "revision"}, context)
     if envelope["asset_id"] != expected_asset_ref: raise StorageM2MProtocolError(f"invalid {context} asset")
     _text(envelope["revision"], f"{context} revision", 32)
@@ -146,10 +152,11 @@ def _candidate(raw: object, index: int, expected_asset_ref: str, source_identity
     if _key(candidate["key"], context) != semantic_key or not isinstance(candidate["evidence"], list) or not candidate["evidence"]: raise StorageM2MProtocolError(f"invalid {context}")
     origin_data = _map(candidate["origin"], {"origin_id", "kind", "evidence"}, f"{context} provenance", {"source_id", "source_epoch_id", "binding_id"})
     origin = _origin(origin_data, f"{context} provenance")
-    source_id, source_epoch_id, binding_id = source_identity
+    source_id, source_epoch_id, binding_id, driver_generation = source_identity
     if origin_data.get("source_id") != source_id or origin_data.get("source_epoch_id") != source_epoch_id or origin_data.get("binding_id") != binding_id or candidate.get("binding_id") != binding_id or candidate.get("source_epoch_id") != source_epoch_id:
         raise StorageM2MProtocolError(f"invalid {context} provenance")
-    _text(candidate.get("driver_generation"), f"{context} driver generation", 32)
+    if _driver_generation(candidate.get("driver_generation"), f"{context} driver generation") != driver_generation:
+        raise StorageM2MProtocolError(f"invalid {context} driver generation")
     revision = _text(candidate["revision"], f"{context} revision", 32)
     if mapping is None: return None, candidate_id, semantic_key, revision
     fact_id, (kind, semantic_unit, unit, _outcome, _loss) = semantic_key[0], mapping
@@ -173,7 +180,7 @@ def _error(payload: Mapping[str, Any]) -> None:
     raise StorageM2MRemoteError(code)
 
 
-def _identity(snapshot: Mapping[str, Any], expected_asset_ref: str) -> tuple[str, str, str]:
+def _identity(snapshot: Mapping[str, Any], expected_asset_ref: str) -> tuple[str, str, str, str]:
     """Verify the one configured asset is bound to one current SemReg source."""
     sources, bindings, links = snapshot["sources"], snapshot["bindings"], snapshot["identity_links"]
     if not isinstance(sources, list) or not isinstance(bindings, list) or not isinstance(links, list) or len(sources) != 1 or len(bindings) != 1 or len(links) != 1:
@@ -184,6 +191,9 @@ def _identity(snapshot: Mapping[str, Any], expected_asset_ref: str) -> tuple[str
     source_id = _text(source["source_id"], "storage source id", 256)
     epoch_id = _text(source["source_epoch_id"], "storage source epoch", 256)
     binding_id = _text(binding["binding_id"], "storage binding id", 256)
+    driver_generation = _driver_generation(
+        binding["driver_generation"], "storage binding driver generation"
+    )
     if source["state"] != "current" or binding["asset_id"] != expected_asset_ref or binding["source_id"] != source_id or binding["source_epoch_id"] != epoch_id or binding["state"] != "current" or link["asset_id"] != expected_asset_ref or link["binding_id"] != binding_id or link["state"] != "qualified":
         raise StorageM2MProtocolError("invalid storage identity")
     _text(source["protocol_id"], "storage protocol", 256)
@@ -195,7 +205,7 @@ def _identity(snapshot: Mapping[str, Any], expected_asset_ref: str) -> tuple[str
     if not isinstance(link["basis"], list) or not link["basis"]:
         raise StorageM2MProtocolError("invalid storage identity basis")
     _origin({"origin_id": "identity", "kind": "native_observation", "evidence": link["basis"]}, "storage identity basis")
-    return source_id, epoch_id, binding_id
+    return source_id, epoch_id, binding_id, driver_generation
 def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], expected_asset_ref: str, published: set[tuple[str, str, str]]) -> None:
     item = _map(value, {"contract", "manifest", "snapshot_id", "revisions", "requested", "dispositions"}, "projection")
     if item["contract"] != "helianthus.semantic.projection/v1" or item["snapshot_id"] != snapshot_id or _revisions(item["revisions"], "projection revisions") != revisions: raise StorageM2MProtocolError("invalid projection binding")

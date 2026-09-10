@@ -145,6 +145,34 @@ def test_candidate_provenance_must_match_the_verified_binding() -> None:
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
 
 
+def test_candidate_generation_must_exactly_match_the_verified_binding() -> None:
+    payload = _payload()
+    candidate = payload["data"]["semanticStorageCurrent"]["snapshot"]["facts"][0]["candidates"][0]
+    candidate["driver_generation"] = "2"
+    with pytest.raises(storage_m2m.StorageM2MProtocolError, match="driver generation"):
+        storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
+
+
+@pytest.mark.parametrize("target, value", [
+    ("binding", None),
+    ("binding", "01"),
+    ("binding", "0"),
+    ("binding", "18446744073709551616"),
+    ("candidate", None),
+    ("candidate", "not-a-generation"),
+])
+def test_driver_generation_absent_or_malformed_rejects(target, value) -> None:
+    payload = _payload()
+    snapshot = payload["data"]["semanticStorageCurrent"]["snapshot"]
+    item = snapshot["bindings"][0] if target == "binding" else snapshot["facts"][0]["candidates"][0]
+    if value is None:
+        del item["driver_generation"]
+    else:
+        item["driver_generation"] = value
+    with pytest.raises(storage_m2m.StorageM2MProtocolError):
+        storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
+
+
 def test_qualified_non_modbus_source_uses_the_same_public_storage_contract() -> None:
     payload = _payload()
     source = payload["data"]["semanticStorageCurrent"]["snapshot"]["sources"][0]
