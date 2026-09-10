@@ -57,7 +57,13 @@
           "pv_m2m_asset_ref": "PV asset reference",
           "pv_m2m_ca_cert_file": "Server CA certificate file",
           "pv_m2m_client_cert_file": "Client certificate file",
-          "pv_m2m_client_key_file": "Client key file"
+          "pv_m2m_client_key_file": "Client key file",
+          "storage_m2m_enabled": "Enable SemReg storage",
+          "storage_m2m_endpoint": "Storage M2M HTTPS endpoint",
+          "storage_m2m_asset_ref": "Storage asset reference",
+          "storage_m2m_ca_cert_file": "Storage server CA certificate file",
+          "storage_m2m_client_cert_file": "Storage client certificate file",
+          "storage_m2m_client_key_file": "Storage client key file"
         }
       },
       "eebus_pairing": {
@@ -146,6 +152,7 @@
     },
     "error": {
       "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
+      "semantic_m2m_invalid": "Each enabled SemReg consumer requires its dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
       "invalid_request": "The eeBUS action request was rejected as invalid.",
       "invalid_response": "The eeBUS admin boundary returned a malformed or unknown response.",
       "idempotency_conflict": "This action key was already used for different input. Start a fresh action.",

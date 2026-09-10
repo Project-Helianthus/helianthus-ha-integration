@@ -18,6 +18,13 @@ from .const import (
     CONF_PV_M2M_DESCRIPTORS,
     CONF_PV_M2M_ENABLED,
     CONF_PV_M2M_ENDPOINT,
+    CONF_STORAGE_M2M_ASSET_REF,
+    CONF_STORAGE_M2M_CA_CERT_FILE,
+    CONF_STORAGE_M2M_CLIENT_CERT_FILE,
+    CONF_STORAGE_M2M_CLIENT_KEY_FILE,
+    CONF_STORAGE_M2M_DESCRIPTORS,
+    CONF_STORAGE_M2M_ENABLED,
+    CONF_STORAGE_M2M_ENDPOINT,
     CONF_USE_SUBSCRIPTIONS,
     CONF_ZONE_SCHEDULE_HELPERS,
     DEFAULT_DHW_SCHEDULE_HELPER,
@@ -27,6 +34,12 @@ from .const import (
     DEFAULT_PV_M2M_CLIENT_KEY_FILE,
     DEFAULT_PV_M2M_ENABLED,
     DEFAULT_PV_M2M_ENDPOINT,
+    DEFAULT_STORAGE_M2M_ASSET_REF,
+    DEFAULT_STORAGE_M2M_CA_CERT_FILE,
+    DEFAULT_STORAGE_M2M_CLIENT_CERT_FILE,
+    DEFAULT_STORAGE_M2M_CLIENT_KEY_FILE,
+    DEFAULT_STORAGE_M2M_ENABLED,
+    DEFAULT_STORAGE_M2M_ENDPOINT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
     DEFAULT_ZONE_SCHEDULE_HELPERS,
@@ -75,6 +88,7 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             from .pv_m2m import validate_pv_m2m_options
+            from .storage_m2m import validate_storage_m2m_options
 
             submitted = dict(user_input)
             for key in (
@@ -83,18 +97,30 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 CONF_PV_M2M_CA_CERT_FILE,
                 CONF_PV_M2M_CLIENT_CERT_FILE,
                 CONF_PV_M2M_CLIENT_KEY_FILE,
+                CONF_STORAGE_M2M_ENDPOINT,
+                CONF_STORAGE_M2M_ASSET_REF,
+                CONF_STORAGE_M2M_CA_CERT_FILE,
+                CONF_STORAGE_M2M_CLIENT_CERT_FILE,
+                CONF_STORAGE_M2M_CLIENT_KEY_FILE,
             ):
                 value = submitted.get(key)
                 if isinstance(value, str):
                     submitted[key] = value.strip()
-            if validate_pv_m2m_options(submitted):
+            pv_valid = validate_pv_m2m_options(submitted)
+            storage_valid = validate_storage_m2m_options(submitted)
+            if pv_valid and storage_valid:
                 stored_descriptors = self._config_entry.options.get(
                     CONF_PV_M2M_DESCRIPTORS
                 )
                 if stored_descriptors is not None:
                     submitted[CONF_PV_M2M_DESCRIPTORS] = stored_descriptors
+                storage_descriptors = self._config_entry.options.get(
+                    CONF_STORAGE_M2M_DESCRIPTORS
+                )
+                if storage_descriptors is not None:
+                    submitted[CONF_STORAGE_M2M_DESCRIPTORS] = storage_descriptors
                 return self.async_create_entry(title="", data=submitted)
-            errors["base"] = "pv_m2m_invalid"
+            errors["base"] = "pv_m2m_invalid" if not pv_valid else "semantic_m2m_invalid"
 
         options = {
             **self._config_entry.options,
@@ -118,6 +144,12 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         pv_m2m_client_key_file = options.get(
             CONF_PV_M2M_CLIENT_KEY_FILE, DEFAULT_PV_M2M_CLIENT_KEY_FILE
         )
+        storage_m2m_enabled = options.get(CONF_STORAGE_M2M_ENABLED, DEFAULT_STORAGE_M2M_ENABLED)
+        storage_m2m_endpoint = options.get(CONF_STORAGE_M2M_ENDPOINT, DEFAULT_STORAGE_M2M_ENDPOINT)
+        storage_m2m_asset_ref = options.get(CONF_STORAGE_M2M_ASSET_REF, DEFAULT_STORAGE_M2M_ASSET_REF)
+        storage_m2m_ca_cert_file = options.get(CONF_STORAGE_M2M_CA_CERT_FILE, DEFAULT_STORAGE_M2M_CA_CERT_FILE)
+        storage_m2m_client_cert_file = options.get(CONF_STORAGE_M2M_CLIENT_CERT_FILE, DEFAULT_STORAGE_M2M_CLIENT_CERT_FILE)
+        storage_m2m_client_key_file = options.get(CONF_STORAGE_M2M_CLIENT_KEY_FILE, DEFAULT_STORAGE_M2M_CLIENT_KEY_FILE)
 
         schema = vol.Schema(
             {
@@ -141,6 +173,12 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                     CONF_PV_M2M_CLIENT_KEY_FILE,
                     default=str(pv_m2m_client_key_file),
                 ): str,
+                vol.Required(CONF_STORAGE_M2M_ENABLED, default=bool(storage_m2m_enabled)): bool,
+                vol.Optional(CONF_STORAGE_M2M_ENDPOINT, default=str(storage_m2m_endpoint)): str,
+                vol.Optional(CONF_STORAGE_M2M_ASSET_REF, default=str(storage_m2m_asset_ref)): str,
+                vol.Optional(CONF_STORAGE_M2M_CA_CERT_FILE, default=str(storage_m2m_ca_cert_file)): str,
+                vol.Optional(CONF_STORAGE_M2M_CLIENT_CERT_FILE, default=str(storage_m2m_client_cert_file)): str,
+                vol.Optional(CONF_STORAGE_M2M_CLIENT_KEY_FILE, default=str(storage_m2m_client_key_file)): str,
             }
         )
 

@@ -17,6 +17,7 @@ from custom_components.helianthus import parity_gate
 ADOPTED_CAPABILITY_TESTS = (
     "tests/test_coordinator.py",
     "tests/test_energy.py",
+    "tests/test_storage_m2m.py",
     "tests/test_smoke_profile.py",
 )
 
