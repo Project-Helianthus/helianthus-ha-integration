@@ -63,7 +63,13 @@
           "storage_m2m_asset_ref": "Storage asset reference",
           "storage_m2m_ca_cert_file": "Storage server CA certificate file",
           "storage_m2m_client_cert_file": "Storage client certificate file",
-          "storage_m2m_client_key_file": "Storage client key file"
+          "storage_m2m_client_key_file": "Storage client key file",
+          "evse_m2m_enabled": "Enable SemReg EVSE current limits",
+          "evse_m2m_endpoint": "EVSE M2M HTTPS endpoint",
+          "evse_m2m_asset_ref": "EVSE asset reference",
+          "evse_m2m_ca_cert_file": "EVSE server CA certificate file",
+          "evse_m2m_client_cert_file": "EVSE client certificate file",
+          "evse_m2m_client_key_file": "EVSE client key file"
         }
       },
       "eebus_pairing": {

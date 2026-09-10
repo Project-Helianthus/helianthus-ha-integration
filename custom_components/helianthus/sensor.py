@@ -23,6 +23,11 @@ from .storage_m2m import (
     StorageM2MFact,
     build_storage_device_identifier,
 )
+from .evse_m2m import (
+    EVSEM2MDescriptor,
+    EVSEM2MFact,
+    build_evse_device_identifier,
+)
 from .sensor_descriptors import (
     ADAPTER_STATUS_FIELDS,
     BOILER_DIAGNOSTICS_SENSOR_FIELDS,
@@ -1371,6 +1376,54 @@ class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
             model="Canonical Electrical Storage",
             name="Electrical Storage",
         )
+
+
+class HelianthusEVSEM2MSensor(CoordinatorEntity, SensorEntity):
+    """One stable, read-only EVSE current-limit entity."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = "current"
+    _attr_native_unit_of_measurement = "A"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: EVSEM2MDescriptor) -> None:
+        super().__init__(coordinator)
+        self._entry_id, self._asset_ref, self._descriptor = entry_id, asset_ref, descriptor
+        self._attr_unique_id = descriptor.unique_id
+        label = descriptor.fact_id.removeprefix("evse.limit.").replace("_", " ").title()
+        if descriptor.fact_id == "evse.limit.allocated_current":
+            dimension = descriptor.dimension[0].replace("_", " ").title()
+            label = f"{label} ({dimension}: {descriptor.dimension[1]})"
+        self._attr_name = label
+
+    def _fact(self) -> EVSEM2MFact | None:
+        facts = getattr(self.coordinator.data, "facts", {})
+        fact = facts.get(self._descriptor.key) if isinstance(facts, Mapping) else None
+        return fact if isinstance(fact, EVSEM2MFact) else None
+
+    @property
+    def available(self) -> bool:
+        fact = self._fact()
+        return bool(getattr(super(), "available", True) and getattr(self.coordinator, "last_update_success", True)
+                    and getattr(self.coordinator.data, "source_available", False) and fact is not None
+                    and fact.availability == "AVAILABLE" and fact.freshness == "FRESH")
+
+    @property
+    def native_value(self) -> Any:
+        fact = self._fact()
+        return None if fact is None or not self.available else fact.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        fact = self._fact()
+        if fact is None:
+            return {"fact_id": self._descriptor.fact_id, "dimension": {self._descriptor.dimension[0]: self._descriptor.dimension[1]}}
+        return {"fact_id": fact.fact_id, "dimension": {fact.dimension[0]: fact.dimension[1]}, "quality": fact.quality,
+                "availability": fact.availability, "freshness": fact.freshness, "freshness_policy": fact.freshness_policy}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={build_evse_device_identifier(self._entry_id, self._asset_ref)}, manufacturer="Helianthus", model="Canonical EVSE Current Limits", name="EVSE")
 
 
 def _storage_sensor_metadata(fact_id: str, unit: str | None) -> tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]:

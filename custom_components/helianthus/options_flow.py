@@ -25,6 +25,13 @@ from .const import (
     CONF_STORAGE_M2M_DESCRIPTORS,
     CONF_STORAGE_M2M_ENABLED,
     CONF_STORAGE_M2M_ENDPOINT,
+    CONF_EVSE_M2M_ASSET_REF,
+    CONF_EVSE_M2M_CA_CERT_FILE,
+    CONF_EVSE_M2M_CLIENT_CERT_FILE,
+    CONF_EVSE_M2M_CLIENT_KEY_FILE,
+    CONF_EVSE_M2M_DESCRIPTORS,
+    CONF_EVSE_M2M_ENABLED,
+    CONF_EVSE_M2M_ENDPOINT,
     CONF_USE_SUBSCRIPTIONS,
     CONF_ZONE_SCHEDULE_HELPERS,
     DEFAULT_DHW_SCHEDULE_HELPER,
@@ -40,6 +47,12 @@ from .const import (
     DEFAULT_STORAGE_M2M_CLIENT_KEY_FILE,
     DEFAULT_STORAGE_M2M_ENABLED,
     DEFAULT_STORAGE_M2M_ENDPOINT,
+    DEFAULT_EVSE_M2M_ASSET_REF,
+    DEFAULT_EVSE_M2M_CA_CERT_FILE,
+    DEFAULT_EVSE_M2M_CLIENT_CERT_FILE,
+    DEFAULT_EVSE_M2M_CLIENT_KEY_FILE,
+    DEFAULT_EVSE_M2M_ENABLED,
+    DEFAULT_EVSE_M2M_ENDPOINT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
     DEFAULT_ZONE_SCHEDULE_HELPERS,
@@ -89,6 +102,7 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             from .pv_m2m import validate_pv_m2m_options
             from .storage_m2m import validate_storage_m2m_options
+            from .evse_m2m import validate_evse_m2m_options
 
             submitted = dict(user_input)
             for key in (
@@ -102,15 +116,21 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 CONF_STORAGE_M2M_CA_CERT_FILE,
                 CONF_STORAGE_M2M_CLIENT_CERT_FILE,
                 CONF_STORAGE_M2M_CLIENT_KEY_FILE,
+                CONF_EVSE_M2M_ENDPOINT,
+                CONF_EVSE_M2M_ASSET_REF,
+                CONF_EVSE_M2M_CA_CERT_FILE,
+                CONF_EVSE_M2M_CLIENT_CERT_FILE,
+                CONF_EVSE_M2M_CLIENT_KEY_FILE,
             ):
                 value = submitted.get(key)
                 if isinstance(value, str):
                     submitted[key] = (
-                        value if key == CONF_STORAGE_M2M_ASSET_REF else value.strip()
+                        value if key in {CONF_STORAGE_M2M_ASSET_REF, CONF_EVSE_M2M_ASSET_REF} else value.strip()
                     )
             pv_valid = validate_pv_m2m_options(submitted)
             storage_valid = validate_storage_m2m_options(submitted)
-            if pv_valid and storage_valid:
+            evse_valid = validate_evse_m2m_options(submitted)
+            if pv_valid and storage_valid and evse_valid:
                 stored_descriptors = self._config_entry.options.get(
                     CONF_PV_M2M_DESCRIPTORS
                 )
@@ -121,6 +141,9 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 )
                 if storage_descriptors is not None:
                     submitted[CONF_STORAGE_M2M_DESCRIPTORS] = storage_descriptors
+                evse_descriptors = self._config_entry.options.get(CONF_EVSE_M2M_DESCRIPTORS)
+                if evse_descriptors is not None:
+                    submitted[CONF_EVSE_M2M_DESCRIPTORS] = evse_descriptors
                 return self.async_create_entry(title="", data=submitted)
             errors["base"] = "pv_m2m_invalid" if not pv_valid else "semantic_m2m_invalid"
 
@@ -152,6 +175,12 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         storage_m2m_ca_cert_file = options.get(CONF_STORAGE_M2M_CA_CERT_FILE, DEFAULT_STORAGE_M2M_CA_CERT_FILE)
         storage_m2m_client_cert_file = options.get(CONF_STORAGE_M2M_CLIENT_CERT_FILE, DEFAULT_STORAGE_M2M_CLIENT_CERT_FILE)
         storage_m2m_client_key_file = options.get(CONF_STORAGE_M2M_CLIENT_KEY_FILE, DEFAULT_STORAGE_M2M_CLIENT_KEY_FILE)
+        evse_m2m_enabled = options.get(CONF_EVSE_M2M_ENABLED, DEFAULT_EVSE_M2M_ENABLED)
+        evse_m2m_endpoint = options.get(CONF_EVSE_M2M_ENDPOINT, DEFAULT_EVSE_M2M_ENDPOINT)
+        evse_m2m_asset_ref = options.get(CONF_EVSE_M2M_ASSET_REF, DEFAULT_EVSE_M2M_ASSET_REF)
+        evse_m2m_ca_cert_file = options.get(CONF_EVSE_M2M_CA_CERT_FILE, DEFAULT_EVSE_M2M_CA_CERT_FILE)
+        evse_m2m_client_cert_file = options.get(CONF_EVSE_M2M_CLIENT_CERT_FILE, DEFAULT_EVSE_M2M_CLIENT_CERT_FILE)
+        evse_m2m_client_key_file = options.get(CONF_EVSE_M2M_CLIENT_KEY_FILE, DEFAULT_EVSE_M2M_CLIENT_KEY_FILE)
 
         schema = vol.Schema(
             {
@@ -181,6 +210,12 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_STORAGE_M2M_CA_CERT_FILE, default=str(storage_m2m_ca_cert_file)): str,
                 vol.Optional(CONF_STORAGE_M2M_CLIENT_CERT_FILE, default=str(storage_m2m_client_cert_file)): str,
                 vol.Optional(CONF_STORAGE_M2M_CLIENT_KEY_FILE, default=str(storage_m2m_client_key_file)): str,
+                vol.Required(CONF_EVSE_M2M_ENABLED, default=bool(evse_m2m_enabled)): bool,
+                vol.Optional(CONF_EVSE_M2M_ENDPOINT, default=str(evse_m2m_endpoint)): str,
+                vol.Optional(CONF_EVSE_M2M_ASSET_REF, default=str(evse_m2m_asset_ref)): str,
+                vol.Optional(CONF_EVSE_M2M_CA_CERT_FILE, default=str(evse_m2m_ca_cert_file)): str,
+                vol.Optional(CONF_EVSE_M2M_CLIENT_CERT_FILE, default=str(evse_m2m_client_cert_file)): str,
+                vol.Optional(CONF_EVSE_M2M_CLIENT_KEY_FILE, default=str(evse_m2m_client_key_file)): str,
             }
         )
 
