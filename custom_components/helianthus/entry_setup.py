@@ -244,6 +244,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_setup_pv_m2m_boundary,
         pv_m2m_option_signature,
     )
+    from .storage_m2m import (
+        async_setup_storage_m2m_boundary,
+        storage_m2m_option_signature,
+    )
     from .entry_services import async_setup_optional_eebus_admin_service
     from .zone_parent import (
         build_zone_parent_device_ids,
@@ -1757,6 +1761,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if pv_m2m_boundary is not None:
         pv_m2m_coordinator = pv_m2m_boundary.coordinator
 
+    storage_m2m_boundary = None
+    storage_m2m_coordinator = None
+    try:
+        storage_m2m_boundary = await async_setup_storage_m2m_boundary(
+            hass,
+            entry,
+            scan_interval=scan_interval,
+        )
+    except (OSError, TypeError, ValueError):
+        _LOGGER.warning(
+            "Canonical storage consumer configuration failed for entry %s",
+            entry.entry_id,
+        )
+    if storage_m2m_boundary is not None:
+        storage_m2m_coordinator = storage_m2m_boundary.coordinator
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
@@ -1776,6 +1796,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "pv_m2m_coordinator": pv_m2m_coordinator,
         "pv_m2m_boundary": pv_m2m_boundary,
         "pv_m2m_option_signature": pv_m2m_option_signature(entry.options),
+        "storage_m2m_coordinator": storage_m2m_coordinator,
+        "storage_m2m_boundary": storage_m2m_boundary,
+        "storage_m2m_option_signature": storage_m2m_option_signature(entry.options),
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
@@ -1805,8 +1828,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         runtime = updated_hass.data.get(DOMAIN, {}).get(updated_entry.entry_id)
         if not isinstance(runtime, dict):
             return
-        if runtime.get("pv_m2m_option_signature") == pv_m2m_option_signature(
-            updated_entry.options
+        if (
+            runtime.get("pv_m2m_option_signature")
+            == pv_m2m_option_signature(updated_entry.options)
+            and runtime.get("storage_m2m_option_signature")
+            == storage_m2m_option_signature(updated_entry.options)
         ):
             return
         await updated_hass.config_entries.async_reload(updated_entry.entry_id)

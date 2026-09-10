@@ -167,6 +167,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusRadioSensor,
         HelianthusSolarSensor,
         HelianthusStatusSensor,
+        HelianthusStorageM2MSensor,
         HelianthusSystemSensor,
         HelianthusZoneValvePositionSensor,
     )
@@ -630,6 +631,51 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         data.setdefault("unsub_listeners", []).append(
             pv_m2m_coordinator.async_add_listener(_add_discovered_pv_entities)
+        )
+
+    storage_m2m_coordinator = data.get("storage_m2m_coordinator")
+    if storage_m2m_coordinator is not None:
+        storage_data = storage_m2m_coordinator.data
+        descriptors = tuple(getattr(storage_data, "descriptors", ()) or ())
+        known_storage_descriptor_keys = {descriptor.key for descriptor in descriptors}
+        sensors.extend(
+            HelianthusStorageM2MSensor(
+                coordinator=storage_m2m_coordinator,
+                entry_id=entry.entry_id,
+                asset_ref=storage_m2m_coordinator.asset_ref,
+                descriptor=descriptor,
+            )
+            for descriptor in descriptors
+        )
+
+        def _add_discovered_storage_entities() -> None:
+            current = storage_m2m_coordinator.data
+            new_descriptors = [
+                descriptor
+                for descriptor in tuple(getattr(current, "descriptors", ()) or ())
+                if descriptor.key not in known_storage_descriptor_keys
+            ]
+            if not new_descriptors:
+                return
+            known_storage_descriptor_keys.update(
+                descriptor.key for descriptor in new_descriptors
+            )
+            async_add_entities(
+                [
+                    HelianthusStorageM2MSensor(
+                        coordinator=storage_m2m_coordinator,
+                        entry_id=entry.entry_id,
+                        asset_ref=storage_m2m_coordinator.asset_ref,
+                        descriptor=descriptor,
+                    )
+                    for descriptor in new_descriptors
+                ]
+            )
+
+        data.setdefault("unsub_listeners", []).append(
+            storage_m2m_coordinator.async_add_listener(
+                _add_discovered_storage_entities
+            )
         )
 
     adapter_info_coordinator = data.get("adapter_info_coordinator")

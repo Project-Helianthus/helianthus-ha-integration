@@ -37,6 +37,23 @@ helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-
   (transport)        (registry/schema)     (GraphQL/MCP runtime)      (HA integration layer)
 ```
 
+## SemReg electrical storage
+
+The optional Storage boundary consumes only the mTLS
+`SemanticStorageCurrent` operation with
+`PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1`. It accepts the fixed
+`helianthus.pack.storage@1.1.0` projection after checking the configured asset,
+SemReg source/binding/link identity, revisions, evaluation digest, manifest,
+projection dispositions, losses, provenance, quality, availability, and
+freshness. It creates stable entities for SOC, pack voltage/current/temperature,
+cumulative charge/discharge Ah, and operating state.
+
+`soft_starting` withdraws only operating state. Rejected reports retain the last
+accepted coordinator state, while expired facts are unavailable. Cumulative Ah
+remains Ah without a `total_increasing` state class: SemReg explicitly retains
+counter reset/wrap continuity as native evidence. This integration has no
+native Modbus/Growatt query, fallback, dual publication, control, or write path.
+
 ## Quickstart (copy/paste)
 
 ### 0) Prerequisites

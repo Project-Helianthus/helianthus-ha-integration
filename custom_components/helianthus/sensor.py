@@ -18,6 +18,11 @@ from .pv_m2m import (
     PVM2MFact,
     build_pv_device_identifier,
 )
+from .storage_m2m import (
+    StorageM2MDescriptor,
+    StorageM2MFact,
+    build_storage_device_identifier,
+)
 from .sensor_descriptors import (
     ADAPTER_STATUS_FIELDS,
     BOILER_DIAGNOSTICS_SENSOR_FIELDS,
@@ -1294,6 +1299,92 @@ def _pv_expected_unit(fact_id: str) -> str:
     if fact_id in {"pv.ac.power_factor", "pv.operating.state", "pv.event.flags"}:
         return "1"
     return "W"
+
+
+class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
+    """One persisted public Storage fact identity."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: StorageM2MDescriptor) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._asset_ref = asset_ref
+        self._descriptor = descriptor
+        self._attr_unique_id = descriptor.unique_id
+        self._attr_name = descriptor.fact_id.removeprefix("storage.").replace(".", " ").replace("_", " ").title()
+        fact = self._fact()
+        device_class, unit, state_class = _storage_sensor_metadata(descriptor.fact_id, fact.unit if fact else None)
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
+        if state_class is not None:
+            self._attr_state_class = state_class
+        # Cumulative Ah lacks SemReg reset/wrap continuity.  It intentionally
+        # has no total_increasing state class.
+
+    def _fact(self) -> StorageM2MFact | None:
+        facts = getattr(self.coordinator.data, "facts", {})
+        fact = facts.get(self._descriptor.key) if isinstance(facts, Mapping) else None
+        return fact if isinstance(fact, StorageM2MFact) else None
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        fact = self._fact()
+        return bool(
+            getattr(super(), "available", True)
+            and getattr(self.coordinator, "last_update_success", True)
+            and getattr(data, "source_available", False)
+            and fact is not None
+            and fact.availability == "AVAILABLE"
+            and fact.freshness in {"FRESH", "STALE"}
+        )
+
+    @property
+    def native_value(self) -> Any:
+        fact = self._fact()
+        if fact is None or fact.availability != "AVAILABLE" or fact.freshness == "EXPIRED":
+            return None
+        return fact.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        fact = self._fact()
+        if fact is None:
+            return {"fact_id": self._descriptor.fact_id, "dimension": {"pack": self._descriptor.dimension[1]}}
+        return {
+            "fact_id": fact.fact_id,
+            "dimension": {"pack": fact.dimension[1]},
+            "quality": fact.quality,
+            "availability": fact.availability,
+            "freshness": fact.freshness,
+            "freshness_policy": fact.freshness_policy,
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={build_storage_device_identifier(self._entry_id, self._asset_ref)},
+            manufacturer="Helianthus",
+            model="Canonical Electrical Storage",
+            name="Electrical Storage",
+        )
+
+
+def _storage_sensor_metadata(fact_id: str, unit: str | None) -> tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]:
+    if fact_id == "storage.state.soc":
+        return None, PERCENTAGE, SensorStateClass.MEASUREMENT
+    if fact_id == "storage.pack.voltage":
+        return SensorDeviceClass.VOLTAGE, "V", SensorStateClass.MEASUREMENT
+    if fact_id == "storage.pack.current":
+        return SensorDeviceClass.CURRENT, "A", SensorStateClass.MEASUREMENT
+    if fact_id == "storage.temperature.pack":
+        return SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT
+    if fact_id in {"storage.capacity.charge", "storage.capacity.discharge"}:
+        return None, "Ah", None
+    return None, unit, None
 
 
 class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):
