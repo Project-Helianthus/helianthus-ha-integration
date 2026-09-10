@@ -52,7 +52,7 @@
           "use_subscriptions": "Use subscriptions",
           "zone_schedule_helpers": "Zone schedule helpers",
           "dhw_schedule_helper": "DHW schedule helper",
-          "pv_m2m_enabled": "Enable canonical PV M2M",
+          "pv_m2m_enabled": "Enable SemReg PV",
           "pv_m2m_endpoint": "PV M2M HTTPS endpoint",
           "pv_m2m_asset_ref": "PV asset reference",
           "pv_m2m_ca_cert_file": "Server CA certificate file",
@@ -145,7 +145,7 @@
       }
     },
     "error": {
-      "pv_m2m_invalid": "Canonical PV M2M requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
+      "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
       "invalid_request": "The eeBUS action request was rejected as invalid.",
       "invalid_response": "The eeBUS admin boundary returned a malformed or unknown response.",
       "idempotency_conflict": "This action key was already used for different input. Start a fresh action.",

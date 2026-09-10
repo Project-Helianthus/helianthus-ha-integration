@@ -171,7 +171,7 @@ def test_strings_describe_only_dedicated_m2m_configuration_fields() -> None:
         )
     )
     data = strings["options"]["step"]["settings"]["data"]
-    assert data[CONF_PV_M2M_ENABLED] == "Enable canonical PV M2M"
+    assert data[CONF_PV_M2M_ENABLED] == "Enable SemReg PV"
     assert data[CONF_PV_M2M_ENDPOINT] == "PV M2M HTTPS endpoint"
     assert data[CONF_PV_M2M_ASSET_REF] == "PV asset reference"
     assert "certificate" in data[CONF_PV_M2M_CLIENT_CERT_FILE].lower()
