@@ -58,13 +58,13 @@ CAN_NATIVE = {
 }
 
 
-def _key(fact_id: str) -> dict:
-    return {"pack_id": "helianthus.pack.storage", "pack_version": "1.1.0", "fact_id": fact_id, "dimensions": [{"id": "storage.dimension.pack", "value": {"kind": "text", "text": ASSET}}]}
+def _key(fact_id: str, *, asset_ref: str = ASSET) -> dict:
+    return {"pack_id": "helianthus.pack.storage", "pack_version": "1.1.0", "fact_id": fact_id, "dimensions": [{"id": "storage.dimension.pack", "value": {"kind": "text", "text": asset_ref}}]}
 
 
-def _fact(index: int, definition: tuple[str, str, str, str, str, str, str | None]) -> dict:
+def _fact(index: int, definition: tuple[str, str, str, str, str, str, str | None], *, asset_ref: str = ASSET) -> dict:
     fact_id, kind, unit, coefficient, _ha_unit, _outcome, _loss = definition
-    key = _key(fact_id)
+    key = _key(fact_id, asset_ref=asset_ref)
     value = {"kind": "symbol", "symbol": {"namespace": fact_id, "token": coefficient, "known": True}} if kind == "symbol" else {"kind": "quantity", "quantity": {"number": {"coefficient": coefficient, "exponent10": -1}, "unit": unit}}
     candidate_id = f"candidate:storage-{index}"
     candidate = {
@@ -81,12 +81,12 @@ def _fact(index: int, definition: tuple[str, str, str, str, str, str, str | None
         "source_epoch_id": "epoch:one",
         "driver_generation": "1",
     }
-    return {"asset_id": ASSET, "key": key, "candidates": [candidate], "conflicts": [], "revision": "1"}
+    return {"asset_id": asset_ref, "key": key, "candidates": [candidate], "conflicts": [], "revision": "1"}
 
 
-def _payload(*, operating_withdrawn: bool = False, alternate_protocol: bool = False) -> dict:
+def _payload(*, asset_ref: str = ASSET, operating_withdrawn: bool = False, alternate_protocol: bool = False) -> dict:
     definitions = FACTS[:-1] if operating_withdrawn else FACTS
-    facts = [_fact(index, definition) for index, definition in enumerate(definitions)]
+    facts = [_fact(index, definition, asset_ref=asset_ref) for index, definition in enumerate(definitions)]
     source_id = "source:can-storage-a" if alternate_protocol else "source:growatt-bms-a"
     native = CAN_NATIVE if alternate_protocol else NATIVE
     for row in facts:
@@ -98,13 +98,13 @@ def _payload(*, operating_withdrawn: bool = False, alternate_protocol: bool = Fa
             dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": "withheld", "reason": "unsupported_or_withheld", "source_keys": [], "loss": [{"kind": "symbol", "source_items": [native[fact_id]], "description": "soft_starting is withheld"}]})
             continue
         loss = [] if loss_kind is None else [{"kind": loss_kind, "source_items": [native[fact_id]], "description": "accepted projection loss"}]
-        dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": outcome, "source_keys": [_key(fact_id)], "loss": loss})
+        dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": outcome, "source_keys": [_key(fact_id, asset_ref=asset_ref)], "loss": loss})
     evaluation_facts = [{"candidate_id": row["candidates"][0]["candidate_id"], "candidate_revision": "1", "freshness": "fresh", "effective_availability": "available"} for row in facts]
     evidence = {"owner": "helianthus.pack.storage", "kind": "test", "digest": DIGEST, "contract": "helianthus.semantic.kernel/v1", "access": "authorized", "redaction": "metadata_only"}
     source = {"source_id": source_id, "source_epoch_id": "epoch:one", "protocol_id": "canbus" if alternate_protocol else "modbus_rtu", "profile_id": "example.storage.public.v1" if alternate_protocol else "growatt.bms.rs485.1xsxxp.v2_02.readonly.v1", "profile_version": "1", "registry_evidence": evidence, "started_at": {}, "state": "current", "revision": "1"}
-    binding = {"binding_id": "binding:one", "asset_id": ASSET, "source_id": source_id, "source_epoch_id": "epoch:one", "driver_generation": "1", "native_resource": evidence, "state": "current", "revision": "1"}
-    identity = {"asset_id": ASSET, "binding_id": "binding:one", "state": "qualified", "basis": [evidence], "revision": "1"}
-    snapshot = {"contract": "helianthus.semantic.kernel/v1", "snapshot_id": "snapshot:one", "asset_id": ASSET, "revisions": REVISIONS, "evaluated_at": {}, "evaluate_monotonic": {}, "sources": [source], "bindings": [binding], "identity_links": [identity], "facts": facts, "services": [], "capabilities": [], "fences": [], "cursors": []}
+    binding = {"binding_id": "binding:one", "asset_id": asset_ref, "source_id": source_id, "source_epoch_id": "epoch:one", "driver_generation": "1", "native_resource": evidence, "state": "current", "revision": "1"}
+    identity = {"asset_id": asset_ref, "binding_id": "binding:one", "state": "qualified", "basis": [evidence], "revision": "1"}
+    snapshot = {"contract": "helianthus.semantic.kernel/v1", "snapshot_id": "snapshot:one", "asset_id": asset_ref, "revisions": REVISIONS, "evaluated_at": {}, "evaluate_monotonic": {}, "sources": [source], "bindings": [binding], "identity_links": [identity], "facts": facts, "services": [], "capabilities": [], "fences": [], "cursors": []}
     evaluation = {"contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one", "revisions": REVISIONS, "context": {}, "facts": evaluation_facts, "evaluation_digest": DIGEST}
     projection = {"contract": "helianthus.semantic.projection/v1", "manifest": {"target_id": "target:gateway-semantic-storage", "target_version": "1.0.0", "kernel_version": "helianthus.semantic.kernel/v1", "pack_versions": [{"id": "helianthus.pack.storage", "version": "1.1.0"}], "mapping_revision": "1"}, "snapshot_id": "snapshot:one", "revisions": REVISIONS, "requested": requested, "dispositions": dispositions}
     return {"data": {"semanticStorageCurrent": {"snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection}}}
@@ -116,6 +116,45 @@ def test_exact_gateway_fixture_maps_the_seven_public_storage_facts() -> None:
     assert {fact.unit for fact in snapshot.facts} == {"%", "V", "A", "Cel", "Ah", "1"}
     assert snapshot.facts[2].value == -1
     assert snapshot.facts[4].unit == "Ah"
+
+
+@pytest.mark.parametrize("length", [96, 97, 256])
+def test_semreg_asset_id_above_legacy_key_limit_refreshes_with_stable_ids(length: int) -> None:
+    asset_ref = "a" * length
+    snapshot = storage_m2m.parse_m2m_response(
+        _payload(asset_ref=asset_ref), expected_asset_ref=asset_ref
+    )
+    unique_id = storage_m2m.build_storage_unique_id(
+        "entry-1", asset_ref, "storage.state.soc", ("pack", asset_ref)
+    )
+    assert snapshot.asset_ref == asset_ref
+    assert all(fact.dimension == ("pack", asset_ref) for fact in snapshot.facts)
+    assert unique_id == storage_m2m.build_storage_unique_id(
+        "entry-1", asset_ref, "storage.state.soc", ("pack", asset_ref)
+    )
+
+
+def _enabled_options(asset_ref: str) -> dict[str, object]:
+    return {
+        "storage_m2m_enabled": True,
+        "storage_m2m_endpoint": "https://storage.example.test/graphql/m2m/v1",
+        "storage_m2m_asset_ref": asset_ref,
+        "storage_m2m_ca_cert_file": "/config/pki/ca.pem",
+        "storage_m2m_client_cert_file": "/config/pki/client.pem",
+        "storage_m2m_client_key_file": "/config/pki/client.key",
+    }
+
+
+@pytest.mark.parametrize("asset_ref", ["a" * 257, "a" * 512, "a" * 513, "asset with space"])
+def test_config_and_response_reject_noncanonical_or_oversize_semreg_asset_ids(
+    asset_ref: str,
+) -> None:
+    with pytest.raises(storage_m2m.StorageM2MProtocolError, match="asset reference"):
+        storage_m2m.parse_m2m_response(
+            _payload(asset_ref=asset_ref), expected_asset_ref=asset_ref
+        )
+    with pytest.raises(storage_m2m.StorageM2MProtocolError, match="asset reference"):
+        storage_m2m.storage_m2m_config_from_options(_enabled_options(asset_ref))
 
 
 def test_soft_start_withdraws_only_operating_state() -> None:

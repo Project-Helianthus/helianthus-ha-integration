@@ -34,11 +34,13 @@ SEMANTIC_STORAGE_CURRENT_QUERY = """query SemanticStorageCurrent($request: M2MCu
 M2M_MAX_FACTS = 256
 M2M_MAX_RESPONSE_BYTES = 1_048_576
 M2M_MAX_JSON_DEPTH = 64
+M2M_ASSET_ID_MAX_LENGTH = 256
 _DESCRIPTOR_SCHEMA_VERSION = 1
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 _UINT64_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 _DEFINITION_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$")
+_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@-]*$")
 
 # The seven accepted facts in the public Storage projection.  The dimension is
 # deliberately the configured SemReg asset ID, never a vendor, transport, or
@@ -62,8 +64,9 @@ class StorageM2MRemoteError(StorageM2MError):
     def __init__(self, code: str) -> None:
         super().__init__(code); self.code = code
 def _validate_descriptor_dimension(dimension: tuple[str, str]) -> None:
-    if dimension[0] != "pack" or not _text(dimension[1], "descriptor pack", 256):
+    if dimension[0] != "pack":
         raise StorageM2MProtocolError("invalid descriptor dimension")
+    _asset_ref(dimension[1], "descriptor pack")
 
 @dataclass(frozen=True)
 class StorageM2MConfig:
@@ -95,6 +98,11 @@ def _map(value: object, required: set[str], context: str, optional: set[str] | N
 def _text(value: object, context: str, maximum: int = 512) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum: raise StorageM2MProtocolError(f"invalid {context}")
     return value
+def _asset_ref(value: object, context: str) -> str:
+    value = _text(value, context, M2M_ASSET_ID_MAX_LENGTH)
+    if _ASSET_ID_RE.fullmatch(value) is None:
+        raise StorageM2MProtocolError(f"invalid {context}")
+    return value
 def _digest(value: object, context: str) -> str:
     value = _text(value, context, 71)
     if _DIGEST_RE.fullmatch(value) is None: raise StorageM2MProtocolError(f"invalid {context}")
@@ -120,7 +128,7 @@ def _key(value: object, context: str) -> tuple[str, str, str]:
     dimension = _map(item["dimensions"][0], {"id", "value"}, context)
     typed = _map(dimension["value"], {"kind", "text"}, context)
     if dimension["id"] != "storage.dimension.pack" or typed["kind"] != "text": raise StorageM2MProtocolError(f"invalid {context}")
-    return _text(item["fact_id"], context, 96), _text(dimension["id"], context, 96), _text(typed["text"], context, 96)
+    return _text(item["fact_id"], context, 96), _text(dimension["id"], context, 96), _asset_ref(typed["text"], context)
 def _value(value: object, kind: str, unit: str, context: str) -> tuple[Decimal | str, str | None, int | None]:
     item = _map(value, {"kind"}, context, {"quantity", "symbol"})
     if item["kind"] != kind: raise StorageM2MProtocolError(f"invalid {context} kind")
@@ -267,6 +275,7 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], exp
     if accounted != published: raise StorageM2MProtocolError("missing projection accounting for published fact")
 
 def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> StorageM2MSnapshot:
+    expected_asset_ref = _asset_ref(expected_asset_ref, "asset reference")
     if not isinstance(payload, Mapping): raise StorageM2MProtocolError("response envelope must be an object")
     if "errors" in payload: _error(payload)
     current = _map(_map(_map(payload, {"data"}, "success envelope")["data"], {"semanticStorageCurrent"}, "success data")["semanticStorageCurrent"], {"snapshot", "evaluation", "selections", "projection"}, "semantic Storage current")
@@ -322,7 +331,7 @@ def _validate_json_depth(raw: bytes) -> None:
 
 class StorageM2MClient:
     def __init__(self, *, session: object, endpoint: str, asset_ref: str) -> None:
-        _validate_endpoint(endpoint); self._session, self._endpoint, self._asset_ref = session, endpoint, _text(asset_ref, "asset reference")
+        _validate_endpoint(endpoint); self._session, self._endpoint, self._asset_ref = session, endpoint, _asset_ref(asset_ref, "asset reference")
     async def async_current_snapshot(self) -> StorageM2MSnapshot:
         body = {"operationName": "SemanticStorageCurrent", "query": SEMANTIC_STORAGE_CURRENT_QUERY, "variables": {"request": {"contractId": PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1, "assetRef": self._asset_ref}}}
         try:
@@ -360,7 +369,7 @@ def storage_m2m_config_from_options(options: Mapping[str, object]) -> StorageM2M
         if values[0]: _validate_endpoint(values[0])
         return None
     if any(not value for value in values): raise ValueError("enabled Storage semantic configuration is incomplete")
-    _validate_endpoint(values[0]); _text(values[1], "asset reference")
+    _validate_endpoint(values[0]); _asset_ref(values[1], "asset reference")
     return StorageM2MConfig(*values)
 def validate_storage_m2m_options(options: Mapping[str, object]) -> bool:
     try: storage_m2m_config_from_options(options)
@@ -370,9 +379,14 @@ def storage_m2m_option_signature(options: Mapping[str, object]) -> tuple[object,
     return tuple(options.get(key) for key in ("scan_interval", CONF_STORAGE_M2M_ENABLED, CONF_STORAGE_M2M_ENDPOINT, CONF_STORAGE_M2M_ASSET_REF, CONF_STORAGE_M2M_CA_CERT_FILE, CONF_STORAGE_M2M_CLIENT_CERT_FILE, CONF_STORAGE_M2M_CLIENT_KEY_FILE))
 def build_storage_unique_id(entry_id: str, asset_ref: str, fact_id: str, dimension: tuple[str, str]) -> str:
     if not fact_id or len(dimension) != 2 or not all(dimension): raise StorageM2MProtocolError("invalid descriptor")
+    asset_ref = _asset_ref(asset_ref, "asset reference")
+    _validate_descriptor_dimension(dimension)
     return f"{entry_id}-storage-{hashlib.sha256(json.dumps([asset_ref, fact_id, *dimension], separators=(',', ':')).encode()).hexdigest()}"
-def build_storage_device_identifier(entry_id: str, asset_ref: str) -> tuple[str, str]: return ("helianthus", f"{entry_id}-storage-asset-{hashlib.sha256(asset_ref.encode()).hexdigest()}")
+def build_storage_device_identifier(entry_id: str, asset_ref: str) -> tuple[str, str]:
+    asset_ref = _asset_ref(asset_ref, "asset reference")
+    return ("helianthus", f"{entry_id}-storage-asset-{hashlib.sha256(asset_ref.encode()).hexdigest()}")
 def load_storage_descriptor_store(raw: object, *, entry_id: str, asset_ref: str) -> tuple[StorageM2MDescriptor, ...]:
+    asset_ref = _asset_ref(asset_ref, "asset reference")
     if raw is None: return ()
     store = _map(raw, {"schema_version", "asset_ref", "descriptors"}, "descriptor store")
     if store["asset_ref"] != asset_ref: return ()
@@ -402,7 +416,10 @@ def load_storage_descriptor_store(raw: object, *, entry_id: str, asset_ref: str)
     if len({item.key for item in result}) != len(result) or len({item.unique_id for item in result}) != len(result): raise StorageM2MProtocolError("duplicate descriptor")
     return tuple(result)
 def serialize_storage_descriptor_store(asset_ref: str, descriptors: Sequence[StorageM2MDescriptor]) -> dict[str, object]:
+    asset_ref = _asset_ref(asset_ref, "asset reference")
     if len(descriptors) > M2M_MAX_FACTS or len({item.key for item in descriptors}) != len(descriptors) or len({item.unique_id for item in descriptors}) != len(descriptors): raise StorageM2MProtocolError("invalid descriptor store")
+    for descriptor in descriptors:
+        _validate_descriptor_dimension(descriptor.dimension)
     return {"schema_version": _DESCRIPTOR_SCHEMA_VERSION, "asset_ref": asset_ref, "descriptors": [{"fact_id": item.fact_id, "dimension": {"kind": item.dimension[0], "value": item.dimension[1]}, "unique_id": item.unique_id} for item in descriptors]}
 async def async_persist_storage_descriptor_store(hass: object, entry: object, *, asset_ref: str, descriptors: Sequence[StorageM2MDescriptor]) -> None:
     options = dict(getattr(entry, "options", {}) or {}); store = serialize_storage_descriptor_store(asset_ref, descriptors)
@@ -412,7 +429,7 @@ async def async_persist_storage_descriptor_store(hass: object, entry: object, *,
 class HelianthusStorageM2MCoordinator(DataUpdateCoordinator[StorageM2MCoordinatorData]):
     def __init__(self, *, hass: object, client: StorageM2MClient | object | None, scan_interval: int, entry_id: str, asset_ref: str, descriptors: Sequence[StorageM2MDescriptor], persist_descriptors: Callable[[tuple[StorageM2MDescriptor, ...]], Awaitable[None]]) -> None:
         super().__init__(hass, _LOGGER, name=f"Helianthus semantic Storage {entry_id}", update_interval=timedelta(seconds=max(1, int(scan_interval))))
-        self._client, self._entry_id, self.asset_ref, self._persist = client, entry_id, asset_ref, persist_descriptors; self.data = StorageM2MCoordinatorData(tuple(descriptors), {}, False, "not_refreshed")
+        self._client, self._entry_id, self.asset_ref, self._persist = client, entry_id, _asset_ref(asset_ref, "asset reference"), persist_descriptors; self.data = StorageM2MCoordinatorData(tuple(descriptors), {}, False, "not_refreshed")
     async def _async_update_data(self) -> StorageM2MCoordinatorData:
         previous = self.data
         if self._client is None: return StorageM2MCoordinatorData(previous.descriptors, previous.facts, False, "configuration_failure")
