@@ -70,6 +70,12 @@ from custom_components.helianthus.const import (
     CONF_PV_M2M_DESCRIPTORS,
     CONF_PV_M2M_ENABLED,
     CONF_PV_M2M_ENDPOINT,
+    CONF_STORAGE_M2M_ASSET_REF,
+    CONF_STORAGE_M2M_CA_CERT_FILE,
+    CONF_STORAGE_M2M_CLIENT_CERT_FILE,
+    CONF_STORAGE_M2M_CLIENT_KEY_FILE,
+    CONF_STORAGE_M2M_ENABLED,
+    CONF_STORAGE_M2M_ENDPOINT,
     DOMAIN,
 )
 from custom_components.helianthus.options_flow import HelianthusOptionsFlow
@@ -131,6 +137,26 @@ def test_valid_options_store_paths_not_certificate_or_key_bytes() -> None:
     rendered = repr(data).lower()
     assert "-----begin" not in rendered
     assert "private key-----" not in rendered
+
+
+def test_storage_asset_reference_is_not_normalized_by_options_flow() -> None:
+    flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
+    invalid = _complete_options()
+    invalid.update(
+        {
+            CONF_STORAGE_M2M_ENABLED: True,
+            CONF_STORAGE_M2M_ENDPOINT: "https://storage.example.test/graphql/m2m/v1",
+            CONF_STORAGE_M2M_ASSET_REF: " asset:growatt-bms-a ",
+            CONF_STORAGE_M2M_CA_CERT_FILE: "/config/pki/ca.pem",
+            CONF_STORAGE_M2M_CLIENT_CERT_FILE: "/config/pki/client.pem",
+            CONF_STORAGE_M2M_CLIENT_KEY_FILE: "/config/pki/client.key",
+        }
+    )
+
+    result = asyncio.run(flow.async_step_settings(invalid))
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "semantic_m2m_invalid"}
 
 
 def test_disabled_options_still_reject_inline_key_material() -> None:

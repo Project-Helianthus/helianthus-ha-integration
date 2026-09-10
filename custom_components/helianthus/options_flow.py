@@ -105,7 +105,9 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             ):
                 value = submitted.get(key)
                 if isinstance(value, str):
-                    submitted[key] = value.strip()
+                    submitted[key] = (
+                        value if key == CONF_STORAGE_M2M_ASSET_REF else value.strip()
+                    )
             pv_valid = validate_pv_m2m_options(submitted)
             storage_valid = validate_storage_m2m_options(submitted)
             if pv_valid and storage_valid:
