@@ -410,6 +410,7 @@ def load_storage_descriptor_store(raw: object, *, entry_id: str, asset_ref: str)
             else: raise StorageM2MProtocolError("invalid descriptor dimension")
         descriptor = StorageM2MDescriptor(_text(item["fact_id"], "descriptor"), dimension, _text(item["unique_id"], "descriptor", 255))
         _validate_descriptor_dimension(descriptor.dimension)
+        if descriptor.dimension[1] != asset_ref: raise StorageM2MProtocolError("descriptor asset does not match store")
         if descriptor.fact_id not in _DESCRIPTOR_DIMENSIONS or descriptor.dimension[0] not in _DESCRIPTOR_DIMENSIONS[descriptor.fact_id]: raise StorageM2MProtocolError("unsupported descriptor identity")
         if not descriptor.unique_id.startswith(f"{entry_id}-storage-"): raise StorageM2MProtocolError("descriptor unique id belongs to another entry")
         result.append(descriptor)
@@ -420,6 +421,7 @@ def serialize_storage_descriptor_store(asset_ref: str, descriptors: Sequence[Sto
     if len(descriptors) > M2M_MAX_FACTS or len({item.key for item in descriptors}) != len(descriptors) or len({item.unique_id for item in descriptors}) != len(descriptors): raise StorageM2MProtocolError("invalid descriptor store")
     for descriptor in descriptors:
         _validate_descriptor_dimension(descriptor.dimension)
+        if descriptor.dimension[1] != asset_ref: raise StorageM2MProtocolError("descriptor asset does not match store")
     return {"schema_version": _DESCRIPTOR_SCHEMA_VERSION, "asset_ref": asset_ref, "descriptors": [{"fact_id": item.fact_id, "dimension": {"kind": item.dimension[0], "value": item.dimension[1]}, "unique_id": item.unique_id} for item in descriptors]}
 async def async_persist_storage_descriptor_store(hass: object, entry: object, *, asset_ref: str, descriptors: Sequence[StorageM2MDescriptor]) -> None:
     options = dict(getattr(entry, "options", {}) or {}); store = serialize_storage_descriptor_store(asset_ref, descriptors)

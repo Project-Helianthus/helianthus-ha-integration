@@ -308,6 +308,7 @@ def test_persisted_descriptor_survives_enabled_boundary_restart_with_its_stable_
 @pytest.mark.parametrize("descriptor", [
     {"fact_id": "storage.unknown", "dimension": {"kind": "pack", "value": ASSET}, "unique_id": "entry-1-storage-invalid"},
     {"fact_id": "storage.state.soc", "dimension": {"kind": "scope", "value": "total"}, "unique_id": "entry-1-storage-invalid"},
+    {"fact_id": "storage.state.soc", "dimension": {"kind": "pack", "value": "asset:other-storage"}, "unique_id": "entry-1-storage-invalid"},
 ])
 def test_invalid_persisted_descriptor_fails_closed(descriptor) -> None:
     with pytest.raises(storage_m2m.StorageM2MProtocolError):
@@ -315,6 +316,20 @@ def test_invalid_persisted_descriptor_fails_closed(descriptor) -> None:
             {"schema_version": 1, "asset_ref": ASSET, "descriptors": [descriptor]},
             entry_id="entry-1",
             asset_ref=ASSET,
+        )
+
+
+def test_descriptor_serializer_rejects_a_different_pack_asset() -> None:
+    with pytest.raises(storage_m2m.StorageM2MProtocolError, match="descriptor asset"):
+        storage_m2m.serialize_storage_descriptor_store(
+            ASSET,
+            (
+                storage_m2m.StorageM2MDescriptor(
+                    "storage.state.soc",
+                    ("pack", "asset:other-storage"),
+                    "entry-1-storage-invalid",
+                ),
+            ),
         )
 
 
