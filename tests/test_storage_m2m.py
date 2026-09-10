@@ -50,6 +50,12 @@ NATIVE = {
     "storage.capacity.discharge": "native.growatt.bms.rs485.v202.cumulative_discharge_amp_hours",
     "storage.status.operating": "native.growatt.bms.rs485.v202.operating_state",
 }
+CAN_NATIVE = {
+    "storage.pack.current": "native.example.canbus.storage.pack_current",
+    "storage.capacity.charge": "native.example.canbus.storage.charge_ah",
+    "storage.capacity.discharge": "native.example.canbus.storage.discharge_ah",
+    "storage.status.operating": "native.example.canbus.storage.operating_state",
+}
 
 
 def _key(fact_id: str) -> dict:
@@ -78,21 +84,25 @@ def _fact(index: int, definition: tuple[str, str, str, str, str, str, str | None
     return {"asset_id": ASSET, "key": key, "candidates": [candidate], "conflicts": [], "revision": "1"}
 
 
-def _payload(*, operating_withdrawn: bool = False) -> dict:
+def _payload(*, operating_withdrawn: bool = False, alternate_protocol: bool = False) -> dict:
     definitions = FACTS[:-1] if operating_withdrawn else FACTS
     facts = [_fact(index, definition) for index, definition in enumerate(definitions)]
+    source_id = "source:can-storage-a" if alternate_protocol else "source:growatt-bms-a"
+    native = CAN_NATIVE if alternate_protocol else NATIVE
+    for row in facts:
+        row["candidates"][0]["origin"]["source_id"] = source_id
     requested = [{"kind": "fact", "item_id": fact_id} for fact_id, *_ in FACTS]
     dispositions = []
     for fact_id, _kind, _unit, _coefficient, _ha_unit, outcome, loss_kind in FACTS:
         if operating_withdrawn and fact_id == "storage.status.operating":
-            dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": "withheld", "reason": "unsupported_or_withheld", "source_keys": [], "loss": [{"kind": "symbol", "source_items": [NATIVE[fact_id]], "description": "soft_starting is withheld"}]})
+            dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": "withheld", "reason": "unsupported_or_withheld", "source_keys": [], "loss": [{"kind": "symbol", "source_items": [native[fact_id]], "description": "soft_starting is withheld"}]})
             continue
-        loss = [] if loss_kind is None else [{"kind": loss_kind, "source_items": [NATIVE[fact_id]], "description": "accepted projection loss"}]
+        loss = [] if loss_kind is None else [{"kind": loss_kind, "source_items": [native[fact_id]], "description": "accepted projection loss"}]
         dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": outcome, "source_keys": [_key(fact_id)], "loss": loss})
     evaluation_facts = [{"candidate_id": row["candidates"][0]["candidate_id"], "candidate_revision": "1", "freshness": "fresh", "effective_availability": "available"} for row in facts]
     evidence = {"owner": "helianthus.pack.storage", "kind": "test", "digest": DIGEST, "contract": "helianthus.semantic.kernel/v1", "access": "authorized", "redaction": "metadata_only"}
-    source = {"source_id": "source:growatt-bms-a", "source_epoch_id": "epoch:one", "protocol_id": "modbus_rtu", "profile_id": "growatt.bms.rs485.1xsxxp.v2_02.readonly.v1", "profile_version": "1", "registry_evidence": evidence, "started_at": {}, "state": "current", "revision": "1"}
-    binding = {"binding_id": "binding:one", "asset_id": ASSET, "source_id": "source:growatt-bms-a", "source_epoch_id": "epoch:one", "driver_generation": "1", "native_resource": evidence, "state": "current", "revision": "1"}
+    source = {"source_id": source_id, "source_epoch_id": "epoch:one", "protocol_id": "canbus" if alternate_protocol else "modbus_rtu", "profile_id": "example.storage.public.v1" if alternate_protocol else "growatt.bms.rs485.1xsxxp.v2_02.readonly.v1", "profile_version": "1", "registry_evidence": evidence, "started_at": {}, "state": "current", "revision": "1"}
+    binding = {"binding_id": "binding:one", "asset_id": ASSET, "source_id": source_id, "source_epoch_id": "epoch:one", "driver_generation": "1", "native_resource": evidence, "state": "current", "revision": "1"}
     identity = {"asset_id": ASSET, "binding_id": "binding:one", "state": "qualified", "basis": [evidence], "revision": "1"}
     snapshot = {"contract": "helianthus.semantic.kernel/v1", "snapshot_id": "snapshot:one", "asset_id": ASSET, "revisions": REVISIONS, "evaluated_at": {}, "evaluate_monotonic": {}, "sources": [source], "bindings": [binding], "identity_links": [identity], "facts": facts, "services": [], "capabilities": [], "fences": [], "cursors": []}
     evaluation = {"contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one", "revisions": REVISIONS, "context": {}, "facts": evaluation_facts, "evaluation_digest": DIGEST}
@@ -174,11 +184,23 @@ def test_driver_generation_absent_or_malformed_rejects(target, value) -> None:
 
 
 def test_qualified_non_modbus_source_uses_the_same_public_storage_contract() -> None:
-    payload = _payload()
-    source = payload["data"]["semanticStorageCurrent"]["snapshot"]["sources"][0]
-    source["protocol_id"] = "canbus"
-    source["profile_id"] = "example.storage.public.v1"
+    payload = _payload(alternate_protocol=True)
     assert storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET).facts
+
+
+@pytest.mark.parametrize("source_items", [
+    [],
+    [""],
+    ["Native/Invalid"],
+    ["native.example.canbus.storage.pack_current", "native.example.canbus.storage.pack_current"],
+    ["native.example.canbus.storage.pack_current", "native.example.canbus.storage.other"],
+])
+def test_loss_source_items_must_be_one_canonical_definition_id(source_items) -> None:
+    payload = _payload(alternate_protocol=True)
+    loss = payload["data"]["semanticStorageCurrent"]["projection"]["dispositions"][2]["loss"][0]
+    loss["source_items"] = source_items
+    with pytest.raises(storage_m2m.StorageM2MProtocolError, match="source items"):
+        storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
 
 
 def test_persisted_descriptor_survives_enabled_boundary_restart_with_its_stable_id(monkeypatch) -> None:

@@ -1314,11 +1314,13 @@ class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = descriptor.unique_id
         self._attr_name = descriptor.fact_id.removeprefix("storage.").replace(".", " ").replace("_", " ").title()
         fact = self._fact()
-        device_class, unit = _storage_sensor_metadata(descriptor.fact_id, fact.unit if fact else None)
+        device_class, unit, state_class = _storage_sensor_metadata(descriptor.fact_id, fact.unit if fact else None)
         if device_class is not None:
             self._attr_device_class = device_class
         if unit is not None:
             self._attr_native_unit_of_measurement = unit
+        if state_class is not None:
+            self._attr_state_class = state_class
         # Cumulative Ah lacks SemReg reset/wrap continuity.  It intentionally
         # has no total_increasing state class.
 
@@ -1371,18 +1373,18 @@ class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
         )
 
 
-def _storage_sensor_metadata(fact_id: str, unit: str | None) -> tuple[SensorDeviceClass | None, str | None]:
+def _storage_sensor_metadata(fact_id: str, unit: str | None) -> tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]:
     if fact_id == "storage.state.soc":
-        return None, PERCENTAGE
+        return None, PERCENTAGE, SensorStateClass.MEASUREMENT
     if fact_id == "storage.pack.voltage":
-        return SensorDeviceClass.VOLTAGE, "V"
+        return SensorDeviceClass.VOLTAGE, "V", SensorStateClass.MEASUREMENT
     if fact_id == "storage.pack.current":
-        return SensorDeviceClass.CURRENT, "A"
+        return SensorDeviceClass.CURRENT, "A", SensorStateClass.MEASUREMENT
     if fact_id == "storage.temperature.pack":
-        return SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS
+        return SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT
     if fact_id in {"storage.capacity.charge", "storage.capacity.discharge"}:
-        return None, "Ah"
-    return None, unit
+        return None, "Ah", None
+    return None, unit, None
 
 
 class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+
+import pytest
 import sys
 import types
 
@@ -821,6 +823,62 @@ def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
     )
     entity.coordinator.last_update_success = False
     assert entity.available is False
+
+
+def _storage_entity(*, fact_id: str, value: Decimal | str, unit: str):
+    from custom_components.helianthus import storage_m2m
+
+    descriptor = storage_m2m.StorageM2MDescriptor(
+        fact_id=fact_id,
+        dimension=("pack", "asset:storage-01"),
+        unique_id=f"entry-1-storage-{fact_id.replace('.', '-')}",
+    )
+    fact = storage_m2m.StorageM2MFact(
+        fact_id=fact_id,
+        dimension=("pack", "asset:storage-01"),
+        value=value,
+        coefficient=str(value) if isinstance(value, Decimal) else None,
+        scale=0 if isinstance(value, Decimal) else None,
+        unit=unit,
+        quality="GOOD",
+        availability="AVAILABLE",
+        freshness="FRESH",
+        freshness_policy="policy:gateway-storage-native-receipt",
+        origin_ref="origin:storage-test",
+    )
+    data = storage_m2m.StorageM2MCoordinatorData(
+        descriptors=(descriptor,),
+        facts={descriptor.key: fact},
+        source_available=True,
+        error=None,
+    )
+    return sensor_platform.HelianthusStorageM2MSensor(
+        coordinator=_FakeCoordinator(data),
+        entry_id="entry-1",
+        asset_ref="asset:storage-01",
+        descriptor=descriptor,
+    )
+
+
+@pytest.mark.parametrize(
+    ("fact_id", "value", "unit", "native_unit", "device_class", "state_class"),
+    [
+        ("storage.state.soc", Decimal("75"), "%", "%", None, "measurement"),
+        ("storage.pack.voltage", Decimal("52"), "V", "V", "voltage", "measurement"),
+        ("storage.pack.current", Decimal("-1"), "A", "A", "current", "measurement"),
+        ("storage.temperature.pack", Decimal("24"), "Cel", "C", "temperature", "measurement"),
+        ("storage.capacity.charge", Decimal("123"), "Ah", "Ah", None, None),
+        ("storage.capacity.discharge", Decimal("456"), "Ah", "Ah", None, None),
+        ("storage.status.operating", "active", "1", "1", None, None),
+    ],
+)
+def test_storage_sensor_metadata_preserves_measurement_and_counter_boundaries(
+    fact_id, value, unit, native_unit, device_class, state_class
+) -> None:
+    entity = _storage_entity(fact_id=fact_id, value=value, unit=unit)
+    assert entity._attr_native_unit_of_measurement == native_unit
+    assert getattr(entity, "_attr_device_class", None) == device_class
+    assert getattr(entity, "_attr_state_class", None) == state_class
 
 
 def test_static_sensor_descriptor_inventory_and_order_are_stable() -> None:

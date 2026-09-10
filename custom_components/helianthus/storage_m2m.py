@@ -38,6 +38,7 @@ _DESCRIPTOR_SCHEMA_VERSION = 1
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _INTEGER_RE = re.compile(r"^-?(0|[1-9][0-9]*)$")
 _UINT64_RE = re.compile(r"^(0|[1-9][0-9]*)$")
+_DEFINITION_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$")
 
 # The seven accepted facts in the public Storage projection.  The dimension is
 # deliberately the configured SemReg asset ID, never a vendor, transport, or
@@ -53,12 +54,6 @@ _FACTS = {
 }
 _DESCRIPTOR_DIMENSIONS = {fact_id: {"pack"} for fact_id in _FACTS}
 _WITHHELD_OPERATING_REASON = "unsupported_or_withheld"
-_NATIVE_LOSS_IDS = {
-    "storage.pack.current": "native.growatt.bms.rs485.v202.pack_current_amps",
-    "storage.capacity.charge": "native.growatt.bms.rs485.v202.cumulative_charge_amp_hours",
-    "storage.capacity.discharge": "native.growatt.bms.rs485.v202.cumulative_discharge_amp_hours",
-    "storage.status.operating": "native.growatt.bms.rs485.v202.operating_state",
-}
 
 class StorageM2MError(Exception): pass
 class StorageM2MProtocolError(StorageM2MError): pass
@@ -109,6 +104,13 @@ def _driver_generation(value: object, context: str) -> str:
     if _UINT64_RE.fullmatch(value) is None or value == "0" or int(value) > 18_446_744_073_709_551_615:
         raise StorageM2MProtocolError(f"invalid {context}")
     return value
+def _loss_source_items(value: object, context: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) != 1:
+        raise StorageM2MProtocolError(f"invalid {context}")
+    items = tuple(_text(item, context, 160) for item in value)
+    if any(len(item) < 3 or _DEFINITION_ID_RE.fullmatch(item) is None for item in items) or len(set(items)) != len(items):
+        raise StorageM2MProtocolError(f"invalid {context}")
+    return items
 def _revisions(value: object, context: str) -> tuple[str, ...]:
     item = _map(value, {"semantic", "identity", "facts", "services", "capabilities"}, context)
     return tuple(_text(item[k], f"{context} {k}", 32) for k in ("semantic", "identity", "facts", "services", "capabilities"))
@@ -247,16 +249,18 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], exp
                 if len(losses) != 1:
                     raise StorageM2MProtocolError("missing projection loss")
                 loss = _map(losses[0], {"kind", "source_items", "description"}, "projection loss", {"reversible"})
-                if loss["kind"] != loss_kind or loss["source_items"] != [_NATIVE_LOSS_IDS[fact_id]]:
+                if loss["kind"] != loss_kind:
                     raise StorageM2MProtocolError("invalid projection loss")
+                _loss_source_items(loss["source_items"], "projection loss source items")
             accounted.add(key)
         elif fact_id == "storage.status.operating":
             loss = disposition["loss"]
             if disposition["outcome"] != "withheld" or disposition.get("reason") != _WITHHELD_OPERATING_REASON or disposition["source_keys"] != [] or not isinstance(loss, list) or len(loss) != 1:
                 raise StorageM2MProtocolError("invalid operating withdrawal")
             detail = _map(loss[0], {"kind", "source_items", "description"}, "operating withdrawal loss", {"reversible"})
-            if detail["kind"] != "symbol" or detail["source_items"] != [_NATIVE_LOSS_IDS[fact_id]]:
+            if detail["kind"] != "symbol":
                 raise StorageM2MProtocolError("invalid operating withdrawal loss")
+            _loss_source_items(detail["source_items"], "operating withdrawal source items")
         else:
             raise StorageM2MProtocolError("invalid projection source")
     if dispositions != requested: raise StorageM2MProtocolError("incomplete projection disposition")
