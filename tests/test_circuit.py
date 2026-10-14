@@ -492,3 +492,48 @@ def test_circuit_writable_entities_fail_closed_when_admission_untrusted() -> Non
         asyncio.run(cooling_enabled.async_turn_on())
 
     assert client.calls == []
+
+
+def _gateway_golden_circuits() -> list[dict]:
+    """Circuits from the gateway #1004 / PR #1010 semantic_circuits_state golden envelope."""
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "gateway_semantic_circuits_state.golden.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    assert envelope["error"] is None
+    return envelope["data"]
+
+
+def test_circuit_state_token_set_of_gateway_1004_is_exposed_raw_and_fail_safe() -> None:
+    circuits = _gateway_golden_circuits()
+    payload, circuit_coordinator, _ = _build_payload()
+    circuit_coordinator.data = {"circuits": circuits}
+    hass = _FakeHass(payload)
+    entry = _FakeEntry("entry-1")
+
+    sensors: list = []
+    asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensors.extend))
+    state_by_index = {
+        entity._circuit_index: entity.native_value
+        for entity in sensors
+        if isinstance(entity, sensor_platform.HelianthusCircuitSensor)
+        and entity._field.key == "circuit_state"
+    }
+    # Tokens are surfaced verbatim: dhw is accepted and unknown_N does not raise.
+    assert state_by_index == {
+        0: "standby",
+        1: "heating",
+        2: "cooling",
+        3: "dhw",
+        4: "unknown_7",
+    }
+
+    binaries: list = []
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, binaries.extend))
+    pump_by_index = {
+        entity._circuit_index: entity.is_on
+        for entity in binaries
+        if isinstance(entity, binary_sensor_platform.HelianthusCircuitPumpBinarySensor)
+    }
+    assert pump_by_index == {0: False, 1: True, 2: False, 3: True, 4: False}
