@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 from custom_components.helianthus.parity_gate import (
     ParityGateValidationError,
     enforce_gateway_parity_gate,
+    configured_gateway_source_repo,
 )
 
 
@@ -26,8 +27,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--source-repo",
-        default="Project-Helianthus/helianthus-ebusgateway",
-        help="Expected gateway source repository",
+        default=configured_gateway_source_repo(),
+        help="Expected gateway owner/repository (default: HELIANTHUS_GATEWAY_SOURCE_REPO or current gateway repository)",
     )
     return parser.parse_args()
 

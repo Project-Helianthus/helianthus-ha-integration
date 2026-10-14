@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 REQUIRED_SOURCE_REPO = "Project-Helianthus/helianthus-ebusgateway"
+SOURCE_REPO_ENV = "HELIANTHUS_GATEWAY_SOURCE_REPO"
 REQUIRED_GATES = ("parity_contract", "tool_classification")
 
 
 class ParityGateValidationError(RuntimeError):
     """Raised when parity gate artifact validation fails."""
+
+
+def configured_gateway_source_repo() -> str:
+    """Read the expected owner/repository at call time, preserving blank misconfiguration."""
+    return os.environ.get(SOURCE_REPO_ENV, REQUIRED_SOURCE_REPO).strip()
 
 
 def load_gateway_parity_artifact(path: str | Path) -> dict[str, Any]:
@@ -30,9 +37,13 @@ def load_gateway_parity_artifact(path: str | Path) -> dict[str, Any]:
 
 def validate_gateway_parity_artifact(
     payload: dict[str, Any],
-    expected_source_repo: str = REQUIRED_SOURCE_REPO,
+    expected_source_repo: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    if expected_source_repo is None:
+        expected_source_repo = configured_gateway_source_repo()
+    if not expected_source_repo.strip():
+        errors.append("expected source repository is empty")
 
     source_repo = str(payload.get("source_repo", "")).strip()
     if source_repo != expected_source_repo:
@@ -67,7 +78,7 @@ def validate_gateway_parity_artifact(
 
 def enforce_gateway_parity_gate(
     artifact_path: str | Path,
-    expected_source_repo: str = REQUIRED_SOURCE_REPO,
+    expected_source_repo: str | None = None,
 ) -> dict[str, Any]:
     payload = load_gateway_parity_artifact(artifact_path)
     errors = validate_gateway_parity_artifact(payload, expected_source_repo=expected_source_repo)
