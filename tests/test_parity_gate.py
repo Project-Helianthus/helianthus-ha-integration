@@ -112,3 +112,59 @@ def test_check_gateway_parity_script_failure(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(sys, "argv", ["check_gateway_parity_gate.py", "--artifact", str(artifact)])
 
     assert module.main() == 1
+
+
+@pytest.mark.parametrize("configured", [None, "Project-Helianthus/helianthus-gateway"])
+def test_repository_configuration_is_read_at_call_time(monkeypatch, tmp_path, configured) -> None:
+    monkeypatch.delenv(parity_gate.SOURCE_REPO_ENV, raising=False)
+    assert parity_gate.configured_gateway_source_repo() == parity_gate.REQUIRED_SOURCE_REPO
+    if configured is not None:
+        monkeypatch.setenv(parity_gate.SOURCE_REPO_ENV, f" {configured} ")
+    expected = configured or parity_gate.REQUIRED_SOURCE_REPO
+    payload = parity_gate.load_gateway_parity_artifact(_fixture_path("gateway_parity_artifact_pass.json"))
+    payload["source_repo"] = expected
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert parity_gate.validate_gateway_parity_artifact(payload) == []
+    assert parity_gate.enforce_gateway_parity_gate(artifact) == payload
+    payload["source_repo"] = "Project-Helianthus/unexpected"
+    assert any("source_repo mismatch" in error for error in parity_gate.validate_gateway_parity_artifact(payload))
+
+
+def test_explicit_repository_overrides_configuration(monkeypatch) -> None:
+    monkeypatch.setenv(parity_gate.SOURCE_REPO_ENV, "Project-Helianthus/helianthus-gateway")
+    payload = parity_gate.load_gateway_parity_artifact(_fixture_path("gateway_parity_artifact_pass.json"))
+    assert parity_gate.validate_gateway_parity_artifact(
+        payload, expected_source_repo=parity_gate.REQUIRED_SOURCE_REPO
+    ) == []
+    assert parity_gate.enforce_gateway_parity_gate(
+        _fixture_path("gateway_parity_artifact_pass.json"),
+        expected_source_repo=parity_gate.REQUIRED_SOURCE_REPO,
+    ) == payload
+
+
+def test_blank_repository_configuration_fails_closed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv(parity_gate.SOURCE_REPO_ENV, "  ")
+    payload = parity_gate.load_gateway_parity_artifact(_fixture_path("gateway_parity_artifact_pass.json"))
+    payload["source_repo"] = ""
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(parity_gate.ParityGateValidationError, match="expected source repository is empty"):
+        parity_gate.enforce_gateway_parity_gate(artifact)
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_check_gateway_parity_script_repository_configuration(monkeypatch, tmp_path, explicit) -> None:
+    module = _load_script_module()
+    monkeypatch.setenv(parity_gate.SOURCE_REPO_ENV, "Project-Helianthus/helianthus-gateway")
+    payload = parity_gate.load_gateway_parity_artifact(_fixture_path("gateway_parity_artifact_pass.json"))
+    if not explicit:
+        payload["source_repo"] = "Project-Helianthus/helianthus-gateway"
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+    argv = ["check_gateway_parity_gate.py", "--artifact", str(artifact)]
+    if explicit:
+        argv.extend(["--source-repo", parity_gate.REQUIRED_SOURCE_REPO])
+    monkeypatch.setattr(sys, "argv", argv)
+    assert module.main() == 0

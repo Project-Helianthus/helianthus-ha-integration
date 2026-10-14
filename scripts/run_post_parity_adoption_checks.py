@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--source-repo",
-        default="Project-Helianthus/helianthus-ebusgateway",
-        help="Expected gateway source repository",
+        default=parity_gate.configured_gateway_source_repo(),
+        help="Expected gateway owner/repository (default: HELIANTHUS_GATEWAY_SOURCE_REPO or current gateway repository)",
     )
     parser.add_argument(
         "--tests",

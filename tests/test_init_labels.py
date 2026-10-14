@@ -405,3 +405,18 @@ def test_zone_instance_from_id() -> None:
     assert _zone_instance_from_id("2") == 1
     assert _zone_instance_from_id("zone-0") is None
     assert _zone_instance_from_id("zone-x") is None
+
+
+def test_canonical_bus_model_name_preserves_unrecognized_annotation_text() -> None:
+    # #104 P3: no source grammar authorizes stripping or rewriting these labels.
+    for source in ("VUW (eBUS: BAI00", "VUW (eBUS: BAI00) extra"):
+        device = {
+            "device_id": "BAI00",
+            "product_model": source,
+            "part_number": "0012345678",
+        }
+        assert _canonical_bus_model_name(device) == (
+            f"{source} (part: 0012345678; eBUS: BAI00)"
+        )
+        assert _canonical_bus_display_name(device) == "ecoTEC plus"
+        assert _stable_bus_identity_model(device) == "VUW"

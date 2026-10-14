@@ -145,6 +145,15 @@ freshness consistently. Expired targets become unavailable and do not synthesize
 Physical-device display names remain friendly product labels. The separate technical model includes the public part
 number when present, for example `VUW (part: 0012345678; eBUS: BAI00)`. Missing or blank part numbers are omitted;
 this metadata does not alter HA device identifiers or entity unique IDs.
+Recognized terminal annotations such as `VUW (eBUS: BAI00)` are normalized to include
+an available part number once. Malformed annotations and annotations followed by
+additional model text are preserved as source text before the canonical suffix.
+This display-only edge case remains P3 under
+[metadata issue #104](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/104):
+the available evidence supplies no grammar for safely removing or rewriting that text.
+A future normalization rule needs documented input examples and expected formatting;
+friendly names and stable identity helpers remain separate. The supplied issue handoff
+also leaves physical HA smoke unverified; offline tests do not establish physical acceptance.
 
 ## Clean Reset Required For Zone Model Changes
 

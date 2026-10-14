@@ -133,3 +133,22 @@ def test_main_uses_cli_arguments(monkeypatch) -> None:
     )
 
     assert module.main() == 0
+
+
+def test_main_uses_configured_repository_and_cli_override(monkeypatch) -> None:
+    module = _load_module()
+    configured = "Project-Helianthus/helianthus-gateway"
+    monkeypatch.setenv(module.parity_gate.SOURCE_REPO_ENV, configured)
+    captured = []
+
+    def _capture(artifact, source_repo, tests):
+        captured.append(source_repo)
+        return 0
+
+    monkeypatch.setattr(module, "run_post_parity_checks", _capture)
+    argv = ["run_post_parity_adoption_checks.py", "--artifact", "artifact.json"]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert module.main() == 0
+    monkeypatch.setattr(sys, "argv", [*argv, "--source-repo", "Project-Helianthus/explicit"])
+    assert module.main() == 0
+    assert captured == [configured, "Project-Helianthus/explicit"]
