@@ -632,14 +632,52 @@ def test_startup_v2_artifact_redacts_and_bounds_endpoint_and_evidence() -> None:
     assert len(artifact["phase_b"]["details"]) <= smoke_profile.MAX_STARTUP_EVIDENCE_CHARS
 
 
-def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None:
+def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # This integration test includes interpreter startup on a shared runner.
+    # Allow up to 30 seconds per real request; tight deadline boundaries are
+    # covered separately with FakeClock, without relying on host scheduling.
+    request_budget = 30.0
+    real_context = smoke_profile.multiprocessing.get_context("spawn")
+    processes = []
+    connections = []
+
+    class TrackingContext:
+        @staticmethod
+        def Pipe(**kwargs: object) -> tuple:  # noqa: N802
+            pair = real_context.Pipe(**kwargs)
+            connections.extend(pair)
+            return pair
+
+        @staticmethod
+        def Process(**kwargs: object) -> object:  # noqa: N802
+            assert kwargs["target"] is smoke_profile._urlopen_request_worker
+            process = real_context.Process(**kwargs)
+            processes.append(process)
+            return process
+
+    def get_context(method: str) -> TrackingContext:
+        assert method == "spawn"
+        return TrackingContext()
+
+    monkeypatch.setattr(smoke_profile.multiprocessing, "get_context", get_context)
+
+    def assert_workers_reaped() -> None:
+        assert processes
+        assert all(not process.is_alive() and process.exitcode is not None for process in processes)
+        assert all(connection.closed for connection in connections)
+
+    observed_redirect_paths: list[tuple[str, str]] = []
+
     class RedirectHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
+            observed_redirect_paths.append(("POST", self.path))
+            self.rfile.read(int(self.headers["Content-Length"]))
             self.send_response(302)
             self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/final")
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
+            observed_redirect_paths.append(("GET", self.path))
             body = b'{"data":{"redirected":true}}'
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
@@ -654,12 +692,15 @@ def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None
     redirect_thread.start()
     try:
         redirected = smoke_profile._budgeted_urlopen_request(
-            f"http://127.0.0.1:{redirect_server.server_port}/redirect", b"{}", 1.0
+            f"http://127.0.0.1:{redirect_server.server_port}/redirect", b"{}", request_budget
         )
     finally:
         redirect_server.shutdown()
         redirect_server.server_close()
         redirect_thread.join(timeout=1)
+        assert_workers_reaped()
+    assert not redirect_thread.is_alive()
+    assert observed_redirect_paths == [("POST", "/redirect"), ("GET", "/final")]
     assert redirected == {"data": {"redirected": True}}
 
     observed_proxy_paths: list[str] = []
@@ -686,7 +727,7 @@ def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None
         os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{proxy_server.server_port}"
         os.environ.pop("no_proxy", None)
         os.environ.pop("NO_PROXY", None)
-        proxied = smoke_profile._budgeted_urlopen_request("http://example.invalid/graphql", b"{}", 1.0)
+        proxied = smoke_profile._budgeted_urlopen_request("http://example.invalid/graphql", b"{}", request_budget)
     finally:
         for key, value in saved_environment.items():
             if value is None:
@@ -696,7 +737,10 @@ def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None
         proxy_server.shutdown()
         proxy_server.server_close()
         proxy_thread.join(timeout=1)
+        assert_workers_reaped()
 
+    assert len(processes) == 2
+    assert not proxy_thread.is_alive()
     assert proxied == {"data": {"proxied": True}}
     assert observed_proxy_paths == ["http://example.invalid/graphql"]
 
