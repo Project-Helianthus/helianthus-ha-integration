@@ -7,8 +7,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import socket
-from threading import Event, Lock, Thread
+from threading import Thread
 import time
+
+import pytest
 
 from custom_components.helianthus import admission, smoke_profile
 
@@ -699,101 +701,152 @@ def test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing() -> None
     assert observed_proxy_paths == ["http://example.invalid/graphql"]
 
 
-def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker() -> None:
-    active_requests = 0
-    lock = Lock()
-    finished = Event()
-    started_request = Event()
+class FakeRequestContext:
+    """Advance only the injected clock at the subprocess response boundary."""
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802
-            nonlocal active_requests
-            self.rfile.read(int(self.headers["Content-Length"]))
-            body = b'{"data":{"slow":"' + (b"x" * 128) + b'"}}'
-            with lock:
-                active_requests += 1
-            started_request.set()
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            try:
-                for offset in range(0, len(body), 4):
-                    self.wfile.write(body[offset:offset + 4])
-                    self.wfile.flush()
-                    time.sleep(0.05)
-            except BrokenPipeError:
-                pass
-            finally:
-                with lock:
-                    active_requests -= 1
-                finished.set()
+    def __init__(self, clock: FakeClock, duration: float, *, ready: bool = True) -> None:
+        self.clock = clock
+        self.duration = duration
+        self.ready = ready
+        self.connections: list[object] = []
+        self.processes: list[object] = []
+        self.poll_budgets: list[float] = []
+        self.payloads: list[bytes] = []
+        self.response = {"data": {"ok": True}}
 
-        def log_message(self, *_: object) -> None:
-            return None
+    def Pipe(self, *, duplex: bool) -> tuple[object, object]:  # noqa: N802
+        assert duplex is False
+        context = self
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    server_thread = Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    try:
-        started = time.monotonic()
-        try:
-            smoke_profile._budgeted_urlopen_request(f"http://127.0.0.1:{server.server_port}/graphql", b"{}", 0.50)
-        except TimeoutError:
-            pass
-        else:
-            raise AssertionError("expected budgeted request timeout")
-        assert started_request.is_set()
-        assert time.monotonic() - started < 0.75
-        assert finished.wait(1.50)
-        assert active_requests == 0
-    finally:
-        server.shutdown()
-        server.server_close()
-        server_thread.join(timeout=1)
+        class Connection:
+            closed = False
+
+            def poll(self, timeout: float) -> bool:
+                context.poll_budgets.append(timeout)
+                context.clock.sleep(context.duration)
+                return context.ready
+
+            def recv(self) -> tuple[str, dict]:
+                return "ok", context.response
+
+            def close(self) -> None:
+                self.closed = True
+
+        pair = (Connection(), Connection())
+        self.connections.extend(pair)
+        return pair
+
+    def Process(self, *, target: object, args: tuple, daemon: bool) -> object:  # noqa: N802
+        assert target is smoke_profile._urlopen_request_worker
+        assert daemon is True
+        self.payloads.append(args[2])
+
+        class Process:
+            alive = False
+            terminated = False
+            joined = False
+
+            def start(self) -> None:
+                self.alive = True
+
+            def is_alive(self) -> bool:
+                return self.alive
+
+            def terminate(self) -> None:
+                self.terminated = True
+                self.alive = False
+
+            def join(self) -> None:
+                self.joined = True
+
+        process = Process()
+        self.processes.append(process)
+        return process
+
+    def assert_cleaned_up(self) -> None:
+        assert self.processes
+        assert all(not process.is_alive() and process.terminated and process.joined for process in self.processes)
+        assert all(connection.closed for connection in self.connections)
 
 
-def test_startup_phase_a_uses_budgeted_urlopen_for_trickled_response() -> None:
-    started_request = Event()
+def _install_request_context(monkeypatch: pytest.MonkeyPatch, context: FakeRequestContext) -> None:
+    def get_context(method: str) -> FakeRequestContext:
+        assert method == "spawn"
+        return context
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802
-            self.rfile.read(int(self.headers["Content-Length"]))
-            body = b'{"data":{"slow":true,"padding":"' + (b"x" * 128) + b'"}}'
-            started_request.set()
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            try:
-                for offset in range(0, len(body), 4):
-                    self.wfile.write(body[offset:offset + 4])
-                    self.wfile.flush()
-                    time.sleep(0.05)
-            except BrokenPipeError:
-                pass
+    monkeypatch.setattr(smoke_profile.multiprocessing, "get_context", get_context)
 
-        def log_message(self, *_: object) -> None:
-            return None
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        execute = smoke_profile._http_executor(f"http://127.0.0.1:{server.server_port}/graphql", 0.50)
-        started = time.monotonic()
-        try:
-            execute(smoke_profile.QUERY_CONNECTION)
-        except TimeoutError:
-            pass
-        else:
-            raise AssertionError("expected Phase A request timeout")
-        assert started_request.is_set()
-        assert time.monotonic() - started < 0.75
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+@pytest.mark.parametrize("ready", [False, True])
+def test_startup_budgeted_urlopen_enforces_deadline_and_leaves_no_worker(
+    monkeypatch: pytest.MonkeyPatch, ready: bool,
+) -> None:
+    clock = FakeClock()
+    # Cover both poll exhaustion and a response arriving exactly at the deadline.
+    context = FakeRequestContext(clock, 0.5, ready=ready)
+    _install_request_context(monkeypatch, context)
+    with pytest.raises(TimeoutError, match="HTTP operation exceeded deadline"):
+        smoke_profile._budgeted_urlopen_request("http://gateway.example/graphql", b"{}", 0.5, clock=clock)
+    assert context.poll_budgets == [0.5]
+    assert clock() == 0.5
+    context.assert_cleaned_up()
+
+
+def test_startup_budgeted_urlopen_deadline_reaps_real_spawned_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_context = smoke_profile.multiprocessing.get_context("spawn")
+    processes = []
+
+    class TrackingContext:
+        Pipe = staticmethod(real_context.Pipe)
+
+        @staticmethod
+        def Process(**kwargs: object) -> object:  # noqa: N802
+            assert kwargs["target"] is smoke_profile._urlopen_request_worker
+            # A real idle child exercises termination without any HTTP/DNS I/O.
+            kwargs.update(target=time.sleep, args=(30,))
+            process = real_context.Process(**kwargs)
+            processes.append(process)
+            return process
+
+    monkeypatch.setattr(smoke_profile.multiprocessing, "get_context", lambda method: TrackingContext())
+    for _ in range(2):
+        ticks = iter((0.0, 0.5))
+        # Exhaust the budget after start, before poll: no transport or real wait.
+        with pytest.raises(TimeoutError, match="HTTP operation exceeded deadline"):
+            smoke_profile._budgeted_urlopen_request(
+                "http://gateway.example/graphql", b"{}", 0.5, clock=lambda: next(ticks),
+            )
+        assert all(not process.is_alive() and process.exitcode is not None for process in processes)
+    assert len(processes) == 2
+
+
+def test_startup_budgeted_urlopen_succeeds_just_before_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = FakeClock()
+    context = FakeRequestContext(clock, 0.499)
+    _install_request_context(monkeypatch, context)
+    assert smoke_profile._budgeted_urlopen_request(
+        "http://gateway.example/graphql", b"{}", 0.5, clock=clock,
+    ) == context.response
+    assert context.poll_budgets == [0.5]
+    assert clock() == 0.499
+    context.assert_cleaned_up()
+
+
+def test_startup_phase_a_uses_budgeted_urlopen_for_trickled_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = FakeClock()
+    context = FakeRequestContext(clock, 0.5, ready=False)
+    _install_request_context(monkeypatch, context)
+    request = smoke_profile._budgeted_urlopen_request
+    monkeypatch.setattr(
+        smoke_profile, "_budgeted_urlopen_request",
+        lambda endpoint, payload, budget: request(endpoint, payload, budget, clock=clock),
+    )
+    execute = smoke_profile._http_executor("http://gateway.example/graphql", 0.5)
+    with pytest.raises(TimeoutError, match="HTTP operation exceeded deadline"):
+        execute(smoke_profile.QUERY_CONNECTION)
+    assert context.poll_budgets == [0.5]
+    assert json.loads(context.payloads[0])["query"] == smoke_profile.QUERY_CONNECTION
+    context.assert_cleaned_up()
 
 
 def test_startup_v2_phase_b_rejects_mixed_urlopen_response_framing() -> None:
@@ -844,81 +897,40 @@ def test_startup_v2_phase_b_rejects_mixed_urlopen_response_framing() -> None:
     assert startup_calls >= 4
 
 
-def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body() -> None:
+def test_startup_v2_production_phase_b_enforces_total_deadline_for_slow_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = FakeClock()
+    context = FakeRequestContext(clock, 0)
+    _install_request_context(monkeypatch, context)
+    request = smoke_profile._budgeted_urlopen_request
     responses = _startup_responses()
-    active_requests = 0
-    max_active_requests = 0
     startup_calls = 0
-    lock = Lock()
-    phase_b_slow_request_started = Event()
-    slow_body_finished = Event()
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802
-            nonlocal active_requests, max_active_requests, startup_calls
-            content_length = int(self.headers["Content-Length"])
-            operation = FakeExecutor._operation_name(json.loads(self.rfile.read(content_length))["query"])
-            with lock:
-                if operation == "StartupStatus":
-                    startup_calls += 1
-                slow_body = operation == "StartupStatus" and startup_calls % 2 == 0
-                if slow_body:
-                    active_requests += 1
-                    max_active_requests = max(max_active_requests, active_requests)
-                    phase_b_slow_request_started.set()
-            body = json.dumps(responses[operation]).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            try:
-                if slow_body:
-                    for offset in range(0, len(body), 8):
-                        self.wfile.write(body[offset:offset + 8])
-                        self.wfile.flush()
-                        time.sleep(0.02)
-                else:
-                    self.wfile.write(body)
-                    self.wfile.flush()
-            except BrokenPipeError:
-                pass
-            finally:
-                if slow_body:
-                    with lock:
-                        active_requests -= 1
-                    slow_body_finished.set()
+    def budgeted_request(endpoint: str, payload: bytes, budget: float) -> dict:
+        nonlocal startup_calls
+        operation = FakeExecutor._operation_name(json.loads(payload)["query"])
+        if operation == "StartupStatus":
+            startup_calls += 1
+        slow_body = operation == "StartupStatus" and startup_calls % 2 == 0
+        context.duration = budget if slow_body else 0
+        context.ready = not slow_body
+        context.response = responses[operation]
+        return request(endpoint, payload, budget, clock=clock)
 
-        def log_message(self, *_: object) -> None:
-            return None
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    server_thread = Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    try:
-        for _ in range(2):
-            phase_b_slow_request_started.clear()
-            slow_body_finished.clear()
-            result = smoke_profile.run_startup_spotcheck_v2(
-                f"http://127.0.0.1:{server.server_port}/graphql",
-                timeout=999.0,
-                phase_b_target_seconds=0.01,
-                phase_b_absolute_timeout_seconds=0.50,
-                phase_b_interval_seconds=0.01,
-            )
-            assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
-            assert phase_b_slow_request_started.is_set()
-            assert "elapsed_seconds=" in result.phase_b.details
-            assert "absolute timeout exceeded after operation" in result.phase_b.details
-            assert slow_body_finished.wait(1.50)
-            assert active_requests == 0
-    finally:
-        server.shutdown()
-        server.server_close()
-        server_thread.join(timeout=1)
-
+    monkeypatch.setattr(smoke_profile, "_budgeted_urlopen_request", budgeted_request)
+    for _ in range(2):
+        result = smoke_profile.run_startup_spotcheck_v2(
+            "http://gateway.example/graphql", timeout=999.0,
+            phase_b_target_seconds=0.01, phase_b_absolute_timeout_seconds=0.5,
+            phase_b_interval_seconds=0.01, clock=clock, sleeper=clock.sleep,
+        )
+        assert result.verdict is smoke_profile.StartupVerdict.DEGRADED_TRANSPORT
+        assert "elapsed_seconds=0.500" in result.phase_b.details
+        assert "absolute timeout exceeded after operation" in result.phase_b.details
+        assert context.poll_budgets[-1] == 0.5
+        context.assert_cleaned_up()
     assert startup_calls == 4
-    assert max_active_requests == 1
 
 
 def test_startup_http_reader_rejects_oversized_headers_and_body_framing() -> None:

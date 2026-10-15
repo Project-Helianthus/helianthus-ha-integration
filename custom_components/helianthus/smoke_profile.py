@@ -897,9 +897,11 @@ def _http_executor(endpoint: str, timeout: float) -> BudgetedGraphQLExecutor:
     return execute
 
 
-def _budgeted_urlopen_request(endpoint: str, payload: bytes, budget: float) -> dict[str, Any]:
+def _budgeted_urlopen_request(
+    endpoint: str, payload: bytes, budget: float, *, clock: Clock = time.monotonic,
+) -> dict[str, Any]:
     """Run urllib routing/redirect semantics in a killable bounded subprocess."""
-    deadline = time.monotonic() + budget
+    deadline = clock() + budget
     context = multiprocessing.get_context("spawn")
     receive_connection, send_connection = context.Pipe(duplex=False)
     process = context.Process(
@@ -910,7 +912,7 @@ def _budgeted_urlopen_request(endpoint: str, payload: bytes, budget: float) -> d
     process.start()
     send_connection.close()
     try:
-        if not receive_connection.poll(_remaining_http_budget(deadline)):
+        if not receive_connection.poll(_remaining_http_budget(deadline, clock=clock)):
             raise TimeoutError("HTTP operation exceeded deadline")
         try:
             state, response = receive_connection.recv()
@@ -920,7 +922,7 @@ def _budgeted_urlopen_request(endpoint: str, payload: bytes, budget: float) -> d
             raise RuntimeError(str(response))
         if not isinstance(response, dict):
             raise RuntimeError("graphql response must be a json object")
-        _remaining_http_budget(deadline)
+        _remaining_http_budget(deadline, clock=clock)
         return response
     finally:
         receive_connection.close()
@@ -1110,8 +1112,8 @@ def _deadline_http_request(endpoint: str, payload: bytes, budget: float) -> dict
     return parsed_payload
 
 
-def _remaining_http_budget(deadline: float) -> float:
-    remaining = deadline - time.monotonic()
+def _remaining_http_budget(deadline: float, *, clock: Clock = time.monotonic) -> float:
+    remaining = deadline - clock()
     if remaining <= 0:
         raise TimeoutError("HTTP operation exceeded deadline")
     return remaining
