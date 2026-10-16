@@ -26,9 +26,13 @@ def load_gateway_parity_artifact(path: str | Path) -> dict[str, Any]:
     try:
         payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ParityGateValidationError(f"parity artifact missing: {artifact_path}") from exc
+        raise ParityGateValidationError("parity artifact missing") from exc
+    except OSError as exc:
+        raise ParityGateValidationError("parity artifact could not be read") from exc
+    except UnicodeError as exc:
+        raise ParityGateValidationError("parity artifact is not valid UTF-8") from exc
     except json.JSONDecodeError as exc:
-        raise ParityGateValidationError(f"parity artifact is invalid json: {artifact_path}: {exc}") from exc
+        raise ParityGateValidationError("parity artifact is invalid json") from exc
 
     if not isinstance(payload, dict):
         raise ParityGateValidationError("parity artifact root must be a JSON object")
