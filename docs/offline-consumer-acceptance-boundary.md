@@ -19,20 +19,20 @@ This map does not replace K26 Ingress checks or M46 candidate indexing and does 
 
 No runtime, GraphQL or eBUS MCP behavior changes here; this supplies neither a gateway API stability promise nor a new snapshot contract. All MCP namespaces remain pre-stable; no stability is declared before Helianthus 1.0. Protocol facts and codec/profile qualification remain outside this consumer map.
 
-[Availability helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/coordinator_availability.py#L9
-[system coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/coordinator.py#L1333
-[Boiler coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/coordinator.py#L1553
-[optional schema test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_coordinator.py#L1603
-[Metadata test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_coordinator.py#L1572
-[Energy coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/coordinator.py#L1488
-[energy copy helper]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/coordinator_availability.py#L30
-[energy retention test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_coordinator.py#L924
-[initial energy test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_coordinator.py#L941
-[monthly fallback test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_coordinator.py#L957
-[Admission normalization]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/admission.py#L60
-[Empty-inventory guard]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/admission.py#L77
-[Effective admission]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/admission.py#L116
-[admission tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_admission.py
-[Entry cleanup]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/custom_components/helianthus/entry_cleanup.py#L7
-[unload retry test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/tests/test_entrypoint_phases.py#L57
-[existing smoke boundary]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/issue/278-offline-consumer-evidence-boundary/README.md#L234
+[Availability helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
+[system coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[Boiler coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[optional schema test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
+[Metadata test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
+[Energy coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[energy copy helper]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
+[energy retention test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
+[initial energy test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
+[monthly fallback test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
+[Admission normalization]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/admission.py
+[Empty-inventory guard]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/admission.py
+[Effective admission]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/admission.py
+[admission tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_admission.py
+[Entry cleanup]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py
+[unload retry test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entrypoint_phases.py
+[existing smoke boundary]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/README.md
