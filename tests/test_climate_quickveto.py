@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+import importlib
 import struct
 import sys
 import types
@@ -108,19 +110,66 @@ def _ensure_homeassistant_stubs() -> None:
     setattr(helpers_module, "update_coordinator", update_coordinator_module)
 
 
-_ensure_homeassistant_stubs()
 
-from custom_components.helianthus import climate as climate_platform
-from custom_components.helianthus.climate import (
-    HelianthusZoneClimate,
-    _ZONE_MODE_ADDR,
-    _ZONE_QUICK_VETO_DURATION_ADDR,
-    _ZONE_QUICK_VETO_TEMP_ADDR,
-    _ZONE_TARGET_TEMP_ADDR,
-    _ZONE_TARGET_TEMP_DESIRED_ADDR,
-)
-from custom_components.helianthus.const import DOMAIN
-from homeassistant.exceptions import HomeAssistantError
+@contextmanager
+def _u09_isolated_modules():
+    """Detach imported HA/entity modules, then restore their exact identities."""
+    prefixes = ("homeassistant", "custom_components.helianthus")
+
+    def selected(name):
+        return any(name == prefix or name.startswith(prefix + ".") for prefix in prefixes)
+
+    saved = {name: module for name, module in sys.modules.copy().items() if selected(name)}
+    parent = sys.modules.get("custom_components")
+    missing = object()
+    parent_attribute = getattr(parent, "helianthus", missing)
+    for name in saved:
+        del sys.modules[name]
+    if parent is not None and parent_attribute is not missing:
+        delattr(parent, "helianthus")
+    try:
+        yield
+    finally:
+        for name in tuple(sys.modules):
+            if selected(name):
+                del sys.modules[name]
+        sys.modules.update(saved)
+        current_parent = sys.modules.get("custom_components")
+        if current_parent is not None:
+            if parent_attribute is missing:
+                current_parent.__dict__.pop("helianthus", None)
+            else:
+                current_parent.helianthus = parent_attribute
+        restored = {name: module for name, module in sys.modules.copy().items() if selected(name)}
+        assert restored.keys() == saved.keys()
+        assert all(restored[name] is module for name, module in saved.items())
+        assert getattr(current_parent, "helianthus", missing) is parent_attribute
+        if parent is None:
+            sys.modules.pop("custom_components", None)
+
+
+@pytest.fixture(autouse=True)
+def _u09_climate_imports(monkeypatch):
+    with _u09_isolated_modules():
+        _ensure_homeassistant_stubs()
+        platform = importlib.import_module("custom_components.helianthus.climate")
+        names = (
+            "HelianthusZoneClimate", "_ZONE_MODE_ADDR", "_ZONE_QUICK_VETO_DURATION_ADDR",
+            "_ZONE_QUICK_VETO_TEMP_ADDR", "_ZONE_TARGET_TEMP_ADDR",
+            "_ZONE_TARGET_TEMP_DESIRED_ADDR",
+        )
+        # Existing cases use these names; keep them local to the fixture lifetime.
+        with monkeypatch.context() as scoped:
+            scoped.setitem(globals(), "climate_platform", platform)
+            for name in names:
+                scoped.setitem(globals(), name, getattr(platform, name))
+            scoped.setitem(globals(), "DOMAIN", importlib.import_module(
+                "custom_components.helianthus.const"
+            ).DOMAIN)
+            scoped.setitem(globals(), "HomeAssistantError", sys.modules[
+                "homeassistant.exceptions"
+            ].HomeAssistantError)
+            yield
 
 
 class _FakeCoordinator:
@@ -465,3 +514,40 @@ def test_extra_state_attributes_omit_quick_veto_when_absent() -> None:
 
     assert "quick_veto_setpoint_c" not in attrs
     assert "quick_veto_duration_h" not in attrs
+
+
+def test_u09_real_write_fences_survive_import_scope_teardown() -> None:
+    parent = sys.modules["custom_components.helianthus"]
+    original_class = HelianthusZoneClimate
+    original_write = original_class.async_set_temperature
+    original_base = sys.modules["homeassistant.components.climate"].ClimateEntity
+    original_feature = sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature
+    entity, client, coordinator = _make_entity(preset="manual")
+    asyncio.run(entity.async_set_temperature(temperature=22.0))
+    assert len(client.calls) == 2
+
+    with _u09_isolated_modules():
+        _ensure_homeassistant_stubs()
+        isolated = importlib.import_module("custom_components.helianthus.climate")
+        assert isolated.HelianthusZoneClimate is not original_class
+        sys.modules["homeassistant"].helpers = types.ModuleType("u09_temporary_helpers")
+
+    assert parent.climate is climate_platform
+    assert sys.modules["custom_components"].helianthus is parent
+    assert sys.modules["homeassistant"].helpers is sys.modules["homeassistant.helpers"]
+    assert sys.modules["homeassistant.components.climate"].ClimateEntity is original_base
+    assert sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature is original_feature
+    assert climate_platform.HelianthusZoneClimate is original_class
+    assert original_class.async_set_temperature is original_write
+    entity._status_coordinator.data["admission"]["trusted"] = False
+    with pytest.raises(HomeAssistantError, match="source admission is not trusted"):
+        asyncio.run(entity.async_set_temperature(temperature=22.0))
+    assert len(client.calls) == 2
+
+    entity._status_coordinator.data["admission"]["trusted"] = True
+    coordinator.zones_is_stale = True
+    coordinator.stale_zone_ids.add("zone-1")
+    assert entity.current_temperature == 20.0
+    with pytest.raises(HomeAssistantError, match="semantic data is stale"):
+        asyncio.run(entity.async_set_temperature(temperature=22.0))
+    assert len(client.calls) == 2

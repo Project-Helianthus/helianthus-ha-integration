@@ -2,14 +2,88 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
 from scripts import ha_adversarial_harness as harness
+
+
+@contextmanager
+def _u09_isolated_modules():
+    """Detach imported HA/entity modules, then restore their exact identities."""
+    prefixes = ("homeassistant", "custom_components.helianthus")
+
+    def selected(name):
+        return any(name == prefix or name.startswith(prefix + ".") for prefix in prefixes)
+
+    saved = {name: module for name, module in sys.modules.copy().items() if selected(name)}
+    parent = sys.modules.get("custom_components")
+    missing = object()
+    parent_attribute = getattr(parent, "helianthus", missing)
+    for name in saved:
+        del sys.modules[name]
+    if parent is not None and parent_attribute is not missing:
+        delattr(parent, "helianthus")
+    try:
+        yield
+    finally:
+        for name in tuple(sys.modules):
+            if selected(name):
+                del sys.modules[name]
+        sys.modules.update(saved)
+        current_parent = sys.modules.get("custom_components")
+        if current_parent is not None:
+            if parent_attribute is missing:
+                current_parent.__dict__.pop("helianthus", None)
+            else:
+                current_parent.helianthus = parent_attribute
+        restored = {name: module for name, module in sys.modules.copy().items() if selected(name)}
+        assert restored.keys() == saved.keys()
+        assert all(restored[name] is module for name, module in saved.items())
+        assert getattr(current_parent, "helianthus", missing) is parent_attribute
+        if parent is None:
+            sys.modules.pop("custom_components", None)
+
+
+@pytest.fixture(autouse=True)
+def _u09_harness_imports():
+    with _u09_isolated_modules():
+        harness._install_entity_stubs()
+        yield
+
+
+def test_u09_harness_restores_modules_and_parent_attributes():
+    from custom_components import helianthus
+    from custom_components.helianthus import climate, water_heater
+
+    original_class = climate.HelianthusZoneClimate
+    original_write = original_class.async_set_temperature
+    original_base = sys.modules["homeassistant.components.climate"].ClimateEntity
+    original_feature = sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature
+    original_helpers = sys.modules["homeassistant"].helpers
+    with _u09_isolated_modules():
+        harness._install_entity_stubs()
+        harness._exercise_real_write_fences()
+        from custom_components.helianthus import climate as isolated_climate
+
+        assert isolated_climate is not climate
+        assert isolated_climate.HelianthusZoneClimate is not original_class
+        sys.modules["homeassistant"].helpers = types.ModuleType("u09_temporary_helpers")
+    assert sys.modules["custom_components.helianthus"].climate is climate
+    assert sys.modules["custom_components.helianthus"].water_heater is water_heater
+    assert sys.modules["custom_components"].helianthus is helianthus
+    assert sys.modules["homeassistant"].helpers is original_helpers
+    assert sys.modules["homeassistant.components.climate"].ClimateEntity is original_base
+    assert sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature is original_feature
+    assert climate.HelianthusZoneClimate is original_class
+    assert original_class.async_set_temperature is original_write
 
 
 FIXTURES = Path(__file__).parent / "fixtures/adversarial-runtime/v1/gateway"
