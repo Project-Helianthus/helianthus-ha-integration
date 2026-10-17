@@ -37,9 +37,22 @@ helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-
   (transport)        (registry/schema)     (GraphQL/MCP runtime)      (HA integration layer)
 ```
 
+## SemReg M2M TLS configuration
+
+The optional PV, Storage, and EVSE consumers use the dedicated HTTPS M2M route.
+Each enabled consumer requires an endpoint, an asset reference, and a server CA
+certificate file. Server certificate verification and hostname checks remain
+required. Client certificate and key file references are optional; leave both
+blank to connect without a client certificate, or configure both to present one.
+Only file paths are stored, never certificate or private-key contents.
+
+This follows the [0.7 gateway M2M decision](https://github.com/Project-Helianthus/helianthus-ebusgateway/issues/1127).
+Protocol-native SHIP pairing, SKI allow-lists, SPINE bindings, and Matter ACLs
+remain unchanged.
+
 ## SemReg electrical storage
 
-The optional Storage boundary consumes only the mTLS
+The optional Storage boundary consumes only the server-verified HTTPS
 `SemanticStorageCurrent` operation with
 `PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1`. It accepts the fixed
 `helianthus.pack.storage@1.1.0` projection after checking the configured asset,
@@ -56,7 +69,7 @@ native Modbus/Growatt query, fallback, dual publication, control, or write path.
 
 ## SemReg EVSE current limits
 
-The optional EVSE boundary uses mTLS and only `SemanticEVSECurrent` with
+The optional EVSE boundary uses server-verified HTTPS and only `SemanticEVSECurrent` with
 `PUBLIC_GRAPHQL_SEMANTIC_EVSE_V1`. It accepts the fixed
 `helianthus.pack.evse@1.0.0` projection after validating the configured asset,
 source/binding/link identity, revision vector, evaluation digest, manifest,

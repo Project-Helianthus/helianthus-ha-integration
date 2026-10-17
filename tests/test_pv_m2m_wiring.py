@@ -251,3 +251,69 @@ def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discover
     assert 'data.get("pv_m2m_coordinator")' in factory_source
     assert "async_add_listener" in factory_source
     assert "known_pv_descriptor_keys" in factory_source
+
+
+@pytest.mark.parametrize("family", ["pv", "storage", "evse"])
+@pytest.mark.parametrize("credentials", ["omitted", "blank", "configured"])
+def test_m2m_optional_client_certificate_preserves_server_verification(
+    monkeypatch, family, credentials
+) -> None:
+    from importlib import import_module
+    import ssl
+    from unittest.mock import Mock
+
+    module = import_module(f"custom_components.helianthus.{family}_m2m")
+    prefix = f"{family}_m2m_"
+    options = {
+        prefix + "enabled": True,
+        prefix + "endpoint": "https://gateway.example.test/graphql/m2m/v1",
+        prefix + "asset_ref": "asset:synthetic-a",
+        prefix + "ca_cert_file": "/config/pki/server-ca.pem",
+    }
+    if credentials != "omitted":
+        options[prefix + "client_cert_file"] = (
+            "/config/pki/client.pem" if credentials == "configured" else ""
+        )
+        options[prefix + "client_key_file"] = (
+            "/config/pki/client.key" if credentials == "configured" else ""
+        )
+    config = getattr(module, f"{family}_m2m_config_from_options")(options)
+    tls = Mock(check_hostname=False, verify_mode=ssl.CERT_NONE)
+    create_context = Mock(return_value=tls)
+    monkeypatch.setattr(module.ssl, "create_default_context", create_context)
+
+    result = getattr(module, f"_build_{family}_ssl_context")(config)
+
+    assert result is tls
+    create_context.assert_called_once_with(
+        ssl.Purpose.SERVER_AUTH, cafile="/config/pki/server-ca.pem"
+    )
+    assert tls.check_hostname is True
+    assert tls.verify_mode == ssl.CERT_REQUIRED
+    if credentials == "configured":
+        tls.load_cert_chain.assert_called_once_with(
+            certfile="/config/pki/client.pem", keyfile="/config/pki/client.key"
+        )
+    else:
+        tls.load_cert_chain.assert_not_called()
+
+
+@pytest.mark.parametrize("family", ["pv", "storage", "evse"])
+@pytest.mark.parametrize("missing", ["endpoint", "asset_ref", "ca_cert_file",
+                                     "client_cert_file", "client_key_file"])
+def test_m2m_requires_server_configuration_and_complete_client_pair(family, missing) -> None:
+    from importlib import import_module
+
+    module = import_module(f"custom_components.helianthus.{family}_m2m")
+    prefix = f"{family}_m2m_"
+    options = {
+        prefix + "enabled": True,
+        prefix + "endpoint": "https://gateway.example.test/graphql/m2m/v1",
+        prefix + "asset_ref": "asset:synthetic-a",
+        prefix + "ca_cert_file": "/config/pki/server-ca.pem",
+        prefix + "client_cert_file": "/config/pki/client.pem",
+        prefix + "client_key_file": "/config/pki/client.key",
+    }
+    options.pop(prefix + missing)
+    with pytest.raises(ValueError):
+        getattr(module, f"{family}_m2m_config_from_options")(options)

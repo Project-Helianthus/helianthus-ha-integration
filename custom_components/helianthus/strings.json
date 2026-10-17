@@ -56,20 +56,20 @@
           "pv_m2m_endpoint": "PV M2M HTTPS endpoint",
           "pv_m2m_asset_ref": "PV asset reference",
           "pv_m2m_ca_cert_file": "Server CA certificate file",
-          "pv_m2m_client_cert_file": "Client certificate file",
-          "pv_m2m_client_key_file": "Client key file",
+          "pv_m2m_client_cert_file": "Client certificate file (optional)",
+          "pv_m2m_client_key_file": "Client key file (optional)",
           "storage_m2m_enabled": "Enable SemReg storage",
           "storage_m2m_endpoint": "Storage M2M HTTPS endpoint",
           "storage_m2m_asset_ref": "Storage asset reference",
           "storage_m2m_ca_cert_file": "Storage server CA certificate file",
-          "storage_m2m_client_cert_file": "Storage client certificate file",
-          "storage_m2m_client_key_file": "Storage client key file",
+          "storage_m2m_client_cert_file": "Storage client certificate file (optional)",
+          "storage_m2m_client_key_file": "Storage client key file (optional)",
           "evse_m2m_enabled": "Enable SemReg EVSE current limits",
           "evse_m2m_endpoint": "EVSE M2M HTTPS endpoint",
           "evse_m2m_asset_ref": "EVSE asset reference",
           "evse_m2m_ca_cert_file": "EVSE server CA certificate file",
-          "evse_m2m_client_cert_file": "EVSE client certificate file",
-          "evse_m2m_client_key_file": "EVSE client key file"
+          "evse_m2m_client_cert_file": "EVSE client certificate file (optional)",
+          "evse_m2m_client_key_file": "EVSE client key file (optional)"
         }
       },
       "eebus_pairing": {
@@ -157,8 +157,8 @@
       }
     },
     "error": {
-      "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
-      "semantic_m2m_invalid": "Each enabled SemReg consumer requires its dedicated HTTPS route, one asset reference, and CA, client certificate, and client key file references.",
+      "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
+      "semantic_m2m_invalid": "Each enabled SemReg consumer requires its dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
       "invalid_request": "The eeBUS action request was rejected as invalid.",
       "invalid_response": "The eeBUS admin boundary returned a malformed or unknown response.",
       "idempotency_conflict": "This action key was already used for different input. Start a fresh action.",
