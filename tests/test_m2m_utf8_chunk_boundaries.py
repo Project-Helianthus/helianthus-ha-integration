@@ -3,36 +3,50 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+import importlib
 import sys
 from types import ModuleType
 from unittest.mock import Mock
 
 import pytest
 
-# These clients only need the coordinator type at import time. Keep the fake
-# local so this selection runs without Home Assistant or other test modules.
-homeassistant = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
-helpers = sys.modules.setdefault("homeassistant.helpers", ModuleType("homeassistant.helpers"))
-homeassistant.helpers = helpers
-coordinator = sys.modules.setdefault(
-    "homeassistant.helpers.update_coordinator",
-    ModuleType("homeassistant.helpers.update_coordinator"),
-)
-helpers.update_coordinator = coordinator
-if not hasattr(coordinator, "DataUpdateCoordinator"):
+@pytest.fixture(scope="module")
+def m2m_modules():
+    # Import fresh clients against a local stub, then restore both the module
+    # cache and package attributes so other tests retain their coordinator base.
+    package = importlib.import_module("custom_components.helianthus")
+    homeassistant = ModuleType("homeassistant")
+    helpers = ModuleType("homeassistant.helpers")
+    coordinator = ModuleType("homeassistant.helpers.update_coordinator")
+    homeassistant.helpers = helpers
+    helpers.update_coordinator = coordinator
+
     class DataUpdateCoordinator:
         def __class_getitem__(cls, _item):
             return cls
 
     coordinator.DataUpdateCoordinator = DataUpdateCoordinator
-
-from custom_components.helianthus import evse_m2m, pv_m2m
+    with pytest.MonkeyPatch.context() as patch:
+        for module in (homeassistant, helpers, coordinator):
+            patch.setitem(sys.modules, module.__name__, module)
+        modules = {}
+        for name in ("evse_m2m", "pv_m2m"):
+            qualified_name = f"{package.__name__}.{name}"
+            # Register restoration even when the original entry is absent.
+            patch.setitem(sys.modules, qualified_name, None)
+            del sys.modules[qualified_name]
+            patch.setattr(package, name, None, raising=False)
+            delattr(package, name)
+            modules[name] = importlib.import_module(qualified_name)
+        yield modules
 
 
 @pytest.fixture(params=["pv", "evse"])
-def consumer(request):
+def consumer(request, m2m_modules):
     if request.param == "pv":
+        pv_m2m = m2m_modules["pv_m2m"]
         return pv_m2m, pv_m2m.PVM2MClient, pv_m2m.PVM2MProtocolError
+    evse_m2m = m2m_modules["evse_m2m"]
     return evse_m2m, evse_m2m.EVSEM2MClient, evse_m2m.EVSEM2MProtocolError
 
 
