@@ -55,12 +55,12 @@ def validate_gateway_parity_artifact(
             f"source_repo mismatch: got={source_repo or '<empty>'} expected={expected_source_repo}"
         )
 
-    source_ref = str(payload.get("source_ref", "")).strip()
-    if not source_ref:
+    source_ref = payload.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref.strip():
         errors.append("source_ref missing")
 
-    generated_at = str(payload.get("generated_at", "")).strip()
-    if not generated_at:
+    generated_at = payload.get("generated_at")
+    if not isinstance(generated_at, str) or not generated_at.strip():
         errors.append("generated_at missing")
 
     gates = payload.get("gates")
