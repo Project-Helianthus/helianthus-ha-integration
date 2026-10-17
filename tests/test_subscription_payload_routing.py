@@ -193,7 +193,7 @@ def test_invalid_domain_payloads_do_not_notify_any_consumer(handler, invalid):
 
 
 @pytest.mark.parametrize("hook", [False, True], ids=["fallback", "dhw-hook"])
-def test_explicit_dhw_null_clears_only_dhw(handler, hook):
+def test_explicit_dhw_null_routes_to_hook_or_clears_fallback_dhw(handler, hook):
     semantic, energy, boiler = consumers = _consumers(hook)
     before_energy = deepcopy(energy.data)
     before_boiler = deepcopy(boiler.data)
@@ -207,12 +207,13 @@ def test_explicit_dhw_null_clears_only_dhw(handler, hook):
         consumers,
     )
 
-    expected = {"zones": [{"id": "zone-a", "state": {"current_temp_c": 20.0}}], "dhw": None}
-    assert semantic.data == expected
     if hook:
+        # The coordinator owns transient-gap retention; this spy checks routing only.
         assert semantic.dhw_updates == [None]
         assert semantic.updates == []
     else:
+        expected = {"zones": [{"id": "zone-a", "state": {"current_temp_c": 20.0}}], "dhw": None}
+        assert semantic.data == expected
         assert semantic.updates == [expected]
     assert energy.updates == []
     assert energy.data == before_energy
