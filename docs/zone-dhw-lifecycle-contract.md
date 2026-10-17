@@ -40,13 +40,13 @@ fresh semantic data and successful coordinator state. Stale retention is read on
 
 | Transition / evidence | Existence | Unique ID | Parent | State write | Availability | Retained payload |
 | --- | --- | --- | --- | --- | --- | --- |
-| Cold discovery, no positive zone inventory; Proven | No new zone climate entity | None allocated from emptiness | No provisional mapped parent | No new entity to publish | No available target | No prior zone payload to retain |
+| Cold discovery, empty zone inventory; Proven | No new zone climate entity | None allocated from emptiness | No provisional mapped parent | No new entity to publish | No available target | No prior zone payload to retain |
 | Cold discovery, DHW absent/null; Proven | No new water heater | None allocated from null | No new DHW device inferred | None | No available target | None |
 | First positive Z; Proven | Create when parent resolves; unresolved mapped zones wait | Existing climate formula above | Resolved physical room-control/regulator family; no provisional mapped device | Publish when enabled/attached | Available if target and other checks pass | Accepted object becomes in-memory baseline |
 | First DHW dictionary; Proven | Platform setup creates water heater; delayed inventory schedules entry reload | Existing DHW formula above | DHW device identifier with regulator, otherwise adapter, as via-device | Publish when enabled/attached | Nonempty object and other checks required | Dictionary becomes baseline; even `{}` is accepted by materializer, but water heater is unavailable |
 | Z omitted in full payload, gaps 1 and 2; Proven | Keep; no reload while retained, as the target stays in the payload | Keep | Re-evaluate under retained-parent rules | Publish retained state with `is_stale: true` | Available while retained and other checks pass | Deep copy of prior complete target object |
 | DHW absent/null in full payload, gaps 1 and 2; Proven | Keep | Keep | Keep established attachment | Publish retained state with `is_stale: true` | Available while nonempty retained target and other checks pass | Deep copy of prior DHW object |
-| Z third consecutive materialized omission; Proven | Keep registry entry; no semantic deletion inferred | Keep | Expiry of a baselined positive zone changes the parent map and reloads the entry | Publish unavailable, no invented zero/off | Unavailable | Expired Z removed from materialized list and last-payload cache |
+| Z third consecutive materialized omission; Proven | Keep registry entry; no semantic deletion inferred | Keep | When the omission is published, expiry of a baselined positive zone changes the parent map and schedules entry reload | Publish unavailable, no invented zero/off | Unavailable | Expired Z removed from materialized list and last-payload cache; failed-refresh publication caveat below applies |
 | DHW third consecutive gap; Proven | Keep registry entry | Keep | Keep established attachment | Publish unavailable, no invented zero/off | Unavailable | Materialized DHW and last-payload cache become null |
 | Fresh Z or DHW returns after gap/expiry; Proven at coordinator boundary | Existing identity reused; reload may instantiate an object | Keep for same entry/target | Resolve current evidence | Publish current values, clear target stale flag | Recovers if all checks pass | New observed target replaces retained baseline |
 | Full refresh raises failure; Proven helpers, HA behavior unverified | Keep registry identity | Keep | Failure alone supplies no new parent evidence | Available callbacks must represent failure, not fresh readings | `last_update_success=False` makes targets unavailable and stale | Previously published data may remain in coordinator; no fresh sample inferred |
@@ -60,7 +60,10 @@ fresh semantic data and successful coordinator state. Stale retention is read on
 A transport client error first calls the gap materializer. If **any** target is
 still retained/observed there, the coordinator returns that payload instead of
 raising; this is the grace case, not a failed full refresh. When none remains it
-raises `UpdateFailed`. Other unrecoverable GraphQL response errors raise directly;
+raises `UpdateFailed` without publishing the empty materialized payload. The
+previously published coordinator data remains, so this expiry alone does not
+expose a changed parent map or schedule a reload; a later successful omission can.
+Other unrecoverable GraphQL response errors raise directly;
 missing zone/DHW schema fields instead materialize an empty inventory, which is treated as a full-poll omission under the same grace (retained targets stay stale until the third gap). Thus the
 failure row must not be conflated with every transport interruption.
 
@@ -101,9 +104,11 @@ and persisted; it does not change the entity unique ID.
 
 Parent map/unresolved-set changes can schedule a config-entry reload. An unchanged
 incomplete baseline waits; complete-to-incomplete or changed resolved bindings can
-reload. Expiry of a baselined positive zone (regulator-fallback zones included) removes it
-from the current map, so the entry reloads deterministically: the coordinator and
-its counters are recreated and the entity object is not preserved. In-memory retention
+reload. Published expiry of a baselined positive zone (regulator-fallback zones
+included) removes it from the current map and schedules entry reload. Transport-driven
+expiry that leaves no retained target raises instead, preserving the old published
+map until a later update exposes the omission. When a reload occurs, the coordinator
+and its counters are recreated and the entity object is not preserved. In-memory retention
 alone does not prove uninterrupted entity-object existence through disappearance.
 After reload, retained readings are not restored from persistent storage. Registry
 identity reuse and uninterrupted runtime presentation are different obligations.
@@ -123,7 +128,8 @@ These are reasoned examples, not executed tests or physical observations:
   omission expires only `zone-2`. A `zone-1` subscription between polls neither
   resets the sibling counter nor postpones the full-poll deadline.
 - After that expiry, receive a positive `zone-2` again. Its original entry-scoped
-  unique ID applies. The earlier expiry of a baselined zone already reloaded the entry; object continuity is unproven.
+  unique ID applies. The earlier published full-poll omission of a baselined zone
+  schedules entry reload; object continuity is unproven.
 - Merge `{"id":"zone-1","state":{"current_temp_c":21}}` as a subscription
   over an existing target with config: keep config. Poll that same sparse object:
   config is absent from the replacement. Neither path establishes field freshness.
