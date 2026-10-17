@@ -12,21 +12,31 @@ from custom_components.helianthus.semantic_freshness import (
 
 
 @pytest.mark.parametrize(
-    ("lookup_id", "stored_id"),
+    ("lookup_id", "stored_id", "expected_target_stale"),
     [
-        ("zone-1", "zone-1"),
-        (" ZONE-001 ", "zone-1"),
-        ("001", "zone-1"),
-        ("zone-1", " ZONE-001 "),
-        (1, "001"),
+        ("zone-1", "zone-1", True),
+        (" ZONE-1 ", "zone-1", True),
+        ("zone-1", " ZONE-1 ", True),
+        (" ZONE-001 ", "zone-1", False),
+        ("001", "zone-1", False),
+        ("zone-1", " ZONE-001 ", False),
+        (1, "001", False),
     ],
-    ids=["canonical", "lookup-case-space-zero", "numeric-token", "stored-alias", "integer"],
+    ids=[
+        "canonical",
+        "lookup-case-space",
+        "stored-case-space",
+        "lookup-case-space-zero",
+        "numeric-token",
+        "stored-alias",
+        "integer",
+    ],
 )
 def test_target_local_freshness_through_removal_failure_and_recovery(
-    lookup_id: object, stored_id: str
+    lookup_id: object, stored_id: str, expected_target_stale: bool
 ) -> None:
     class Coordinator:
-        """Mutable source state, with explicit aliases for the fake checker."""
+        """Mutable source state with production stale-key handling."""
 
         def __init__(self) -> None:
             self.data = {
@@ -42,14 +52,8 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
             self.stale_zone_ids: set[str] = set()
 
         def zone_is_stale(self, zone_id: object | None) -> bool:
-            aliases = {
-                "zone-1": "zone-1",
-                " ZONE-001 ": "zone-1",
-                "001": "zone-1",
-                1: "zone-1",
-                "zone-2": "zone-2",
-            }
-            return aliases[zone_id] in self.stale_zone_ids
+            token = str(zone_id).strip().lower() if zone_id is not None else ""
+            return bool(token and token in self.stale_zone_ids)
 
     coordinator = Coordinator()
 
@@ -71,12 +75,18 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
     )
 
     # Zone 1 retains its last-known-good payload; siblings advance independently.
-    coordinator.stale_zone_ids = {"zone-1"}
+    # Production keys use the stored ID with only whitespace/case normalized.
+    # Payload aliases still match, but numeric/prefix aliases do not share stale keys.
+    coordinator.stale_zone_ids = {stored_id.strip().lower()}
     coordinator.zones_is_stale = True
     coordinator.data["zones"][1] = {"id": "zone-2", "state": {"current_temp_c": 19.0}}
     coordinator.data["dhw"] = {"state": {"current_temp_c": 46.0}}
     assert observed_targets() == (
-        ({"id": stored_id, "state": {"current_temp_c": 20.0}}, True, {"is_stale": True}),
+        (
+            {"id": stored_id, "state": {"current_temp_c": 20.0}},
+            True,
+            {"is_stale": expected_target_stale},
+        ),
         ({"id": "zone-2", "state": {"current_temp_c": 19.0}}, True, {"is_stale": False}),
         ({"state": {"current_temp_c": 46.0}}, True, {"is_stale": False}),
     )
@@ -86,7 +96,7 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
         {"id": "zone-2", "state": {"current_temp_c": 19.0}}
     ]
     assert observed_targets() == (
-        ({}, False, {"is_stale": True}),
+        ({}, False, {"is_stale": expected_target_stale}),
         ({"id": "zone-2", "state": {"current_temp_c": 19.0}}, True, {"is_stale": False}),
         ({"state": {"current_temp_c": 46.0}}, True, {"is_stale": False}),
     )
