@@ -1,4 +1,4 @@
-"""Binding-side identity regressions with ticket-local synthetic EVSE evidence."""
+"""Identity join regressions with local synthetic EVSE evidence."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -8,18 +8,18 @@ from types import ModuleType
 
 import pytest
 
-_u06_ha = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
-_u06_helpers = sys.modules.setdefault("homeassistant.helpers", ModuleType("homeassistant.helpers"))
-_u06_ha.helpers = _u06_helpers
-_u06_coordinator = sys.modules.setdefault(
+_identity_join_ha = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
+_identity_join_helpers = sys.modules.setdefault("homeassistant.helpers", ModuleType("homeassistant.helpers"))
+_identity_join_ha.helpers = _identity_join_helpers
+_identity_join_coordinator = sys.modules.setdefault(
     "homeassistant.helpers.update_coordinator",
     ModuleType("homeassistant.helpers.update_coordinator"),
 )
-_u06_helpers.update_coordinator = _u06_coordinator
-if not hasattr(_u06_coordinator, "DataUpdateCoordinator") or not hasattr(
-    _u06_coordinator.DataUpdateCoordinator, "async_set_updated_data"
+_identity_join_helpers.update_coordinator = _identity_join_coordinator
+if not hasattr(_identity_join_coordinator, "DataUpdateCoordinator") or not hasattr(
+    _identity_join_coordinator.DataUpdateCoordinator, "async_set_updated_data"
 ):
-    class _U06DataUpdateCoordinator:
+    class _IdentityJoinDataUpdateCoordinator:
         def __class_getitem__(cls, _item):
             return cls
 
@@ -29,55 +29,55 @@ if not hasattr(_u06_coordinator, "DataUpdateCoordinator") or not hasattr(
         def async_set_updated_data(self, value):
             self.data = value
 
-    _u06_coordinator.DataUpdateCoordinator = _U06DataUpdateCoordinator
+    _identity_join_coordinator.DataUpdateCoordinator = _IdentityJoinDataUpdateCoordinator
 
 from custom_components.helianthus import evse_m2m
 
-_U06_ASSET = "asset:evse-family-a"
-_U06_FACTS = (
+_IDENTITY_JOIN_ASSET = "asset:evse-family-a"
+_IDENTITY_JOIN_FACTS = (
     ("evse.limit.configured_current", "evse", "evse-a", "48"),
     ("evse.limit.allocated_current", "connector", "connector-a", "32"),
 )
 
 
-def _u06_evidence() -> dict:
+def _identity_join_evidence() -> dict:
     return {
         "owner": "helianthus.pack.evse", "kind": "test",
-        "digest": "sha256:" + hashlib.sha256(b"synthetic U06 identity evidence").hexdigest(),
+        "digest": "sha256:" + hashlib.sha256(b"synthetic identity join evidence").hexdigest(),
         "contract": "helianthus.semantic.kernel/v1", "access": "authorized",
         "redaction": "metadata_only",
     }
 
 
-def _u06_identity_snapshot(generation: str = "1") -> dict:
+def _identity_join_identity_snapshot(generation: str = "1") -> dict:
     return {
         "sources": [{
             "source_id": "source:evse-a", "source_epoch_id": "epoch:one",
             "protocol_id": "synthetic", "profile_id": "synthetic.evse.current-limit",
-            "profile_version": "1", "registry_evidence": _u06_evidence(),
+            "profile_version": "1", "registry_evidence": _identity_join_evidence(),
             "started_at": {}, "state": "current", "revision": "1",
         }],
         "bindings": [{
-            "binding_id": "binding:one", "asset_id": _U06_ASSET,
+            "binding_id": "binding:one", "asset_id": _IDENTITY_JOIN_ASSET,
             "source_id": "source:evse-a", "source_epoch_id": "epoch:one",
-            "driver_generation": generation, "native_resource": _u06_evidence(),
+            "driver_generation": generation, "native_resource": _identity_join_evidence(),
             "state": "current", "revision": "1",
         }],
         "identity_links": [{
-            "asset_id": _U06_ASSET, "binding_id": "binding:one", "state": "qualified",
-            "basis": [_u06_evidence()], "revision": "1",
+            "asset_id": _IDENTITY_JOIN_ASSET, "binding_id": "binding:one", "state": "qualified",
+            "basis": [_identity_join_evidence()], "revision": "1",
         }],
     }
 
 
-def _u06_expected_identity(generation: str = "1") -> tuple[str, str, str, str]:
+def _identity_join_expected_identity(generation: str = "1") -> tuple[str, str, str, str]:
     return "source:evse-a", "epoch:one", "binding:one", generation
 
 
-def _u06_public_payload(generation: str = "1") -> dict:
+def _identity_join_public_payload(generation: str = "1") -> dict:
     revisions = dict.fromkeys(("semantic", "identity", "facts", "services", "capabilities"), "1")
     facts, dispositions = [], []
-    for index, (fact_id, dimension, label, amps) in enumerate(_U06_FACTS):
+    for index, (fact_id, dimension, label, amps) in enumerate(_IDENTITY_JOIN_FACTS):
         key = {
             "pack_id": "helianthus.pack.evse", "pack_version": "1.0.0", "fact_id": fact_id,
             "dimensions": [{"id": f"evse.dimension.{dimension}",
@@ -101,20 +101,20 @@ def _u06_public_payload(generation: str = "1") -> dict:
             "origin": {
                 "origin_id": f"origin:{index}", "kind": "native_observation",
                 "source_id": "source:evse-a", "source_epoch_id": "epoch:one",
-                "binding_id": "binding:one", "evidence": [_u06_evidence()],
+                "binding_id": "binding:one", "evidence": [_identity_join_evidence()],
             },
-            "evidence": [_u06_evidence()], "revision": "1",
+            "evidence": [_identity_join_evidence()], "revision": "1",
             "binding_id": "binding:one", "source_epoch_id": "epoch:one",
             "driver_generation": generation,
         }
-        facts.append({"asset_id": _U06_ASSET, "key": key, "candidates": [candidate],
+        facts.append({"asset_id": _IDENTITY_JOIN_ASSET, "key": key, "candidates": [candidate],
                       "conflicts": [], "revision": "1"})
         dispositions.append({"kind": "fact", "item_id": fact_id, "outcome": "exact",
                              "source_keys": [deepcopy(key)], "loss": []})
-    snapshot = _u06_identity_snapshot(generation)
+    snapshot = _identity_join_identity_snapshot(generation)
     snapshot.update({
         "contract": "helianthus.semantic.kernel/v1", "snapshot_id": "snapshot:one",
-        "asset_id": _U06_ASSET, "revisions": deepcopy(revisions), "evaluated_at": {},
+        "asset_id": _IDENTITY_JOIN_ASSET, "revisions": deepcopy(revisions), "evaluated_at": {},
         "evaluate_monotonic": {}, "facts": facts, "services": [], "capabilities": [],
         "fences": [], "cursors": [],
     })
@@ -123,7 +123,7 @@ def _u06_public_payload(generation: str = "1") -> dict:
         "evaluation": {
             "contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one",
             "revisions": deepcopy(revisions), "context": {},
-            "evaluation_digest": _u06_evidence()["digest"],
+            "evaluation_digest": _identity_join_evidence()["digest"],
             "facts": [{"candidate_id": f"candidate:{index}", "candidate_revision": "1",
                        "freshness": "fresh", "effective_availability": "available"}
                       for index in range(len(facts))],
@@ -138,15 +138,15 @@ def _u06_public_payload(generation: str = "1") -> dict:
                 "pack_versions": [{"id": "helianthus.pack.evse", "version": "1.0.0"}],
                 "mapping_revision": "1",
             },
-            "requested": [{"kind": "fact", "item_id": item[0]} for item in _U06_FACTS],
+            "requested": [{"kind": "fact", "item_id": item[0]} for item in _IDENTITY_JOIN_FACTS],
             "dispositions": dispositions,
         },
     }}}
 
 
-def _u06_assert_public_control(payload: dict) -> None:
-    parsed = evse_m2m.parse_m2m_response(payload, expected_asset_ref=_U06_ASSET)
-    assert parsed.asset_ref == _U06_ASSET
+def _identity_join_assert_public_control(payload: dict) -> None:
+    parsed = evse_m2m.parse_m2m_response(payload, expected_asset_ref=_IDENTITY_JOIN_ASSET)
+    assert parsed.asset_ref == _IDENTITY_JOIN_ASSET
     assert [(fact.key, fact.value, fact.unit, fact.quality, fact.availability, fact.freshness)
             for fact in parsed.facts] == [
         (("evse.limit.configured_current", "evse", "evse-a"), 48, "A", "GOOD", "AVAILABLE", "FRESH"),
@@ -154,22 +154,22 @@ def _u06_assert_public_control(payload: dict) -> None:
     ]
 
 
-def _u06_changed_paths(before: object, after: object, path: tuple = ()) -> list[tuple]:
+def _identity_join_changed_paths(before: object, after: object, path: tuple = ()) -> list[tuple]:
     if isinstance(before, dict) and isinstance(after, dict):
         assert before.keys() == after.keys()
         return [changed for key in before
-                for changed in _u06_changed_paths(before[key], after[key], (*path, key))]
+                for changed in _identity_join_changed_paths(before[key], after[key], (*path, key))]
     if isinstance(before, list) and isinstance(after, list):
         assert len(before) == len(after)
         return [changed for index, (left, right) in enumerate(zip(before, after))
-                for changed in _u06_changed_paths(left, right, (*path, index))]
+                for changed in _identity_join_changed_paths(left, right, (*path, index))]
     return [] if type(before) is type(after) and before == after else [path]
 
 
 @pytest.mark.parametrize("generation", ["1", "7"])
 def test_u06_identity_accepts_canonical_positive_binding_generation(generation: str) -> None:
-    assert evse_m2m._identity(_u06_identity_snapshot(generation), _U06_ASSET) == (
-        _u06_expected_identity(generation)
+    assert evse_m2m._identity(_identity_join_identity_snapshot(generation), _IDENTITY_JOIN_ASSET) == (
+        _identity_join_expected_identity(generation)
     )
 
 
@@ -180,15 +180,15 @@ def test_u06_identity_accepts_canonical_positive_binding_generation(generation: 
          "empty", "integer", "boolean"],
 )
 def test_u06_identity_rejects_invalid_binding_generation_directly(invalid: object) -> None:
-    control = _u06_identity_snapshot()
-    assert evse_m2m._identity(control, _U06_ASSET) == _u06_expected_identity()
+    control = _identity_join_identity_snapshot()
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
     malformed = deepcopy(control)
     malformed["bindings"][0]["driver_generation"] = invalid
-    assert _u06_changed_paths(control, malformed) == [("bindings", 0, "driver_generation")]
+    assert _identity_join_changed_paths(control, malformed) == [("bindings", 0, "driver_generation")]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError,
                        match=r"^invalid evse binding driver generation$"):
-        evse_m2m._identity(malformed, _U06_ASSET)
-    assert evse_m2m._identity(control, _U06_ASSET) == _u06_expected_identity()
+        evse_m2m._identity(malformed, _IDENTITY_JOIN_ASSET)
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
 
 
 @pytest.mark.parametrize(
@@ -200,19 +200,19 @@ def test_u06_identity_rejects_invalid_binding_generation_directly(invalid: objec
 def test_u06_identity_requires_binding_and_link_joins_directly(
     section: str, field: str, replacement: str,
 ) -> None:
-    control = _u06_identity_snapshot()
-    assert evse_m2m._identity(control, _U06_ASSET) == _u06_expected_identity()
+    control = _identity_join_identity_snapshot()
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
     malformed = deepcopy(control)
     malformed[section][0][field] = replacement
-    assert _u06_changed_paths(control, malformed) == [(section, 0, field)]
+    assert _identity_join_changed_paths(control, malformed) == [(section, 0, field)]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=r"^invalid evse identity$"):
-        evse_m2m._identity(malformed, _U06_ASSET)
-    assert evse_m2m._identity(control, _U06_ASSET) == _u06_expected_identity()
+        evse_m2m._identity(malformed, _IDENTITY_JOIN_ASSET)
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
 
 
 @pytest.mark.parametrize("generation", ["1", "7"])
 def test_u06_public_parse_accepts_matching_identity(generation: str) -> None:
-    _u06_assert_public_control(_u06_public_payload(generation))
+    _identity_join_assert_public_control(_identity_join_public_payload(generation))
 
 
 @pytest.mark.parametrize(
@@ -225,13 +225,62 @@ def test_u06_public_parse_accepts_matching_identity(generation: str) -> None:
 def test_u06_public_parse_rejects_identity_faults(
     section: str, field: str, replacement: str, reason: str,
 ) -> None:
-    control = _u06_public_payload()
-    _u06_assert_public_control(control)
+    control = _identity_join_public_payload()
+    _identity_join_assert_public_control(control)
     malformed = deepcopy(control)
     malformed["data"]["semanticEVSECurrent"]["snapshot"][section][0][field] = replacement
-    assert _u06_changed_paths(control, malformed) == [
+    assert _identity_join_changed_paths(control, malformed) == [
         ("data", "semanticEVSECurrent", "snapshot", section, 0, field),
     ]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=f"^{reason}$"):
-        evse_m2m.parse_m2m_response(malformed, expected_asset_ref=_U06_ASSET)
-    _u06_assert_public_control(control)
+        evse_m2m.parse_m2m_response(malformed, expected_asset_ref=_IDENTITY_JOIN_ASSET)
+    _identity_join_assert_public_control(control)
+
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "replacement"),
+    [("bindings", "asset_id", "asset:evse-family-other"),
+     ("identity_links", "asset_id", "asset:evse-family-other"),
+     ("sources", "state", "retired"),
+     ("bindings", "state", "retired"),
+     ("identity_links", "state", "unqualified")],
+    ids=["binding-asset", "link-asset", "retired-source", "retired-binding",
+         "unqualified-link"],
+)
+def test_identity_requires_matching_assets_and_admitted_states_directly(
+    section: str, field: str, replacement: str,
+) -> None:
+    control = _identity_join_identity_snapshot()
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
+    malformed = deepcopy(control)
+    malformed[section][0][field] = replacement
+    assert _identity_join_changed_paths(control, malformed) == [(section, 0, field)]
+    with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=r"^invalid evse identity$"):
+        evse_m2m._identity(malformed, _IDENTITY_JOIN_ASSET)
+    assert evse_m2m._identity(control, _IDENTITY_JOIN_ASSET) == _identity_join_expected_identity()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "replacement"),
+    [("bindings", "asset_id", "asset:evse-family-other"),
+     ("identity_links", "asset_id", "asset:evse-family-other"),
+     ("sources", "state", "retired"),
+     ("bindings", "state", "retired"),
+     ("identity_links", "state", "unqualified")],
+    ids=["binding-asset", "link-asset", "retired-source", "retired-binding",
+         "unqualified-link"],
+)
+def test_public_parse_rejects_asset_and_state_identity_faults(
+    section: str, field: str, replacement: str,
+) -> None:
+    control = _identity_join_public_payload()
+    _identity_join_assert_public_control(control)
+    malformed = deepcopy(control)
+    malformed["data"]["semanticEVSECurrent"]["snapshot"][section][0][field] = replacement
+    assert _identity_join_changed_paths(control, malformed) == [
+        ("data", "semanticEVSECurrent", "snapshot", section, 0, field),
+    ]
+    with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=r"^invalid evse identity$"):
+        evse_m2m.parse_m2m_response(malformed, expected_asset_ref=_IDENTITY_JOIN_ASSET)
+    _identity_join_assert_public_control(control)
