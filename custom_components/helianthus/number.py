@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from homeassistant.components.number import NumberEntity
@@ -158,7 +159,7 @@ _SYSTEM_NUMBER_FIELDS = [
         config_key="dhw_bivalence_point",
         label="DHW Bivalence Point",
         minimum=-20.0,
-        maximum=50.0,
+        maximum=20.0,
         step=1.0,
         unit=UnitOfTemperature.CELSIUS,
         icon="mdi:thermometer",
@@ -579,7 +580,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
 
 
 class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
-    """Writable BASV2 system configuration number."""
+    """Writable system configuration number for supported controller families."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
@@ -627,6 +628,39 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
         base_available = getattr(super(), "available", True)
         return bool(base_available) and status_admission_trusted(self._status_coordinator)
 
+    def _effective_bounds(self) -> tuple[float, float]:
+        fallback = (self._field.minimum, self._field.maximum)
+        if self._field.mutation_field != "dhw_bivalence_point_c":
+            return fallback
+        payload = self.coordinator.data
+        config = payload.get("config") if isinstance(payload, dict) else None
+        bound = config.get("dhw_bivalence_point_bound") if isinstance(config, dict) else None
+        if not isinstance(bound, dict) or bound.get("source") not in (
+            "controller_profile", "unmatched_policy"
+        ):
+            return fallback
+        minimum, maximum = bound.get("min_c"), bound.get("max_c")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in (minimum, maximum)
+        ):
+            return fallback
+        try:
+            minimum, maximum = float(minimum), float(maximum)
+        except OverflowError:
+            return fallback
+        if not math.isfinite(minimum) or not math.isfinite(maximum) or minimum > maximum:
+            return fallback
+        return minimum, maximum
+
+    @property
+    def native_min_value(self) -> float:
+        return self._effective_bounds()[0]
+
+    @property
+    def native_max_value(self) -> float:
+        return self._effective_bounds()[1]
+
     @property
     def native_value(self) -> float | None:
         payload = self.coordinator.data or {}
@@ -640,9 +674,12 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
             return None
 
     async def async_set_native_value(self, value: float) -> None:
-        if value < self._field.minimum or value > self._field.maximum:
+        minimum, maximum = self._effective_bounds()
+        if value < minimum or value > maximum or (
+            self._field.mutation_field == "dhw_bivalence_point_c" and not math.isfinite(value)
+        ):
             raise HomeAssistantError(
-                f"Value {value} outside allowed range [{self._field.minimum}, {self._field.maximum}]"
+                f"Value {value} outside allowed range [{minimum}, {maximum}]"
             )
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")

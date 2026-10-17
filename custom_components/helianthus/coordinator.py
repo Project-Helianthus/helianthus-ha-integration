@@ -680,6 +680,11 @@ query System {
       adaptive_heating_curve
       heating_circuit_bivalence_point
       dhw_bivalence_point
+      dhw_bivalence_point_bound {
+        min_c
+        max_c
+        source
+      }
       hc_emergency_temperature
       hwc_max_flow_temp_desired
       max_room_humidity
@@ -691,6 +696,15 @@ query System {
   }
 }
 """
+
+QUERY_SYSTEM_LEGACY = QUERY_SYSTEM.replace(
+    "      dhw_bivalence_point_bound {\n"
+    "        min_c\n"
+    "        max_c\n"
+    "        source\n"
+    "      }\n",
+    "",
+)
 
 QUERY_SYSTEM_GATEWAY_METADATA = """
 query SystemGatewayMetadata {
@@ -1333,6 +1347,8 @@ query SystemSensitive {
 class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic system data."""
 
+    _system_dhw_bound_supported = True
+
     def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
             hass,
@@ -1377,7 +1393,16 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
 
         try:
-            payload = await self._client.execute(QUERY_SYSTEM)
+            query = QUERY_SYSTEM if self._system_dhw_bound_supported else QUERY_SYSTEM_LEGACY
+            try:
+                payload = await self._client.execute(query)
+            except GraphQLResponseError as exc:
+                if not self._system_dhw_bound_supported or not _is_missing_field_error(
+                    exc.errors, ["dhw_bivalence_point_bound", "dhwBivalencePointBound"]
+                ):
+                    raise
+                self._system_dhw_bound_supported = False
+                payload = await self._client.execute(QUERY_SYSTEM_LEGACY)
         except GraphQLResponseError as exc:
             if _is_missing_field_error(exc.errors, missing_fields):
                 return empty
