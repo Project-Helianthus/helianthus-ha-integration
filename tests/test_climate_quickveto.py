@@ -112,7 +112,7 @@ def _ensure_homeassistant_stubs() -> None:
 
 
 @contextmanager
-def _u09_isolated_modules():
+def _isolated_entity_modules():
     """Detach imported HA/entity modules, then restore their exact identities."""
     prefixes = ("homeassistant", "custom_components.helianthus")
 
@@ -149,8 +149,8 @@ def _u09_isolated_modules():
 
 
 @pytest.fixture(autouse=True)
-def _u09_climate_imports(monkeypatch):
-    with _u09_isolated_modules():
+def _isolated_climate_imports(monkeypatch):
+    with _isolated_entity_modules():
         _ensure_homeassistant_stubs()
         platform = importlib.import_module("custom_components.helianthus.climate")
         names = (
@@ -526,7 +526,7 @@ def test_u09_real_write_fences_survive_import_scope_teardown() -> None:
     asyncio.run(entity.async_set_temperature(temperature=22.0))
     assert len(client.calls) == 2
 
-    with _u09_isolated_modules():
+    with _isolated_entity_modules():
         _ensure_homeassistant_stubs()
         isolated = importlib.import_module("custom_components.helianthus.climate")
         assert isolated.HelianthusZoneClimate is not original_class
