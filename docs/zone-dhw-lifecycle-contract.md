@@ -44,14 +44,15 @@ fresh semantic data and successful coordinator state. Stale retention is read on
 | Cold discovery, DHW absent/null; Proven | No new water heater | None allocated from null | No new DHW device inferred | None | No available target | None |
 | First positive Z; Proven | Create when parent resolves; unresolved mapped zones wait | Existing climate formula above | Resolved physical room-control/regulator family; no provisional mapped device | Publish when enabled/attached | Available if target and other checks pass | Accepted object becomes in-memory baseline |
 | First DHW dictionary; Proven | Platform setup creates water heater; delayed inventory schedules entry reload | Existing DHW formula above | DHW device identifier with regulator, otherwise adapter, as via-device | Publish when enabled/attached | Nonempty object and other checks required | Dictionary becomes baseline; even `{}` is accepted by materializer, but water heater is unavailable |
-| Z omitted in full payload, gaps 1 and 2; Proven | Keep; parent reconciliation may reload entry (see below) | Keep | Re-evaluate under retained-parent rules | Publish retained state with `is_stale: true` | Available while retained and other checks pass | Deep copy of prior complete target object |
+| Z omitted in full payload, gaps 1 and 2; Proven | Keep; no reload while retained, as the target stays in the payload | Keep | Re-evaluate under retained-parent rules | Publish retained state with `is_stale: true` | Available while retained and other checks pass | Deep copy of prior complete target object |
 | DHW absent/null in full payload, gaps 1 and 2; Proven | Keep | Keep | Keep established attachment | Publish retained state with `is_stale: true` | Available while nonempty retained target and other checks pass | Deep copy of prior DHW object |
-| Z third consecutive materialized omission; Proven | Keep registry entry; no semantic deletion inferred | Keep | Reconciliation can schedule reload | Publish unavailable, no invented zero/off | Unavailable | Expired Z removed from materialized list and last-payload cache |
+| Z third consecutive materialized omission; Proven | Keep registry entry; no semantic deletion inferred | Keep | Expiry of a baselined positive zone changes the parent map and reloads the entry | Publish unavailable, no invented zero/off | Unavailable | Expired Z removed from materialized list and last-payload cache |
 | DHW third consecutive gap; Proven | Keep registry entry | Keep | Keep established attachment | Publish unavailable, no invented zero/off | Unavailable | Materialized DHW and last-payload cache become null |
 | Fresh Z or DHW returns after gap/expiry; Proven at coordinator boundary | Existing identity reused; reload may instantiate an object | Keep for same entry/target | Resolve current evidence | Publish current values, clear target stale flag | Recovers if all checks pass | New observed target replaces retained baseline |
 | Full refresh raises failure; Proven helpers, HA behavior unverified | Keep registry identity | Keep | Failure alone supplies no new parent evidence | Available callbacks must represent failure, not fresh readings | `last_update_success=False` makes targets unavailable and stale | Previously published data may remain in coordinator; no fresh sample inferred |
-| Sparse zone subscription for Z; Proven | Keep Z and sibling identities | Keep | Merged mapping may trigger reconciliation | Publish merged Z; no sibling freshness reset | Z follows own freshness; siblings follow theirs | Recursive merge retains omitted/existing-null fields; other zones and DHW preserved |
-| Sparse DHW subscription; Proven | Keep D and zone identities | Keep | No new zone binding inferred | Publish merged D | DHW refreshed independently of zones | Recursive merge preserves omitted fields and existing values for null fields |
+| Sparse zone subscription for Z; Proven | Keep Z and sibling identities | Keep | Merged mapping may trigger reconciliation | Publish merged Z; no sibling freshness reset | Z follows own freshness; siblings follow theirs | Recursive merge: omitted fields and null updates over existing keys keep the existing value; a null for an absent key is stored, and a real value overwrites an existing null; other zones and DHW preserved |
+| Sparse DHW subscription; Proven | Keep D and zone identities | Keep | No new zone binding inferred | Publish merged D | DHW refreshed independently of zones | Recursive merge: omitted fields and null updates over existing keys keep the existing value; a null DHW subscription counts as a gap against the shared two-update grace (stale at gaps 1-2, expiry at 3) |
+| Zone mapping change or parent reassignment; Proven branches, Hypothesis end-to-end | Keep registry entry; entry may reload | Keep; parent never changes the unique ID | Retained binding only under the fallback conditions below, else unresolved; a valid new live binding is adopted | Publish when enabled/attached after any reload | Follows own freshness; unresolved mapped zone waits | Retained readings are not restored across reload |
 | Disabled registry/runtime entity during gap or recovery; Proven guard, Hypothesis full HA lifecycle | Keep disabled registry entry | Keep | Same evidence rules; disabling supplies no parent evidence | Guard suppresses publication while disabled | Disabled is separate from semantic availability; no active state promised | Coordinator can retain/update regardless of disabled status |
 | Re-enable existing disabled entry; Hypothesis end-to-end | Reuse registry entry, no identity recreation required | Keep | Resolve under same rules | Resume only when enabled/attached | Re-evaluate current data; no automatic fresh assumption | Use current materialized target, not obsolete pre-disable values |
 | Authoritative target removal; Unknown / unmet | No automatic deletion contract currently supported | Do not retire/reassign based on omission | Do not infer replacement | No removal-driven synthetic state | Bounded gap/expiry rules apply today | A future public API decision is required before destructive removal semantics |
@@ -60,7 +61,7 @@ A transport client error first calls the gap materializer. If **any** target is
 still retained/observed there, the coordinator returns that payload instead of
 raising; this is the grace case, not a failed full refresh. When none remains it
 raises `UpdateFailed`. Other unrecoverable GraphQL response errors raise directly;
-missing zone/DHW schema fields instead materialize an empty inventory. Thus the
+missing zone/DHW schema fields instead materialize an empty inventory, which is treated as a full-poll omission under the same grace (retained targets stay stale until the third gap). Thus the
 failure row must not be conflated with every transport interruption.
 
 The [subscription merge](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/subscriptions.py) is not a sparse full poll. Full polls replace an observed
@@ -71,10 +72,10 @@ Missing fields must not be advertised as independently reacquired native evidenc
 
 ## Zone zero and identity boundaries
 
-| Input / transition | Existence | Unique ID | Parent | State write | Availability | Retained payload |
+| Input / transition | Existence | Normalized token (unique ID is `{entry_id}-zone-{token}`) | Parent | State write | Availability | Retained payload |
 | --- | --- | --- | --- | --- | --- | --- |
-| `0` / `"0"` versus `"zone-0"`; Proven helper boundary | Lookup accepts distinct zero tokens; not proof of supported zone discovery | Bare zero normalizes to `"0"`; prefixed zero remains `"zone-0"`; do not equate them | Both have no positive zone instance in parent resolver | No valid climate control instance; write blocked | Helper can find either object; platform availability is not established by lookup | Match its own token; never substitute the other zero token |
-| Positive `"001"` versus `"zone-1"`; Proven inconsistency | Payload lookup canonicalizes positive aliases | Climate normalizes both to `"zone-1"` | Positive zone instance is zero based internally | No new identity migration authorized | Stale lookup uses case/space normalization only, unlike payload lookup | Poll keys and subscription matching are not universal canonical aliases |
+| `0` / `"0"` versus `"zone-0"`; Proven helper boundary | Lookup accepts distinct zero tokens; not proof of supported zone discovery | Bare zero normalizes to `"0"` (ID suffix `zone-0`); prefixed zero remains `"zone-0"` (ID suffix `zone-zone-0`); do not equate them | Both have no positive zone instance in parent resolver | HA state publishes if the entity exists (setup fallback); control writes are rejected because the zone instance is None | Helper can find either object; platform availability is not established by lookup | Match its own token; never substitute the other zero token |
+| Positive `"001"` versus `"zone-1"`; Proven inconsistency | Payload lookup canonicalizes positive aliases | Climate normalizes both to `"zone-1"` (ID suffix `zone-zone-1`) | Positive zone instance is zero based internally | No new identity migration authorized | Stale lookup uses case/space normalization only, unlike payload lookup | Poll keys and subscription matching are not universal canonical aliases |
 
 **Unknown / unmet:** zero is not a documented native zone identity in this slice.
 Climate setup can take a zero token through its unmapped regulator fallback even
@@ -100,7 +101,9 @@ and persisted; it does not change the entity unique ID.
 
 Parent map/unresolved-set changes can schedule a config-entry reload. An unchanged
 incomplete baseline waits; complete-to-incomplete or changed resolved bindings can
-reload. An omitted/expired zone can itself change the map, so in-memory retention
+reload. Expiry of a baselined positive zone (regulator-fallback zones included) removes it
+from the current map, so the entry reloads deterministically: the coordinator and
+its counters are recreated and the entity object is not preserved. In-memory retention
 alone does not prove uninterrupted entity-object existence through disappearance.
 After reload, retained readings are not restored from persistent storage. Registry
 identity reuse and uninterrupted runtime presentation are different obligations.
@@ -120,7 +123,7 @@ These are reasoned examples, not executed tests or physical observations:
   omission expires only `zone-2`. A `zone-1` subscription between polls neither
   resets the sibling counter nor postpones the full-poll deadline.
 - After that expiry, receive a positive `zone-2` again. Its original entry-scoped
-  unique ID applies. A parent-map reload may occur; object continuity is unproven.
+  unique ID applies. The earlier expiry of a baselined zone already reloaded the entry; object continuity is unproven.
 - Merge `{"id":"zone-1","state":{"current_temp_c":21}}` as a subscription
   over an existing target with config: keep config. Poll that same sparse object:
   config is absent from the replacement. Neither path establishes field freshness.
