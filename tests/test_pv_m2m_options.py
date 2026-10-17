@@ -6,6 +6,8 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+
+import pytest
 from types import ModuleType, SimpleNamespace
 
 
@@ -160,7 +162,7 @@ def test_evse_options_reject_invalid_url_ports() -> None:
         assert result["errors"] == {"base": "semantic_m2m_invalid"}
 
 
-def test_enabled_options_require_https_asset_and_all_certificate_references() -> None:
+def test_enabled_options_require_https_and_a_complete_configured_client_pair() -> None:
     flow = HelianthusOptionsFlow(SimpleNamespace(options={}))
     invalid = _complete_options()
     invalid[CONF_PV_M2M_ENDPOINT] = "http://pv.example.test/graphql/m2m/v1"
@@ -364,3 +366,44 @@ def test_options_controller_uses_entry_shared_terminal_broker() -> None:
     controller = flow._pairing_controller()
     assert controller._client is client
     assert controller._action_broker is broker
+
+
+@pytest.mark.parametrize("family", ["pv", "storage", "evse"])
+@pytest.mark.parametrize("credentials", ["omitted", "blank", "configured", "cert_only", "key_only"])
+def test_options_flow_accepts_optional_client_pair(family, credentials) -> None:
+    prefix = f"{family}_m2m_"
+    submitted = {
+        prefix + "enabled": True,
+        prefix + "endpoint": "https://gateway.example.test/graphql/m2m/v1",
+        prefix + "asset_ref": "asset:synthetic-a",
+        prefix + "ca_cert_file": "/config/pki/server-ca.pem",
+    }
+    if credentials in {"blank", "configured", "cert_only"}:
+        submitted[prefix + "client_cert_file"] = (
+            "" if credentials == "blank" else "/config/pki/client.pem"
+        )
+    if credentials in {"blank", "configured", "key_only"}:
+        submitted[prefix + "client_key_file"] = (
+            "" if credentials == "blank" else "/config/pki/client.key"
+        )
+    result = asyncio.run(
+        HelianthusOptionsFlow(SimpleNamespace(options={})).async_step_settings(submitted)
+    )
+    if credentials in {"cert_only", "key_only"}:
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == (
+            "pv_m2m_invalid" if family == "pv" else "semantic_m2m_invalid"
+        )
+    else:
+        assert result["type"] == "create_entry"
+        assert result["data"] == submitted
+
+
+def test_strings_label_client_credentials_optional_for_all_consumers() -> None:
+    strings = json.loads(
+        (Path(__file__).parents[1] / "custom_components/helianthus/strings.json").read_text()
+    )
+    labels = strings["options"]["step"]["settings"]["data"]
+    for family in ("pv", "storage", "evse"):
+        for field in ("client_cert_file", "client_key_file"):
+            assert "optional" in labels[f"{family}_m2m_{field}"]

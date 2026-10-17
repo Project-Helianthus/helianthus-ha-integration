@@ -68,7 +68,7 @@ def _validate_descriptor_dimension(dimension: tuple[str, str]) -> None:
 
 @dataclass(frozen=True)
 class EVSEM2MConfig:
-    endpoint: str; asset_ref: str; ca_cert_file: str; client_cert_file: str; client_key_file: str
+    endpoint: str; asset_ref: str; ca_cert_file: str; client_cert_file: str = ""; client_key_file: str = ""
 @dataclass(frozen=True)
 class EVSEM2MDescriptor:
     fact_id: str; dimension: tuple[str, str]; unique_id: str
@@ -384,7 +384,8 @@ def evse_m2m_config_from_options(options: Mapping[str, object]) -> EVSEM2MConfig
     if options.get(CONF_EVSE_M2M_ENABLED, DEFAULT_EVSE_M2M_ENABLED) is not True:
         if values[0]: _validate_endpoint(values[0])
         return None
-    if any(not value for value in values): raise ValueError("enabled EVSE semantic configuration is incomplete")
+    if any(not value for value in values[:3]): raise ValueError("enabled EVSE semantic configuration is incomplete")
+    if bool(values[3]) != bool(values[4]): raise ValueError("client certificate and key must be configured together")
     _validate_endpoint(values[0]); _asset_ref(values[1], "asset reference")
     return EVSEM2MConfig(*values)
 def validate_evse_m2m_options(options: Mapping[str, object]) -> bool:
@@ -484,5 +485,12 @@ async def async_setup_evse_m2m_boundary(hass: object, entry: object, *, scan_int
     coordinator = HelianthusEVSEM2MCoordinator(hass=hass, client=client, scan_interval=scan_interval, entry_id=entry.entry_id, asset_ref=config.asset_ref, descriptors=descriptors, persist_descriptors=persist)
     await async_first_refresh_with_cleanup(coordinator, client); return EVSEM2MBoundary(coordinator, client)
 def _build_evse_ssl_context(config: EVSEM2MConfig) -> ssl.SSLContext:
-    tls = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.ca_cert_file); tls.check_hostname = True; tls.verify_mode = ssl.CERT_REQUIRED; tls.load_cert_chain(certfile=config.client_cert_file, keyfile=config.client_key_file); return tls
+    tls = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.ca_cert_file)
+    tls.check_hostname = True
+    tls.verify_mode = ssl.CERT_REQUIRED
+    if config.client_cert_file or config.client_key_file:
+        if not config.client_cert_file or not config.client_key_file:
+            raise ValueError("client certificate and key must be configured together")
+        tls.load_cert_chain(certfile=config.client_cert_file, keyfile=config.client_key_file)
+    return tls
 async def async_build_evse_ssl_context(hass: object, config: EVSEM2MConfig) -> ssl.SSLContext: return await hass.async_add_executor_job(_build_evse_ssl_context, config)
