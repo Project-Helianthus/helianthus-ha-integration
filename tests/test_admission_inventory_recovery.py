@@ -102,7 +102,14 @@ def test_inventory_recovery_preserves_raw_status_and_refresh_boundary(next_statu
     )
     _assert_inventory_cycle(coordinator)
 
-    if next_status == "degraded":
+    if next_status == "healthy":
+        previous_raw_admission = coordinator.data["raw_admission"]
+        coordinator.data = {
+            **coordinator.data,
+            "raw_admission": _raw_admission(),
+        }
+        assert coordinator.data["raw_admission"] is not previous_raw_admission
+    elif next_status == "degraded":
         coordinator.data["raw_admission"] = _raw_admission(degraded=True)
     elif next_status == "refresh_failed":
         coordinator.last_update_success = False
