@@ -110,6 +110,7 @@ def test_equal_revision_rollback_transport_failure_and_recovery_on_one_coordinat
             evse_m2m.EVSEM2MTransportError("synthetic transport failure"),
             _snapshot("1", 12, "connector-rejected-repeat"),
             _snapshot("3", 30, "connector-c"),
+            _snapshot("2", 26, "connector-after-recovery"),
         )
         persisted = []
         coordinator = _coordinator(client, persisted)
@@ -141,7 +142,18 @@ def test_equal_revision_rollback_transport_failure_and_recovery_on_one_coordinat
                       error=None)
         assert recovered.descriptors[:3] == accepted_descriptors
         assert persisted == [first_descriptors, accepted_descriptors, recovered.descriptors]
-        assert client.calls == 6
+        recovered_facts = dict(recovered.facts)
+        recovered_descriptors = tuple(recovered.descriptors)
+
+        # The watermark advanced to 3, so a later revision 2 is a rollback.
+        rolled_back = await _refresh(coordinator)
+        _assert_state(rolled_back, amps=30, connector="connector-c",
+                      known_connectors=("connector-a", "connector-b", "connector-c"),
+                      error="contract_failure")
+        assert rolled_back.facts == recovered_facts
+        assert rolled_back.descriptors == recovered_descriptors
+        assert persisted == [first_descriptors, accepted_descriptors, recovered_descriptors]
+        assert client.calls == 7
 
     asyncio.run(scenario())
 
@@ -155,6 +167,7 @@ def test_invalid_revision_preserves_accepted_state_and_watermark(revision):
             _snapshot(revision, 40, "connector-invalid"),
             _snapshot("1", 10, "connector-lower"),
             _snapshot("3", 32, "connector-c"),
+            _snapshot("2", 28, "connector-after-recovery"),
         )
         persisted = []
         coordinator = _coordinator(client, persisted)
@@ -185,6 +198,15 @@ def test_invalid_revision_preserves_accepted_state_and_watermark(revision):
                       known_connectors=("connector-a", "connector-c"), error=None)
         assert recovered.descriptors[:2] == accepted_descriptors
         assert persisted == [accepted_descriptors, recovered.descriptors]
-        assert client.calls == 5
+        recovered_facts = dict(recovered.facts)
+        recovered_descriptors = tuple(recovered.descriptors)
+
+        rolled_back = await _refresh(coordinator)
+        _assert_state(rolled_back, amps=32, connector="connector-c",
+                      known_connectors=("connector-a", "connector-c"), error="contract_failure")
+        assert rolled_back.facts == recovered_facts
+        assert rolled_back.descriptors == recovered_descriptors
+        assert persisted == [accepted_descriptors, recovered_descriptors]
+        assert client.calls == 6
 
     asyncio.run(scenario())
