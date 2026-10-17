@@ -1344,10 +1344,11 @@ query SystemSensitive {
 """
 
 
+SYSTEM_DHW_BOUND_REPROBE_COOLDOWN_SECONDS = 15 * 60
+
+
 class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic system data."""
-
-    _system_dhw_bound_supported = True
 
     def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
         super().__init__(
@@ -1359,6 +1360,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._client = client
         self._system_installer_available: bool | None = None
         self._system_sensitive_available: bool | None = None
+        self._system_dhw_bound_next_probe: float | None = None
 
     @property
     def system_installer_available(self) -> bool:
@@ -1393,16 +1395,23 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
 
         try:
-            query = QUERY_SYSTEM if self._system_dhw_bound_supported else QUERY_SYSTEM_LEGACY
+            next_probe = getattr(self, "_system_dhw_bound_next_probe", None)
+            probe_bounds = next_probe is None or time.monotonic() >= next_probe
+            query = QUERY_SYSTEM if probe_bounds else QUERY_SYSTEM_LEGACY
             try:
                 payload = await self._client.execute(query)
             except GraphQLResponseError as exc:
-                if not self._system_dhw_bound_supported or not _is_missing_field_error(
+                if not probe_bounds or not _is_missing_field_error(
                     exc.errors, ["dhw_bivalence_point_bound", "dhwBivalencePointBound"]
                 ):
                     raise
-                self._system_dhw_bound_supported = False
+                self._system_dhw_bound_next_probe = (
+                    time.monotonic() + SYSTEM_DHW_BOUND_REPROBE_COOLDOWN_SECONDS
+                )
                 payload = await self._client.execute(QUERY_SYSTEM_LEGACY)
+            else:
+                if probe_bounds:
+                    self._system_dhw_bound_next_probe = None
         except GraphQLResponseError as exc:
             if _is_missing_field_error(exc.errors, missing_fields):
                 return empty
