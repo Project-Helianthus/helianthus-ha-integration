@@ -5,7 +5,7 @@ It documents current source behavior and proposed display rules separately;
 it changes no runtime behavior. Nothing is stable before Helianthus 1.0. Query
 constant names below describe existing schema shapes, not an API stability promise.
 
-## Three separate concerns
+## Three separate concerns (Hypothesis: proposed boundaries)
 
 | Concern | Inputs and boundary |
 | --- | --- |
@@ -18,18 +18,20 @@ source-admission or trust rules. Keep partial last-known-good state separate fro
 current evidence. This slice adds no authorization gate before 0.9 and changes no
 MCP envelope, GraphQL field, transport, recovery policy or parity requirement.
 
-## Current behavior: source-established, not runtime qualification
+## Current behavior (Proven by source inspection, not runtime qualification)
 
 The [label helpers] and [device registration] currently behave as follows.
 
 | Output | Existing precedence / handling |
 | --- | --- |
 | Friendly registry name | A recognized `device_id` family selects the hard-coded name **before** gateway `display_name`, then `product_family`. Registration falls back to manufacturer plus device ID if the helper has no label. |
-| Technical model base | A recognized terminal annotation in `product_model` is unpacked; otherwise nonempty `product_model` wins over the hard-coded family model, then usable `device_id`, then `unknown`. `product_family` and `display_name` do not supply the technical base. |
-| Technical annotation | A nonempty separate `part_number` wins over a part embedded in a recognized terminal annotation. The helper emits one terminal `(part: …; eBUS: …)` or `(eBUS: …)` annotation. A usable `device_id` supplies the code ahead of an annotated code; missing-identity sentinels allow the annotated code fallback. These are formatting rules, not protocol evidence. |
+| Technical model base | A recognized terminal annotation in `product_model` is unpacked; otherwise nonempty `product_model` wins over the hard-coded family model, then usable `device_id`, then `unknown`. `product_family` and `display_name` do not supply the technical base. If `device_id` is absent or a placeholder and the annotation has no code, the eBUS code renders as the literal `UNKNOWN` and the base falls through to `unknown`; with a known `device_id` the code is the normalized form (upper-cased, `BASV` prefix collapsed), not the raw value. |
+| Technical annotation | A nonempty separate `part_number` wins over a part embedded in a recognized terminal annotation. The helper emits one terminal `(part: …; eBUS: …)` or `(eBUS: …)` annotation. A usable `device_id` supplies the code ahead of an annotated code; missing-identity sentinels allow the annotated code fallback. These are formatting rules, not protocol evidence. With no usable code the annotation shows the literal `UNKNOWN`; a known `device_id` yields the normalized code (upper-cased, `BASV` prefix collapsed), not the raw value. |
 | Placeholder handling | `_clean_label` trims and stringifies, rejecting only null/empty text. It does **not** reject `Unknown`, `none` or `null` strings in model, part or friendly fields. By contrast, `has_known_identity_text` rejects these case-insensitively and rejects `unknown` followed by whitespace and more text, including Unicode whitespace. It does not reject `unknown-model`. |
 | Bus identity model | [Identity helpers] select a hard-coded model for recognized families before `product_model`; otherwise a nonempty `product_model` wins over trimmed `device_id`, then `unknown`. This path only trims model text; it is not the technical annotation formatter. |
 | Key and unique ID | `build_bus_device_key` uses model token plus resolved address. Its serial, MAC, hardware and software parameters do not contribute. `bus_identifier` adds the config-entry token and bus prefix. [Sensor setup] uses this path, and the [bus-address sensor] appends `-ebus-address` to that device identifier. |
+| Registry write, migration and cleanup | Registration calls `_select_bus_migration_target`, which first returns a device already holding the new bus identifier. Otherwise it considers devices of the same entry with a bus identifier and a matching manufacturer, and returns one whose serial equals the gateway serial, or whose registry model text equals the formatted model and whose legacy identifier address matches. On a match, `async_update_device` runs with `merge_identifiers={new bus id}` plus manufacturer, model, name and `via_device_id` (and serial, software and hardware version when present), merging old and new identifiers without user action; with no match, `async_get_or_create` registers the device. A later cleanup pass removes bus-address entities whose unique ID key is no longer known, and removes devices with a stale bus identifier unless they still have entities. |
+| Persisted versus re-derived | Home Assistant persists what registration writes: manufacturer (defaults to `Unknown`), model, name, serial number and software/hardware version. The bus key, the identity-model token and the known-bus-device set are re-derived from the gateway inventory at each setup and are not stored. |
 
 The family maps cover the controller family (including its family-prefix variants),
 function-module family (including its spelling alias), boiler family and connectivity
@@ -41,7 +43,12 @@ sparse identity sentinels and known-family identity-model stability. Malformed o
 nonterminal annotation text remains base text; it is not silently repaired or
 promoted to evidence. Reading those assertions does not establish that they ran.
 
-## Proposed precedence for future implementation
+Scope: the page covers the four gateway fields for bus devices only. Manufacturer,
+`serial_number`, `software_version`, `hardware_version`, `via_device` (the adapter)
+and the radio, zone, boiler and virtual-device builders are out of scope; no
+`suggested_area` is used.
+
+## Proposed precedence for future implementation (Hypothesis)
 
 These rules define desired consumer presentation, not additional gateway semantics.
 They require implementation and regression evidence before being claimed as actual
@@ -70,7 +77,7 @@ authority over a registry identifier or a contradictory native field. A separate
 part-number conflict is resolved only for display by the explicit-field rule;
 preserve both received values. Do not parse arbitrary product text as a new API.
 
-## Schema fallback: preserve the existing fetch order
+## Schema fallback: preserve the existing fetch order (Proven)
 
 The [inventory queries] and [inventory fetch] define these branches. Only recognized
 missing-field errors select a smaller query; a null or placeholder field in a
@@ -92,7 +99,7 @@ serial/MAC. These are error-driven branches, not an unconditional sequence that
 must query every tier. Unsupported fields are absent evidence, not proof that a
 previous value was withdrawn. Do not require newer metadata to admit older schemas.
 
-## Transition contract and implementation boundary
+## Transition contract and implementation boundary (Hypothesis; current limitations Proven)
 
 In this table an association is an already-established device association under
 existing identity/admission rules. Retention is a proposed presentation requirement
@@ -103,16 +110,16 @@ is established here; permanent clearing and restart retention remain Unknown.
 | Transition | Required presentation / native evidence handling | Identity and current limitation |
 | --- | --- | --- |
 | First arrival of usable metadata | Select each output independently using the proposed precedence. Keep the source fields. | Do not change an existing key or unique ID. Current known-family identity mapping helps; unmapped families are a gap below. |
-| Enrichment after sparse inventory | Replace fallback display text with usable metadata; add the part clause only if usable. | No merge, migration or reassignment from richer names. Runtime refresh behavior is not proven by this document. |
+| Enrichment after sparse inventory | Replace fallback display text with usable metadata; add the part clause only if usable. | Desired: no merge, migration or reassignment from richer names. Current: for unmapped families a new `product_model` changes the bus key, and registration may then merge identifiers through the migration-target path (serial match, or matching model text plus legacy address) while cleanup drops stale bus-address entities and entity-free devices (see Current behavior). This conflicts with the invariant. Runtime effect is not proven by this document. |
 | One field disappears, becomes null or empty | Retain that field's last-known-good presentation for the same association, clearly distinguished from current evidence; continue applying usable updates to other fields. With no retained value, use its fallback. | Do not erase identity or manufacture a native value. Current helpers are stateless; this per-field retention is not implemented by them. |
 | A field changes to an Unknown placeholder | Same unavailable-field rule, including mixed case and whitespace; preserve the actual placeholder in evidence. | Current display/model cleaners may publish the placeholder. No identifier repair is authorized. |
 | Older schema selected | Keep accepted base inventory; use available family/device-ID fallbacks on first observation, or retain eligible presentation from prior richer observations. | Missing support does not mean a device vanished. Query fallback exists; presentation retention is a separate implementation gap. |
 | Gateway friendly label conflicts with a hard-coded name | Proposed gateway `display_name`, then `product_family`, wins for presentation. Preserve the conflict in native evidence. | Current known-family name wins instead. Fixing that precedence must not change family identity maps or user names. |
-| Gateway technical model conflicts with family map | Usable gateway model wins for technical display; retain the map solely for existing identity/fallback purposes. | Current formatter already prefers gateway model; identity helper intentionally prefers the map for recognized families. Do not unify these helpers. |
+| Gateway technical model conflicts with family map | Usable gateway model wins for technical display; retain the map solely for existing identity/fallback purposes. | Current formatter already prefers gateway model; the identity helper deliberately prefers the map for recognized families (per the known-family stability test). Do not unify these helpers. |
 | Part-number-only arrival or replacement | Update the technical part clause once, leaving base and friendly name unchanged. Separate field wins over an embedded part; retain disagreement. | Bus key, unique IDs and parents remain unchanged. Missing/placeholder part uses eligible retained part, then usable embedded part, else omission. |
 | All metadata disappears or fetch fails | Preserve partial last-known-good presentation where already associated, without calling it fresh native evidence. Preserve existing failure/admission handling. | Do not infer device removal, trust or successful polling. No recovery redesign is specified. |
 
-## Synthetic family examples and unresolved work
+## Synthetic family examples and unresolved work (Hypothesis examples; Proven, Unknown below)
 
 Each row varies only the stated field of an otherwise unchanged, already-associated
 synthetic device. These are reasoned contract examples, not executed tests.
@@ -121,23 +128,26 @@ synthetic device. These are reasoned contract examples, not executed tests.
 | --- | --- |
 | Controller-family `display_name`: absent → `Controller family` | Friendly display becomes `Controller family`; technical model and identifiers stay unchanged, even if a hard-coded label disagrees. |
 | Function-module `product_family`: absent → `Function-module family`, with no usable display name | Friendly fallback becomes `Function-module family`; technical model and identifiers stay unchanged. |
-| Boiler-family `product_model`: absent → `Boiler family` | Technical base becomes `Boiler family`; friendly name and identifiers stay unchanged. This synthetic label is not a specific model identification. |
+| Boiler-family `product_model`: absent → `MODEL-A` | Technical base becomes `MODEL-A`; friendly name and identifiers stay unchanged. This synthetic token is not a specific model identification. |
 | Connectivity-family `part_number`: absent → `PART-A`, then separately `PART-A` → `PART-B` | Only the technical part clause changes on each transition. Friendly name, base, bus key and unique IDs stay unchanged. |
 | Any one metadata field: usable → ` Unknown ` | That field becomes unavailable for current selection; keep its eligible last-known-good presentation, and mark the distinction from native evidence. Other fields still update independently. |
 
 **Proven (source inspection only):** current formatting, query branches and key
-construction described above are visible in the linked code. Existing assertions
+construction described above are visible in the linked code. For unmapped families
+`stable_bus_identity_model` returns `product_model`, so changing it changes the
+bus key and the bus-address unique ID (`<identifier>-ebus-address`); the
+migration-target merge and stale-identifier cleanup described above then apply.
+That contradicts the enrichment invariant today. Existing assertions
 are visible in [label tests] and [fetch tests]; no execution result is claimed.
 
 **Hypothesis (proposed consumer behavior):** independent field selection, placeholder
 filtering, gateway-first friendly naming and presentation retention will support
 enrichment without identifier churn once implemented and verified.
 
-**Unknown / remaining acceptance:** for unmapped families, changing `product_model`
-can change the current identity helper's result and therefore the bus key and
-bus-address entity unique ID. This contradicts the enrichment invariant and needs
-separate implementation and migration assessment before rollout; do not silently
-freeze, rewrite or merge identifiers as a documentation side effect. Registry
+**Unknown / remaining acceptance:** the unmapped-family key change needs separate
+implementation and migration assessment before rollout, including whether existing
+installations hit the merge or the cleanup path; do not silently freeze, rewrite or
+merge identifiers as a documentation side effect. Registry
 refresh, preservation of user names, per-field retention and restart behavior need
 focused implementation evidence. No protocol-native semantics beyond the public
 consumer fields are established here; any required new gateway meaning needs its
