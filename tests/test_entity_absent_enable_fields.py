@@ -9,7 +9,7 @@ import pytest
 from custom_components.helianthus.entity_updates import async_write_entity_state_if_enabled
 
 
-class _U03CallableEntity:
+class _CallableWriterEntity:
     def __init__(self) -> None:
         self.hass = None
         self.registry_entry = None
@@ -23,10 +23,10 @@ class _U03CallableEntity:
     "explicit_enabled", [False, True], ids=["absent-enabled", "explicit-enabled"]
 )
 def test_optional_enable_fields_across_transitions(explicit_enabled: bool) -> None:
-    entity = _U03CallableEntity()
+    entity = _CallableWriterEntity()
     if explicit_enabled:
         entity.enabled = True
-    peer = _U03CallableEntity()
+    peer = _CallableWriterEntity()
     attachment = object()
     peer.hass = attachment
     peer.enabled = True

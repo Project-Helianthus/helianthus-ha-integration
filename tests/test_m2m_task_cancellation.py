@@ -10,18 +10,18 @@ import pytest
 
 
 # These tests need only the coordinator base type, not a running HA instance.
-_u07_ha = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
-_u07_helpers = sys.modules.setdefault(
+_cancellation_ha = sys.modules.setdefault("homeassistant", ModuleType("homeassistant"))
+_cancellation_helpers = sys.modules.setdefault(
     "homeassistant.helpers", ModuleType("homeassistant.helpers")
 )
-_u07_ha.helpers = _u07_helpers
-_u07_coordinator = sys.modules.setdefault(
+_cancellation_ha.helpers = _cancellation_helpers
+_cancellation_coordinator = sys.modules.setdefault(
     "homeassistant.helpers.update_coordinator",
     ModuleType("homeassistant.helpers.update_coordinator"),
 )
-_u07_helpers.update_coordinator = _u07_coordinator
-if not hasattr(_u07_coordinator, "DataUpdateCoordinator"):
-    class _U07DataUpdateCoordinator:
+_cancellation_helpers.update_coordinator = _cancellation_coordinator
+if not hasattr(_cancellation_coordinator, "DataUpdateCoordinator"):
+    class _CancellationDataUpdateCoordinator:
         def __class_getitem__(cls, _item):
             return cls
 
@@ -31,16 +31,16 @@ if not hasattr(_u07_coordinator, "DataUpdateCoordinator"):
         def async_set_updated_data(self, value):
             self.data = value
 
-    _u07_coordinator.DataUpdateCoordinator = _U07DataUpdateCoordinator
+    _cancellation_coordinator.DataUpdateCoordinator = _CancellationDataUpdateCoordinator
 
 from custom_components.helianthus import evse_m2m, pv_m2m, storage_m2m
 
 
-_U07_MODULES = (pv_m2m, storage_m2m, evse_m2m)
-_U07_WATCHDOG_SECONDS = 3
+_CANCELLATION_MODULES = (pv_m2m, storage_m2m, evse_m2m)
+_CANCELLATION_WATCHDOG_SECONDS = 3
 
 
-class _U07Refresh:
+class _BlockingRefresh:
     def __init__(self, *, fail: bool):
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
@@ -53,7 +53,7 @@ class _U07Refresh:
             raise RuntimeError("synthetic refresh failure")
 
 
-class _U07Client:
+class _BlockingCloseClient:
     def __init__(self):
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
@@ -72,27 +72,27 @@ class _U07Client:
         self.completed += 1
 
 
-async def _u07_join(task, refresh, client):
+async def _release_and_join(task, refresh, client):
     """Release and join the sole created task, including assertion failures."""
     refresh.release.set()
     client.release.set()
     if not task.done():
         task.cancel()
     await asyncio.wait_for(
-        asyncio.gather(task, return_exceptions=True), _U07_WATCHDOG_SECONDS
+        asyncio.gather(task, return_exceptions=True), _CANCELLATION_WATCHDOG_SECONDS
     )
 
 
-@pytest.mark.parametrize("module", _U07_MODULES, ids=("pv", "storage", "evse"))
+@pytest.mark.parametrize("module", _CANCELLATION_MODULES, ids=("pv", "storage", "evse"))
 def test_u07_cancel_during_refresh_awaits_close_once(module):
     async def exercise():
-        refresh = _U07Refresh(fail=False)
-        client = _U07Client()
+        refresh = _BlockingRefresh(fail=False)
+        client = _BlockingCloseClient()
         task = asyncio.create_task(
             module.async_first_refresh_with_cleanup(refresh, client)
         )
         try:
-            async with asyncio.timeout(_U07_WATCHDOG_SECONDS):
+            async with asyncio.timeout(_CANCELLATION_WATCHDOG_SECONDS):
                 await refresh.entered.wait()
                 assert task.cancel()
                 await client.entered.wait()
@@ -107,22 +107,22 @@ def test_u07_cancel_during_refresh_awaits_close_once(module):
                 assert client.completed == 1
                 assert client.cancelled == 0
         finally:
-            await _u07_join(task, refresh, client)
+            await _release_and_join(task, refresh, client)
         assert task.done()
 
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("module", _U07_MODULES, ids=("pv", "storage", "evse"))
+@pytest.mark.parametrize("module", _CANCELLATION_MODULES, ids=("pv", "storage", "evse"))
 def test_u07_cancel_during_close_stays_cancelled(module):
     async def exercise():
-        refresh = _U07Refresh(fail=True)
-        client = _U07Client()
+        refresh = _BlockingRefresh(fail=True)
+        client = _BlockingCloseClient()
         task = asyncio.create_task(
             module.async_first_refresh_with_cleanup(refresh, client)
         )
         try:
-            async with asyncio.timeout(_U07_WATCHDOG_SECONDS):
+            async with asyncio.timeout(_CANCELLATION_WATCHDOG_SECONDS):
                 await refresh.entered.wait()
                 refresh.release.set()
                 await client.entered.wait()
@@ -136,7 +136,7 @@ def test_u07_cancel_during_close_stays_cancelled(module):
                 assert client.cancelled == 1
                 assert client.completed == 0
         finally:
-            await _u07_join(task, refresh, client)
+            await _release_and_join(task, refresh, client)
         assert task.done()
 
     asyncio.run(exercise())

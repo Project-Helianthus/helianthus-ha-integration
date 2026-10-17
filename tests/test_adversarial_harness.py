@@ -16,7 +16,7 @@ from scripts import ha_adversarial_harness as harness
 
 
 @contextmanager
-def _u09_isolated_modules():
+def _isolated_entity_modules():
     """Detach imported HA/entity modules, then restore their exact identities."""
     prefixes = ("homeassistant", "custom_components.helianthus")
 
@@ -53,8 +53,8 @@ def _u09_isolated_modules():
 
 
 @pytest.fixture(autouse=True)
-def _u09_harness_imports():
-    with _u09_isolated_modules():
+def _isolated_harness_imports():
+    with _isolated_entity_modules():
         harness._install_entity_stubs()
         yield
 
@@ -68,7 +68,7 @@ def test_u09_harness_restores_modules_and_parent_attributes():
     original_base = sys.modules["homeassistant.components.climate"].ClimateEntity
     original_feature = sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature
     original_helpers = sys.modules["homeassistant"].helpers
-    with _u09_isolated_modules():
+    with _isolated_entity_modules():
         harness._install_entity_stubs()
         harness._exercise_real_write_fences()
         from custom_components.helianthus import climate as isolated_climate
