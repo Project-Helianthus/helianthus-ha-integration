@@ -11,20 +11,22 @@ or native semantics.
 
 | Layer | Present capability or required next step |
 | --- | --- |
-| Implemented client | The [ordinary GraphQL client](../custom_components/helianthus/graphql.py) sends queries and variables, returns `data`, and raises on GraphQL errors. It does not validate SemReg records or implement a shared-snapshot coordinator. |
-| Existing pack consumers | [PV](../custom_components/helianthus/pv_m2m.py), [Storage](../custom_components/helianthus/storage_m2m.py) and [EVSE](../custom_components/helianthus/evse_m2m.py) consume separate fixed machine-to-machine projections. Their parsers, endpoint configuration and selection rules are not the ordinary M07 contract. |
+| Implemented client | The [ordinary GraphQL client](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/graphql.py) sends queries and variables, returns `data`, and raises on GraphQL errors. It does not validate SemReg records or implement a shared-snapshot coordinator. |
+| Existing pack consumers | [PV](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/pv_m2m.py), [Storage](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/storage_m2m.py) and [EVSE](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/evse_m2m.py) consume separate fixed machine-to-machine projections. Their parsers, endpoint configuration and selection rules are not the ordinary M07 contract. |
 | Initial shared-path rollout | Only read-only PV, Storage and Infrastructure sensors are in scope for initial enablement, after implementation and focused acceptance. This document enables no sensors; Infrastructure and the shared adapter remain pending here. |
 | Full INT-15 | All-five-pack decoding, coherent refresh, persistent identity, recovery and integration acceptance remain pending. Existing pack tests are not shared-snapshot runtime parity evidence. |
 
 The new path uses only ordinary `semanticSnapshot(assetIds: [ID!]!)`. It must
 not fall back to MCP, machine-to-machine pack roots, legacy eBUS tools, native
-probes or native decoding when this root is absent, fails or withholds data.
+probes or native decoding when this root is absent, fails or withholds data. A
+gateway lacking the root is handled as in [Older gateways](#older-gateways).
 Existing consumers remain independently owned until their explicit migration;
 they are not fallback sources for a failed shared read. Keep legacy eBUS MCP
 names, envelopes and behavior compatible. GraphQL/MCP data parity is a gateway
 acceptance obligation; HA does not call MCP to establish it. All MCP namespaces
 remain pre-stable; this page makes no stability promise before 1.0 and adds no
-consumer authorization gate before 0.9. Existing qualification and source trust
+consumer authorization gate before 0.11, when authentication and
+authorization frameworks arrive. Existing qualification and source trust
 safeguards continue to apply independently of user authorization.
 
 ## One detached update
@@ -61,12 +63,32 @@ safeguards continue to apply independently of user authorization.
    representation, not qualification or admission. Alternatives and conflicts
    must not be silently collapsed into a chosen value. If no existing explicit
    presentation policy resolves candidates, expose no chosen sensor reading.
-6. Commit the validated refresh atomically. A mixed identity/vector, malformed
-   scalar, unresolved reference, GraphQL `errors`, null root, transport failure,
-   `CONFLICT`, `RESOURCE_EXHAUSTED` or `UNAVAILABLE` rejects the whole attempt.
+6. Commit the validated refresh atomically. On a root already known to be
+   supported, a mixed identity/vector, malformed scalar, unresolved reference,
+   GraphQL `errors` (including a missing sub-field), null root, transport
+   failure, `CONFLICT`, `RESOURCE_EXHAUSTED` or `UNAVAILABLE` rejects the whole
+   attempt. A missing `semanticSnapshot` root itself is the separate
+   unsupported-gateway case below.
    Keep the previous accepted detached state for diagnostics and recovery, mark
    affected live sensors unavailable, and never synthesize zero. Do not present
    a cache from a failed request as a new successful read.
+
+### Older gateways
+
+The integration's existing optional-query rule (`next_optional_query_state` and
+`_is_missing_field_error`) applies to the shared path:
+
+- A recognised GraphQL error that the `semanticSnapshot` field is missing sets a
+  "shared path unsupported" state. No shared-path entities are created.
+- That state is not retried on every poll and does not touch the existing PV,
+  Storage and EVSE owners.
+- Transient errors (transport failure, other GraphQL errors) keep the current
+  state; the first valid response advances an unknown state to supported.
+- A missing sub-field never triggers a reduced or legacy selection retry: a
+  selection lacking quality is insufficient, so there is no thinner query to
+  fall back to.
+- A missing sub-field on a root already known to be supported is a whole-attempt
+  failure under rule 6, not an unsupported-gateway verdict.
 
 A successful response may explicitly mark one asset unavailable while preserving
 readable siblings. Commit that result: retain the failed asset's descriptors and
@@ -216,7 +238,7 @@ qualification or write permission.
 Lifecycle, source admission, discovery/config-entry setup, unload/retry cleanup,
 subscriptions and existing entity enable/disable owners also remain in place.
 Their shared-path migrations require separately reviewed ownership, identity and
-recovery changes. See the [offline consumer acceptance boundary](offline-consumer-acceptance-boundary.md)
+recovery changes. See the [offline consumer acceptance boundary](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/docs/offline-consumer-acceptance-boundary.md)
 for existing behavior; it is not evidence that the new path inherits that behavior.
 
 Full INT-15 still needs synthetic all-five-pack adapter tests, every revision
