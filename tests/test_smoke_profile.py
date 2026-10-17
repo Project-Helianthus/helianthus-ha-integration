@@ -1217,14 +1217,120 @@ def test_startup_http_reader_header_limit_is_inclusive_and_preserves_coalesced_b
     assert smoke_profile._read_http_response_body(reader, {**parsed_headers, "content-length": "2"}) == b"{}"
 
 
-def test_startup_dns_resolution_is_killed_at_the_deadline() -> None:
-    started = time.monotonic()
-    try:
-        smoke_profile._resolve_http_addresses("localhost", 80, started + 0.01)
-    except TimeoutError:
-        pass
-    elapsed = time.monotonic() - started
-    assert elapsed < 0.20
+@pytest.fixture
+def u08_dns_context(monkeypatch):
+    def install(*, ready, response, alive):
+        events = []
+        class U08Clock:
+            value = 10.0
+
+            def __call__(self):
+                return self.value
+
+        clock = U08Clock()
+        deadline = 20.0
+
+        class U08SendPipe:
+            def close(self):
+                events.append("send.close")
+
+        class U08ReceivePipe:
+            def poll(self, timeout):
+                events.append(("poll", timeout))
+                assert timeout > 0
+                assert timeout == 3.0
+                clock.value = deadline - 0.001 if ready else deadline
+                return ready
+
+            def recv(self):
+                events.append("recv")
+                assert ready, "recv must not follow a timed-out poll"
+                assert clock.value < deadline
+                return response
+
+            def close(self):
+                events.append("receive.close")
+
+        send = U08SendPipe()
+        receive = U08ReceivePipe()
+
+        class U08Process:
+            def start(self):
+                events.append("start")
+                # Simulate startup consuming most of the original budget.
+                clock.value = 17.0
+
+            def is_alive(self):
+                events.append("is_alive")
+                return alive
+
+            def terminate(self):
+                events.append("terminate")
+
+            def join(self):
+                events.append("join")
+
+        class U08Context:
+            def Pipe(self, *, duplex):
+                assert duplex is False
+                events.append("pipe")
+                return receive, send
+
+            def Process(self, *, target, args, daemon):
+                assert target is smoke_profile._resolver_worker
+                assert args == (send, "resolver.example", 80)
+                assert daemon is True
+                events.append("process")
+                return U08Process()
+
+        def get_context(method):
+            assert method == "spawn"
+            events.append("context")
+            return U08Context()
+
+        remaining_budget = smoke_profile._remaining_http_budget
+        monkeypatch.setattr(
+            smoke_profile, "_remaining_http_budget",
+            lambda deadline: remaining_budget(deadline, clock=clock),
+        )
+        monkeypatch.setattr(smoke_profile.multiprocessing, "get_context", get_context)
+        return deadline, clock, events
+
+    return install
+
+
+def test_startup_dns_resolution_is_killed_at_the_deadline(u08_dns_context) -> None:
+    deadline, clock, events = u08_dns_context(ready=False, response=None, alive=True)
+    with pytest.raises(TimeoutError, match="^DNS resolution exceeded deadline$"):
+        smoke_profile._resolve_http_addresses("resolver.example", 80, deadline)
+    assert clock.value == deadline
+    assert events == [
+        "context", "pipe", "process", "start", "send.close", ("poll", 3.0),
+        "receive.close", "is_alive", "terminate", "join",
+    ]
+
+
+def test_startup_dns_resolution_ready_just_within_budget(u08_dns_context) -> None:
+    addresses = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.1", 80))]
+    deadline, clock, events = u08_dns_context(ready=True, response=("ok", addresses), alive=False)
+    assert smoke_profile._resolve_http_addresses("resolver.example", 80, deadline) == addresses
+    assert clock.value == deadline - 0.001
+    assert events == [
+        "context", "pipe", "process", "start", "send.close", ("poll", 3.0),
+        "recv", "receive.close", "is_alive", "join",
+    ]
+
+
+def test_startup_dns_resolution_resolver_error(u08_dns_context) -> None:
+    deadline, _, events = u08_dns_context(
+        ready=True, response=("error", "synthetic resolver failure"), alive=False,
+    )
+    with pytest.raises(RuntimeError, match="^DNS resolution failed: synthetic resolver failure$"):
+        smoke_profile._resolve_http_addresses("resolver.example", 80, deadline)
+    assert events == [
+        "context", "pipe", "process", "start", "send.close", ("poll", 3.0),
+        "recv", "receive.close", "is_alive", "join",
+    ]
 
 
 def test_startup_http_authority_brackets_ipv6_and_omits_default_ports() -> None:
