@@ -49,7 +49,12 @@ safeguards continue to apply independently of user authorization.
    order; joins use identities rather than positions.
 4. For every readable asset, require snapshot and every native binding `assetId`
    to match its wrapper `assetId`. Each identity link must belong to that asset
-   and reference a binding in its snapshot, regardless of link state. Require
+   and reference a binding in its snapshot, regardless of link state. Active
+   candidates' non-null source epochs must resolve in the snapshot. Non-null
+   candidate binding IDs must resolve there with a matching source and epoch;
+   any declared candidate epoch and driver generation must match that binding.
+   This check does not require historical retained observations to resolve against
+   active descriptors. Require
    the same `snapshotId` and complete revision vector in `snapshot`, `evaluation`
    and `projection`. The vector is
    `semantic`, `identity`, `facts`, `services`, `capabilities`, all decimal
@@ -60,7 +65,8 @@ safeguards continue to apply independently of user authorization.
    joining by candidate identity and revision and preserving the complete original
    observation; their evaluated freshness remains separate from source quality.
    Retained observations remain separate from active candidates. Validate
-   selections, if consumed, against the same snapshot, vector, candidate,
+   selections, if consumed, with contract `helianthus.semantic.selection/v1`
+   against the same snapshot, vector, candidate,
    evaluation context/digest and policy version; they are presentation-only.
 5. Validate accounting against the captured pack versions. Retain all declared
    item kinds: `fact`, `relation`, `capability` and `operation`. Each requested

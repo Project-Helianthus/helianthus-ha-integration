@@ -485,7 +485,10 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
     for binding in snapshot["bindings"]:
         if binding["assetId"] != asset["assetId"]:
             _fail("binding asset mismatch")
-    binding_ids = {binding["bindingId"] for binding in snapshot["bindings"]}
+    bindings = {binding["bindingId"]: binding for binding in snapshot["bindings"]}
+    binding_ids = set(bindings)
+    sources = {(source["sourceId"], source["sourceEpochId"]) for source in snapshot["sources"]}
+    source_epochs = {epoch for _, epoch in sources}
     for link in snapshot["identityLinks"]:
         if link["assetId"] != asset["assetId"] or link["bindingId"] not in binding_ids:
             _fail("identity link mismatch")
@@ -512,6 +515,17 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
             cid = candidate["candidateId"]
             if cid in candidates or _key(candidate["key"]) != key:
                 _fail("candidate identity mismatch")
+            binding_id, epoch, generation = (candidate[k] for k in (
+                "bindingId", "sourceEpochId", "driverGeneration"))
+            if epoch is not None and epoch not in source_epochs:
+                _fail("candidate provenance mismatch")
+            if binding_id is not None:
+                binding = bindings.get(binding_id)
+                if (binding is None
+                        or (binding["sourceId"], binding["sourceEpochId"]) not in sources
+                        or (epoch is not None and epoch != binding["sourceEpochId"])
+                        or (generation is not None and generation != binding["driverGeneration"])):
+                    _fail("candidate provenance mismatch")
             candidates[cid] = candidate
         for conflict in fact["conflicts"]:
             if any(cid not in {c["candidateId"] for c in fact["candidates"]} for cid in conflict["candidates"]):
@@ -544,7 +558,8 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         _fail("retained evaluation mismatch")
     for selection in asset["selections"]:
         cid = selection["selectedCandidate"]
-        if (cid not in candidates or selection["candidateRevision"] != candidates[cid]["revision"]
+        if (selection["contract"] != "helianthus.semantic.selection/v1"
+                or cid not in candidates or selection["candidateRevision"] != candidates[cid]["revision"]
                 or _key(selection["key"]) != _key(candidates[cid]["key"])
                 or selection["context"] != evaluation["context"]
                 or selection["evaluationDigest"] != evaluation["evaluationDigest"]

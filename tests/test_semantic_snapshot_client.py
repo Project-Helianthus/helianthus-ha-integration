@@ -395,7 +395,8 @@ def test_selection_is_provenance_bound_and_presentation_only():
                          "key": key("pv"), "policyId": "policy:synthetic", "policyVersion": "1.0.0",
                          "selectedCandidate": "candidate:pv", "candidateRevision": "7", "presentationOnly": True}]
     assert normalize(data)["assets"][0]["selections"][0]["presentationOnly"] is True
-    for field, bad in (("selectedCandidate", "candidate:other"), ("candidateRevision", "8"),
+    for field, bad in (("contract", "wrong-contract"),
+                       ("selectedCandidate", "candidate:other"), ("candidateRevision", "8"),
                        ("evaluationDigest", digest("other")), ("presentationOnly", False),
                        ("snapshotId", "snapshot:other")):
         changed = deepcopy(data)
@@ -556,3 +557,55 @@ def test_empty_nullable_retained_arrays_remain_accepted(snapshot_empty, evaluati
     a["evaluation"]["retainedObservations"] = evaluation_empty
     assert normalize(data)["assets"][0]["snapshot"]["retainedObservations"] == (
         None if snapshot_empty is None else ())
+
+
+@pytest.mark.parametrize("mutation", (
+    "none", "binding", "epoch", "different_epoch", "generation", "source", "source_epoch", "both",
+    "epoch_only", "absent_epoch_only", "nullable_epoch_generation",
+))
+def test_active_candidate_provenance_resolves_within_snapshot(mutation):
+    data = response()
+    snapshot = data["semanticSnapshot"]["assets"][-1]["snapshot"]
+    evidence = {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+                "digest": digest("provenance"), "contract": "synthetic.evidence/v1",
+                "access": "restricted", "redaction": "metadata_only"}
+    snapshot["sources"] = [{
+        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
+        "protocolId": "protocol.synthetic", "profileId": "profile.synthetic",
+        "profileVersion": "synthetic", "registryEvidence": evidence,
+        "startedAt": point(), "state": "current", "revision": "1",
+    }]
+    snapshot["bindings"] = [{
+        "bindingId": "binding:synthetic", "assetId": "asset:infrastructure",
+        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
+        "driverGeneration": "1", "nativeResource": evidence, "state": "current", "revision": "1",
+    }]
+    c = snapshot["facts"][0]["candidates"][0]
+    c.update(bindingId="binding:synthetic", sourceEpochId="epoch:synthetic", driverGeneration="1")
+    if mutation in ("binding", "both"):
+        c["bindingId"] = "binding:absent"
+    if mutation in ("epoch", "both", "absent_epoch_only"):
+        c["sourceEpochId"] = "epoch:absent"
+    if mutation == "different_epoch":
+        snapshot["sources"].append({**snapshot["sources"][0], "sourceEpochId": "epoch:other"})
+        c["sourceEpochId"] = "epoch:other"
+    if mutation == "generation":
+        c["driverGeneration"] = "2"
+    if mutation == "source":
+        snapshot["sources"][0]["sourceId"] = "source:other"
+    if mutation == "source_epoch":
+        snapshot["sources"][0]["sourceEpochId"] = "epoch:other"
+    if mutation in ("epoch_only", "absent_epoch_only"):
+        c["bindingId"] = c["driverGeneration"] = None
+    if mutation == "nullable_epoch_generation":
+        c["sourceEpochId"] = c["driverGeneration"] = None
+    before = deepcopy(data)
+    if mutation in ("none", "epoch_only", "nullable_epoch_generation"):
+        out = normalize(data)["assets"][-1]["snapshot"]["facts"][0]["candidates"][0]
+        assert out["bindingId"] == c["bindingId"]
+        assert out["sourceEpochId"] == c["sourceEpochId"]
+        assert out["driverGeneration"] == c["driverGeneration"]
+    else:
+        with pytest.raises(SemanticSnapshotError, match="candidate provenance mismatch"):
+            normalize(data)
+    assert data == before
