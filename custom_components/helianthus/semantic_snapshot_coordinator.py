@@ -129,7 +129,9 @@ class SemanticSnapshotCoordinator:
             try:
                 await self.async_request_refresh()
                 if self.supported is not False:
-                    self._poll_task = asyncio.create_task(self._poll())
+                    self._poll_task = self.hass.async_create_background_task(
+                        self._poll(), "helianthus semantic snapshot polling"
+                    )
             except BaseException:
                 await self._close()
                 raise
