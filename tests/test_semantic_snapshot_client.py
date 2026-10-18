@@ -9,7 +9,7 @@ from hashlib import sha256
 
 import pytest
 
-from custom_components.helianthus.graphql import GraphQLClient
+from custom_components.helianthus.graphql import GraphQLClient, GraphQLResponseError
 from custom_components.helianthus.semantic_snapshot import (
     SEMANTIC_SNAPSHOT_QUERY,
     SemanticSnapshotError,
@@ -249,14 +249,18 @@ def test_unavailable_sibling_and_absent_value_remain_distinct():
     assert out["assets"][2]["snapshot"] is not None
 
 
-@pytest.mark.parametrize("errors", [[{"message": "private " * 10000}], [{"message": "missing field"}]])
+@pytest.mark.parametrize("errors", [
+    [{"message": "private " * 10000}],
+    [{"message": 'Cannot query field "semanticSnapshot" on type "Query".'}],
+    [{"message": 'Cannot query field "quality" on type "Candidate".'}],
+])
 def test_graphql_partial_data_errors_are_bounded_and_never_fallback(errors):
     session = FakeSession({"data": response(), "errors": errors})
-    with pytest.raises(SemanticSnapshotError) as caught:
+    with pytest.raises(GraphQLResponseError) as caught:
         asyncio.run(fetch_semantic_snapshot(GraphQLClient(session, "synthetic"), ["asset:" + p for p in PACKS]))
-    assert str(caught.value) == "semantic snapshot: GraphQL errors"
+    assert str(caught.value) == "GraphQL response contains errors"
+    assert caught.value.errors is errors
     assert len(session.calls) == 1
-    assert caught.value.__suppress_context__
 
 
 @pytest.mark.parametrize("field", ("candidateId", "candidateRevision"))
@@ -290,7 +294,7 @@ def test_malformed_attempt_rejected_atomically_without_input_mutation(mutation):
     assert data == before
 
 
-@pytest.mark.parametrize("ids", ([], ["asset:a"] * 2, ["*"], ["native://resource"], ["a b"], ["é" * 129], "asset:a", ["asset:" + str(i) for i in range(33)]))
+@pytest.mark.parametrize("ids", ([], ["asset:a"] * 2, [""], [None], [1], ["é" * 129], ["a" * 257], ["\ud800"], "asset:a", ["asset:" + str(i) for i in range(33)]))
 def test_invalid_selection_never_calls_client(ids):
     session = FakeSession({})
     with pytest.raises(SemanticSnapshotError):
@@ -405,3 +409,60 @@ def test_view_overflow_is_a_whole_attempt_error():
     data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = value("text", "x" * (4 * 1024 * 1024))
     with pytest.raises(SemanticSnapshotError, match="view size exceeded"):
         normalize(data)
+
+
+@pytest.mark.parametrize("aid", ["asset:é", "é" * 128, "a" * 256, "*", "opaque://identifier", " a b "])
+def test_opaque_asset_ids_are_preserved_through_graphql(aid):
+    data = {"semanticSnapshot": {"assets": [{
+        "assetId": aid, "snapshot": None, "evaluation": None, "projection": None,
+        "selections": [], "unavailableReason": "semantic.read.reason.asset_unknown",
+    }]}}
+    session = FakeSession({"data": data})
+    result = asyncio.run(fetch_semantic_snapshot(GraphQLClient(session, "synthetic"), [aid]))
+    assert session.calls[0]["variables"] == {"assetIds": [aid]}
+    assert result["assets"][0]["assetId"] == aid
+
+
+@pytest.mark.parametrize("kind", ["capability", "relation", "operation"])
+@pytest.mark.parametrize("accounting", ["complete", "missing", "duplicate", "unknown_kind"])
+def test_projection_item_kinds_preserve_accounted_siblings(kind, accounting):
+    data = response()
+    projection = data["semanticSnapshot"]["assets"][0]["projection"]
+    projection["requested"].append({"kind": kind, "itemId": "item.synthetic"})
+    disposition = {"kind": kind, "itemId": "item.synthetic", "outcome": "withheld",
+                   "sourceKeys": [key("pv")], "loss": [], "reason": "reason.synthetic"}
+    if accounting != "missing":
+        projection["dispositions"].append(disposition)
+    if accounting == "duplicate":
+        projection["dispositions"].append(deepcopy(disposition))
+    elif accounting == "unknown_kind":
+        projection["requested"][-1]["kind"] = "unknown"
+        disposition["kind"] = "unknown"
+    if accounting != "complete":
+        with pytest.raises(SemanticSnapshotError):
+            normalize(data)
+        return
+    result = normalize(data)
+    assert result["assets"][0]["projection"]["dispositions"][-1]["kind"] == kind
+    assert len(result["assets"]) == len(PACKS)
+    assert result["assets"][1]["snapshot"]["assetId"] == "asset:storage"
+
+
+@pytest.mark.parametrize("binding_asset", ["asset:pv", "asset:storage"])
+def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
+    data = response()
+    bindings = data["semanticSnapshot"]["assets"][0]["snapshot"]["bindings"]
+    binding = {"bindingId": "binding:synthetic", "assetId": "asset:pv",
+               "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
+               "driverGeneration": "1", "state": "current", "revision": "1",
+               "nativeResource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+                                  "digest": digest("binding"), "contract": "synthetic.evidence/v1",
+                                  "access": "restricted", "redaction": "metadata_only"}}
+    bindings.extend([deepcopy(binding), {**binding, "bindingId": "binding:second", "assetId": binding_asset}])
+    before = deepcopy(data)
+    if binding_asset == "asset:pv":
+        assert len(normalize(data)["assets"][0]["snapshot"]["bindings"]) == 2
+    else:
+        with pytest.raises(SemanticSnapshotError, match="binding asset mismatch"):
+            normalize(data)
+    assert data == before

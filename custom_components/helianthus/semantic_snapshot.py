@@ -13,7 +13,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
-from .graphql import GraphQLClient, GraphQLResponseError
+from .graphql import GraphQLClient
 
 
 class SemanticSnapshotError(ValueError):
@@ -482,6 +482,9 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         _fail("incomplete readable asset")
     if snapshot["assetId"] != asset["assetId"]:
         _fail("asset identity mismatch")
+    for binding in snapshot["bindings"]:
+        if binding["assetId"] != asset["assetId"]:
+            _fail("binding asset mismatch")
     for record in (evaluation, projection, *asset["selections"]):
         if record["snapshotId"] != snapshot["snapshotId"] or record["revisions"] != snapshot["revisions"]:
             _fail("snapshot revision mismatch")
@@ -540,7 +543,7 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
     if any(("fact", f["key"]["factId"]) not in requested for f in snapshot["facts"]):
         _fail("unaccounted fact")
     for disposition in projection["dispositions"]:
-        if disposition["kind"] not in ("fact", "capability") or len(disposition["sourceKeys"]) > 32:
+        if len(disposition["sourceKeys"]) > 32:
             _fail("invalid disposition")
         if any(_key(k) not in keys for k in disposition["sourceKeys"]):
             _fail("unresolved source key")
@@ -592,8 +595,13 @@ def _asset_ids(asset_ids: Sequence[str]) -> tuple[str, ...]:
     if not 1 <= len(ids) <= 32:
         _fail("invalid asset count")
     for aid in ids:
-        if (not isinstance(aid, str) or not aid or len(aid) > 256
-                or "://" in aid or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", aid)):
+        if not isinstance(aid, str):
+            _fail("invalid asset identifier")
+        try:
+            size = len(aid.encode("utf-8"))
+        except UnicodeError:
+            raise SemanticSnapshotError("semantic snapshot: invalid asset identifier") from None
+        if not 1 <= size <= 256:
             _fail("invalid asset identifier")
     if len(set(ids)) != len(ids):
         _fail("duplicate asset identifier")
@@ -601,10 +609,7 @@ def _asset_ids(asset_ids: Sequence[str]) -> tuple[str, ...]:
 
 
 async def fetch_semantic_snapshot(client: GraphQLClient, asset_ids: Sequence[str]) -> Mapping[str, Any]:
-    """Read all five packs in one operation; failures never trigger a fallback."""
+    """Read once, preserving GraphQLResponseError for optional-root classification."""
     ids = _asset_ids(asset_ids)
-    try:
-        data = await client.execute(SEMANTIC_SNAPSHOT_QUERY, {"assetIds": list(ids)})
-    except GraphQLResponseError:
-        raise SemanticSnapshotError("semantic snapshot: GraphQL errors") from None
+    data = await client.execute(SEMANTIC_SNAPSHOT_QUERY, {"assetIds": list(ids)})
     return normalize_semantic_snapshot(data, ids)
