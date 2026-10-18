@@ -218,6 +218,12 @@ reasons include `semantic.read.reason.asset_unknown`, `snapshot_unavailable`,
 `source_unavailable` and `publication_withheld` under the same prefix. A connected
 transport or readable candidate proves neither support nor admission.
 
+The sensor platform defers shared-snapshot discovery until entry setup publishes
+its coordinator after platform forwarding. Only a currently admitted reading
+creates a new sensor; later loss retains that entity and makes it unavailable.
+Display names include the asset and dimension ID/value. The PV active-power and
+export-power limit argument fields have no measurement state class.
+
 New semantic entity identity is scoped by the existing HA config entry and opaque
 `assetId`, plus the complete semantic fact key: `packId`, `packVersion`, `factId`
 and every typed dimension ID/value in canonical order. Never join by label,

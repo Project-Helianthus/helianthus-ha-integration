@@ -43,8 +43,8 @@ DESCRIPTORS = (
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.ac.power_factor', 'pv.dimension.inverter', 'unit.ratio', None, None, 'measurement', False, '-1e0', '1e0', ()),
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.energy.generated', 'pv.dimension.system', 'unit.kilowatt_hour', 'kWh', 'energy', 'total', True, '0e0', '1e12', ()),
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.temperature.inverter', 'pv.dimension.inverter', 'unit.celsius', '°C', 'temperature', 'measurement', True, '-5e1', '2e2', ()),
-    SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.limit.active_power', 'pv.dimension.inverter', 'unit.watt', 'W', 'power', 'measurement', False, '0e0', '1e7', ()),
-    SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.limit.export_power', 'pv.dimension.system', 'unit.watt', 'W', 'power', 'measurement', False, '0e0', '1e7', ()),
+    SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.limit.active_power', 'pv.dimension.inverter', 'unit.watt', 'W', 'power', None, False, '0e0', '1e7', ()),
+    SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.limit.export_power', 'pv.dimension.system', 'unit.watt', 'W', 'power', None, False, '0e0', '1e7', ()),
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.status.operating', 'pv.dimension.inverter', '', None, None, None, True, None, None, ('generating', 'idle', 'standby')),
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.status.derating', 'pv.dimension.inverter', '', None, None, None, False, None, None, ('active', 'clear')),
     SemanticSensorDescriptor('helianthus.pack.pv', '1.0.0', 'pv.status.fault', 'pv.dimension.inverter', '', None, None, None, False, None, None, ('clear', 'present')),
@@ -170,7 +170,11 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
         self._key = key
         self.descriptor = descriptor
         self._attr_unique_id = semantic_unique_id(entry_id, asset_id, key)
-        self._attr_name = descriptor.fact_id
+        dimension = key["dimensions"][0]
+        self._attr_name = (
+            f"{asset_id} {descriptor.fact_id} "
+            f"{dimension['id']}={dimension['value']['text']}"
+        )
         self._attr_native_unit_of_measurement = descriptor.display_unit
         self._attr_device_class = descriptor.device_class
         self._attr_state_class = descriptor.state_class
@@ -240,6 +244,13 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
     """Discover supported keys once, retaining entities through missing/lost reads."""
     coordinator = data.get("semantic_snapshot_coordinator")
     if coordinator is None:
+        if "semantic_snapshot_coordinator" not in data:
+            def setup_when_ready():
+                entities = setup_semantic_snapshot_sensors(data, entry_id, async_add_entities)
+                if entities:
+                    async_add_entities(entities)
+
+            data["semantic_snapshot_sensors_setup"] = setup_when_ready
         return []
     known = set()
 
@@ -258,9 +269,12 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
                 unique_id = semantic_unique_id(entry_id, asset["assetId"], key)
                 if unique_id in known:
                     continue
+                sensor = SemanticSnapshotSensor(
+                    coordinator, entry_id, asset["assetId"], key, descriptor)
+                if not sensor.available:
+                    continue
                 known.add(unique_id)
-                entities.append(SemanticSnapshotSensor(
-                    coordinator, entry_id, asset["assetId"], key, descriptor))
+                entities.append(sensor)
         return entities
 
     initial = discover()

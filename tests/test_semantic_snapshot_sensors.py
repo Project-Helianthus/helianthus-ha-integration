@@ -342,6 +342,12 @@ def test_same_fact_on_distinct_assets_and_dimensions_stays_distinct():
     sensors = shared(entities)
     assert len(sensors) == len({e._attr_unique_id for e in sensors}) == 3
     assert all(e.available for e in sensors)
+    assert len({e._attr_name for e in sensors}) == 3
+    for sensor in sensors:
+        assert sensor._asset_id in sensor._attr_name
+        dimension = sensor._key["dimensions"][0]
+        assert dimension["id"] in sensor._attr_name
+        assert dimension["value"]["text"] in sensor._attr_name
 
 
 @pytest.mark.parametrize("member,invalid", [("namespace", "status.other"), ("token", "unknown"), ("known", False)])
@@ -425,3 +431,43 @@ def test_pack_valid_empty_dimension_text_is_not_missing():
     _, _, _, entities = setup([record])
     sensor, = shared(entities)
     assert sensor.available and sensor.native_value == Decimal("12.5")
+
+
+@pytest.mark.parametrize("axis", ["qualification", "promotion", "value", "projection", "source", "freshness"])
+def test_discovery_waits_for_first_admitted_reading(axis):
+    admitted = readable(*ROWS[0])
+    rejected = deepcopy(admitted)
+    candidate = rejected["snapshot"]["facts"][0]["candidates"][0]
+    if axis == "qualification":
+        candidate["quality"][axis] = "unknown"
+    elif axis == "promotion":
+        candidate["quality"][axis] = "unpromoted"
+    elif axis == "value":
+        candidate["value"] = None
+    elif axis == "projection":
+        rejected["projection"]["dispositions"][0].update(
+            outcome="withheld", reason="reason.synthetic")
+    elif axis == "source":
+        rejected["snapshot"]["sources"][0]["state"] = "retired"
+    else:
+        rejected["evaluation"]["facts"][0]["freshness"] = "unknown"
+    client, coordinator, _, entities = setup([rejected])
+    assert shared(entities) == []
+    refresh(coordinator)
+    assert shared(entities) == []
+    client.payload = {"semanticSnapshot": {"assets": [admitted]}}
+    refresh(coordinator)
+    sensor, = shared(entities)
+    assert sensor.available
+    refresh(coordinator)
+    assert shared(entities) == [sensor]
+    client.payload = {"semanticSnapshot": {"assets": [rejected]}}
+    refresh(coordinator)
+    assert shared(entities) == [sensor] and not sensor.available
+
+
+def test_operation_argument_fields_have_no_measurement_state_class():
+    limits = [d for d in DESCRIPTORS if d.fact_id in (
+        "pv.limit.active_power", "pv.limit.export_power")]
+    assert len(limits) == 2
+    assert all(d.state_class is None for d in limits)
