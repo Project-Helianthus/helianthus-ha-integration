@@ -47,16 +47,29 @@ safeguards continue to apply independently of user authorization.
    missing selected assets and inconsistent wrappers; never default missing
    required arrays or quality axes. Server array order is canonical, not request
    order; joins use identities rather than positions.
-4. For every readable asset, require snapshot `assetId` to match its wrapper
-   `assetId`, and require the same `snapshotId` and complete revision
-   vector in `snapshot`, `evaluation` and `projection`. The vector is
+4. For every readable asset, require snapshot and every native binding `assetId`
+   to match its wrapper `assetId`. Each identity link must belong to that asset
+   and reference a binding in its snapshot, regardless of link state. Active
+   candidates' non-null source epochs must resolve in the snapshot. Non-null
+   candidate binding IDs must resolve there with a matching source and epoch;
+   any declared candidate epoch and driver generation must match that binding.
+   This check does not require historical retained observations to resolve against
+   active descriptors. Require
+   the same `snapshotId` and complete revision vector in `snapshot`, `evaluation`
+   and `projection`. The vector is
    `semantic`, `identity`, `facts`, `services`, `capabilities`, all decimal
    strings. Different assets may have different vectors: there is no global
    SemReg revision. Join evaluations using both `candidateId` and
-   `candidateRevision` against candidate `candidateId` and `revision`. Validate
-   selections, if consumed, against the same snapshot, vector, candidate,
+   `candidateRevision` against candidate `candidateId` and `revision`. Retained
+   evaluations must account for each retained snapshot observation exactly once,
+   joining by candidate identity and revision and preserving the complete original
+   observation; their evaluated freshness remains separate from source quality.
+   Retained observations remain separate from active candidates. Validate
+   selections, if consumed, with contract `helianthus.semantic.selection/v1`
+   against the same snapshot, vector, candidate,
    evaluation context/digest and policy version; they are presentation-only.
-5. Validate accounting against the captured pack versions. Each requested
+5. Validate accounting against the captured pack versions. Retain all declared
+   item kinds: `fact`, `relation`, `capability` and `operation`. Each requested
    `(kind, itemId)` needs exactly one disposition, with complete `sourceKeys`,
    `outcome`, `loss` and optional `reason`. Do not drop unknown, withheld,
    unsupported or unrepresentable siblings. `exact` with empty loss means exact
@@ -74,6 +87,11 @@ safeguards continue to apply independently of user authorization.
    a cache from a failed request as a new successful read.
 
 ### Older gateways
+
+`fetch_semantic_snapshot` propagates `GraphQLResponseError` with its structured
+`errors` intact for caller classification; its exception message remains bounded.
+Malformed successful responses raise `SemanticSnapshotError`. The client never
+retries with a reduced selection or another root.
 
 The integration's existing optional-query rule (`next_optional_query_state` and
 `_is_missing_field_error`) applies to the shared path:
