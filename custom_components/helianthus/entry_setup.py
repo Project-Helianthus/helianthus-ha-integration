@@ -42,6 +42,7 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
+from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
 
 
@@ -1874,6 +1875,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         cleanup_nonexportable_radio_registry_entries=cleanup_nonexportable_radio_registry_entries,
         nonexportable_radio_keys=nonexportable_radio_keys,
         run_trusted_cleanup=run_trusted_cleanup,
+    )
+
+    hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (
+        await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
     )
 
     return True
