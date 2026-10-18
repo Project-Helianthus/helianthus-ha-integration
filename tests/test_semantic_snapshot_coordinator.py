@@ -22,7 +22,10 @@ def entry(data=None, options=None):
 
 
 def hass():
-    return SimpleNamespace(async_create_task=asyncio.create_task)
+    return SimpleNamespace(
+        async_create_task=asyncio.create_task,
+        async_create_background_task=lambda coro, name: asyncio.create_task(coro, name=name),
+    )
 
 
 def unavailable(*ids):
@@ -83,7 +86,9 @@ def test_disabled_or_invalid_setup_creates_no_task_or_read(configured):
         def forbidden(_coro):
             raise AssertionError("no polling task allowed")
         assert await async_setup_semantic_snapshot(
-            SimpleNamespace(async_create_task=forbidden), entry(data=configured), client
+            SimpleNamespace(async_create_task=forbidden,
+                            async_create_background_task=lambda coro, name: forbidden(coro)),
+            entry(data=configured), client
         ) is None
         assert client.calls == []
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))
@@ -419,7 +424,9 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
             assert shared(entities) == []
         def update(entry, **kw):
             entry.__dict__.update(kw)
-        ha = SimpleNamespace(data={}, async_create_task=create_task, config_entries=SimpleNamespace(
+        ha = SimpleNamespace(data={}, async_create_task=create_task,
+            async_create_background_task=lambda coro, name: asyncio.create_task(coro, name=name),
+            config_entries=SimpleNamespace(
             async_entries=lambda domain: [configured], async_update_entry=update,
             async_forward_entry_setups=forward, async_unload_platforms=AsyncMock(return_value=True)))
         assert await entry_setup.async_setup_entry(ha, configured)
