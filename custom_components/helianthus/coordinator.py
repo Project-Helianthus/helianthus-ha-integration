@@ -16,6 +16,7 @@ from .admission import (
     source_selection_from_status_payload,
 )
 from .coordinator_availability import (
+    _is_missing_field_error,
     hold_last_known_energy_totals,
     next_optional_query_state,
     optional_query_available,
@@ -1801,21 +1802,6 @@ class HelianthusScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return empty
 
         return {"programs": programs}
-
-
-def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
-    if not isinstance(errors, list):
-        return False
-    for error in errors:
-        message = ""
-        if isinstance(error, dict):
-            message = str(error.get("message", ""))
-        else:
-            message = str(error)
-        for field in fields:
-            if f'Cannot query field "{field}"' in message:
-                return True
-    return False
 
 
 QUERY_ADAPTER_HARDWARE_INFO = """

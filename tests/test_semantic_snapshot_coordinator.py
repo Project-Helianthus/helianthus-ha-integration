@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import ast
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -113,7 +111,7 @@ def test_whole_snapshot_once_retention_failure_and_recovery():
         client.payload = RuntimeError("synthetic server detail")
         await coordinator.async_request_refresh()
         assert coordinator.data is retained and not coordinator.last_update_success
-        assert str(coordinator.last_exception) == "semantic snapshot: refresh failed"
+        assert coordinator.last_exception is client.payload
         client.payload = unavailable(*ids)
         await coordinator.async_request_refresh()
         assert len(seen) == 4 and seen[-1][1] is True
@@ -165,6 +163,8 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
         order = []
         def boundary(name):
             async def close():
+                assert coordinator._closed
+                assert coordinator._poll_task is coordinator._refresh_task is None
                 order.append(name)
             return SimpleNamespace(async_close=close)
         runtime = {"semantic_snapshot_coordinator": coordinator,
@@ -189,24 +189,6 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
         assert coordinator.last_update_success and len(client.calls) == 3
         await coordinator.async_close()
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))
-
-
-def test_entry_setup_wiring_is_after_existing_platform_and_parity_paths():
-    source = Path("custom_components/helianthus/entry_setup.py").read_text()
-    tree = ast.parse(source)
-    setup = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef)
-                 and n.name == "async_setup_entry")
-    calls = [n for n in ast.walk(setup) if isinstance(n, ast.Call)]
-    new_calls = [n for n in calls if isinstance(n.func, ast.Name)
-                 and n.func.id == "async_setup_semantic_snapshot"]
-    assert len(new_calls) == 1
-    forward = next(n for n in calls if isinstance(n.func, ast.Name)
-                   and n.func.id == "_async_forward_platforms_and_finalize")
-    assert new_calls[0].lineno > forward.lineno
-    assert [ast.unparse(arg) for arg in new_calls[0].args] == [
-        "hass", "entry", "client", "scan_interval"]
-    assert '"semantic_snapshot_coordinator"' in ast.unparse(setup).replace("'", '"')
-    assert "HelianthusSemanticCoordinator(hass, client, scan_interval)" in source
 
 
 def test_one_poll_timer_refreshes_once_per_release(monkeypatch):
@@ -282,4 +264,204 @@ def test_five_pack_value_quality_and_evaluation_published_together():
         # Successful transport/read does not promote or admit any candidate.
         assert coordinator.last_update_success
         await coordinator.async_close()
+    asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+
+
+@pytest.mark.parametrize("initial_success", [False, True])
+@pytest.mark.parametrize("missing", ["semanticSnapshot", "assets", None])
+def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial_success, missing):
+    from custom_components.helianthus import semantic_snapshot_coordinator as module
+    from custom_components.helianthus.graphql import GraphQLResponseError
+
+    async def exercise():
+        timer = asyncio.Event()
+        tick = asyncio.Event()
+        async def wait_interval(_interval):
+            timer.set()
+            await tick.wait()
+            tick.clear()
+        monkeypatch.setattr(module.asyncio, "sleep", wait_interval)
+        error = GraphQLResponseError([{"message": (
+            f'Cannot query field "{missing}" on type "Query".' if missing
+            else "synthetic execution failure") }])
+        client = Client(unavailable("a") if initial_success else error)
+        coordinator = SemanticSnapshotCoordinator(hass(), client, ("a",))
+        updated = asyncio.Event()
+        coordinator.async_add_listener(updated.set)
+        await coordinator.async_start()
+        retained = coordinator.data
+        client.payload = error
+        if coordinator._poll_task is not None:
+            await timer.wait()
+            timer.clear()
+            updated.clear()
+            tick.set()
+            await updated.wait()
+        expected = False if missing == "semanticSnapshot" else (True if initial_success else None)
+        assert coordinator.supported is expected
+        assert not coordinator.last_update_success
+        assert coordinator.last_exception is error
+        assert coordinator.last_exception.errors is error.errors
+        assert coordinator.data is retained
+        calls = len(client.calls)
+        if expected is False:
+            if coordinator._poll_task is not None:
+                await coordinator._poll_task
+                assert coordinator._poll_task.done()
+            for _ in range(3):
+                await coordinator.async_request_refresh()
+            assert len(client.calls) == calls
+        else:
+            for _ in range(3):
+                await timer.wait()
+                timer.clear()
+                updated.clear()
+                tick.set()
+                await updated.wait()
+            assert len(client.calls) == calls + 3
+            client.payload = unavailable("a")
+            await coordinator.async_request_refresh()
+            assert coordinator.supported is True and coordinator.last_update_success
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        await coordinator.async_close()
+    asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+
+
+def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
+    """Execute the real setup function with fake HA registries and legacy owners."""
+    import sys
+    from types import ModuleType
+    from unittest.mock import AsyncMock
+    from custom_components.helianthus import entry_setup
+    from custom_components.helianthus.graphql import GraphQLResponseError
+    from custom_components.helianthus import graphql, identity
+
+    def install(name, **attrs):
+        mod = ModuleType(name)
+        mod.__dict__.update(attrs)
+        monkeypatch.setitem(sys.modules, name, mod)
+        parent, _, child = name.rpartition(".")
+        if parent in sys.modules:
+            monkeypatch.setattr(sys.modules[parent], child, mod, raising=False)
+        return mod
+
+    # Stub only external HA services and independent owners, never the shared path.
+    install("homeassistant.core", callback=lambda fn: fn)
+    registry = SimpleNamespace(entities={}, devices={},
+                               async_get_or_create=lambda **kw: SimpleNamespace(id="synthetic-device"))
+    dr = install("homeassistant.helpers.device_registry", async_get=lambda ha: registry,
+                 async_entries_for_config_entry=lambda *args: [])
+    er = install("homeassistant.helpers.entity_registry", async_get=lambda ha: registry,
+                 async_entries_for_config_entry=lambda *args: [])
+    install("homeassistant.helpers", device_registry=dr, entity_registry=er)
+    install("homeassistant.helpers.aiohttp_client", async_get_clientsession=lambda ha: object())
+    install("homeassistant.helpers.event", async_track_state_change_event=lambda *args: lambda: None)
+    install("homeassistant.const", CONF_HOST="host", CONF_PORT="port", CONF_SCAN_INTERVAL="scan_interval")
+
+    class LegacyCoordinator:
+        def __init__(self, *args):
+            self.data = {}
+        async def async_config_entry_first_refresh(self):
+            pass
+        def async_add_listener(self, *args):
+            return lambda: None
+
+    # A module double keeps this test independent of HA's DataUpdateCoordinator.
+    install("custom_components.helianthus.coordinator", **{
+        name: LegacyCoordinator for name in (
+            "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator",
+            "HelianthusCircuitCoordinator", "HelianthusCoordinator",
+            "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
+            "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator",
+            "HelianthusSemanticCoordinator", "HelianthusSystemCoordinator",
+            "HelianthusStatusCoordinator",
+        )
+    })
+    install("custom_components.helianthus.subscriptions", start_subscriptions=AsyncMock())
+    for family in ("pv", "storage", "evse"):
+        install(f"custom_components.helianthus.{family}_m2m", **{
+            f"async_setup_{family}_m2m_boundary": AsyncMock(return_value=None),
+            f"{family}_m2m_option_signature": lambda options: (),
+        })
+    admin = SimpleNamespace(lifecycle=SimpleNamespace(clear=lambda: None, action_broker=object()))
+    install("custom_components.helianthus.entry_services",
+            async_setup_optional_eebus_admin_service=AsyncMock(return_value=(admin, None, False)))
+    monkeypatch.setattr(entry_setup, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
+    monkeypatch.setattr(entry_setup, "_migrate_unique_ids_to_snake_case", lambda *args: 0)
+    monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
+
+    async def exercise():
+        configured = entry(data={"host": "synthetic.invalid", "port": 1,
+                                 CONF_SEMANTIC_ASSET_IDS: ["a"]},
+                           options={"use_subscriptions": False, "scan_interval": 17})
+        configured.unique_id = None
+        client = Client(GraphQLResponseError([
+            {"message": 'Cannot query field "semanticSnapshot" on type "Query".'}]))
+        monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: client)
+        tracked = []
+        def create_task(coro):
+            task = asyncio.create_task(coro)
+            tracked.append(task)
+            return task
+        forwarded = []
+        async def forward(entry, platforms):
+            runtime = ha.data[DOMAIN][entry.entry_id]
+            assert "semantic_snapshot_coordinator" not in runtime
+            forwarded.append(tuple(platforms))
+        def update(entry, **kw):
+            entry.__dict__.update(kw)
+        ha = SimpleNamespace(data={}, async_create_task=create_task, config_entries=SimpleNamespace(
+            async_entries=lambda domain: [configured], async_update_entry=update,
+            async_forward_entry_setups=forward, async_unload_platforms=AsyncMock(return_value=True)))
+        assert await entry_setup.async_setup_entry(ha, configured)
+        first = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
+        assert first.client is client and first.supported is False
+        assert first.update_interval == 17 and len(client.calls) == 1
+        assert all(task.done() for task in tracked)
+        assert await entry_cleanup.async_unload_entry(ha, configured)
+        assert configured.entry_id not in ha.data[DOMAIN]
+        assert first._closed and first._refresh_task is first._poll_task is None
+        client.payload = unavailable("a")
+        assert await entry_setup.async_setup_entry(ha, configured)
+        second = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
+        assert second is not first and second.supported is True
+        assert len(client.calls) == 2 and len(forwarded) == 2
+        # HA waits only for tracked finite work; the poll must not be in this set.
+        await asyncio.gather(*tracked)
+        assert second._poll_task not in tracked and not second._poll_task.done()
+        assert await entry_cleanup.async_unload_entry(ha, configured)
+        assert second._closed and second._poll_task is second._refresh_task is None
+    asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+
+
+def test_invalid_selection_warning_identifies_entry(caplog):
+    async def exercise():
+        client = Client(unavailable("a"))
+        assert await async_setup_semantic_snapshot(
+            hass(), entry(data={CONF_SEMANTIC_ASSET_IDS: ["a", "a"]}), client
+        ) is None
+        assert client.calls == []
+    asyncio.run(exercise())
+    assert "synthetic-entry" in caplog.text
+
+
+@pytest.mark.parametrize("failing_boundary", ["pv", "storage", "evse"])
+def test_snapshot_closed_before_a_boundary_teardown_failure(failing_boundary):
+    async def exercise():
+        from unittest.mock import AsyncMock
+        ha = hass()
+        configured = entry(data={CONF_SEMANTIC_ASSET_IDS: ["a"]})
+        coordinator = await async_setup_semantic_snapshot(ha, configured, Client(unavailable("a")))
+        poll = coordinator._poll_task
+        boundaries = {name + "_m2m_boundary": SimpleNamespace(async_close=AsyncMock(
+            side_effect=RuntimeError("synthetic teardown failure") if name == failing_boundary else None
+        )) for name in ("pv", "storage", "evse")}
+        ha.data = {DOMAIN: {configured.entry_id: {
+            "semantic_snapshot_coordinator": coordinator, **boundaries}}}
+        ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
+        with pytest.raises(RuntimeError, match="synthetic teardown failure"):
+            await entry_cleanup.async_unload_entry(ha, configured)
+        assert coordinator._closed and poll.done()
+        assert coordinator._poll_task is coordinator._refresh_task is None
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))

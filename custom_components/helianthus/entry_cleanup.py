@@ -31,6 +31,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif admin_session is not None:
             from .eebus_admin_coordinator import close_admin_session
             await close_admin_session(admin_session)
+        snapshot_coordinator = None if data is None else data.get("semantic_snapshot_coordinator")
+        if snapshot_coordinator is not None:
+            await snapshot_coordinator.async_close()
         pv_m2m_boundary = None if data is None else data.get("pv_m2m_boundary")
         if pv_m2m_boundary is not None:
             await pv_m2m_boundary.async_close()
@@ -40,7 +43,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         evse_m2m_boundary = None if data is None else data.get("evse_m2m_boundary")
         if evse_m2m_boundary is not None:
             await evse_m2m_boundary.async_close()
-        snapshot_coordinator = None if data is None else data.get("semantic_snapshot_coordinator")
-        if snapshot_coordinator is not None:
-            await snapshot_coordinator.async_close()
     return unload_ok

@@ -7,6 +7,8 @@ from collections.abc import Callable
 import logging
 
 from .const import DEFAULT_SCAN_INTERVAL
+from .coordinator_availability import _is_missing_field_error, next_optional_query_state
+from .graphql import GraphQLResponseError
 from .semantic_snapshot import fetch_semantic_snapshot
 
 CONF_SEMANTIC_ASSET_IDS = "semantic_asset_ids"
@@ -47,6 +49,8 @@ class SemanticSnapshotCoordinator:
         self.data = None
         self.last_update_success = False
         self.last_exception = None
+        self.supported: bool | None = None
+        self._reported_state = None
         self._listeners: list[Callable[[], None]] = []
         self._poll_task = None
         self._refresh_task = None
@@ -72,29 +76,47 @@ class SemanticSnapshotCoordinator:
     async def _refresh(self) -> None:
         try:
             value = await fetch_semantic_snapshot(self.client, self.asset_ids)
-        except Exception:
+        except Exception as exc:
             if self._closed:
                 return
             self.last_update_success = False
-            self.last_exception = ValueError("semantic snapshot: refresh failed")
+            self.last_exception = exc
+            self.supported = next_optional_query_state(
+                self.supported,
+                schema_field_missing=isinstance(exc, GraphQLResponseError)
+                and _is_missing_field_error(exc.errors, ["semanticSnapshot"]),
+            )
         else:
             if self._closed:
                 return
+            self.supported = next_optional_query_state(
+                self.supported, response_received=True
+            )
             self.data = value
             self.last_update_success = True
             self.last_exception = None
+        state = (self.supported, self.last_update_success)
+        if state != self._reported_state:
+            self._reported_state = state
+            if self.supported is False:
+                _LOGGER.warning("Semantic snapshot root unsupported; reload entry to retry")
+            elif not self.last_update_success:
+                _LOGGER.warning("Semantic snapshot refresh failed (%s)",
+                                type(self.last_exception).__name__)
+            else:
+                _LOGGER.info("Semantic snapshot refresh available")
         self._notify()
 
     async def async_request_refresh(self) -> None:
         """Coalesce overlapping requests into one read and one notification."""
-        if self._closed:
+        if self._closed or self.supported is False:
             return
         if self._refresh_task is None or self._refresh_task.done():
             self._refresh_task = self.hass.async_create_task(self._refresh())
         await asyncio.shield(self._refresh_task)
 
     async def _poll(self) -> None:
-        while True:
+        while not self._closed and self.supported is not False:
             await asyncio.sleep(self.update_interval)
             await self.async_request_refresh()
 
@@ -106,7 +128,8 @@ class SemanticSnapshotCoordinator:
             self._closed = False
             try:
                 await self.async_request_refresh()
-                self._poll_task = self.hass.async_create_task(self._poll())
+                if self.supported is not False:
+                    self._poll_task = asyncio.create_task(self._poll())
             except BaseException:
                 await self._close()
                 raise
@@ -135,7 +158,8 @@ async def async_setup_semantic_snapshot(hass: object, entry: object, client: obj
     try:
         ids = semantic_asset_ids(entry)
     except ValueError:
-        _LOGGER.warning("Semantic snapshot: invalid configured asset selection")
+        _LOGGER.warning("Semantic snapshot: invalid configured asset selection for entry %s",
+                        entry.entry_id)
         return None
     if not ids:
         return None
