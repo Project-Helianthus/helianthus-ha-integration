@@ -482,12 +482,22 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         _fail("incomplete readable asset")
     if snapshot["assetId"] != asset["assetId"]:
         _fail("asset identity mismatch")
+    sources = set()
+    for source in snapshot["sources"]:
+        identity = (source["sourceId"], source["sourceEpochId"])
+        if identity in sources:
+            _fail("duplicate source identity")
+        sources.add(identity)
+    bindings = {}
     for binding in snapshot["bindings"]:
         if binding["assetId"] != asset["assetId"]:
             _fail("binding asset mismatch")
-    bindings = {binding["bindingId"]: binding for binding in snapshot["bindings"]}
+        if binding["bindingId"] in bindings:
+            _fail("duplicate binding identity")
+        if (binding["sourceId"], binding["sourceEpochId"]) not in sources:
+            _fail("binding provenance mismatch")
+        bindings[binding["bindingId"]] = binding
     binding_ids = set(bindings)
-    sources = {(source["sourceId"], source["sourceEpochId"]) for source in snapshot["sources"]}
     source_epochs = {epoch for _, epoch in sources}
     for link in snapshot["identityLinks"]:
         if link["assetId"] != asset["assetId"] or link["bindingId"] not in binding_ids:
