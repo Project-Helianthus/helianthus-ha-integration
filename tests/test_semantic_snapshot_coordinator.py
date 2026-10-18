@@ -446,6 +446,53 @@ def test_invalid_selection_warning_identifies_entry(caplog):
     assert "synthetic-entry" in caplog.text
 
 
+@pytest.mark.parametrize("services_registered", [False, True])
+def test_snapshot_joined_despite_admin_teardown_failure(monkeypatch, services_registered):
+    async def exercise():
+        from unittest.mock import AsyncMock
+        from custom_components.helianthus import eebus_admin_coordinator
+
+        ha = hass()
+        configured = entry(data={CONF_SEMANTIC_ASSET_IDS: ["a"]})
+        client = Client(unavailable("a"))
+        coordinator = await async_setup_semantic_snapshot(ha, configured, client)
+        poll = coordinator._poll_task
+        client.entered.clear()
+        client.finished.clear()
+        client.release.clear()
+        refresh = asyncio.create_task(coordinator.async_request_refresh())
+        await client.entered.wait()
+        read = coordinator._refresh_task
+        error = RuntimeError("synthetic admin teardown failure")
+        close_admin = AsyncMock(side_effect=error)
+        if services_registered:
+            monkeypatch.setattr(entry_cleanup, "async_unload_eebus_admin_boundary", close_admin)
+        else:
+            monkeypatch.setattr(eebus_admin_coordinator, "close_admin_session", close_admin)
+        session = object()
+        ha.data = {DOMAIN: {configured.entry_id: {
+            "semantic_snapshot_coordinator": coordinator,
+            "eebus_admin_session": session,
+            "eebus_admin_services_registered": services_registered,
+        }}}
+        ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
+        try:
+            with pytest.raises(RuntimeError) as raised:
+                await entry_cleanup.async_unload_entry(ha, configured)
+            assert raised.value is error
+            assert configured.entry_id not in ha.data[DOMAIN]
+            assert coordinator._closed and poll.done() and read.done()
+            assert client.finished.is_set()
+            assert coordinator._poll_task is coordinator._refresh_task is None
+            assert not coordinator.last_update_success
+            assert await entry_cleanup.async_unload_entry(ha, configured)
+            close_admin.assert_awaited_once()
+        finally:
+            await coordinator.async_close()
+            await asyncio.gather(refresh, return_exceptions=True)
+    asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+
+
 @pytest.mark.parametrize("failing_boundary", ["pv", "storage", "evse"])
 def test_snapshot_closed_before_a_boundary_teardown_failure(failing_boundary):
     async def exercise():
