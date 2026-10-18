@@ -328,7 +328,8 @@ def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))
 
 
-def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
+@pytest.mark.parametrize("readable_snapshot", [False, True])
+def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_snapshot):
     """Execute the real setup function with fake HA registries and legacy owners."""
     import sys
     from types import ModuleType
@@ -336,6 +337,8 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
     from custom_components.helianthus import entry_setup
     from custom_components.helianthus.graphql import GraphQLResponseError
     from custom_components.helianthus import graphql, identity
+    from test_semantic_snapshot_sensors import ROWS, readable, shared, sensor_platform
+    from decimal import Decimal
 
     def install(name, **attrs):
         mod = ModuleType(name)
@@ -393,11 +396,13 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
 
     async def exercise():
         configured = entry(data={"host": "synthetic.invalid", "port": 1,
-                                 CONF_SEMANTIC_ASSET_IDS: ["a"]},
+                                 CONF_SEMANTIC_ASSET_IDS: ["asset:pv" if readable_snapshot else "a"]},
                            options={"use_subscriptions": False, "scan_interval": 17})
         configured.unique_id = None
         client = Client(GraphQLResponseError([
             {"message": 'Cannot query field "semanticSnapshot" on type "Query".'}]))
+        if readable_snapshot:
+            client.payload = {"semanticSnapshot": {"assets": [readable(*ROWS[0])]}}
         monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: client)
         tracked = []
         def create_task(coro):
@@ -405,10 +410,13 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
             tracked.append(task)
             return task
         forwarded = []
+        entities = []
         async def forward(entry, platforms):
             runtime = ha.data[DOMAIN][entry.entry_id]
             assert "semantic_snapshot_coordinator" not in runtime
             forwarded.append(tuple(platforms))
+            await sensor_platform.async_setup_entry(ha, entry, entities.extend)
+            assert shared(entities) == []
         def update(entry, **kw):
             entry.__dict__.update(kw)
         ha = SimpleNamespace(data={}, async_create_task=create_task, config_entries=SimpleNamespace(
@@ -416,17 +424,29 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch):
             async_forward_entry_setups=forward, async_unload_platforms=AsyncMock(return_value=True)))
         assert await entry_setup.async_setup_entry(ha, configured)
         first = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
-        assert first.client is client and first.supported is False
+        assert first.client is client and first.supported is readable_snapshot
         assert first.update_interval == 17 and len(client.calls) == 1
+        assert "semantic_snapshot_sensors_setup" not in ha.data[DOMAIN][configured.entry_id]
+        if readable_snapshot:
+            sensor, = shared(entities)
+            assert sensor.available and sensor.native_value == Decimal("12.5")
+            client.payload = {"semanticSnapshot": {"assets": [
+                readable(*ROWS[0], number="0", exponent=0)]}}
+            await first.async_request_refresh()
+            assert shared(entities) == [sensor]
+            assert sensor.available and sensor.native_value == Decimal(0)
+        else:
+            assert shared(entities) == []
         assert all(task.done() for task in tracked)
         assert await entry_cleanup.async_unload_entry(ha, configured)
         assert configured.entry_id not in ha.data[DOMAIN]
         assert first._closed and first._refresh_task is first._poll_task is None
-        client.payload = unavailable("a")
+        entities.clear()
+        client.payload = unavailable("asset:pv" if readable_snapshot else "a")
         assert await entry_setup.async_setup_entry(ha, configured)
         second = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
         assert second is not first and second.supported is True
-        assert len(client.calls) == 2 and len(forwarded) == 2
+        assert len(client.calls) == (3 if readable_snapshot else 2) and len(forwarded) == 2
         # HA waits only for tracked finite work; the poll must not be in this set.
         await asyncio.gather(*tracked)
         assert second._poll_task not in tracked and not second._poll_task.done()

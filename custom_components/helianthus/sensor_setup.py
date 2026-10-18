@@ -165,6 +165,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusEnergySensor,
         HelianthusFM5ModeSensor,
         HelianthusRadioSensor,
+        HelianthusPVM2MSensor,
         HelianthusSolarSensor,
         HelianthusStatusSensor,
         HelianthusStorageM2MSensor,
@@ -172,6 +173,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusSystemSensor,
         HelianthusZoneValvePositionSensor,
     )
+
+    from .semantic_snapshot_sensors import setup_semantic_snapshot_sensors
 
     data = hass.data[DOMAIN][entry.entry_id]
     device_coordinator = data["device_coordinator"]
@@ -193,6 +196,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     manufacturer = data.get("regulator_manufacturer") or "Helianthus"
 
     sensors: list[SensorEntity] = []
+    sensors.extend(setup_semantic_snapshot_sensors(data, entry.entry_id, async_add_entities))
     admin_coordinator = data.get("eebus_admin_coordinator")
     if admin_coordinator is not None:
         origin = f"{entry.data.get('transport', 'http')}://{entry.data.get('host')}:{entry.data.get('port')}"

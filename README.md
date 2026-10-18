@@ -67,6 +67,28 @@ remains Ah without a `total_increasing` state class: SemReg explicitly retains
 counter reset/wrap continuity as native evidence. This integration has no
 native Modbus/Growatt query, fallback, dual publication, control, or write path.
 
+## Shared semantic snapshot sensors
+
+The shared semantic snapshot path creates read-only sensors for the PV, Storage
+and Infrastructure packs from a static descriptor table, using exact decimal
+scaling from each quantity's unit and exponent. It uses only the ordinary
+`semanticSnapshot` GraphQL root; there is no native operation, fallback, control
+or write path.
+
+An entity is created only after its first admitted reading (qualified, promoted,
+source-admitted and pack-valid) and is then kept. Identity is the config entry,
+opaque asset ID, pack ID, pack version, fact ID and typed dimensions in
+canonical order, joined with a fixed separator; labels and positions never
+contribute. Facts already exposed by the existing PV and Storage consumers create
+no duplicate entity until the explicit migration.
+
+Zero and false are real values. Withheld readings, loss, a failed refresh or an
+unsupported root make the entity unavailable without changing its identity.
+The path is enabled per config entry by the `semantic_asset_ids` key (an options
+UI follows later); without it nothing is created. The production gateway answers
+unavailable until its provider wiring lands, so no entities appear there yet.
+See [docs/semantic-snapshot-consumer.md](docs/semantic-snapshot-consumer.md).
+
 ## SemReg EVSE current limits
 
 The optional EVSE boundary uses server-verified HTTPS and only `SemanticEVSECurrent` with

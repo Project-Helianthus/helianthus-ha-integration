@@ -1880,5 +1880,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (
         await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
     )
+    setup_snapshot_sensors = hass.data[DOMAIN][entry.entry_id].pop(
+        "semantic_snapshot_sensors_setup", None
+    )
+    if setup_snapshot_sensors is not None:
+        setup_snapshot_sensors()
 
     return True

@@ -13,8 +13,8 @@ or native semantics.
 | --- | --- |
 | Implemented client | The [ordinary GraphQL client](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/graphql.py) sends queries and variables, returns `data`, and raises on GraphQL errors. It does not validate SemReg records or implement a shared-snapshot coordinator. |
 | Existing pack consumers | [PV](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/pv_m2m.py), [Storage](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/storage_m2m.py) and [EVSE](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/evse_m2m.py) consume separate fixed machine-to-machine projections. Their parsers, endpoint configuration and selection rules are not the ordinary M07 contract. |
-| Initial shared-path rollout | Only read-only PV, Storage and Infrastructure sensors are in scope for initial enablement, after implementation and focused acceptance. This document enables no sensors; Infrastructure and the shared adapter remain pending here. |
-| Full INT-15 | All-five-pack decoding, coherent refresh, persistent identity, recovery and integration acceptance remain pending. Existing pack tests are not shared-snapshot runtime parity evidence. |
+| Initial shared-path rollout | Read-only PV, Storage and Infrastructure sensors are created from the shared snapshot through a static descriptor table. They attach to the entry-owned coordinator through a deferred hook, are created only after a first admitted reading, and are enabled only for entries that configure `semantic_asset_ids`; an absent selection creates nothing. Facts already exposed by the existing PV and Storage consumers create no entity here. Focused acceptance covers the sensors; the production gateway answers unavailable until its provider wiring lands. |
+| Full INT-15 | All-five-pack decoding, coherent refresh, recovery and integration acceptance remain pending; persistent identity is implemented for the three sensor packs. Existing pack tests are not shared-snapshot runtime parity evidence. |
 
 The new path uses only ordinary `semanticSnapshot(assetIds: [ID!]!)`. It must
 not fall back to MCP, machine-to-machine pack roots, legacy eBUS tools, native
@@ -218,6 +218,12 @@ reasons include `semantic.read.reason.asset_unknown`, `snapshot_unavailable`,
 `source_unavailable` and `publication_withheld` under the same prefix. A connected
 transport or readable candidate proves neither support nor admission.
 
+The sensor platform defers shared-snapshot discovery until entry setup publishes
+its coordinator after platform forwarding. Only a currently admitted reading
+creates a new sensor; later loss retains that entity and makes it unavailable.
+Display names include the asset and dimension ID/value. The PV active-power and
+export-power limit argument fields have no measurement state class.
+
 New semantic entity identity is scoped by the existing HA config entry and opaque
 `assetId`, plus the complete semantic fact key: `packId`, `packVersion`, `factId`
 and every typed dimension ID/value in canonical order. Never join by label,
@@ -237,7 +243,12 @@ legacy mapping is not a general serializer for a complete M07 `FactKey`. A
 future shared adapter must explicitly reconcile existing descriptors before
 creating entities, preserve approved IDs and reject ambiguous migration matches;
 no new hash format or duplicate replacement entities are authorized here.
-Infrastructure's persistent ID implementation and restart coverage are pending.
+The shared sensors implement this identity for PV, Storage and Infrastructure:
+the entry ID, opaque asset ID, pack ID, pack version, fact ID and every typed
+dimension ID/value in canonical order are each escaped and joined with a fixed
+separator. Label and position never contribute. Facts already exposed by the
+legacy PV and Storage consumers are flagged legacy-covered in the descriptor
+table and create no entity until the explicit migration.
 
 Documentary **Proven**, **Hypothesis** and **Unknown** describe evidence strength,
 separately from machine qualification. M07 defines the required contract; this
@@ -254,9 +265,9 @@ qualification or write permission.
 
 | Pack / device family | Shared contract capability | Initial entity rollout / later owner |
 | --- | --- | --- |
-| `helianthus.pack.pv` / PV-inverter | Decode complete snapshot, evaluation and accounting. | Read-only sensors after shared-adapter acceptance; reconcile current PV descriptors without ID changes. |
-| `helianthus.pack.storage` / Storage-BMS | Same read contract, exact quantities and missing-value semantics. | Read-only sensors after acceptance; reconcile current Storage descriptors. No battery operation dispatch. |
-| `helianthus.pack.infrastructure` / Infrastructure | Same read contract and independent asset revisions. | Read-only sensors after identity persistence and availability acceptance; no lifecycle writes. |
+| `helianthus.pack.pv` / PV-inverter | Decode complete snapshot, evaluation and accounting. | Read-only sensors for facts not already exposed by the legacy PV consumer; legacy-covered facts create no entity until the explicit migration, which must keep current descriptor IDs. |
+| `helianthus.pack.storage` / Storage-BMS | Same read contract, exact quantities and missing-value semantics. | Read-only sensors for facts not already exposed by the legacy Storage consumer; legacy-covered facts create no entity until the explicit migration. No battery operation dispatch. |
+| `helianthus.pack.infrastructure` / Infrastructure | Same read contract and independent asset revisions. | Read-only sensors with persistent identity and retained-unavailable behavior; no lifecycle writes. |
 | `helianthus.pack.evse` / EVSE | Decode and account now in the contract; no implied enabled entity. | Shared-path entity migration is later work; retain existing EVSE consumer/descriptor ownership and controls. |
 | `helianthus.pack.thermal` / Thermal-HVAC | Decode and account without replacing existing semantic owners. | Zone/climate, DHW/water-heater, demand/status/valve and schedule migrations are later work. Keep existing coordinators, IDs, stale grace and guarded writes. |
 
