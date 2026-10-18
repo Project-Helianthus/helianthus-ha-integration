@@ -33,3 +33,18 @@ def hold_last_known_energy_totals(totals: dict[str, Any] | None) -> dict[str, An
     if isinstance(totals, dict):
         return {"energy_totals": deepcopy(totals)}
     return {"energy_totals": None}
+
+
+def _is_missing_field_error(errors: object, fields: list[str]) -> bool:
+    if not isinstance(errors, list):
+        return False
+    for error in errors:
+        message = ""
+        if isinstance(error, dict):
+            message = str(error.get("message", ""))
+        else:
+            message = str(error)
+        for field in fields:
+            if f'Cannot query field "{field}"' in message:
+                return True
+    return False

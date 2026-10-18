@@ -29,6 +29,13 @@ consumer authorization gate before 0.11, when authentication and
 authorization frameworks arrive. Existing qualification and source trust
 safeguards continue to apply independently of user authorization.
 
+The entry-owned coordinator uses the entry's `scan_interval` option (default
+60 seconds, minimum one second). Its public `supported` state is `None` before
+support is established, `True` after a valid response, and `False` when the root
+is missing. An unsupported root stops polling and explicit refresh requests;
+unload and setup create a new coordinator and probe again. Refresh failures retain
+the original exception for diagnostics and log once per support/health transition.
+
 ## One detached update
 
 1. Select 1–32 distinct opaque asset IDs, at most 256 UTF-8 bytes each, according
