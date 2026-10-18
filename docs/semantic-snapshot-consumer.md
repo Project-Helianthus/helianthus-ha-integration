@@ -56,7 +56,12 @@ the original exception for diagnostics and log once per support/health transitio
    order; joins use identities rather than positions.
 4. For every readable asset, require snapshot and every native binding `assetId`
    to match its wrapper `assetId`. Each identity link must belong to that asset
-   and reference a binding in its snapshot, regardless of link state. Active
+   and reference a binding in its snapshot, regardless of link state. Reject
+   duplicate `bindingId` values and duplicate source identity pairs
+   (`sourceId`, `sourceEpochId`) before constructing lookup collections. Every
+   binding in the active snapshot must resolve its complete source identity pair
+   against that snapshot's source descriptors, even when no active candidate
+   references it. Active
    candidates' non-null source epochs must resolve in the snapshot. Non-null
    candidate binding IDs must resolve there with a matching source and epoch;
    any declared candidate epoch and driver generation must match that binding.
@@ -75,7 +80,12 @@ the original exception for diagnostics and log once per support/health transitio
    selections, if consumed, with contract `helianthus.semantic.selection/v1`
    against the same snapshot, vector, candidate,
    evaluation context/digest and policy version; they are presentation-only.
-5. Validate accounting against the captured pack versions. Retain all declared
+5. Require the projection manifest's `targetId` to be
+   `target:semantic-snapshot-read`, `targetVersion` and `mappingRevision` to be
+   `"1"`, and `kernelVersion` to match the snapshot's supported
+   `helianthus.semantic.kernel/v1` contract. A mismatch rejects the whole attempt,
+   preserving prior detached state and leaving the supplied input unchanged.
+   Validate accounting against the captured pack versions. Retain all declared
    item kinds: `fact`, `relation`, `capability` and `operation`. Each requested
    `(kind, itemId)` needs exactly one disposition, with complete `sourceKeys`,
    `outcome`, `loss` and optional `reason`. Do not drop unknown, withheld,

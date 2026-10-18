@@ -69,6 +69,18 @@ def candidate(pack):
     }
 
 
+def source():
+    return {
+        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
+        "protocolId": "protocol.synthetic", "profileId": "profile.synthetic",
+        "profileVersion": "synthetic",
+        "registryEvidence": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+                             "digest": digest("source"), "contract": "synthetic.evidence/v1",
+                             "access": "restricted", "redaction": "metadata_only"},
+        "startedAt": point(), "state": "current", "revision": "1",
+    }
+
+
 def asset(pack):
     aid = "asset:" + pack
     revisions = dict(zip(AXES, ("1", "2", "3", "4", "5")))
@@ -452,7 +464,9 @@ def test_projection_item_kinds_preserve_accounted_siblings(kind, accounting):
 @pytest.mark.parametrize("binding_asset", ["asset:pv", "asset:storage"])
 def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
     data = response()
-    bindings = data["semanticSnapshot"]["assets"][0]["snapshot"]["bindings"]
+    snapshot = data["semanticSnapshot"]["assets"][0]["snapshot"]
+    snapshot["sources"] = [source()]
+    bindings = snapshot["bindings"]
     binding = {"bindingId": "binding:synthetic", "assetId": "asset:pv",
                "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
                "driverGeneration": "1", "state": "current", "revision": "1",
@@ -474,6 +488,7 @@ def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
 def test_identity_links_resolve_within_the_enclosing_asset(state, mutation):
     data = response()
     snapshot = data["semanticSnapshot"]["assets"][0]["snapshot"]
+    snapshot["sources"] = [source()]
     snapshot["bindings"] = [{
         "bindingId": "binding:synthetic", "assetId": "asset:pv",
         "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
@@ -606,6 +621,8 @@ def test_active_candidate_provenance_resolves_within_snapshot(mutation):
         assert out["sourceEpochId"] == c["sourceEpochId"]
         assert out["driverGeneration"] == c["driverGeneration"]
     else:
-        with pytest.raises(SemanticSnapshotError, match="candidate provenance mismatch"):
+        with pytest.raises(SemanticSnapshotError, match=(
+                "binding provenance mismatch" if mutation in ("source", "source_epoch")
+                else "candidate provenance mismatch")):
             normalize(data)
     assert data == before
