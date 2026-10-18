@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import voluptuous as vol
@@ -58,6 +59,23 @@ from .const import (
     DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
 )
+from .semantic_snapshot_coordinator import CONF_SEMANTIC_ASSET_IDS, semantic_asset_ids
+
+
+def _semantic_asset_selection(value: Any) -> list[str]:
+    """Adapt the shared entry validator without interpreting opaque IDs."""
+    return list(semantic_asset_ids(
+        SimpleNamespace(options={CONF_SEMANTIC_ASSET_IDS: value}, data={})
+    ))
+
+
+def _semantic_asset_selector() -> Any:
+    try:
+        from homeassistant.helpers import selector
+
+        return selector.TextSelector(selector.TextSelectorConfig(multiple=True))
+    except (ImportError, AttributeError, TypeError):
+        return _semantic_asset_selection
 
 
 def _pin_selector() -> Any:
@@ -105,6 +123,18 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             from .evse_m2m import validate_evse_m2m_options
 
             submitted = dict(user_input)
+            if CONF_SEMANTIC_ASSET_IDS not in submitted:
+                if CONF_SEMANTIC_ASSET_IDS in self._config_entry.options:
+                    submitted[CONF_SEMANTIC_ASSET_IDS] = self._config_entry.options[
+                        CONF_SEMANTIC_ASSET_IDS
+                    ]
+            if CONF_SEMANTIC_ASSET_IDS in submitted:
+                try:
+                    submitted[CONF_SEMANTIC_ASSET_IDS] = _semantic_asset_selection(
+                        submitted[CONF_SEMANTIC_ASSET_IDS]
+                    )
+                except ValueError:
+                    errors[CONF_SEMANTIC_ASSET_IDS] = "semantic_asset_ids_invalid"
             for key in (
                 CONF_PV_M2M_ENDPOINT,
                 CONF_PV_M2M_ASSET_REF,
@@ -130,7 +160,7 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             pv_valid = validate_pv_m2m_options(submitted)
             storage_valid = validate_storage_m2m_options(submitted)
             evse_valid = validate_evse_m2m_options(submitted)
-            if pv_valid and storage_valid and evse_valid:
+            if pv_valid and storage_valid and evse_valid and not errors:
                 stored_descriptors = self._config_entry.options.get(
                     CONF_PV_M2M_DESCRIPTORS
                 )
@@ -145,12 +175,17 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
                 if evse_descriptors is not None:
                     submitted[CONF_EVSE_M2M_DESCRIPTORS] = evse_descriptors
                 return self.async_create_entry(title="", data=submitted)
-            errors["base"] = "pv_m2m_invalid" if not pv_valid else "semantic_m2m_invalid"
+            if not (pv_valid and storage_valid and evse_valid):
+                errors["base"] = "pv_m2m_invalid" if not pv_valid else "semantic_m2m_invalid"
 
         options = {
             **self._config_entry.options,
             **(user_input or {}),
         }
+        asset_ids = options.get(
+            CONF_SEMANTIC_ASSET_IDS,
+            getattr(self._config_entry, "data", {}).get(CONF_SEMANTIC_ASSET_IDS, []),
+        )
         scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         use_subscriptions = options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
         zone_schedule_helpers = options.get(
@@ -184,6 +219,9 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_SEMANTIC_ASSET_IDS, default=asset_ids
+                ): _semantic_asset_selector(),
                 vol.Required(CONF_SCAN_INTERVAL, default=scan_interval): int,
                 vol.Required(CONF_USE_SUBSCRIPTIONS, default=use_subscriptions): bool,
                 vol.Optional(
