@@ -485,6 +485,10 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
     for binding in snapshot["bindings"]:
         if binding["assetId"] != asset["assetId"]:
             _fail("binding asset mismatch")
+    binding_ids = {binding["bindingId"] for binding in snapshot["bindings"]}
+    for link in snapshot["identityLinks"]:
+        if link["assetId"] != asset["assetId"] or link["bindingId"] not in binding_ids:
+            _fail("identity link mismatch")
     for record in (evaluation, projection, *asset["selections"]):
         if record["snapshotId"] != snapshot["snapshotId"] or record["revisions"] != snapshot["revisions"]:
             _fail("snapshot revision mismatch")
@@ -520,6 +524,24 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         evaluated.add(cid)
     if evaluated != set(candidates):
         _fail("incomplete evaluation")
+    retained = {}
+    for observation in snapshot["retainedObservations"] or ():
+        candidate = observation["candidate"]
+        identity = (candidate["candidateId"], candidate["revision"])
+        if identity in retained:
+            _fail("retained observation mismatch")
+        retained[identity] = observation
+    evaluated_retained = set()
+    for record in evaluation["retainedObservations"] or ():
+        observation = record["observation"]
+        candidate = observation["candidate"]
+        identity = (candidate["candidateId"], candidate["revision"])
+        if (identity in evaluated_retained or identity not in retained
+                or observation != retained[identity]):
+            _fail("retained evaluation mismatch")
+        evaluated_retained.add(identity)
+    if evaluated_retained != set(retained):
+        _fail("retained evaluation mismatch")
     for selection in asset["selections"]:
         cid = selection["selectedCandidate"]
         if (cid not in candidates or selection["candidateRevision"] != candidates[cid]["revision"]

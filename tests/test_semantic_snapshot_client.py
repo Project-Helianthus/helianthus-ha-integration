@@ -466,3 +466,93 @@ def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
         with pytest.raises(SemanticSnapshotError, match="binding asset mismatch"):
             normalize(data)
     assert data == before
+
+
+@pytest.mark.parametrize("state", ("candidate", "qualified", "rejected", "conflict", "withdrawn"))
+@pytest.mark.parametrize("mutation", ("none", "asset", "binding", "both"))
+def test_identity_links_resolve_within_the_enclosing_asset(state, mutation):
+    data = response()
+    snapshot = data["semanticSnapshot"]["assets"][0]["snapshot"]
+    snapshot["bindings"] = [{
+        "bindingId": "binding:synthetic", "assetId": "asset:pv",
+        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
+        "driverGeneration": "1", "state": "current", "revision": "1",
+        "nativeResource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+                           "digest": digest("binding"), "contract": "synthetic.evidence/v1",
+                           "access": "restricted", "redaction": "metadata_only"},
+    }]
+    link = {"assetId": "asset:pv", "bindingId": "binding:synthetic",
+            "state": state, "basis": [], "revision": "1"}
+    snapshot["identityLinks"] = [link]
+    if mutation in ("asset", "both"):
+        link["assetId"] = "asset:storage"
+    if mutation in ("binding", "both"):
+        link["bindingId"] = "binding:absent"
+    before = deepcopy(data)
+    if mutation == "none":
+        assert normalize(data)["assets"][0]["snapshot"]["identityLinks"][0] == {**link, "basis": ()}
+    else:
+        with pytest.raises(SemanticSnapshotError, match="identity link mismatch"):
+            normalize(data)
+    assert data == before
+
+
+@pytest.mark.parametrize("mutation", (
+    "none", "reordered", "revision", "identity", "value", "removal",
+    "missing", "extra", "duplicate", "snapshot_duplicate", "snapshot_null", "evaluation_null",
+))
+def test_retained_evaluation_matches_complete_snapshot_audit_records(mutation):
+    data = response()
+    a = data["semanticSnapshot"]["assets"][0]
+    retained = []
+    for suffix in ("first", "second"):
+        c = candidate("pv")
+        c["candidateId"] = "candidate:historical:" + suffix
+        retained.append({"contract": "helianthus.semantic.retained-observation/v1",
+                         "candidate": c, "removal": "source_retirement"})
+    a["snapshot"]["retainedObservations"] = retained
+    evaluated = [{"observation": deepcopy(r), "freshness": "expired"} for r in retained]
+    a["evaluation"]["retainedObservations"] = evaluated
+    if mutation == "reordered":
+        evaluated.reverse()
+    elif mutation == "revision":
+        evaluated[0]["observation"]["candidate"]["revision"] = "999"
+    elif mutation == "identity":
+        evaluated[0]["observation"]["candidate"]["candidateId"] = "candidate:absent"
+    elif mutation == "value":
+        evaluated[0]["observation"]["candidate"]["value"] = None
+    elif mutation == "removal":
+        evaluated[0]["observation"]["removal"] = "generation_fence"
+    elif mutation == "missing":
+        evaluated.pop()
+    elif mutation == "extra":
+        a["snapshot"]["retainedObservations"] = retained[:1]
+    elif mutation == "duplicate":
+        evaluated.append(deepcopy(evaluated[0]))
+    elif mutation == "snapshot_duplicate":
+        retained.append(deepcopy(retained[0]))
+    elif mutation == "snapshot_null":
+        a["snapshot"]["retainedObservations"] = None
+    elif mutation == "evaluation_null":
+        a["evaluation"]["retainedObservations"] = None
+    before = deepcopy(data)
+    if mutation in ("none", "reordered"):
+        out = normalize(data)["assets"][0]
+        assert len(out["snapshot"]["retainedObservations"]) == 2
+        assert len(out["evaluation"]["facts"]) == 1
+        assert out["evaluation"]["retainedObservations"][0]["freshness"] == "expired"
+    else:
+        with pytest.raises(SemanticSnapshotError, match="retained .*mismatch"):
+            normalize(data)
+    assert data == before
+
+
+@pytest.mark.parametrize("snapshot_empty", (None, []))
+@pytest.mark.parametrize("evaluation_empty", (None, []))
+def test_empty_nullable_retained_arrays_remain_accepted(snapshot_empty, evaluation_empty):
+    data = response()
+    a = data["semanticSnapshot"]["assets"][0]
+    a["snapshot"]["retainedObservations"] = snapshot_empty
+    a["evaluation"]["retainedObservations"] = evaluation_empty
+    assert normalize(data)["assets"][0]["snapshot"]["retainedObservations"] == (
+        None if snapshot_empty is None else ())

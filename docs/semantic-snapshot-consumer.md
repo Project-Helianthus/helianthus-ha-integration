@@ -48,12 +48,18 @@ safeguards continue to apply independently of user authorization.
    required arrays or quality axes. Server array order is canonical, not request
    order; joins use identities rather than positions.
 4. For every readable asset, require snapshot and every native binding `assetId`
-   to match its wrapper `assetId`, and require the same `snapshotId` and complete
-   revision vector in `snapshot`, `evaluation` and `projection`. The vector is
+   to match its wrapper `assetId`. Each identity link must belong to that asset
+   and reference a binding in its snapshot, regardless of link state. Require
+   the same `snapshotId` and complete revision vector in `snapshot`, `evaluation`
+   and `projection`. The vector is
    `semantic`, `identity`, `facts`, `services`, `capabilities`, all decimal
    strings. Different assets may have different vectors: there is no global
    SemReg revision. Join evaluations using both `candidateId` and
-   `candidateRevision` against candidate `candidateId` and `revision`. Validate
+   `candidateRevision` against candidate `candidateId` and `revision`. Retained
+   evaluations must account for each retained snapshot observation exactly once,
+   joining by candidate identity and revision and preserving the complete original
+   observation; their evaluated freshness remains separate from source quality.
+   Retained observations remain separate from active candidates. Validate
    selections, if consumed, against the same snapshot, vector, candidate,
    evaluation context/digest and policy version; they are presentation-only.
 5. Validate accounting against the captured pack versions. Retain all declared
