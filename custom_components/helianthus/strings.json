@@ -47,7 +47,11 @@
         }
       },
       "settings": {
+        "data_description": {
+          "semantic_asset_ids": "Enter up to 32 distinct opaque IDs, each 1–256 UTF-8 bytes. Each list item is one complete ID; spaces, case, commas and newlines are preserved. An empty list clears selection. Changes take effect on entry reload."
+        },
         "data": {
+          "semantic_asset_ids": "Semantic asset IDs",
           "scan_interval": "Scan interval",
           "use_subscriptions": "Use subscriptions",
           "zone_schedule_helpers": "Zone schedule helpers",
@@ -157,6 +161,7 @@
       }
     },
     "error": {
+      "semantic_asset_ids_invalid": "Use a list of up to 32 distinct, nonempty strings, each at most 256 UTF-8 bytes. IDs are preserved exactly.",
       "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
       "semantic_m2m_invalid": "Each enabled SemReg consumer requires its dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
       "invalid_request": "The eeBUS action request was rejected as invalid.",
