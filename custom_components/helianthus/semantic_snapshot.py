@@ -497,6 +497,27 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         if (binding["sourceId"], binding["sourceEpochId"]) not in sources:
             _fail("binding provenance mismatch")
         bindings[binding["bindingId"]] = binding
+    services = {}
+    for service in snapshot["services"]:
+        if service["instanceId"] in services:
+            _fail("duplicate service identity")
+        binding = bindings.get(service["bindingId"])
+        if (binding is None
+                or service["sourceEpochId"] != binding["sourceEpochId"]
+                or service["driverGeneration"] != binding["driverGeneration"]):
+            _fail("service provenance mismatch")
+        services[service["instanceId"]] = service
+    capability_ids = set()
+    for capability in snapshot["capabilities"]:
+        if capability["instanceId"] in capability_ids:
+            _fail("duplicate capability identity")
+        service = services.get(capability["serviceInstance"])
+        if (service is None
+                or capability["bindingId"] != service["bindingId"]
+                or capability["sourceEpochId"] != service["sourceEpochId"]
+                or capability["driverGeneration"] != service["driverGeneration"]):
+            _fail("capability provenance mismatch")
+        capability_ids.add(capability["instanceId"])
     binding_ids = set(bindings)
     source_epochs = {epoch for _, epoch in sources}
     for link in snapshot["identityLinks"]:
@@ -550,6 +571,8 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
         _fail("incomplete evaluation")
     retained = {}
     for observation in snapshot["retainedObservations"] or ():
+        if observation["contract"] != "helianthus.semantic.retained-observation/v1":
+            _fail("unsupported snapshot retained contract")
         candidate = observation["candidate"]
         identity = (candidate["candidateId"], candidate["revision"])
         if identity in retained:
@@ -558,6 +581,8 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
     evaluated_retained = set()
     for record in evaluation["retainedObservations"] or ():
         observation = record["observation"]
+        if observation["contract"] != "helianthus.semantic.retained-observation/v1":
+            _fail("unsupported evaluated retained contract")
         candidate = observation["candidate"]
         identity = (candidate["candidateId"], candidate["revision"])
         if (identity in evaluated_retained or identity not in retained
@@ -585,10 +610,12 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
             _fail("instance asset mismatch")
         applicable.add((record["definition"]["pack"]["id"], record["definition"]["pack"]["version"]))
     packs = [(p["id"], p["version"]) for p in manifest["packVersions"]]
-    if len(set(packs)) != len(packs) or set(packs) != applicable:
+    if len(set(packs)) != len(packs) or not applicable.issubset(set(packs)):
         _fail("pack manifest mismatch")
     if any(("fact", f["key"]["factId"]) not in requested for f in snapshot["facts"]):
         _fail("unaccounted fact")
+    if any(("capability", c["definition"]["id"]) not in requested for c in snapshot["capabilities"]):
+        _fail("unaccounted capability")
     for disposition in projection["dispositions"]:
         if len(disposition["sourceKeys"]) > 32:
             _fail("invalid disposition")
@@ -604,7 +631,7 @@ def _validate_asset(asset: Mapping[str, Any]) -> None:
             _fail("invalid outcome")
         if ((outcome == "exact" and disposition["loss"])
                 or (outcome == "transformed" and not disposition["loss"])
-                or (outcome in ("withheld", "unrepresentable", "unknown") and not disposition["reason"])):
+                or (outcome in ("withheld", "unrepresentable", "unsupported", "unknown") and not disposition["reason"])):
             _fail("invalid loss accounting")
 
 

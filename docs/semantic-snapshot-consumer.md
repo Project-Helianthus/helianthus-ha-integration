@@ -65,6 +65,12 @@ the original exception for diagnostics and log once per support/health transitio
    candidates' non-null source epochs must resolve in the snapshot. Non-null
    candidate binding IDs must resolve there with a matching source and epoch;
    any declared candidate epoch and driver generation must match that binding.
+   Service and capability `instanceId` values must each be unique within their
+   own collection. Every service `bindingId` must resolve to a binding, with
+   equal `sourceEpochId` and `driverGeneration`. Every capability
+   `serviceInstance` must resolve to a service and match that service's
+   `bindingId`, `sourceEpochId` and `driverGeneration`; instance asset ownership
+   is checked independently.
    This check does not require historical retained observations to resolve against
    active descriptors. Require
    the same `snapshotId` and complete revision vector in `snapshot`, `evaluation`
@@ -76,6 +82,9 @@ the original exception for diagnostics and log once per support/health transitio
    evaluations must account for each retained snapshot observation exactly once,
    joining by candidate identity and revision and preserving the complete original
    observation; their evaluated freshness remains separate from source quality.
+   Both retained arrays must use
+   `helianthus.semantic.retained-observation/v1` on every observation before
+   joining, even when two unsupported records otherwise match exactly.
    Retained observations remain separate from active candidates. Validate
    selections, if consumed, with contract `helianthus.semantic.selection/v1`
    against the same snapshot, vector, candidate,
@@ -85,7 +94,15 @@ the original exception for diagnostics and log once per support/health transitio
    `"1"`, and `kernelVersion` to match the snapshot's supported
    `helianthus.semantic.kernel/v1` contract. A mismatch rejects the whole attempt,
    preserving prior detached state and leaving the supplied input unchanged.
-   Validate accounting against the captured pack versions. Retain all declared
+   Validate accounting against the captured pack versions. Manifest
+   `(id, version)` pairs must be unique and include every active fact, service
+   and capability pack reference. This is a subset check: a captured pack with
+   no live instance, such as one with only an accounted withheld operation,
+   remains valid. A missing instance pack or mismatched pack version rejects
+   the whole attempt. Every fact and capability definition present in the
+   snapshot must appear in `requested` and have a matching disposition.
+   `unsupported`, like `withheld`, `unrepresentable` and `unknown`, requires a
+   nonempty reason; absence alone cannot establish non-support. Retain all declared
    item kinds: `fact`, `relation`, `capability` and `operation`. Each requested
    `(kind, itemId)` needs exactly one disposition, with complete `sourceKeys`,
    `outcome`, `loss` and optional `reason`. Do not drop unknown, withheld,
