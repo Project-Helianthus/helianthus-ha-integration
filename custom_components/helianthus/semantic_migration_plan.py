@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
+from decimal import Decimal
 from hashlib import sha256
+import re
 
 
 # The seven conditional rows of the public legacy migration contract.
@@ -78,6 +80,51 @@ def _identity(value):
     return value
 
 
+def _symbol(value):
+    symbol = _fields(value, "namespace token known")
+    _text(symbol["namespace"])
+    if not isinstance(symbol["token"], str) or type(symbol["known"]) is not bool:
+        raise ValueError("invalid reservation symbol")
+
+
+def _integer_string(value, low, high):
+    if (not isinstance(value, str) or len(value) > 20
+            or not re.fullmatch(r"0|-?[1-9][0-9]*", value)
+            or not low <= int(value) <= high):
+        raise ValueError("invalid reservation integer string")
+
+
+def _reservation_value(typed):
+    typed = _fields(typed, "kind quantity boolean text symbol symbols time")
+    arms = ("quantity", "boolean", "text", "symbol", "symbols", "time")
+    kind = typed["kind"]
+    if kind not in arms or [arm for arm in arms if typed[arm] is not None] != [kind]:
+        raise ValueError("invalid reservation typed value")
+    value = typed[kind]
+    if kind == "text":
+        _text(value)
+    elif kind == "boolean":
+        if type(value) is not bool:
+            raise ValueError("invalid reservation boolean")
+    elif kind == "quantity":
+        quantity = _fields(value, "number unit")
+        if not isinstance(quantity["number"], Decimal) or not quantity["number"].is_finite():
+            raise ValueError("invalid reservation quantity")
+        _text(quantity["unit"])
+    elif kind == "symbol":
+        _symbol(value)
+    elif kind == "symbols":
+        if not isinstance(value, (list, tuple)) or not 1 <= len(value) <= 64:
+            raise ValueError("invalid reservation symbols")
+        for symbol in value:
+            _symbol(symbol)
+    else:
+        time = _fields(value, "unixNanoseconds clockId uncertaintyNs")
+        _integer_string(time["unixNanoseconds"], -(2**63), 2**63 - 1)
+        _text(time["clockId"])
+        _integer_string(time["uncertaintyNs"], 0, 2**64 - 1)
+
+
 def _reservation_key(value):
     # Other shared entities may reserve keys outside the candidate row shapes.
     # Validate the identity envelope without interpreting their measurements.
@@ -87,13 +134,10 @@ def _reservation_key(value):
     if not isinstance(key["dimensions"], (list, tuple)):
         raise ValueError("invalid reservation dimensions")
     ids = []
-    arms = ("quantity", "boolean", "text", "symbol", "symbols", "time")
     for dim in key["dimensions"]:
         _fields(dim, "id value")
         ids.append(_text(dim["id"]))
-        typed = _fields(dim["value"], "kind quantity boolean text symbol symbols time")
-        if typed["kind"] not in arms or [arm for arm in arms if typed[arm] is not None] != [typed["kind"]]:
-            raise ValueError("invalid reservation typed value")
+        _reservation_value(dim["value"])
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate reservation dimension")
 
@@ -145,10 +189,11 @@ def _expected(family, asset_ref, key):
 def build_migration_plan(*, entry_id: str, configured_asset: str, family: str,
                          persisted_descriptors: Sequence[Mapping],
                          registry_inventory: Sequence[Mapping],
-                         requests: Sequence[Mapping]) -> dict:
+                         requests: Iterable[Mapping]) -> dict:
     """Return detached proposals/rejections in request order; never write state.
 
-    Requests use the normalized GraphQL FactKey and explicit entry/asset context.
+    Requests must be iterable (None is outside the contract). They use the
+    normalized GraphQL FactKey and explicit entry/asset context.
     Inventory is a complete caller-supplied reservation view, including disabled
     records and existing shared targets. Malformed inventory rejects all requests.
     Each accepted proposal retains the entire old registry snapshot and descriptor.

@@ -1,6 +1,7 @@
 """Synthetic descriptor/registry proposals, without Home Assistant or I/O."""
 
 from copy import deepcopy
+from decimal import Decimal
 from hashlib import sha256
 from types import MappingProxyType
 
@@ -151,12 +152,8 @@ def test_unknown_identity_member_fails_closed(path):
 
 
 @pytest.mark.parametrize("row", WITHHELD)
-def test_all_seven_withheld_rows_rejected_even_when_observations_equal(row):
+def test_all_seven_withheld_rows_keep_withheld_reason(row):
     data = fixture(row)
-    # Observations are intentionally not planner input: equal values cannot
-    # change the structural disposition or erase native loss/provenance.
-    old_value = new_value = 0
-    assert old_value == new_value
     result = reject(data)
     assert result["rejected"] == [{"index": 0, "reason": "withheld row"}]
 
@@ -323,3 +320,150 @@ def test_inventory_retains_unrelated_multidimension_shared_reservations():
     result = build_migration_plan(**data)
     assert not result["rejected"]
     assert len(result["proposed"]) == 1
+
+
+ARMS = ("quantity", "boolean", "text", "symbol", "symbols", "time")
+SYMBOL = {"namespace": "symbol.synthetic", "token": "", "known": False}
+TIME = {"unixNanoseconds": "0", "clockId": "clock.synthetic", "uncertaintyNs": "0"}
+VALID_VALUES = (
+    ("text", "synthetic"), ("boolean", False),
+    ("quantity", {"number": Decimal(0), "unit": "unit.synthetic"}),
+    ("symbol", SYMBOL), ("symbols", [SYMBOL]), ("symbols", (SYMBOL,)),
+    ("time", TIME),
+    ("time", {**TIME, "unixNanoseconds": str(-(2**63)), "uncertaintyNs": str(2**64 - 1)}),
+    ("time", {**TIME, "unixNanoseconds": str(2**63 - 1)}),
+)
+
+
+def reservation_fixture(kind="text", value="synthetic"):
+    data = fixture()
+    # One admissible candidate and a withheld sibling: global errors must reject
+    # both with the inventory reason, rather than preserving a partial proposal.
+    invalid = deepcopy(data["requests"][0])
+    invalid["key"]["factId"] = "pv.energy.generated"
+    data["requests"].append(invalid)
+    other = deepcopy(data["registry_inventory"][0])
+    other.update(entry_id="entry-other", asset_ref="asset:other",
+                 unique_id="other-shared", entity_id="sensor.other",
+                 device_id="device:other", device_identifier=["helianthus", "other"])
+    other["semantic_key"] = {
+        "packId": "pack.synthetic", "packVersion": "1.0.0", "factId": "fact.synthetic",
+        "dimensions": [{"id": "dimension.synthetic", "value": {
+            **dict.fromkeys(ARMS), "kind": kind, kind: deepcopy(value)}}],
+    }
+    data["registry_inventory"].append(other)
+    return data, other
+
+
+def assert_global_rejection(data):
+    before = deepcopy(data)
+    assert build_migration_plan(**data) == {
+        "proposed": [], "rejected": [
+            {"index": 0, "reason": "invalid inventory or configuration"},
+            {"index": 1, "reason": "invalid inventory or configuration"},
+        ],
+    }
+    assert data == before
+
+
+@pytest.mark.parametrize("kind,value", VALID_VALUES)
+def test_normalized_reservation_active_values_preserve_valid_candidate(kind, value):
+    data, _ = reservation_fixture(kind, value)
+    result = build_migration_plan(**data)
+    assert len(result["proposed"]) == 1
+    assert result["rejected"] == [{"index": 1, "reason": "withheld row"}]
+
+
+BAD_VALUES = (
+    [("text", v) for v in (7, False, "", [], {})]
+    + [("boolean", v) for v in (0, 1, "false", [], {})]
+    + [("quantity", v) for v in (0, "0", {}, {"number": Decimal(0)},
+        {"number": Decimal(0), "unit": "unit.synthetic", "extra": False})]
+    + [("quantity", {"number": v, "unit": "unit.synthetic"})
+       for v in (0, False, 0.0, "0", {"coefficient": "0", "exponent10": 0},
+                 Decimal("NaN"), Decimal("Infinity"))]
+    + [("quantity", {"number": Decimal(0), "unit": v}) for v in ("", 7)]
+    + [("symbol", v) for v in ("synthetic", {}, {**SYMBOL, "extra": False})]
+    + [("symbol", {**SYMBOL, field: v}) for field, v in (
+        ("namespace", ""), ("namespace", 7), ("token", 7), ("known", 0), ("known", "false"))]
+    + [("symbol", {k: v for k, v in SYMBOL.items() if k != field}) for field in SYMBOL]
+    + [("symbols", v) for v in ("synthetic", {}, [], (), [SYMBOL] * 65, [False],
+                                [{**SYMBOL, "namespace": ""}],
+                                [{**SYMBOL, "token": 7}], [{**SYMBOL, "known": 0}])]
+    + [("time", v) for v in ("0", {}, {**TIME, "extra": False})]
+    + [("time", {k: v for k, v in TIME.items() if k != field}) for field in TIME]
+    + [("time", {**TIME, field: v}) for field, v in (
+        ("clockId", ""), ("clockId", 7),
+        ("unixNanoseconds", 0), ("unixNanoseconds", False),
+        ("unixNanoseconds", "00"), ("unixNanoseconds", "-0"),
+        ("unixNanoseconds", str(-(2**63) - 1)), ("unixNanoseconds", str(2**63)),
+        ("uncertaintyNs", 0), ("uncertaintyNs", "-1"),
+        ("uncertaintyNs", "01"), ("uncertaintyNs", str(2**64)))])
+
+
+@pytest.mark.parametrize("kind,value", BAD_VALUES)
+def test_malformed_unrelated_active_value_rejects_every_request(kind, value):
+    data, _ = reservation_fixture(kind, value)
+    assert_global_rejection(data)
+
+
+@pytest.mark.parametrize("kind", ARMS)
+@pytest.mark.parametrize("arm", ARMS)
+def test_null_active_or_nonnull_inactive_reservation_arm_rejects_every_request(kind, arm):
+    value = next(value for candidate, value in VALID_VALUES if candidate == kind)
+    data, other = reservation_fixture(kind, value)
+    typed = other["semantic_key"]["dimensions"][0]["value"]
+    typed[arm] = None if arm == kind else False
+    assert_global_rejection(data)
+
+
+@pytest.mark.parametrize("path,field", [
+    ((), "packId"), ((), "packVersion"), ((), "factId"), ((), "dimensions"),
+    (("dimensions", 0), "id"), (("dimensions", 0), "value"),
+    *(((("dimensions", 0, "value"), field)) for field in ("kind", *ARMS)),
+])
+@pytest.mark.parametrize("mutation", ["missing", "type", "extra"])
+def test_malformed_unrelated_key_identity_rejects_every_request(path, field, mutation):
+    data, other = reservation_fixture()
+    record = at(other["semantic_key"], path)
+    if mutation == "missing":
+        del record[field]
+    elif mutation == "extra":
+        record["unexpected"] = False
+    else:
+        record[field] = 7
+    assert_global_rejection(data)
+
+
+def test_duplicate_unrelated_reservation_dimension_rejects_every_request():
+    data, other = reservation_fixture()
+    dims = other["semantic_key"]["dimensions"]
+    duplicate = deepcopy(dims[0])
+    duplicate["value"]["text"] = "different-value-same-id"
+    dims.append(duplicate)
+    assert_global_rejection(data)
+
+
+@pytest.mark.parametrize("identifier", [None, "ab", {}, [], ["one"], ["one", "two", "three"],
+    ["", "two"], ["one", ""], [7, "two"], ["one", 7], [False, "two"], ["one", False]])
+def test_malformed_unrelated_device_identifier_rejects_every_request(identifier):
+    data, other = reservation_fixture()
+    other["device_identifier"] = identifier
+    assert_global_rejection(data)
+
+
+@pytest.mark.parametrize("path,field,value", [
+    ((), "packId", "pack.other"), ((), "packVersion", "2.0.0"),
+    ((), "factId", "fact.other"), (("dimensions", 0), "id", "dimension.other"),
+    (("dimensions", 0, "value"), "text", "phase:L2"),
+])
+def test_each_reservation_key_identity_component_prevents_false_collision(path, field, value):
+    data = fixture()
+    other = deepcopy(data["registry_inventory"][0])
+    other.update(unique_id="other-shared", entity_id="sensor.other")
+    other["semantic_key"] = deepcopy(data["requests"][0]["key"])
+    at(other["semantic_key"], path)[field] = value
+    data["registry_inventory"].append(other)
+    result = build_migration_plan(**data)
+    assert len(result["proposed"]) == 1
+    assert result["rejected"] == []
