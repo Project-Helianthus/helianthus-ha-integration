@@ -42,8 +42,16 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
-from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
+from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+
+
+def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
+    """Retain exact validated IDs, or one bounded invalid-selection sentinel."""
+    try:
+        return semantic_asset_ids(entry)
+    except ValueError:
+        return None
 
 
 def _semantic_inventory_became_available(
@@ -1823,6 +1831,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "evse_m2m_coordinator": evse_m2m_coordinator,
         "evse_m2m_boundary": evse_m2m_boundary,
         "evse_m2m_option_signature": evse_m2m_option_signature(entry.options),
+        "semantic_asset_selection_signature": _semantic_asset_selection_signature(entry),
         "graphql_client": client,
         "subscription_task": subscription_task,
         "unsub_listeners": unsub_listeners,
@@ -1859,6 +1868,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             == storage_m2m_option_signature(updated_entry.options)
             and runtime.get("evse_m2m_option_signature")
             == evse_m2m_option_signature(updated_entry.options)
+            and runtime.get("semantic_asset_selection_signature")
+            == _semantic_asset_selection_signature(updated_entry)
         ):
             return
         await updated_hass.config_entries.async_reload(updated_entry.entry_id)

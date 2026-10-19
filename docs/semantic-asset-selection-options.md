@@ -29,11 +29,22 @@ saved options and leaves data fallback effective when the key is absent.
 Existing PV, Storage and EVSE settings, optional client certificate/key pairing,
 and stored descriptors retain their current behavior.
 
-A changed selection takes effect on entry reload. Automatic reload on selection
-changes and background-task registration remain M32 acceptance; this slice adds
-neither a reload listener nor a config-flow field. It changes no entity unique
-IDs, native provenance, retained last-known-good state, qualification or
-fail-closed admission. Selection itself proves neither availability nor support.
+Saving a changed effective selection automatically reloads that config entry,
+so polling for the previous selection cannot survive the reload. Adding or
+removing IDs, clearing the list, reordering IDs, or changing their exact UTF-8
+bytes counts as a change. The comparison uses options when the key is present
+(including `[]`), otherwise data. An unchanged valid selection or an unrelated
+option save does not trigger a selection reload; PV, Storage and EVSE reload
+settings retain their existing behavior.
+
+If a selection becomes invalid outside the options form, the listener also
+reloads the entry; existing validation then disables shared-selection polling.
+Invalid selections share a bounded sentinel rather than retaining rejected
+values, so repeated invalid-to-invalid updates alone do not reload. Selection
+comparison never logs IDs. Background-task registration and live qualification
+are outside this change. This slice changes no entity unique IDs, native provenance,
+retained last-known-good state, qualification or fail-closed admission.
+Selection itself proves neither availability nor support.
 
 The control adds no protocol transport or decoding, MCP fallback, GraphQL
 payload change, principal or credential gate. Legacy eBUS MCP compatibility and
@@ -42,7 +53,8 @@ remains driver-owned. No stability is promised before Helianthus 1.0;
 authentication and authorization remain 0.11 work, with no new authorization
 gate before 0.9. Existing trust and admission checks remain in force.
 
-Synthetic focused tests establish only UI configuration and persistence behavior.
+Synthetic focused tests establish UI configuration, persistence and reload
+listener behavior with fake Home Assistant entry management.
 **Proven**, **Hypothesis** and **Unknown** describe evidence strength separately
 from qualification, acquisition and admission. Live behavior is **Unknown**;
 this page claims no runtime, transport, hardware or physical acceptance.
