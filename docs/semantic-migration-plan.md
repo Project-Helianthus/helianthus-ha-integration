@@ -24,7 +24,11 @@ has explicit keyword arguments:
 | `entry_id`, `configured_asset`, `family` | Nonempty entry and configured opaque asset; family is `pv` or `storage`. Call once per configured family/asset. |
 | `persisted_descriptors` | Sequence of loaded persisted descriptor mappings for that entry/configured asset. Each has exactly `fact_id`, `dimension: {kind, value}`, and saved `unique_id`. The caller must establish the descriptor store's entry/asset context; this function does not load options or accept discovery as persistence evidence. |
 | `registry_inventory` | Complete caller-supplied reservation inventory, including disabled/hidden entries and existing shared entities. Each record has exactly `entry_id`, `asset_ref`, `unique_id`, `entity_id`, `device_id`, `device_identifier`, `metadata`, `settings`, `semantic_key`. It is an explicit planning snapshot, not an HA registry object or a new persisted format. |
-| `requests` | Sequence of mappings with exactly `entry_id`, `asset_ref`, `key`. Each key has exactly `packId`, `packVersion`, `factId`, `dimensions`; one dimension with exactly `id`, `value`. |
+| `requests` | Required iterable of mappings with exactly `entry_id`, `asset_ref`, `key`. Each key has exactly `packId`, `packVersion`, `factId`, `dimensions`; one dimension with exactly `id`, `value`. |
+
+`requests` must be iterable; `None` and other non-iterable arguments are outside
+the contract and are not converted into structured rejections. This precondition
+does not define persistence or continuity behavior.
 
 The key's typed `value` uses the normalized shared GraphQL shape: `kind: text`,
 nonempty `text`, and explicit null `quantity`, `boolean`, `symbol`, `symbols`,
@@ -47,7 +51,22 @@ already reserved shared target.
 
 Inventory may also reserve unrelated shared keys with other dimension counts or
 typed arms. Their complete normalized identity envelopes are retained for
-comparison; their values do not supply candidate equivalence. Do not silently
+comparison; their values do not supply candidate equivalence. Each dimension ID
+must be nonempty and unique within its key. Exactly the named typed arm is
+non-null; all inactive arms are required and null. Active text is nonempty text,
+boolean is a bool (not an integer), and quantity is exactly `{number, unit}` with
+a finite normalized `Decimal` number and nonempty unit. Raw coefficient/exponent
+records, floats and numeric strings are not normalized quantities. Symbol is
+exactly `{namespace, token, known}` with nonempty namespace, string token and
+bool `known`; empty tokens and `known: false` are preserved. Symbols is a list
+or tuple of 1–64 such symbols. Time is exactly
+`{unixNanoseconds, clockId, uncertaintyNs}` with nonempty clock ID and canonical
+decimal strings bounded to Int64 and Uint64 respectively. No arm is coerced.
+These are consumer checks of the existing
+[normalized GraphQL typed-value contract](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/docs/semantic-snapshot-consumer.md).
+An unrelated malformed active value, non-null inactive arm, duplicate dimension
+ID or malformed two-element nonempty-string device identifier rejects every
+request, including otherwise valid candidates. Do not silently
 filter reservations to obtain a proposal. Missing or malformed inventory
 rejects all requests; an empty inventory cannot establish an installed entity.
 The planner cannot verify that a caller has supplied the complete registry or
