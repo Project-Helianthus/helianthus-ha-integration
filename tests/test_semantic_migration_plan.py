@@ -326,8 +326,10 @@ ARMS = ("quantity", "boolean", "text", "symbol", "symbols", "time")
 SYMBOL = {"namespace": "symbol.synthetic", "token": "", "known": False}
 TIME = {"unixNanoseconds": "0", "clockId": "clock.synthetic", "uncertaintyNs": "0"}
 VALID_VALUES = (
-    ("text", "synthetic"), ("boolean", False),
+    ("text", "synthetic"), ("text", ""), ("boolean", False),
     ("quantity", {"number": Decimal(0), "unit": "unit.synthetic"}),
+    ("quantity", {"number": Decimal("10"), "unit": "unit.synthetic"}),
+    ("quantity", {"number": Decimal("1E+30"), "unit": "unit.synthetic"}),
     ("symbol", SYMBOL), ("symbols", [SYMBOL]), ("symbols", (SYMBOL,)),
     ("time", TIME),
     ("time", {**TIME, "unixNanoseconds": str(-(2**63)), "uncertaintyNs": str(2**64 - 1)}),
@@ -375,13 +377,13 @@ def test_normalized_reservation_active_values_preserve_valid_candidate(kind, val
 
 
 BAD_VALUES = (
-    [("text", v) for v in (7, False, "", [], {})]
+    [("text", v) for v in (7, False, [], {})]
     + [("boolean", v) for v in (0, 1, "false", [], {})]
     + [("quantity", v) for v in (0, "0", {}, {"number": Decimal(0)},
         {"number": Decimal(0), "unit": "unit.synthetic", "extra": False})]
     + [("quantity", {"number": v, "unit": "unit.synthetic"})
        for v in (0, False, 0.0, "0", {"coefficient": "0", "exponent10": 0},
-                 Decimal("NaN"), Decimal("Infinity"))]
+                 Decimal("NaN"), Decimal("sNaN"), Decimal("Infinity"), Decimal("-Infinity"))]
     + [("quantity", {"number": Decimal(0), "unit": v}) for v in ("", 7)]
     + [("symbol", v) for v in ("synthetic", {}, {**SYMBOL, "extra": False})]
     + [("symbol", {**SYMBOL, field: v}) for field, v in (
@@ -456,6 +458,7 @@ def test_malformed_unrelated_device_identifier_rejects_every_request(identifier)
     ((), "packId", "pack.other"), ((), "packVersion", "2.0.0"),
     ((), "factId", "fact.other"), (("dimensions", 0), "id", "dimension.other"),
     (("dimensions", 0, "value"), "text", "phase:L2"),
+    (("dimensions", 0, "value"), "text", ""),
 ])
 def test_each_reservation_key_identity_component_prevents_false_collision(path, field, value):
     data = fixture()
@@ -467,3 +470,13 @@ def test_each_reservation_key_identity_component_prevents_false_collision(path, 
     result = build_migration_plan(**data)
     assert len(result["proposed"]) == 1
     assert result["rejected"] == []
+
+
+@pytest.mark.parametrize("path,field", [
+    ((), "packId"), ((), "packVersion"), ((), "factId"),
+    (("dimensions", 0), "id"),
+])
+def test_empty_reservation_identity_still_rejects_global_inventory(path, field):
+    data, other = reservation_fixture("text", "")
+    at(other["semantic_key"], path)[field] = ""
+    assert_global_rejection(data)
