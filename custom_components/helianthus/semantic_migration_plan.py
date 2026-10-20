@@ -102,7 +102,8 @@ def _reservation_value(typed):
         raise ValueError("invalid reservation typed value")
     value = typed[kind]
     if kind == "text":
-        _text(value)
+        if not isinstance(value, str):
+            raise ValueError("invalid reservation text")
     elif kind == "boolean":
         if type(value) is not bool:
             raise ValueError("invalid reservation boolean")

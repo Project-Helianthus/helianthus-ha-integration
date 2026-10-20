@@ -53,10 +53,16 @@ Inventory may also reserve unrelated shared keys with other dimension counts or
 typed arms. Their complete normalized identity envelopes are retained for
 comparison; their values do not supply candidate equivalence. Each dimension ID
 must be nonempty and unique within its key. Exactly the named typed arm is
-non-null; all inactive arms are required and null. Active text is nonempty text,
-boolean is a bool (not an integer), and quantity is exactly `{number, unit}` with
-a finite normalized `Decimal` number and nonempty unit. Raw coefficient/exponent
-records, floats and numeric strings are not normalized quantities. Symbol is
+non-null; all inactive arms are required and null. Active text is a string,
+including empty text where the shared pack permits it; this does not relax
+nonempty candidate text, identity fields, symbol namespaces or units. Boolean
+is a bool (not an integer), and quantity is exactly `{number, unit}` with
+a finite in-memory `Decimal` number and nonempty unit. This is a structural
+check: `Decimal("10")` and `Decimal("1E+30")` are accepted. A decoded/in-memory
+Decimal does not prove canonical coefficient/exponent wire encoding. The shared
+wire decoder remains stricter: it validates canonical coefficients, exponent
+range -18 through 18, and zero coefficient only with exponent 0. Raw
+coefficient/exponent records, floats and numeric strings are not accepted here. Symbol is
 exactly `{namespace, token, known}` with nonempty namespace, string token and
 bool `known`; empty tokens and `known: false` are preserved. Symbols is a list
 or tuple of 1–64 such symbols. Time is exactly
