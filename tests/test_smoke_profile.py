@@ -1218,27 +1218,27 @@ def test_startup_http_reader_header_limit_is_inclusive_and_preserves_coalesced_b
 
 
 @pytest.fixture
-def u08_dns_context(monkeypatch):
-    def install(*, ready, response, alive):
+def fake_startup_dns_context(monkeypatch):
+    def install(*, ready, response, alive, startup_jump=7.0, expected_poll_timeout=3.0):
         events = []
-        class U08Clock:
+        class ResolverClock:
             value = 10.0
 
             def __call__(self):
                 return self.value
 
-        clock = U08Clock()
+        clock = ResolverClock()
         deadline = 20.0
 
-        class U08SendPipe:
+        class FakeSendPipe:
             def close(self):
                 events.append("send.close")
 
-        class U08ReceivePipe:
+        class FakeReceivePipe:
             def poll(self, timeout):
                 events.append(("poll", timeout))
                 assert timeout > 0
-                assert timeout == 3.0
+                assert timeout == expected_poll_timeout
                 clock.value = deadline - 0.001 if ready else deadline
                 return ready
 
@@ -1251,14 +1251,14 @@ def u08_dns_context(monkeypatch):
             def close(self):
                 events.append("receive.close")
 
-        send = U08SendPipe()
-        receive = U08ReceivePipe()
+        send = FakeSendPipe()
+        receive = FakeReceivePipe()
 
-        class U08Process:
+        class FakeResolverProcess:
             def start(self):
                 events.append("start")
-                # Simulate startup consuming most of the original budget.
-                clock.value = 17.0
+                # Advance only the fake clock to model process startup cost.
+                clock.value += startup_jump
 
             def is_alive(self):
                 events.append("is_alive")
@@ -1270,7 +1270,7 @@ def u08_dns_context(monkeypatch):
             def join(self):
                 events.append("join")
 
-        class U08Context:
+        class FakeResolverContext:
             def Pipe(self, *, duplex):
                 assert duplex is False
                 events.append("pipe")
@@ -1281,12 +1281,12 @@ def u08_dns_context(monkeypatch):
                 assert args == (send, "resolver.example", 80)
                 assert daemon is True
                 events.append("process")
-                return U08Process()
+                return FakeResolverProcess()
 
         def get_context(method):
             assert method == "spawn"
             events.append("context")
-            return U08Context()
+            return FakeResolverContext()
 
         remaining_budget = smoke_profile._remaining_http_budget
         monkeypatch.setattr(
@@ -1299,30 +1299,50 @@ def u08_dns_context(monkeypatch):
     return install
 
 
-def test_startup_dns_resolution_is_killed_at_the_deadline(u08_dns_context) -> None:
-    deadline, clock, events = u08_dns_context(ready=False, response=None, alive=True)
+@pytest.mark.parametrize(
+    ("startup_jump", "expected_poll_timeout"),
+    [(7.0, 3.0), (2.0, 8.0)],
+    ids=["seven-unit-startup", "two-unit-startup"],
+)
+def test_startup_dns_resolution_is_killed_at_the_deadline(
+    fake_startup_dns_context, startup_jump, expected_poll_timeout,
+) -> None:
+    deadline, clock, events = fake_startup_dns_context(
+        ready=False, response=None, alive=True,
+        startup_jump=startup_jump, expected_poll_timeout=expected_poll_timeout,
+    )
     with pytest.raises(TimeoutError, match="^DNS resolution exceeded deadline$"):
         smoke_profile._resolve_http_addresses("resolver.example", 80, deadline)
     assert clock.value == deadline
     assert events == [
-        "context", "pipe", "process", "start", "send.close", ("poll", 3.0),
+        "context", "pipe", "process", "start", "send.close", ("poll", expected_poll_timeout),
         "receive.close", "is_alive", "terminate", "join",
     ]
 
 
-def test_startup_dns_resolution_ready_just_within_budget(u08_dns_context) -> None:
+@pytest.mark.parametrize(
+    ("startup_jump", "expected_poll_timeout"),
+    [(7.0, 3.0), (2.0, 8.0)],
+    ids=["seven-unit-startup", "two-unit-startup"],
+)
+def test_startup_dns_resolution_ready_just_within_budget(
+    fake_startup_dns_context, startup_jump, expected_poll_timeout,
+) -> None:
     addresses = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.1", 80))]
-    deadline, clock, events = u08_dns_context(ready=True, response=("ok", addresses), alive=False)
+    deadline, clock, events = fake_startup_dns_context(
+        ready=True, response=("ok", addresses), alive=False,
+        startup_jump=startup_jump, expected_poll_timeout=expected_poll_timeout,
+    )
     assert smoke_profile._resolve_http_addresses("resolver.example", 80, deadline) == addresses
     assert clock.value == deadline - 0.001
     assert events == [
-        "context", "pipe", "process", "start", "send.close", ("poll", 3.0),
+        "context", "pipe", "process", "start", "send.close", ("poll", expected_poll_timeout),
         "recv", "receive.close", "is_alive", "join",
     ]
 
 
-def test_startup_dns_resolution_resolver_error(u08_dns_context) -> None:
-    deadline, _, events = u08_dns_context(
+def test_startup_dns_resolution_resolver_error(fake_startup_dns_context) -> None:
+    deadline, _, events = fake_startup_dns_context(
         ready=True, response=("error", "synthetic resolver failure"), alive=False,
     )
     with pytest.raises(RuntimeError, match="^DNS resolution failed: synthetic resolver failure$"):
