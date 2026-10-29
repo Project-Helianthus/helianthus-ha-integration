@@ -1,5 +1,9 @@
 """Tests for label normalization helpers."""
 
+from copy import deepcopy
+
+import pytest
+
 from custom_components.helianthus import (
     DOMAIN,
     _bus_identifier_tokens_for_entry,
@@ -420,3 +424,128 @@ def test_canonical_bus_model_name_preserves_unrecognized_annotation_text() -> No
         )
         assert _canonical_bus_display_name(device) == "ecoTEC plus"
         assert _stable_bus_identity_model(device) == "VUW"
+
+
+_UNAVAILABLE_PRESENTATION = (None, "", "  ", " unknown ", " NONE ", "NuLl",
+                             " unknown device ", "unknown\tdevice", "unknown\u2003device",
+                             42, False, ["MODEL-A"], {"label": "MODEL-A"})
+
+
+@pytest.mark.parametrize("device_id,identity", [
+    ("BASV0", "VRC 720f/2"), ("VR_71", "VR 71"),
+    ("BAI00", "VUW"), ("NETX3", "VR940f"),
+])
+@pytest.mark.parametrize("field", ["display_name", "product_family", "product_model", "part_number"])
+@pytest.mark.parametrize("value", [" LABEL-B ", "unknown-model", *_UNAVAILABLE_PRESENTATION])
+def test_presentation_fields_independently_preserve_family_identity(device_id, identity, field, value) -> None:
+    # Catches family-first naming, placeholder/stringification acceptance and part duplication.
+    device = {"device_id": device_id, "display_name": "DISPLAY-A",
+              "product_family": "FAMILY-A", "product_model": "MODEL-A", "part_number": "PART-A"}
+    device[field] = value
+    before = deepcopy(device)
+    usable = isinstance(value, str) and value.strip() in {"LABEL-B", "unknown-model"}
+    selected = value.strip() if usable else None
+    expected_name = (selected or "FAMILY-A") if field == "display_name" else "DISPLAY-A"
+    expected_base = (selected or identity) if field == "product_model" else "MODEL-A"
+    expected_part = selected if field == "part_number" else "PART-A"
+    clause = f"part: {expected_part}; " if expected_part else ""
+    code = "BASV" if device_id == "BASV0" else device_id
+    assert _canonical_bus_display_name(device) == expected_name
+    assert _canonical_bus_model_name(device) == f"{expected_base} ({clause}eBUS: {code})"
+    assert _stable_bus_identity_model(device) == identity
+    assert device == before
+
+
+@pytest.mark.parametrize("field", ["display_name", "product_family", "product_model", "part_number"])
+@pytest.mark.parametrize("value", [" LABEL-B ", "unknown-model", *_UNAVAILABLE_PRESENTATION])
+def test_missing_and_independent_fallback_fields(field, value) -> None:
+    device = {field: value}
+    before = deepcopy(device)
+    usable = isinstance(value, str) and value.strip() in {"LABEL-B", "unknown-model"}
+    selected = value.strip() if usable else None
+    assert _canonical_bus_display_name({}) is None
+    assert _canonical_bus_model_name({}) == "unknown (eBUS: UNKNOWN)"
+    assert _canonical_bus_display_name(device) == (selected if field in {"display_name", "product_family"} else None)
+    base = selected if field == "product_model" and selected else "unknown"
+    clause = f"part: {selected}; " if field == "part_number" and selected else ""
+    assert _canonical_bus_model_name(device) == f"{base} ({clause}eBUS: UNKNOWN)"
+    assert device == before
+
+
+@pytest.mark.parametrize("value", [" BASE-B ", "unknown-model", *_UNAVAILABLE_PRESENTATION[:9]])
+@pytest.mark.parametrize("field", ["base", "embedded_part", "explicit_part", "code", "device_id"])
+def test_recognized_annotation_fields_are_independently_usable(field, value) -> None:
+    # Each dimension has valid controls; explicit parts and authoritative codes win.
+    fields = {"base": "MODEL-A", "embedded_part": "PART-A", "code": "CODE-A"}
+    device = {}
+    if field in fields:
+        fields[field] = "" if value is None else value
+    elif field == "explicit_part":
+        device["part_number"] = value
+    else:
+        device["device_id"] = value
+    device["product_model"] = f"{fields['base']} (part: {fields['embedded_part']}; eBUS: {fields['code']})"
+    before = deepcopy(device)
+    usable = isinstance(value, str) and value.strip() in {"BASE-B", "unknown-model"}
+    selected = value.strip() if usable else None
+    base = (selected or "unknown") if field == "base" else "MODEL-A"
+    part = selected if field == "embedded_part" else "PART-A"
+    if field == "explicit_part":
+        part = selected or "PART-A"
+    code = (selected or "UNKNOWN").upper() if field == "code" else "CODE-A"
+    if field == "device_id" and selected:
+        code = selected.upper()
+    clause = f"part: {part}; " if part else ""
+    # Empty bases do not match the existing grammar and remain opaque text.
+    if field == "base" and value in (None, "", "  "):
+        base = device["product_model"].strip()
+        part = None
+        code = "UNKNOWN"
+        clause = ""
+    assert _canonical_bus_model_name(device) == f"{base} ({clause}eBUS: {code})"
+    assert device == before
+
+
+@pytest.mark.parametrize("value", [None, "", " unknown ", 42, False, " CODE-B "])
+def test_authoritative_device_code_fallback_without_model(value) -> None:
+    device = {"device_id": value}
+    expected = "CODE-B (eBUS: CODE-B)" if value == " CODE-B " else "unknown (eBUS: UNKNOWN)"
+    assert _canonical_bus_model_name(device) == expected
+
+
+def test_known_family_fallbacks_filter_annotation_components_separately() -> None:
+    assert _canonical_bus_display_name({"device_id": "BAI00", "display_name": "Unknown", "product_family": 42}) == "ecoTEC plus"
+    assert _canonical_bus_model_name({"device_id": "BAI00", "product_model": "Unknown (part: PART-A; eBUS: CODE-A)"}) == "VUW (part: PART-A; eBUS: BAI00)"
+    assert _canonical_bus_model_name({"product_model": "Unknown (part: null; eBUS: VR_71)"}) == "VR 71 (eBUS: VR_71)"
+
+
+@pytest.mark.parametrize("field", ["display_name", "product_family", "product_model", "part_number"])
+@pytest.mark.parametrize("value", [None, " MODEL-B ", " unknown ", 42])
+def test_unmapped_identity_keeps_preexisting_model_enrichment_behavior(field, value) -> None:
+    device = {"device_id": "CODE-A", "product_model": "MODEL-A"}
+    device[field] = value
+    before = deepcopy(device)
+    expected = (str(value).strip() if value is not None else "CODE-A") if field == "product_model" else "MODEL-A"
+    _canonical_bus_display_name(device)
+    _canonical_bus_model_name(device)
+    assert _stable_bus_identity_model(device) == expected
+    assert device == before
+
+
+def test_generic_cleaner_still_stringifies_and_preserves_placeholders() -> None:
+    assert _clean_label(42) == "42"
+    assert _clean_label(" Unknown ") == "Unknown"
+
+
+@pytest.mark.parametrize("device_id,fallback", [
+    ("BASV0", "sensoCOMFORT RF"), ("VR_71", "FM5 Control Centre"),
+    ("BAI00", "ecoTEC plus"), ("NETX3", "myVaillant Connect"),
+])
+@pytest.mark.parametrize("value", [" FAMILY-B ", "unknown-model", *_UNAVAILABLE_PRESENTATION])
+def test_gateway_family_precedes_known_name_with_unavailable_display(device_id, fallback, value) -> None:
+    # Catches dropping product_family or placing the known name ahead of it.
+    device = {"device_id": device_id, "display_name": " Unknown ", "product_family": value}
+    before = deepcopy(device)
+    usable = isinstance(value, str) and value.strip() in {"FAMILY-B", "unknown-model"}
+    assert _canonical_bus_display_name(device) == (value.strip() if usable else fallback)
+    assert device == before

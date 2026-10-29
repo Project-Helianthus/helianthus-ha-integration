@@ -260,33 +260,45 @@ def _normalized_ebus_code(device_id: object | None) -> str:
     return normalized
 
 
+def _usable_presentation_label(value: object | None) -> str | None:
+    if not isinstance(value, str) or not has_known_identity_text(value):
+        return None
+    return value.strip()
+
+
 def _canonical_bus_display_name(device: dict) -> str | None:
     device_id = _normalized_ebus_code(device.get("device_id"))
-    known = _KNOWN_BUS_DISPLAY_NAMES.get(device_id)
-    if known:
-        return known
-    return _clean_label(device.get("display_name")) or _clean_label(device.get("product_family"))
+    return (
+        _usable_presentation_label(device.get("display_name"))
+        or _usable_presentation_label(device.get("product_family"))
+        or _KNOWN_BUS_DISPLAY_NAMES.get(device_id)
+    )
 
 
 def _canonical_bus_model_name(device: dict) -> str:
-    product_model = _clean_label(device.get("product_model"))
-    part_number = _clean_label(device.get("part_number"))
-    device_id = _clean_label(device.get("device_id"))
-    authoritative_device_id = device_id if has_known_identity_text(device_id) else None
+    raw_model = device.get("product_model")
+    product_model = raw_model.strip() if isinstance(raw_model, str) else None
+    part_number = _usable_presentation_label(device.get("part_number"))
+    authoritative_device_id = _usable_presentation_label(device.get("device_id"))
     annotation = product_model and re.fullmatch(
         r"(?P<base>.+?)\s+\((?:part:\s*(?P<part>[^;()]*)\s*;\s*)?eBUS:\s*(?P<ebus_code>[^()]*)\s*\)",
         product_model,
         flags=re.IGNORECASE,
     )
-    annotated_ebus_code = _clean_label(annotation.group("ebus_code")) if annotation else None
+    annotated_ebus_code = (
+        _usable_presentation_label(annotation.group("ebus_code")) if annotation else None
+    )
     ebus_code = _normalized_ebus_code(authoritative_device_id or annotated_ebus_code)
-    base_model = (
-        _clean_label(annotation.group("base"))
+    selected_model = (
+        _usable_presentation_label(annotation.group("base"))
         if annotation
-        else product_model or _KNOWN_BUS_MODELS.get(ebus_code) or authoritative_device_id or "unknown"
+        else _usable_presentation_label(product_model)
+    )
+    base_model = (
+        selected_model or _KNOWN_BUS_MODELS.get(ebus_code) or authoritative_device_id or "unknown"
     )
     formatted_part_number = part_number or (
-        _clean_label(annotation.group("part")) if annotation else None
+        _usable_presentation_label(annotation.group("part")) if annotation else None
     )
     if formatted_part_number:
         return f"{base_model} (part: {formatted_part_number}; eBUS: {ebus_code})"
