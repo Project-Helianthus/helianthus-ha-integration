@@ -199,8 +199,13 @@ def test_legacy_rows_never_create_duplicate_entities():
             continue
         row = (descriptor.pack_id.rsplit(".", 1)[-1], descriptor.pack_version,
                descriptor.fact_id, descriptor.dimension_id, descriptor.unit)
-        _, _, _, entities = setup([readable(*row)])
+        record = readable(*row)
+        owner = {"helianthus.pack.pv": "pv_m2m_coordinator",
+                 "helianthus.pack.storage": "storage_m2m_coordinator"}[descriptor.pack_id]
+        _, _, _, entities = setup([record], {owner: _legacy(record["assetId"])})
         assert shared(entities) == []
+        _, _, _, entities = setup([record])
+        assert len(shared(entities)) == 1
 
 
 def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
@@ -411,7 +416,7 @@ def test_shared_setup_keeps_existing_pv_entities_and_ids():
     from test_pv_unknown_zero import _PVConsumer, _pv_payload
     consumer = _PVConsumer()
     consumer.update(_pv_payload())
-    legacy = SimpleNamespace(data=consumer.coordinator.data, asset_ref=consumer.coordinator.asset_ref,
+    legacy = SimpleNamespace(data=consumer.coordinator.data, asset_ref="asset:pv",
                              async_add_listener=lambda listener: lambda: None)
     covered = readable("pv", "1.0.0", "pv.ac.aggregate_active_power", "pv.dimension.inverter", "unit.watt")
     _, _, _, entities = setup([covered], {"pv_m2m_coordinator": legacy})
@@ -471,3 +476,114 @@ def test_operation_argument_fields_have_no_measurement_state_class():
         "pv.limit.active_power", "pv.limit.export_power")]
     assert len(limits) == 2
     assert all(d.state_class is None for d in limits)
+
+
+def _as_asset(record, asset_id):
+    record = deepcopy(record)
+    record["assetId"] = record["snapshot"]["assetId"] = asset_id
+    record["snapshot"]["facts"][0]["assetId"] = asset_id
+    record["snapshot"]["bindings"][0]["assetId"] = asset_id
+    record["snapshot"]["identityLinks"][0]["assetId"] = asset_id
+    return record
+
+
+def _legacy(asset_ref):
+    return SimpleNamespace(data=SimpleNamespace(descriptors=()), asset_ref=asset_ref,
+                           async_add_listener=lambda listener: lambda: None)
+
+
+PV_AC = ("pv", "1.0.0", "pv.ac.voltage", "pv.dimension.phase", "unit.volt")
+STORAGE_SOC = ("storage", "1.1.0", "storage.state.soc", "storage.dimension.pack", "unit.percent")
+METER_ENERGY = ("infrastructure", "1.0.0", "infrastructure.energy.import",
+                "infrastructure.dimension.meter", "unit.kilowatt_hour")
+GRID_FREQUENCY = ("infrastructure", "1.0.0", "infrastructure.ac.frequency",
+                  "infrastructure.dimension.grid_connection", "unit.hertz")
+
+
+def _site():
+    return [_as_asset(readable(*PV_AC), "asset:pv-1"), _as_asset(readable(*PV_AC), "asset:pv-2"),
+            _as_asset(readable(*PV_AC), "asset:pv-3"), _as_asset(readable(*STORAGE_SOC), "asset:battery"),
+            _as_asset(readable(*METER_ENERGY), "asset:meter")]
+
+
+def test_multi_asset_site_creates_one_entity_and_device_per_asset():
+    _, _, _, entities = setup(_site())
+    sensors = shared(entities)
+    assert {e._asset_id: e.descriptor.fact_id for e in sensors} == {
+        "asset:pv-1": "pv.ac.voltage", "asset:pv-2": "pv.ac.voltage", "asset:pv-3": "pv.ac.voltage",
+        "asset:battery": "storage.state.soc", "asset:meter": "infrastructure.energy.import"}
+    assert all(e.available for e in sensors)
+    devices = {e._asset_id: e.device_info for e in sensors}
+    assert len({tuple(sorted(d["identifiers"])) for d in devices.values()}) == 5
+    assert {a: d["model"] for a, d in devices.items()} == {
+        "asset:pv-1": "Inverter", "asset:pv-2": "Inverter", "asset:pv-3": "Inverter",
+        "asset:battery": "Battery", "asset:meter": "Meter"}
+
+
+def test_grid_connection_asset_is_classed_separately_from_meter():
+    _, _, _, entities = setup([_as_asset(readable(*GRID_FREQUENCY), "asset:grid")])
+    assert [e.device_info["model"] for e in shared(entities)] == ["Grid connection"]
+
+
+def test_legacy_suppression_is_per_asset_and_per_pack():
+    site = _site()
+    runtime = {"pv_m2m_coordinator": _legacy("asset:pv-2"),
+               "storage_m2m_coordinator": _legacy("asset:battery")}
+    _, _, _, entities = setup(site, runtime)
+    assert {e._asset_id for e in shared(entities)} == {
+        "asset:pv-1", "asset:pv-3", "asset:meter"}
+    pv_only = {"pv_m2m_coordinator": _legacy("asset:pv-2")}
+    _, _, _, entities = setup(site, pv_only)
+    assert {e._asset_id for e in shared(entities)} == {
+        "asset:pv-1", "asset:pv-3", "asset:battery", "asset:meter"}
+    # A storage binding never suppresses a PV fact, even on the same asset ID.
+    _, _, _, entities = setup(site, {"storage_m2m_coordinator": _legacy("asset:pv-1")})
+    assert "asset:pv-1" in {e._asset_id for e in shared(entities)}
+
+
+def test_legacy_bound_asset_keeps_its_uncovered_facts():
+    covered = readable(*PV_AC)
+    uncovered = readable("pv", "1.0.0", "pv.dc.power", "pv.dimension.input", "unit.watt")
+    record = covered
+    fact = deepcopy(uncovered["snapshot"]["facts"][0])
+    fact["candidates"][0]["candidateId"] = "candidate:uncovered"
+    record["snapshot"]["facts"].append(fact)
+    evaluated = deepcopy(record["evaluation"]["facts"][0])
+    evaluated["candidateId"] = "candidate:uncovered"
+    record["evaluation"]["facts"].append(evaluated)
+    record["projection"]["requested"].append({"kind": "fact", "itemId": "pv.dc.power"})
+    record["projection"]["dispositions"].append(deepcopy(uncovered["projection"]["dispositions"][0]))
+    _, _, _, entities = setup([record], {"pv_m2m_coordinator": _legacy(record["assetId"])})
+    assert [e.descriptor.fact_id for e in shared(entities)] == ["pv.dc.power"]
+
+
+def test_unique_ids_are_unchanged_by_device_grouping_and_binding():
+    site = _site()
+    _, _, _, plain = setup(site)
+    _, _, _, bound = setup(site, {"pv_m2m_coordinator": _legacy("asset:pv-2")})
+    for sensor in shared(plain):
+        key = sensor._key
+        assert sensor._attr_unique_id == semantic_unique_id("entry-1", sensor._asset_id, key)
+    surviving = {e._asset_id: e._attr_unique_id for e in shared(bound)}
+    assert surviving == {e._asset_id: e._attr_unique_id for e in shared(plain)
+                         if e._asset_id in surviving}
+
+
+@pytest.mark.parametrize("row", [PV_AC, STORAGE_SOC, METER_ENERGY])
+def test_withheld_fact_is_unavailable_never_zero(row):
+    client, coordinator, _, entities = setup([readable(*row)])
+    sensor = shared(entities)[0]
+    assert sensor.available and sensor.native_value is not None
+    for freshness, availability in (("stale", "available"), ("fresh", "unavailable")):
+        client.payload["semanticSnapshot"]["assets"][0]["evaluation"]["facts"][0].update(
+            freshness=freshness, effectiveAvailability=availability)
+        refresh(coordinator)
+        assert not sensor.available and sensor.native_value is None
+
+
+def test_more_than_32_asset_ids_are_rejected():
+    from custom_components.helianthus.semantic_snapshot_coordinator import semantic_asset_ids
+    ids = [f"asset:{index}" for index in range(33)]
+    assert len(semantic_asset_ids(SimpleNamespace(options={"semantic_asset_ids": ids[:32]}, data={}))) == 32
+    with pytest.raises(ValueError):
+        semantic_asset_ids(SimpleNamespace(options={"semantic_asset_ids": ids}, data={}))
