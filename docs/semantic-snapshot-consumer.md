@@ -13,7 +13,7 @@ or native semantics.
 | --- | --- |
 | Implemented client | The [ordinary GraphQL client](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/graphql.py) sends queries and variables, returns `data`, and raises on GraphQL errors. It does not validate SemReg records or implement a shared-snapshot coordinator. |
 | Existing pack consumers | [PV](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/pv_m2m.py), [Storage](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/storage_m2m.py) and [EVSE](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/evse_m2m.py) consume separate fixed machine-to-machine projections. Their parsers, endpoint configuration and selection rules are not the ordinary M07 contract. |
-| Initial shared-path rollout | Read-only PV, Storage and Infrastructure sensors are created from the shared snapshot through a static descriptor table. They attach to the entry-owned coordinator through a deferred hook, are created only after a first admitted reading, and are enabled only for entries that configure `semantic_asset_ids`; an absent selection creates nothing. Facts already exposed by the existing PV and Storage consumers create no entity here. Focused acceptance covers the sensors; the production gateway answers unavailable until its provider wiring lands. |
+| Initial shared-path rollout | Read-only PV, Storage and Infrastructure sensors are created from the shared snapshot through a static descriptor table. They attach to the entry-owned coordinator through a deferred hook, are created only after a first admitted reading, and are enabled only for entries that configure `semantic_asset_ids`; an absent selection creates nothing. A fact already exposed by the existing PV or Storage consumer creates no entity here only for the one asset that consumer is bound to; every other selected asset gets full descriptor coverage. Focused acceptance covers the sensors; the production gateway answers unavailable until its provider wiring lands. |
 | Full INT-15 | All-five-pack decoding, coherent refresh, recovery and integration acceptance remain pending; persistent identity is implemented for the three sensor packs. Existing pack tests are not shared-snapshot runtime parity evidence. |
 
 The new path uses only ordinary `semanticSnapshot(assetIds: [ID!]!)`. It must
@@ -275,7 +275,33 @@ the entry ID, opaque asset ID, pack ID, pack version, fact ID and every typed
 dimension ID/value in canonical order are each escaped and joined with a fixed
 separator. Label and position never contribute. Facts already exposed by the
 legacy PV and Storage consumers are flagged legacy-covered in the descriptor
-table and create no entity until the explicit migration.
+table. Suppression is per asset and per pack: a flagged PV fact is skipped only
+for the asset equal to the legacy PV consumer's configured asset reference, and
+a flagged Storage fact only for the legacy Storage consumer's asset. Every other
+asset, including further inverters, batteries and meters of a multi-asset
+installation, creates entities for all mapped facts. Unflagged facts of the
+bound asset are also created. Until the explicit migration the bound asset's
+flagged facts remain with the legacy owner.
+
+### Devices and asset selection
+
+Each selected asset is one HA device, identified by the entry ID and a hash of
+the opaque asset ID; entity unique IDs are unaffected. The device model comes
+from the packs of the asset's mapped facts, never from a family name: PV facts
+give `Inverter`, Storage facts `Battery`, and Infrastructure facts `Meter` (meter
+dimension present) or `Grid connection`. An asset with no mapped fact is
+`Semantic asset`.
+
+Selection stays at 1–32 distinct opaque IDs per entry; more than 32 is rejected
+at configuration. Operators find the published asset IDs in the gateway's
+status tool or the Portal and enter them verbatim in the options flow. There is
+no fallback to MCP, native probes or machine-to-machine roots, and no discovery
+by device family. Descriptor coverage targets the public PV (phase and input
+dimensions), Storage and Infrastructure (meter and grid connection) fact sets.
+A withheld, stale or unavailable fact makes its entity unavailable, never zero.
+This is read-only; no writes or controls are added. Behavior against a live
+multi-asset installation is Unknown until gateway publication and per-site
+bring-up.
 
 Documentary **Proven**, **Hypothesis** and **Unknown** describe evidence strength,
 separately from machine qualification. M07 defines the required contract; this
@@ -292,8 +318,8 @@ qualification or write permission.
 
 | Pack / device family | Shared contract capability | Initial entity rollout / later owner |
 | --- | --- | --- |
-| `helianthus.pack.pv` / PV-inverter | Decode complete snapshot, evaluation and accounting. | Read-only sensors for facts not already exposed by the legacy PV consumer; legacy-covered facts create no entity until the explicit migration, which must keep current descriptor IDs. |
-| `helianthus.pack.storage` / Storage-BMS | Same read contract, exact quantities and missing-value semantics. | Read-only sensors for facts not already exposed by the legacy Storage consumer; legacy-covered facts create no entity until the explicit migration. No battery operation dispatch. |
+| `helianthus.pack.pv` / PV-inverter | Decode complete snapshot, evaluation and accounting. | Read-only sensors for every selected asset; legacy-covered facts are skipped only for the asset bound to the legacy PV consumer until the explicit migration, which must keep current descriptor IDs. |
+| `helianthus.pack.storage` / Storage-BMS | Same read contract, exact quantities and missing-value semantics. | Read-only sensors for every selected asset; legacy-covered facts are skipped only for the asset bound to the legacy Storage consumer until the explicit migration. No battery operation dispatch. |
 | `helianthus.pack.infrastructure` / Infrastructure | Same read contract and independent asset revisions. | Read-only sensors with persistent identity and retained-unavailable behavior; no lifecycle writes. |
 | `helianthus.pack.evse` / EVSE | Decode and account now in the contract; no implied enabled entity. | Shared-path entity migration is later work; retain existing EVSE consumer/descriptor ownership and controls. |
 | `helianthus.pack.thermal` / Thermal-HVAC | Decode and account without replacing existing semantic owners. | Zone/climate, DHW/water-heater, demand/status/valve and schedule migrations are later work. Keep existing coordinators, IDs, stale grace and guarded writes. |

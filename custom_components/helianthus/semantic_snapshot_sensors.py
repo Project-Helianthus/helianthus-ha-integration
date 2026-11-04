@@ -5,11 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+import hashlib
 import json
 from urllib.parse import quote
 
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .pv_m2m import build_pv_device_identifier
+from .storage_m2m import build_storage_device_identifier
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,59 @@ DESCRIPTORS = (
 )
 
 
+DEVICE_MODELS = {
+    'helianthus.pack.pv': 'Inverter',
+    'helianthus.pack.storage': 'Battery',
+}
+METER_DIMENSION = 'infrastructure.dimension.meter'
+LEGACY_COORDINATORS = {
+    'helianthus.pack.pv': 'pv_m2m_coordinator',
+    'helianthus.pack.storage': 'storage_m2m_coordinator',
+}
+
+
+def semantic_device_identifier(entry_id, asset_id):
+    """One device per opaque asset; the hash keeps arbitrary asset bytes opaque."""
+    return ("helianthus", f"{entry_id}-semantic-asset-{hashlib.sha256(asset_id.encode()).hexdigest()}")
+
+
+def semantic_device_model(asset):
+    """Class an asset from the packs of its mapped facts, never from a family name."""
+    packs, dimensions = set(), set()
+    for fact in (asset.get("snapshot") or {}).get("facts", ()):
+        descriptor = _descriptor(fact["key"])
+        if descriptor is not None:
+            packs.add(descriptor.pack_id)
+            dimensions.add(descriptor.dimension_id)
+    for pack_id, model in DEVICE_MODELS.items():
+        if pack_id in packs:
+            return model
+    if 'helianthus.pack.infrastructure' in packs:
+        return 'Meter' if METER_DIMENSION in dimensions else 'Grid connection'
+    return 'Semantic asset'
+
+
+LEGACY_DEVICE_BUILDERS = {
+    'helianthus.pack.pv': build_pv_device_identifier,
+    'helianthus.pack.storage': build_storage_device_identifier,
+}
+
+
+def _device_identifier(data, entry_id, asset_id):
+    """Reuse the legacy device of a bound asset so one asset stays one HA device."""
+    for pack_id, build in LEGACY_DEVICE_BUILDERS.items():
+        if asset_id == _legacy_bound_asset(data, pack_id):
+            return build(entry_id, asset_id)
+    return semantic_device_identifier(entry_id, asset_id)
+
+
+def _legacy_bound_asset(data, pack_id):
+    """The one asset the legacy single-asset consumer for this pack already owns."""
+    coordinator = data.get(LEGACY_COORDINATORS.get(pack_id, ''))
+    asset_ref = getattr(coordinator, 'asset_ref', None)
+    return asset_ref if isinstance(asset_ref, str) and asset_ref else None
+
+
 def _identity_value(value):
     """Encode every typed arm without losing false, zero, or Decimal precision."""
     if isinstance(value, Decimal):
@@ -163,8 +221,11 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_icon = "mdi:chart-line"
 
-    def __init__(self, coordinator, entry_id, asset_id, key, descriptor):
+    def __init__(self, coordinator, entry_id, asset_id, key, descriptor, model='Semantic asset',
+                 device_identifier=None):
         super().__init__(coordinator)
+        self._device_identifier = device_identifier or semantic_device_identifier(entry_id, asset_id)
+        self._model = model
         self._entry_id = entry_id
         self._asset_id = asset_id
         self._key = key
@@ -178,6 +239,12 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = descriptor.display_unit
         self._attr_device_class = descriptor.device_class
         self._attr_state_class = descriptor.state_class
+
+    @property
+    def device_info(self):
+        return DeviceInfo(
+            identifiers={self._device_identifier},
+            manufacturer="Helianthus", model=self._model, name=self._asset_id)
 
     def _reading(self):
         coordinator = self.coordinator
@@ -261,16 +328,22 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
         for asset in (coordinator.data or {}).get("assets", ()):
             if asset["snapshot"] is None:
                 continue
+            model = semantic_device_model(asset)
+            device_identifier = _device_identifier(data, entry_id, asset["assetId"])
             for fact in asset["snapshot"]["facts"]:
                 key = fact["key"]
                 descriptor = _descriptor(key)
-                if descriptor is None or descriptor.legacy_covered:
+                if descriptor is None:
+                    continue
+                if (descriptor.legacy_covered
+                        and asset["assetId"] == _legacy_bound_asset(data, descriptor.pack_id)):
                     continue
                 unique_id = semantic_unique_id(entry_id, asset["assetId"], key)
                 if unique_id in known:
                     continue
                 sensor = SemanticSnapshotSensor(
-                    coordinator, entry_id, asset["assetId"], key, descriptor)
+                    coordinator, entry_id, asset["assetId"], key, descriptor, model,
+                    device_identifier)
                 if not sensor.available:
                     continue
                 known.add(unique_id)
