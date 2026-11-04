@@ -587,3 +587,25 @@ def test_more_than_32_asset_ids_are_rejected():
     assert len(semantic_asset_ids(SimpleNamespace(options={"semantic_asset_ids": ids[:32]}, data={}))) == 32
     with pytest.raises(ValueError):
         semantic_asset_ids(SimpleNamespace(options={"semantic_asset_ids": ids}, data={}))
+
+
+def test_legacy_bound_asset_shares_its_legacy_device_with_shared_sensors():
+    from custom_components.helianthus.pv_m2m import build_pv_device_identifier
+    from custom_components.helianthus.storage_m2m import build_storage_device_identifier
+    covered = readable(*PV_AC)
+    uncovered = readable("pv", "1.0.0", "pv.dc.power", "pv.dimension.input", "unit.watt")
+    fact = deepcopy(uncovered["snapshot"]["facts"][0])
+    fact["candidates"][0]["candidateId"] = "candidate:uncovered"
+    covered["snapshot"]["facts"].append(fact)
+    evaluated = deepcopy(covered["evaluation"]["facts"][0])
+    evaluated["candidateId"] = "candidate:uncovered"
+    covered["evaluation"]["facts"].append(evaluated)
+    covered["projection"]["requested"].append({"kind": "fact", "itemId": "pv.dc.power"})
+    covered["projection"]["dispositions"].append(deepcopy(uncovered["projection"]["dispositions"][0]))
+    other = _as_asset(readable(*PV_AC), "asset:pv-other")
+    asset_id = covered["assetId"]
+    _, _, _, entities = setup([covered, other], {"pv_m2m_coordinator": _legacy(asset_id)})
+    ids = {e._asset_id: next(iter(e.device_info["identifiers"])) for e in shared(entities)}
+    assert ids[asset_id] == build_pv_device_identifier("entry-1", asset_id)
+    assert ids["asset:pv-other"] != build_pv_device_identifier("entry-1", "asset:pv-other")
+    assert build_storage_device_identifier("entry-1", asset_id) != ids[asset_id]
