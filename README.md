@@ -84,8 +84,8 @@ no duplicate entity until the explicit migration.
 
 Zero and false are real values. Withheld readings, loss, a failed refresh or an
 unsupported root make the entity unavailable without changing its identity.
-The path is enabled per config entry by the `semantic_asset_ids` key (an options
-UI follows later); without it nothing is created. The production gateway answers
+The path is enabled per config entry by the `semantic_asset_ids` key in the
+options settings form; without it nothing is created. The production gateway answers
 unavailable until its provider wiring lands, so no entities appear there yet.
 See [docs/semantic-snapshot-consumer.md](docs/semantic-snapshot-consumer.md).
 
@@ -204,7 +204,17 @@ This reset procedure is strictly internal to Helianthus. Other integrations are 
 
 ### 4) Config flow and options examples
 
-Config flow fields:
+Config flow fields (fresh manual setup; discovery can prefill these values):
+
+| Form | Field | Presence | Fresh default |
+|---|---|---|---|
+| `config/user` | `host` | required | `""` |
+| `config/user` | `port` | required | `80` |
+| `config/user` | `path` | optional | `"/graphql"` |
+| `config/user` | `transport` | optional | `"http"` |
+| `config/user` | `version` | optional | `""` |
+
+The following values are examples, not defaults:
 
 ```yaml
 host: "203.0.113.10"
@@ -216,7 +226,56 @@ version: "optional"
 
 Manual setup verifies `gatewayIdentity.instanceGuid` before the entry is created. Zeroconf rediscovery only rebinding when TXT `instance_guid` and GraphQL `gatewayIdentity.instanceGuid` match.
 
-Options flow fields:
+Options flow fields. Saved options prefill the form; these defaults apply to a fresh
+entry. Required fields have defaults; optional fields may be omitted.
+`semantic_asset_ids` also falls back to config-entry data when no options selection exists.
+
+| Form | Field | Presence | Fresh default |
+|---|---|---|---|
+| `options/settings` | `semantic_asset_ids` | optional | `[]` |
+| `options/settings` | `scan_interval` | required | `60` |
+| `options/settings` | `use_subscriptions` | required | `true` |
+| `options/settings` | `zone_schedule_helpers` | optional | `""` |
+| `options/settings` | `dhw_schedule_helper` | optional | `""` |
+| `options/settings` | `pv_m2m_enabled` | required | `false` |
+| `options/settings` | `pv_m2m_endpoint` | optional | `""` |
+| `options/settings` | `pv_m2m_asset_ref` | optional | `""` |
+| `options/settings` | `pv_m2m_ca_cert_file` | optional | `""` |
+| `options/settings` | `pv_m2m_client_cert_file` | optional | `""` |
+| `options/settings` | `pv_m2m_client_key_file` | optional | `""` |
+| `options/settings` | `storage_m2m_enabled` | required | `false` |
+| `options/settings` | `storage_m2m_endpoint` | optional | `""` |
+| `options/settings` | `storage_m2m_asset_ref` | optional | `""` |
+| `options/settings` | `storage_m2m_ca_cert_file` | optional | `""` |
+| `options/settings` | `storage_m2m_client_cert_file` | optional | `""` |
+| `options/settings` | `storage_m2m_client_key_file` | optional | `""` |
+| `options/settings` | `evse_m2m_enabled` | required | `false` |
+| `options/settings` | `evse_m2m_endpoint` | optional | `""` |
+| `options/settings` | `evse_m2m_asset_ref` | optional | `""` |
+| `options/settings` | `evse_m2m_ca_cert_file` | optional | `""` |
+| `options/settings` | `evse_m2m_client_cert_file` | optional | `""` |
+| `options/settings` | `evse_m2m_client_key_file` | optional | `""` |
+
+The M2M descriptor keys `pv_m2m_descriptors`, `storage_m2m_descriptors` and
+`evse_m2m_descriptors` are retained internal state, not editable form fields.
+Schedule helpers default to empty strings; M2M consumers default to disabled.
+
+eeBUS pairing uses separate action forms, not persisted settings. A `—` means
+there is no default:
+
+| Form | Field | Presence | Fresh default |
+|---|---|---|---|
+| `options/eebus_open_window` | `duration_seconds` | required | `120` |
+| `options/eebus_close_window` | `confirm` | required | `false` |
+| `options/eebus_discovered` | `observation_id` | required | `—` |
+| `options/eebus_compare_observation` | `expected_ski` | required | `—` |
+| `options/eebus_connect` | `pin` | optional | `—` |
+| `options/eebus_confirm_candidate` | `expected_ski` | required | `—` |
+| `options/eebus_cancel_candidate` | `confirm` | required | `false` |
+| `options/eebus_trusted` | `partner_id` | required | `—` |
+| `options/eebus_untrust` | `confirm` | required | `false` |
+
+Options example (a subset, not a full settings payload):
 
 ```yaml
 scan_interval: 60
@@ -227,9 +286,9 @@ use_subscriptions: true
 
 Issue #105 adds a deterministic, fixture-only consumer gate for the accepted
 `adversarial-runtime-report-v1` contract at
-[helianthus-docs-ebus `2e290480b7fbb9a0895b77a04d6c3634512b212e`](https://github.com/Project-Helianthus/helianthus-docs-ebus/tree/2e290480b7fbb9a0895b77a04d6c3634512b212e).
+[helianthus-docs-ebus](https://github.com/Project-Helianthus/helianthus-docs-ebus).
 The four gateway inputs are copied byte-for-byte from
-[helianthus-ebusgateway `25b96a0593357ff63de8315b803ec1262479c3df`](https://github.com/Project-Helianthus/helianthus-ebusgateway/tree/25b96a0593357ff63de8315b803ec1262479c3df).
+[helianthus-ebusgateway](https://github.com/Project-Helianthus/helianthus-ebusgateway).
 It is an offline regression gate; it does not contact a gateway, start Home
 Assistant, sleep, parse cache bytes, or establish physical acceptance.
 
@@ -407,10 +466,29 @@ python3 scripts/ha_inventory_verifier.py \
 
 ### Local docs in this repo
 
-- Architecture baseline: `ARCHITECTURE.md`
-- MCP-first rollout guardrails: `MCP_FIRST_ROLLOUT_GUARDRAILS.md`
-- Working conventions: `CONVENTIONS.md`
-- Agent workflow instructions: `AGENT.md`
+- Architecture baseline: [ARCHITECTURE.md](ARCHITECTURE.md)
+- MCP-first rollout guardrails: [MCP_FIRST_ROLLOUT_GUARDRAILS.md](MCP_FIRST_ROLLOUT_GUARDRAILS.md)
+- Working conventions: [CONVENTIONS.md](CONVENTIONS.md)
+- Agent workflow instructions: [AGENTS.md](AGENTS.md)
+
+### Documentation pages
+
+- [adversarial runtime contract](docs/adversarial-runtime-contract.md)
+- [dhw bound reprobe](docs/dhw-bound-reprobe.md)
+- [freshness availability contract](docs/freshness-availability-contract.md)
+- [legacy sensor shared migration](docs/legacy-sensor-shared-migration.md)
+- [offline consumer acceptance boundary](docs/offline-consumer-acceptance-boundary.md)
+- [parity artifact metadata](docs/parity-artifact-metadata.md)
+- [physical model metadata contract](docs/physical-model-metadata-contract.md)
+- [semantic asset options preview](docs/semantic-asset-options-preview.md)
+- [semantic asset selection options](docs/semantic-asset-selection-options.md)
+- [semantic migration plan](docs/semantic-migration-plan.md)
+- [semantic migration transaction](docs/semantic-migration-transaction.md)
+- [semantic snapshot consumer](docs/semantic-snapshot-consumer.md)
+- [startup verdict contract](docs/startup-verdict-contract.md)
+- [zone dhw lifecycle contract](docs/zone-dhw-lifecycle-contract.md)
+
+Relative link targets are checked offline; remote URL reachability is unverified.
 
 ### Related Helianthus repos/docs
 
