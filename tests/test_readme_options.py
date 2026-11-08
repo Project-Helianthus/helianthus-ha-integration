@@ -26,6 +26,16 @@ def literal_constants(source):
     return values
 
 
+def is_schema_call(node):
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "vol"
+        and node.func.attr == "Schema"
+    )
+
+
 def form_contract(config, options, constants):
     """Read schema markers, resolving only fresh-entry fallback expressions.
 
@@ -39,6 +49,7 @@ def form_contract(config, options, constants):
     rows = {}
     for flow, source in (("config", config), ("options", options)):
         tree = ast.parse(source)
+        processed = set()
         for method in ast.walk(tree):
             if not isinstance(method, ast.AsyncFunctionDef):
                 continue
@@ -66,14 +77,9 @@ def form_contract(config, options, constants):
                 return ast.literal_eval(node)
 
             for node in ast.walk(method):
-                if not (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "vol"
-                    and node.func.attr == "Schema"
-                ):
+                if not is_schema_call(node):
                     continue
+                processed.add(id(node))
                 assert len(node.args) == 1 and isinstance(node.args[0], ast.Dict)
                 for marker in node.args[0].keys:
                     assert isinstance(marker, ast.Call)
@@ -90,6 +96,14 @@ def form_contract(config, options, constants):
                         marker.func.attr.lower(),
                         json.dumps(value(defaults["default"])) if "default" in defaults else NO_DEFAULT,
                     )
+        # Field-less schemas (confirmation-only forms) carry nothing to document.
+        built = {
+            id(node)
+            for node in ast.walk(tree)
+            if is_schema_call(node)
+            and not (len(node.args) == 1 and isinstance(node.args[0], ast.Dict) and not node.args[0].keys)
+        }
+        assert built <= processed, f"{flow}: vol.Schema built outside an async step method"
     assert rows, "no public form fields extracted"
     return rows
 
@@ -195,6 +209,15 @@ def test_newly_exposed_option_is_rejected():
     )
     assert changed != OPTIONS
     with pytest.raises(AssertionError, match="README form"):
+        check_forms(README, CONFIG, changed, CONSTANTS)
+
+
+def test_schema_built_outside_async_step_is_rejected():
+    changed = OPTIONS + (
+        "\n\ndef helper():\n"
+        "    return vol.Schema({vol.Optional(\"hidden\", default=1): int})\n"
+    )
+    with pytest.raises(AssertionError, match="outside an async step"):
         check_forms(README, CONFIG, changed, CONSTANTS)
 
 
