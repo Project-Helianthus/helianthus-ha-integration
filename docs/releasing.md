@@ -11,8 +11,8 @@ heading, and creates an annotated `vMAJOR.MINOR.PATCH` tag. The tag without
 `v`, the manifest version, and the changelog heading must match exactly. Keep
 `Unreleased` for subsequent development. Do not infer the first integration
 version from an umbrella release. The release workflow and tag step are an
-owner handoff after review; issue #409 remains open until the first release
-identity is assigned.
+owner handoff after review, tracked in a separate release-tracking issue until
+the first release identity is assigned.
 
 Prereleases use `vMAJOR.MINOR.PATCH-IDENTIFIERS`, where identifiers are
 nonempty ASCII alphanumeric or hyphen strings separated by dots; numeric

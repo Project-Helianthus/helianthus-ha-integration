@@ -58,6 +58,12 @@ def test_development_placeholder():
     assert validate_identity({"version": "bad"}, "## Unreleased\n")
 
 
+def test_repository_identity():
+    manifest = json.loads((ROOT / "custom_components/helianthus/manifest.json").read_text())
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    assert validate_identity(manifest, changelog) == []
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-tree", action="store_true", required=True)
