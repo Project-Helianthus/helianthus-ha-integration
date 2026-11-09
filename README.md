@@ -480,6 +480,7 @@ python3 scripts/ha_inventory_verifier.py \
 - [offline consumer acceptance boundary](docs/offline-consumer-acceptance-boundary.md)
 - [parity artifact metadata](docs/parity-artifact-metadata.md)
 - [physical model metadata contract](docs/physical-model-metadata-contract.md)
+- [releasing](docs/releasing.md)
 - [semantic asset options preview](docs/semantic-asset-options-preview.md)
 - [semantic asset selection options](docs/semantic-asset-selection-options.md)
 - [semantic migration plan](docs/semantic-migration-plan.md)
