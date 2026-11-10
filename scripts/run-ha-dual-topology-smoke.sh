@@ -184,7 +184,7 @@ if [[ -z "${PROXY_PORT}" ]]; then
 fi
 
 CMD=(
-	python -m custom_components.helianthus.smoke_profile
+	python3 -m scripts.smoke_profile
 	--timeout "${TIMEOUT}"
 	--dual-topology
 	--ebusd-host "${EBUSD_HOST}"

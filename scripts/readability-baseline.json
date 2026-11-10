@@ -1004,49 +1004,49 @@
       "count": 200
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_check_dual_topology_path",
       "rule": "C901",
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_check_transport_stability",
       "rule": "C901",
       "count": 15
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_check_transport_stability",
       "rule": "E702",
       "count": 2
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_check_transport_stability",
       "rule": "PLR0915",
       "count": 60
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_fetch_energy",
       "rule": "C901",
       "count": 11
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_is_missing_field_error",
       "rule": "F402",
       "count": 1
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_read_http_response_body",
       "rule": "C901",
       "count": 15
     },
     {
-      "path": "custom_components/helianthus/smoke_profile.py",
+      "path": "scripts/smoke_profile.py",
       "symbol": "_run_startup_phase_a",
       "rule": "E702",
       "count": 4

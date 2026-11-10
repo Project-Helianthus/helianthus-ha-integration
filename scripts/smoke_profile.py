@@ -20,7 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-from .admission import normalize_source_selection
+from custom_components.helianthus.admission import normalize_source_selection
 
 
 QUERY_CONNECTION = """

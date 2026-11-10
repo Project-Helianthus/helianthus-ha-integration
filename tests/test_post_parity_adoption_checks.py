@@ -152,3 +152,15 @@ def test_main_uses_configured_repository_and_cli_override(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", [*argv, "--source-repo", "Project-Helianthus/explicit"])
     assert module.main() == 0
     assert captured == [configured, "Project-Helianthus/explicit"]
+
+
+def test_default_adoption_targets_include_operator_cli_location() -> None:
+    module = _load_module()
+
+    assert module.ADOPTED_CAPABILITY_TESTS == (
+        "tests/test_coordinator.py",
+        "tests/test_energy.py",
+        "tests/test_storage_m2m.py",
+        "tests/test_smoke_profile.py",
+        "tests/test_smoke_cli_location.py",
+    )
