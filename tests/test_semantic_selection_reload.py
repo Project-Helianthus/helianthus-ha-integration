@@ -32,6 +32,19 @@ def entry(options=None, data=None, entry_id="synthetic-primary"):
     )
 
 
+def runtime_dictionary(value):
+    """Find a literal mapping through only the production typing cast.
+
+    The original assignment, including its cast, still executes in the harness.
+    """
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id == "cast"):
+        assert len(value.args) == 2 and not value.keywords
+        assert isinstance(value.args[0], ast.Name) and value.args[0].id == "EntryRuntime"
+        value = value.args[1]
+    return value if isinstance(value, ast.Dict) else ast.Dict(keys=[], values=[])
+
+
 def install(hass, configured):
     """Execute the actual setup assignment/registration without unrelated I/O.
 
@@ -42,10 +55,9 @@ def install(hass, configured):
     setup = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef)
                  and n.name == "async_setup_entry")
     assignment = next(n for n in setup.body if isinstance(n, ast.Assign)
-                      and isinstance(n.value, ast.Dict)
                       and any(isinstance(k, ast.Constant)
                               and k.value == "pv_m2m_option_signature"
-                              for k in n.value.keys))
+                              for k in runtime_dictionary(n.value).keys))
     listener = next(n for n in setup.body if isinstance(n, ast.AsyncFunctionDef)
                     and n.name == "_reload_on_pv_m2m_option_change")
     registration = setup.body[setup.body.index(listener) + 1]
@@ -54,6 +66,7 @@ def install(hass, configured):
     namespace.update(vars(const))
     namespace.update(
         hass=hass, entry=configured, admission={},
+        cast=entry_setup.cast, EntryRuntime=entry_setup.EntryRuntime,
         admin_coordinator=SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)),
         _semantic_asset_selection_signature=entry_setup._semantic_asset_selection_signature,
     )
