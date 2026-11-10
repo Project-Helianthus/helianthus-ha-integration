@@ -65,10 +65,12 @@ class ValidationWorkflowTests(unittest.TestCase):
 
     def test_hassfest_reports_findings_until_follow_up_makes_it_blocking(self):
         text = job(workflow("ha-validation.yml"), "hassfest")
-        self.assertIn("    continue-on-error: true\n", text)
+        # Step level: the step reports its findings while the job, and so the check run, stays green.
+        self.assertIn("        continue-on-error: true\n", text)
         self.assertIn("issue #424", text)
         self.assertIn("then makes this job blocking", text)
-        self.assertNotRegex(text, r"(?m)^ {6,}continue-on-error:")
+        # Never at job level: a job-level continue-on-error still reports the job as failed.
+        self.assertNotRegex(text, r"(?m)^    continue-on-error:")
 
     def test_readability_runs_guard_and_workflow_tests_without_refreshing_debt(self):
         text = job(workflow("readability.yml"), "readability")

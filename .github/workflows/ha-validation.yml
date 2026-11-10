@@ -29,10 +29,10 @@ jobs:
   hassfest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Reporting until issue #424 fixes manifest key order and the invalid services response option, then makes this job blocking.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      # Reporting until issue #424 fixes manifest key order and the invalid services response option, then makes this job blocking.
       - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # 2026-10-26
+        continue-on-error: true
