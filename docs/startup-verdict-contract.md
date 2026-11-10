@@ -115,7 +115,7 @@ This contract is a source/claim/table review, not software execution. Existing [
 
 This slice supplies no new transition-test or complete CI evidence and does not supersede the previously accepted offline work in the parent snapshot. The parent remains open for separately authorized deployment-smoke acceptance. Its required physical observation does not become a mandatory CI/PR gate for this documentation slice; real HA smoke remains supplemental software evidence under [repository instructions]. No live action is authorized by this page. There is no new user authorization gate before 0.9. Native admission/trust remains fail-closed; partial last-known-good data, existing entity identities, eBUS MCP envelopes and GraphQL parity remain unchanged. Any later API/protocol interpretation must first use the public native documentation contract, rather than deriving protocol facts from this consumer implementation.
 
-[startup implementation]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/smoke_profile.py
+[startup implementation]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/scripts/smoke_profile.py
 [Admission normalization]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/admission.py
 [startup tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_smoke_profile.py
 [operator documentation]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/README.md

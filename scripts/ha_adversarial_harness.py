@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed, offline consumer replay for adversarial-runtime-report-v1.
 
-This is deliberately separate from ``smoke_profile.py``.  It never opens a
+This is deliberately separate from ``scripts/smoke_profile.py``.  It never opens a
 socket, starts Home Assistant, or sleeps: the only external input is one pinned
 gateway report and replay time is an injected monotonic value.
 """

@@ -9,7 +9,7 @@
 - Home Assistant config flow and options flow (`custom_components/helianthus/config_flow.py`, `options_flow.py`).
 - GraphQL client/discovery handling for endpoint consumption (`graphql.py`, `discovery.py`).
 - Entity modeling for diagnostics, climate, water heater, and energy (`sensor.py`, `climate.py`, `water_heater.py`, `energy.py`).
-- Local operator smoke profile tooling (`custom_components/helianthus/smoke_profile.py`, `scripts/run-ha-dual-topology-smoke.sh`).
+- Local operator smoke profile tooling (`scripts/smoke_profile.py`, `scripts/run-ha-dual-topology-smoke.sh`).
 
 ### What does not belong in this repository
 
@@ -331,10 +331,17 @@ live procedure.
 
 ## Local Smoke-Test Configuration Examples
 
+The operator CLI now runs as `python3 -m scripts.smoke_profile` from the
+repository checkout. It replaces `python3 -m custom_components.helianthus.smoke_profile`;
+the old invocation has no alias or forwarding module. The installed
+`custom_components/helianthus` directory no longer includes the smoke CLI.
+Options, exit codes, JSON verdicts, deadlines, response bounds, and dual-topology
+checks are unchanged.
+
 Standard smoke check against local gateway:
 
 ```bash
-python3 -m custom_components.helianthus.smoke_profile \
+python3 -m scripts.smoke_profile \
   --host 203.0.113.10 \
   --port 8080 \
   --path /graphql
@@ -343,7 +350,7 @@ python3 -m custom_components.helianthus.smoke_profile \
 JSON output mode:
 
 ```bash
-python3 -m custom_components.helianthus.smoke_profile \
+python3 -m scripts.smoke_profile \
   --url http://203.0.113.10:8080/graphql \
   --json
 ```
@@ -351,7 +358,7 @@ python3 -m custom_components.helianthus.smoke_profile \
 Dual-topology path mode (`ebusd` + adapter-proxy):
 
 ```bash
-python3 -m custom_components.helianthus.smoke_profile \
+python3 -m scripts.smoke_profile \
   --host 203.0.113.10 \
   --port 8080 \
   --path /graphql \
@@ -422,7 +429,7 @@ performs GraphQL reads only; do not provide credentials on the command line or
 include endpoint-specific output in public issue/PR text.
 
 ```bash
-python3 -m custom_components.helianthus.smoke_profile \
+python3 -m scripts.smoke_profile \
   --startup-spotcheck-v2 \
   --url http://203.0.113.10:8080/graphql \
   --json > /tmp/helianthus-startup-spotcheck-v2.json
@@ -458,7 +465,7 @@ python3 scripts/ha_inventory_verifier.py \
 | gateway parity guardrail check | `python3 scripts/check_gateway_parity_gate.py --artifact tests/fixtures/gateway_parity_artifact_pass.json` |
 | guarded post-parity adoption run | `python3 scripts/run_post_parity_adoption_checks.py --artifact tests/fixtures/gateway_parity_artifact_pass.json` |
 | HA inventory verifier tests | `python3 -m pytest tests/test_ha_inventory_verifier.py` |
-| smoke CLI help | `python3 -m custom_components.helianthus.smoke_profile --help` |
+| smoke CLI help | `python3 -m scripts.smoke_profile --help` |
 | HA inventory verifier CLI help | `python3 scripts/ha_inventory_verifier.py --help` |
 | dual-topology wrapper help | `./scripts/run-ha-dual-topology-smoke.sh --help` |
 

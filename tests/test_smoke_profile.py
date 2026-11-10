@@ -12,7 +12,8 @@ import time
 
 import pytest
 
-from custom_components.helianthus import admission, smoke_profile
+from custom_components.helianthus import admission
+from scripts import smoke_profile
 
 
 class FakeExecutor:
