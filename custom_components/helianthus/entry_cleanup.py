@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from . import DOMAIN, PLATFORMS, async_unload_eebus_admin_boundary
+from .entry_runtime import EntryRuntime
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok and DOMAIN in hass.data:
-        data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        data: EntryRuntime | None = hass.data[DOMAIN].pop(entry.entry_id, None)
         try:
             cleanup_counts = hass.data[DOMAIN].get("_admission_cleanup_counts")
             if isinstance(cleanup_counts, dict):

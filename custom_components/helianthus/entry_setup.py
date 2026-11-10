@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 from urllib.parse import urlsplit
 
 from . import (
@@ -42,6 +43,7 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
+from .entry_runtime import EntryRuntime
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
 
@@ -1806,7 +1808,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if evse_m2m_boundary is not None:
         evse_m2m_coordinator = evse_m2m_boundary.coordinator
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = cast(EntryRuntime, {
         "device_coordinator": device_coordinator,
         "status_coordinator": status_coordinator,
         "semantic_coordinator": semantic_coordinator,
@@ -1852,7 +1854,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "radio_device_zone_names": radio_device_zone_names,
         "unresolved_zone_ids": unresolved_zone_ids,
         "b524_merge_targets": b524_merge_targets,
-    }
+    })
 
     async def _reload_on_pv_m2m_option_change(
         updated_hass: HomeAssistant,
