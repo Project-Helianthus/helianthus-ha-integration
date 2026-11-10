@@ -59,7 +59,7 @@ class ValidationWorkflowTests(unittest.TestCase):
 
     def test_hassfest_invocation_is_reviewed_action_on_docker_capable_runner(self):
         text = job(workflow("ha-validation.yml"), "hassfest")
-        self.assertRegex(text, r"(?m)^      - uses: home-assistant/actions/hassfest@[0-9a-f]{40} # master, 2026-10-26$")
+        self.assertRegex(text, r"(?m)^      - uses: home-assistant/actions/hassfest@[0-9a-f]{40} # 2026-10-26$")
         self.assertEqual(text.count("home-assistant/actions/hassfest@"), 1)
         self.assertIn("runs-on: ubuntu-latest", text)
 
