@@ -63,6 +63,47 @@ class PrivateImportGateTests(unittest.TestCase):
         self.assertFalse(self.edges('from .helpers import public as p'))
         self.assertFalse(self.edges(f'from {P}.helpers import public'))
 
+    def test_plain_import_private_path_components(self):
+        for suffix in ('_internal', '_internal.helpers', 'helpers._internal.tools'):
+            for alias in ('', ' as helpers'):
+                with self.subTest(suffix=suffix, alias=alias):
+                    target = (P + '.' + suffix).partition('._internal')[0]
+                    expected = {(P+'.consumer', target, '_internal', 'private'): 1}
+                    if target == P:
+                        expected[(P+'.consumer', P, '_internal', 'package')] = 1
+                    self.assertEqual(self.edges(f'import {P}.{suffix}{alias}'),
+                                     expected)
+
+    def test_plain_import_nested_package_private_components(self):
+        for alias in ('', ' as helpers'):
+            with self.subTest(alias=alias):
+                self.assertEqual(
+                    self.edges(f'import {P}.nested._internal.helpers{alias}',
+                               path='nested/consumer.py'),
+                    {(P+'.nested.consumer', P+'.nested', '_internal', 'private'): 1})
+        self.assertEqual(self.edges(f'import {P}._internal._nested.helpers'), {
+            (P+'.consumer', P, '_internal', 'private'): 1,
+            (P+'.consumer', P, '_internal', 'package'): 1,
+            (P+'.consumer', P+'._internal', '_nested', 'private'): 1,
+        })
+
+    def test_plain_import_public_paths_allowed(self):
+        for source in (f'import {P}.helpers', f'import {P}.nested.helpers as helpers',
+                       'import external._internal.helpers as helpers'):
+            with self.subTest(source=source):
+                self.assertFalse(self.edges(source))
+
+    def test_plain_import_reexport_preserves_private_source(self):
+        extra = {'custom_components/helianthus/facade.py':
+                 f'import {P}._internal.helpers as public'}
+        for source in ('from .facade import public',
+                       f'from {P}.facade import public as helpers',
+                       'from . import facade as pkg\npkg.public'):
+            with self.subTest(source=source):
+                edges = self.edges(source, extra=extra)
+                self.assertIn((P+'.facade', P, '_internal', 'private'), edges)
+                self.assertIn((P+'.consumer', P, '_internal', 'private'), edges)
+
     def test_package_imports_only_platform_entrypoints_exempt(self):
         self.assertFalse(self.edges('from . import public', path='sensor.py'))
         self.assertEqual(self.edges('from . import public'),

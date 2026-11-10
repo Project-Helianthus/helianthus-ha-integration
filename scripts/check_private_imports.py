@@ -130,6 +130,12 @@ def collect_edges(sources: dict[str, str]) -> Counter:
                 origin, _, member = resolved.rpartition(".")
                 if internal(origin) and member.startswith("_"):
                     kinds.add((origin, member, "private"))
+                if resolved != target + "." + symbol:
+                    parts = resolved.split(".")
+                    for index, member in enumerate(parts[:-1]):
+                        origin = ".".join(parts[:index])
+                        if internal(origin) and member.startswith("_"):
+                            kinds.add((origin, member, "private"))
             if target == PACKAGE and not platform:
                 kinds.add((target, symbol, "package"))
             for mod, name, kind in kinds:
@@ -138,9 +144,10 @@ def collect_edges(sources: dict[str, str]) -> Counter:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    target, _, symbol = canonical(alias.name).rpartition(".")
-                    if symbol.startswith("_"):
-                        record(target, symbol)
+                    parts = canonical(alias.name).split(".")
+                    for index, symbol in enumerate(parts):
+                        if symbol.startswith("_"):
+                            record(".".join(parts[:index]), symbol)
             elif isinstance(node, ast.ImportFrom):
                 target = source_module(node, importer, is_package)
                 for alias in node.names:
