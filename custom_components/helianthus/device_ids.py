@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import re
 
+from .address import parse_bus_address
 from .const import DOMAIN
 
 _MAC_TOKEN_RE = re.compile(r"[^0-9A-Fa-f]")
@@ -93,20 +94,20 @@ def has_bus_identity_evidence(device: dict) -> bool:
 def has_radio_identity_evidence(device: dict) -> bool:
     """Return whether a radio slot carries a real device identity."""
 
-    class_address = _parse_bus_address(device.get("device_class_address"))
+    class_address = parse_bus_address(device.get("device_class_address"))
     if class_address in {0x15, 0x26, 0x35}:
         return True
     for key in ("device_model", "firmware_version"):
         if has_known_identity_text(device.get(key)):
             return True
-    hardware_identifier = _parse_bus_address(device.get("hardware_identifier"))
+    hardware_identifier = _parse_identity_integer(device.get("hardware_identifier"))
     return hardware_identifier is not None and hardware_identifier > 0
 
 
 def should_export_radio_device(device: dict) -> bool:
     """Return whether a radio slot should become HA device/entity inventory."""
 
-    group = _parse_bus_address(device.get("group"))
+    group = _parse_identity_integer(device.get("group"))
     if group is None:
         return False
     if group == 0x0C:
@@ -120,8 +121,8 @@ def radio_bus_key_from_device(device: dict) -> str | None:
     key = _clean(device.get("radio_bus_key"))
     if key:
         return key
-    group = _parse_bus_address(device.get("group"))
-    instance = _parse_bus_address(device.get("instance"))
+    group = _parse_identity_integer(device.get("group"))
+    instance = _parse_identity_integer(device.get("instance"))
     if group is None or instance is None:
         return None
     return build_radio_bus_key(group, instance)
@@ -191,7 +192,7 @@ def stable_bus_identity_model(device_id: object | None, product_model: object | 
     return normalized_device_id or "unknown"
 
 
-def _parse_bus_address(value: object | None) -> int | None:
+def _parse_identity_integer(value: object | None) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -240,11 +241,11 @@ def resolve_bus_address(address: object | None, addresses: object | None = None)
     parsed: list[int] = []
     if isinstance(addresses, Iterable) and not isinstance(addresses, (str, bytes, bytearray)):
         for item in addresses:
-            parsed_item = _parse_bus_address(item)
+            parsed_item = parse_bus_address(item)
             if parsed_item is not None:
                 parsed.append(parsed_item)
 
-    parsed_single = _parse_bus_address(address)
+    parsed_single = parse_bus_address(address)
     if parsed_single is not None:
         parsed.append(parsed_single)
     if not parsed:
@@ -377,7 +378,7 @@ def managing_device_identifier(
             return regulator_device_id
         if role == "FUNCTION_MODULE":
             device_id = _clean((managing_device or {}).get("device_id"))
-            address = _parse_bus_address((managing_device or {}).get("address"))
+            address = parse_bus_address((managing_device or {}).get("address"))
             if vr71_device_id and (device_id == "VR_71" or address == 0x26):
                 return vr71_device_id
             return None

@@ -9,7 +9,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, RADIO_STALE_GRACE_CYCLES
 from .device_ids import (
     build_radio_bus_key,
     circuit_display_name,
@@ -25,7 +25,6 @@ from .semantic_freshness import (
 )
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
-_RADIO_STALE_GRACE_CYCLES = 3
 
 
 def _normalize_preset(value: Any) -> str:
@@ -745,7 +744,7 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
         if device is None:
             return False
         stale = _parse_optional_int(device.get("stale_cycles")) or 0
-        return stale < _RADIO_STALE_GRACE_CYCLES
+        return stale < RADIO_STALE_GRACE_CYCLES
 
     @property
     def device_info(self) -> DeviceInfo:

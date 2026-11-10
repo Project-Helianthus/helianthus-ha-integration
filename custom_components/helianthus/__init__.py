@@ -311,22 +311,6 @@ def _stable_bus_identity_model(device: dict) -> str:
     return stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
 
 
-def _parse_bus_address(value: object | None) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, int):
-        if 0 <= value <= 0xFF:
-            return value
-        return None
-    try:
-        parsed = int(str(value).strip(), 0)
-    except (TypeError, ValueError):
-        return None
-    if 0 <= parsed <= 0xFF:
-        return parsed
-    return None
-
-
 def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
     return token in {
         f"daemon-{entry_id}",
