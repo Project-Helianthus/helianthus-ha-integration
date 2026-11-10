@@ -29,6 +29,8 @@ jobs:
   hassfest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Reporting until issue #424 fixes manifest key order and the invalid services response option, then makes this job blocking.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:

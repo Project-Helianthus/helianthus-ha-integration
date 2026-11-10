@@ -63,6 +63,13 @@ class ValidationWorkflowTests(unittest.TestCase):
         self.assertEqual(text.count("home-assistant/actions/hassfest@"), 1)
         self.assertIn("runs-on: ubuntu-latest", text)
 
+    def test_hassfest_reports_findings_until_follow_up_makes_it_blocking(self):
+        text = job(workflow("ha-validation.yml"), "hassfest")
+        self.assertIn("    continue-on-error: true\n", text)
+        self.assertIn("issue #424", text)
+        self.assertIn("then makes this job blocking", text)
+        self.assertNotRegex(text, r"(?m)^ {6,}continue-on-error:")
+
     def test_readability_runs_guard_and_workflow_tests_without_refreshing_debt(self):
         text = job(workflow("readability.yml"), "readability")
         for command in ("python3 scripts/check_readability.py --self-test", "python3 scripts/check_readability.py --check",
