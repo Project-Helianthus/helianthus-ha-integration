@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+from custom_components.helianthus.address import parse_bus_address
+
 import pytest
 
 from custom_components.helianthus import (
@@ -15,7 +17,6 @@ from custom_components.helianthus import (
     _is_stale_bus_identifier,
     _legacy_bus_identifier_address,
     _iter_identifier_pairs,
-    _parse_bus_address,
     _parse_zone_schedule_helper_bindings,
     _select_bus_migration_target,
     _stable_bus_identity_model,
@@ -386,12 +387,12 @@ def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
 
 
 def test_parse_bus_address_handles_hex_and_int() -> None:
-    assert _parse_bus_address("0x1f") == 0x1F
-    assert _parse_bus_address("15") == 15
+    assert parse_bus_address("0x1f") == 0x1F
+    assert parse_bus_address("15") == 15
     parsed = 0x30 + 1
-    assert _parse_bus_address(parsed) == parsed
-    assert _parse_bus_address("bogus") is None
-    assert _parse_bus_address(999) is None
+    assert parse_bus_address(parsed) == parsed
+    assert parse_bus_address("bogus") is None
+    assert parse_bus_address(999) is None
 
 
 def test_parse_zone_schedule_helper_bindings() -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from .address import parse_bus_address
+
 
 def parse_optional_int(value: Any) -> int | None:
     if isinstance(value, bool):
@@ -41,8 +43,8 @@ def normalize_radio_device(raw: dict[str, Any]) -> dict[str, Any] | None:
     connected = raw.get("device_connected")
     if isinstance(connected, bool):
         normalized["device_connected"] = connected
-    class_address = parse_optional_int(raw.get("device_class_address"))
-    if class_address is not None and 0 <= class_address <= 0xFF:
+    class_address = parse_bus_address(raw.get("device_class_address"))
+    if class_address is not None:
         normalized["device_class_address"] = class_address
 
     device_model = str(raw.get("device_model") or "").strip()

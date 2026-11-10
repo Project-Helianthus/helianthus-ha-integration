@@ -10,6 +10,7 @@ from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .const import RADIO_STALE_GRACE_CYCLES
 from .admission import (
     daemon_status_with_admission,
     schema_incompatible_admission,
@@ -777,7 +778,6 @@ query BoilerStatus {
 _RADIO_GROUP_ZONE_VRC = 0x09
 _RADIO_GROUP_ZONE_VR92 = 0x0A
 _RADIO_GROUP_INVENTORY = 0x0C
-_RADIO_STALE_GRACE_CYCLES = 3
 
 
 class HelianthusCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
@@ -1206,7 +1206,7 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if slot in combined:
                 continue
             stale = self._stale_cycles.get(slot, 0) + 1
-            if stale > _RADIO_STALE_GRACE_CYCLES:
+            if stale > RADIO_STALE_GRACE_CYCLES:
                 continue
             carried = dict(previous)
             observed = observed_by_slot.get(slot)

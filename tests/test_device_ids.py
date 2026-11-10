@@ -286,3 +286,38 @@ def test_managing_device_identifier_returns_none_for_unknown_circuit_ownership()
         )
         is None
     )
+
+
+def test_radio_key_varies_group_and_instance_independently():
+    from custom_components.helianthus.device_ids import radio_bus_key_from_device
+
+    # Each field catches substitution, omission, or byte-range narrowing of that field.
+    baseline = {"group": 12, "instance": 1}
+    assert radio_bus_key_from_device(baseline) == "g0c-i01"
+    for field, value, expected in [
+        ("group", 256, "g100-i01"), ("group", -1, "g-1-i01"),
+        ("group", "012", "g0c-i01"), ("group", "0x100", "g100-i01"),
+        ("instance", 256, "g0c-i256"), ("instance", -1, "g0c-i-1"),
+        ("instance", "002", "g0c-i02"), ("instance", "0x100", "g0c-i256"),
+    ]:
+        assert radio_bus_key_from_device({**baseline, field: value}) == expected
+    for field in baseline:
+        assert radio_bus_key_from_device({**baseline, field: True}) is None
+
+
+def test_radio_hardware_identity_is_not_narrowed_to_byte_range():
+    from custom_components.helianthus.device_ids import has_radio_identity_evidence
+
+    # Catches routing hardware_identifier through the byte-address parser.
+    for value in (256, "0256", "0x100"):
+        assert has_radio_identity_evidence({"hardware_identifier": value})
+    for value in (True, -1, "-1", 0, "bogus"):
+        assert not has_radio_identity_evidence({"hardware_identifier": value})
+
+
+def test_radio_class_address_uses_byte_contract():
+    from custom_components.helianthus.device_ids import has_radio_identity_evidence
+
+    # Catches retaining decimal-only leading-zero parsing for class addresses.
+    assert has_radio_identity_evidence({"device_class_address": "0x15"})
+    assert not has_radio_identity_evidence({"device_class_address": "021"})

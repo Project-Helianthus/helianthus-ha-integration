@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .energy import compute_total
-from .const import DOMAIN
+from .const import DOMAIN, RADIO_STALE_GRACE_CYCLES
 from . import sensor_setup
 from .pv_m2m import (
     PVM2MDescriptor,
@@ -40,7 +40,6 @@ from .sensor_descriptors import (
     SYSTEM_SENSOR_FIELDS,
     _FM5_MODE_INTERPRETED,
     _RADIO_ROOM_CLASSES,
-    _RADIO_STALE_GRACE_CYCLES,
     _SENSOR_DEVICE_CLASS_DURATION,
     _SENSOR_DEVICE_CLASS_HUMIDITY,
     _SENSOR_DEVICE_CLASS_PRESSURE,
@@ -612,7 +611,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         if device is None:
             return False
         stale = _parse_optional_int(device.get("stale_cycles")) or 0
-        return stale < _RADIO_STALE_GRACE_CYCLES
+        return stale < RADIO_STALE_GRACE_CYCLES
 
     @property
     def device_info(self) -> DeviceInfo:
