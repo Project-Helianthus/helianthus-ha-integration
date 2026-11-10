@@ -115,7 +115,7 @@ def collect_edges(sources: dict[str, str]) -> Counter:
     for importer, (tree, is_package) in trees.items():
         platform = importer in {PACKAGE + "." + item for item in PLATFORMS}
 
-        def record(target, symbol):
+        def record(target, symbol, *, check_source=False):
             target = canonical(target)
             if not internal(target):
                 return
@@ -123,6 +123,8 @@ def collect_edges(sources: dict[str, str]) -> Counter:
             if symbol == "*":
                 kinds.add((target, symbol, "star"))
             elif symbol.startswith("_"):
+                kinds.add((target, symbol, "private"))
+            if check_source and any(part.startswith("_") for part in target.split(".")):
                 kinds.add((target, symbol, "private"))
             for resolved in resolve(target + "." + symbol):
                 origin, _, member = resolved.rpartition(".")
@@ -142,7 +144,7 @@ def collect_edges(sources: dict[str, str]) -> Counter:
             elif isinstance(node, ast.ImportFrom):
                 target = source_module(node, importer, is_package)
                 for alias in node.names:
-                    record(target, alias.name)
+                    record(target, alias.name, check_source=True)
             elif isinstance(node, ast.Attribute):
                 base = dotted(node.value)
                 if base:

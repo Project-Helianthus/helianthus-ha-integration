@@ -46,6 +46,23 @@ class PrivateImportGateTests(unittest.TestCase):
     def test_public_sibling_and_external_imports_allowed(self):
         self.assertFalse(self.edges('from .helpers import public\nfrom external import _private'))
 
+    def test_from_import_private_source_modules(self):
+        for source in ('from ._internal import public',
+                       f'from {P}._internal import public',
+                       'from ._internal import public as p',
+                       'from ._internal.helpers import public',
+                       'from .helpers._internal import public'):
+            with self.subTest(source=source):
+                target = source.split(' import ')[0].removeprefix('from ')
+                if target.startswith('.'):
+                    target = P + target
+                self.assertEqual(self.edges(source),
+                                 {(P+'.consumer', target, 'public', 'private'): 1})
+
+    def test_from_import_public_source_and_symbol_allowed(self):
+        self.assertFalse(self.edges('from .helpers import public as p'))
+        self.assertFalse(self.edges(f'from {P}.helpers import public'))
+
     def test_package_imports_only_platform_entrypoints_exempt(self):
         self.assertFalse(self.edges('from . import public', path='sensor.py'))
         self.assertEqual(self.edges('from . import public'),
