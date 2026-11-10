@@ -1,0 +1,13 @@
+# Retain Ruff's default rules and settings when this file takes precedence.
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "N", "C901", "PLR0915"]
+
+# Initial reviewable defaults; these are not Board-mandated limits.
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-statements = 50

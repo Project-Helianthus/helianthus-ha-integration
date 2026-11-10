@@ -1,0 +1,4 @@
+# Ruff verified in the cached environment; Home Assistant supplied by dispatch.
+ruff==0.15.10
+homeassistant==2026.11.1
+pytest
