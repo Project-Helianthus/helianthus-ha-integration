@@ -1,0 +1,2363 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "path": "custom_components/helianthus/__init__.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/__init__.py",
+      "symbol": "_select_bus_migration_target",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "HelianthusBoilerStateBinarySensor.__init__",
+      "rule": "N806",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "HelianthusScheduleBinarySensor.__init__",
+      "rule": "N806",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "HelianthusSolarBinarySensor.__init__",
+      "rule": "N806",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "HelianthusSystemBinarySensor.__init__",
+      "rule": "N806",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "async_setup_entry",
+      "rule": "C901",
+      "count": 26
+    },
+    {
+      "path": "custom_components/helianthus/binary_sensor.py",
+      "symbol": "async_setup_entry",
+      "rule": "PLR0915",
+      "count": 71
+    },
+    {
+      "path": "custom_components/helianthus/climate.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/climate.py",
+      "symbol": "HelianthusZoneClimate._write_ext_register",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/config_flow.py",
+      "symbol": "HelianthusConfigFlow._async_finish_verified_entry",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusAdapterInfoCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusBoilerCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 17
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusFM5Coordinator._async_update_data",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusRadioDeviceCoordinator._materialize_snapshot",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusStatusCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusSystemCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 24
+    },
+    {
+      "path": "custom_components/helianthus/coordinator.py",
+      "symbol": "HelianthusSystemCoordinator._async_update_data",
+      "rule": "PLR0915",
+      "count": 68
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_fetch.py",
+      "symbol": "fetch_device_inventory",
+      "rule": "C901",
+      "count": 22
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_merge.py",
+      "symbol": "normalize_radio_device",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/date.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/eebus_admin_services.py",
+      "symbol": "_invoke",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/eebus_admin_services.py",
+      "symbol": "_service_schema",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "custom_components/helianthus/eebus_admin_services.py",
+      "symbol": "validate_service_call",
+      "rule": "C901",
+      "count": 17
+    },
+    {
+      "path": "custom_components/helianthus/eebus_pairing.py",
+      "symbol": "EEBusActionTerminalBroker.observe",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/eebus_pairing.py",
+      "symbol": "EEBusPairingController.async_poll_active_action",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/entry_cleanup.py",
+      "symbol": "async_unload_entry",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/entry_cleanup.py",
+      "symbol": "async_unload_entry",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "C901",
+      "count": 285
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "F821",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "N806",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "PLR0915",
+      "count": 846
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry._is_sparse_entity_live",
+      "rule": "C901",
+      "count": 20
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry._reload_on_pv_m2m_option_change",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.cleanup_nonexportable_radio_registry_entries",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.cleanup_obsolete_devices",
+      "rule": "C901",
+      "count": 16
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.cleanup_obsolete_devices",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.cleanup_obsolete_entity_registry_entries",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.cleanup_obsolete_entity_registry_entries",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.refuse_duplicate_setup",
+      "rule": "F821",
+      "count": 3
+    },
+    {
+      "path": "custom_components/helianthus/entry_setup.py",
+      "symbol": "async_setup_entry.run_trusted_cleanup",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MBoundary",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MBoundary.async_close",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MClient.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MClient.async_current_snapshot",
+      "rule": "E701",
+      "count": 7
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MConfig",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MCoordinatorData",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MDescriptor",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MFact",
+      "rule": "E702",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MProtocolError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MRemoteError.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MSnapshot",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "EVSEM2MTransportError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "HelianthusEVSEM2MCoordinator.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "HelianthusEVSEM2MCoordinator._async_update_data",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "HelianthusEVSEM2MCoordinator._async_update_data",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_candidate",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E701",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_digest",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_error",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_key",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_origin",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_projection",
+      "rule": "C901",
+      "count": 21
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_projection",
+      "rule": "E701",
+      "count": 9
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_projection",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_projection",
+      "rule": "PLR0915",
+      "count": 56
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_reject_duplicate_pairs",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_text",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_validate_endpoint",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "_value",
+      "rule": "E701",
+      "count": 5
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "async_first_refresh_with_cleanup",
+      "rule": "E701",
+      "count": 3
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "async_persist_evse_descriptor_store",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "async_setup_evse_m2m_boundary",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "async_setup_evse_m2m_boundary",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "build_evse_unique_id",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "evse_m2m_config_from_options",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "evse_m2m_config_from_options",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "load_evse_descriptor_store",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E701",
+      "count": 9
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "serialize_evse_descriptor_store",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/evse_m2m.py",
+      "symbol": "validate_evse_m2m_options",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/fan.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/number.py",
+      "symbol": "async_setup_entry",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/number.py",
+      "symbol": "async_setup_entry",
+      "rule": "F841",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/options_flow.py",
+      "symbol": "HelianthusOptionsFlow.async_step_settings",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/options_flow.py",
+      "symbol": "HelianthusOptionsFlow.async_step_settings",
+      "rule": "PLR0915",
+      "count": 57
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "HelianthusPVM2MCoordinator.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "HelianthusPVM2MCoordinator._async_update_data",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "HelianthusPVM2MCoordinator._async_update_data",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MBoundary",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MBoundary.async_close",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MClient.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MClient.async_current_snapshot",
+      "rule": "E701",
+      "count": 7
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MConfig",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MCoordinatorData",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MDescriptor",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MFact",
+      "rule": "E702",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MProtocolError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MRemoteError.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MSnapshot",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "PVM2MTransportError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_candidate",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E701",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_digest",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_error",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_key",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_origin",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_projection",
+      "rule": "C901",
+      "count": 18
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_projection",
+      "rule": "E701",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_projection",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_reject_duplicate_pairs",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_text",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_validate_descriptor_dimension",
+      "rule": "E701",
+      "count": 5
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_validate_endpoint",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "_value",
+      "rule": "E701",
+      "count": 5
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "async_first_refresh_with_cleanup",
+      "rule": "E701",
+      "count": 3
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "async_persist_pv_descriptor_store",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "async_setup_pv_m2m_boundary",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "async_setup_pv_m2m_boundary",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "build_pv_unique_id",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "load_pv_descriptor_store",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "load_pv_descriptor_store",
+      "rule": "E701",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "C901",
+      "count": 18
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E701",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E702",
+      "count": 3
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "PLR0915",
+      "count": 52
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "pv_m2m_config_from_options",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "pv_m2m_config_from_options",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "serialize_pv_descriptor_store",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/pv_m2m.py",
+      "symbol": "validate_pv_m2m_options",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/semantic_migration_plan.py",
+      "symbol": "_reservation_value",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/semantic_migration_plan.py",
+      "symbol": "build_migration_plan",
+      "rule": "C901",
+      "count": 17
+    },
+    {
+      "path": "custom_components/helianthus/semantic_migration_transaction.py",
+      "symbol": "RecoveryRequired",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot.py",
+      "symbol": "_decode",
+      "rule": "C901",
+      "count": 28
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot.py",
+      "symbol": "_decode",
+      "rule": "PLR0915",
+      "count": 57
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot.py",
+      "symbol": "_validate_asset",
+      "rule": "C901",
+      "count": 56
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot.py",
+      "symbol": "_validate_asset",
+      "rule": "PLR0915",
+      "count": 123
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot_sensors.py",
+      "symbol": "SemanticSnapshotSensor._reading",
+      "rule": "C901",
+      "count": 16
+    },
+    {
+      "path": "custom_components/helianthus/semantic_snapshot_sensors.py",
+      "symbol": "setup_semantic_snapshot_sensors",
+      "rule": "C901",
+      "count": 16
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusCircuitSensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusCylinderConfigSensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusCylinderSensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusDHWStatusSensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusDemandSensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor.py",
+      "symbol": "HelianthusEnergySensor.device_info",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor_descriptors.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor_setup.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 7
+    },
+    {
+      "path": "custom_components/helianthus/sensor_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "C901",
+      "count": 61
+    },
+    {
+      "path": "custom_components/helianthus/sensor_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "F841",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/sensor_setup.py",
+      "symbol": "async_setup_entry",
+      "rule": "PLR0915",
+      "count": 200
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_check_dual_topology_path",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_check_transport_stability",
+      "rule": "C901",
+      "count": 15
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_check_transport_stability",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_check_transport_stability",
+      "rule": "PLR0915",
+      "count": 60
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_fetch_energy",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_is_missing_field_error",
+      "rule": "F402",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_read_http_response_body",
+      "rule": "C901",
+      "count": 15
+    },
+    {
+      "path": "custom_components/helianthus/smoke_profile.py",
+      "symbol": "_run_startup_phase_a",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "HelianthusStorageM2MCoordinator.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "HelianthusStorageM2MCoordinator._async_update_data",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "HelianthusStorageM2MCoordinator._async_update_data",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MBoundary",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MBoundary.async_close",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MClient.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MClient.async_current_snapshot",
+      "rule": "E701",
+      "count": 7
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MConfig",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MCoordinatorData",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MDescriptor",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MFact",
+      "rule": "E702",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MProtocolError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MRemoteError.__init__",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MSnapshot",
+      "rule": "E702",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "StorageM2MTransportError",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_candidate",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E701",
+      "count": 8
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_candidate",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_digest",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_error",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_key",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_origin",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_projection",
+      "rule": "C901",
+      "count": 24
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_projection",
+      "rule": "E701",
+      "count": 9
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_projection",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_projection",
+      "rule": "PLR0915",
+      "count": 64
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_read_bounded_response",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_reject_duplicate_pairs",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_text",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_validate_endpoint",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E701",
+      "count": 6
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_validate_json_depth",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "_value",
+      "rule": "E701",
+      "count": 5
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "async_first_refresh_with_cleanup",
+      "rule": "E701",
+      "count": 3
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "async_persist_storage_descriptor_store",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "async_setup_storage_m2m_boundary",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "async_setup_storage_m2m_boundary",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "build_storage_unique_id",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "load_storage_descriptor_store",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "load_storage_descriptor_store",
+      "rule": "E701",
+      "count": 9
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E701",
+      "count": 10
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "parse_m2m_response",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "serialize_storage_descriptor_store",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "storage_m2m_config_from_options",
+      "rule": "E701",
+      "count": 4
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "storage_m2m_config_from_options",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/storage_m2m.py",
+      "symbol": "validate_storage_m2m_options",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/subscriptions.py",
+      "symbol": "_handle_message",
+      "rule": "C901",
+      "count": 20
+    },
+    {
+      "path": "custom_components/helianthus/switch.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/valve.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 2
+    },
+    {
+      "path": "custom_components/helianthus/water_heater.py",
+      "symbol": "HelianthusDhwWaterHeater._write_ext_register",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "custom_components/helianthus/water_heater.py",
+      "symbol": "HelianthusDhwWaterHeater.extra_state_attributes",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "scripts/check_gateway_parity_gate.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "scripts/check_private_imports.py",
+      "symbol": "collect_edges",
+      "rule": "C901",
+      "count": 45
+    },
+    {
+      "path": "scripts/check_private_imports.py",
+      "symbol": "collect_edges",
+      "rule": "PLR0915",
+      "count": 73
+    },
+    {
+      "path": "scripts/check_private_imports.py",
+      "symbol": "collect_edges.record",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 2
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_exercise_real_write_fences",
+      "rule": "C901",
+      "count": 24
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_exercise_real_write_fences",
+      "rule": "PLR0915",
+      "count": 77
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_replay_actual_delayed_inventory_listener",
+      "rule": "C901",
+      "count": 28
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_replay_actual_delayed_inventory_listener",
+      "rule": "PLR0915",
+      "count": 97
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_semantic_class.UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "scripts/ha_adversarial_harness.py",
+      "symbol": "_validate_scenario_contract",
+      "rule": "C901",
+      "count": 21
+    },
+    {
+      "path": "scripts/ha_inventory_verifier.py",
+      "symbol": "run_verifier",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "scripts/ha_inventory_verifier.py",
+      "symbol": "summarize_inventory",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "scripts/run_post_parity_adoption_checks.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_adversarial_harness.py",
+      "symbol": "test_existing_owned_output_is_refused_and_preserved_on_each_current_run_failure",
+      "rule": "E731",
+      "count": 1
+    },
+    {
+      "path": "tests/test_binary_sensor.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_binary_sensor.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "tests/test_binary_sensor.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_calendar.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_calendar.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "tests/test_circuit.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 8
+    },
+    {
+      "path": "tests/test_circuit.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 25
+    },
+    {
+      "path": "tests/test_circuit.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 76
+    },
+    {
+      "path": "tests/test_circuit.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "_FakeHass.__init__",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "_make_entity",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_climate_partial_zone_refresh_does_not_authorize_stale_sibling_write",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_climate_retained_zone_is_readable_but_not_writable",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_climate_setup_refreshes_state_on_admission_updates",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_climate_write_fails_closed_when_admission_untrusted",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_climate_write_uses_live_admission_transition",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_manual_preset_writes_mode_manual",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_quickveto_preset_writes_temp_then_duration",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_schedule_preset_writes_mode_auto",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_set_temperature_during_quickveto_writes_veto_register",
+      "rule": "F821",
+      "count": 1
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_set_temperature_outside_quickveto_writes_normal_registers",
+      "rule": "F821",
+      "count": 2
+    },
+    {
+      "path": "tests/test_climate_quickveto.py",
+      "symbol": "test_u09_real_write_fences_survive_import_scope_teardown",
+      "rule": "F821",
+      "count": 5
+    },
+    {
+      "path": "tests/test_config_flow_identity_repair.py",
+      "symbol": "_ensure_config_flow_stubs",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "tests/test_coordinator.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 3
+    },
+    {
+      "path": "tests/test_coordinator.py",
+      "symbol": "_UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_dhw_status.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_dhw_status.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 16
+    },
+    {
+      "path": "tests/test_dhw_status.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.All",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.In",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Invalid",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Length",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Optional",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Range",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Required",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_eebus_admin_services.py",
+      "symbol": "test_real_schema_strict_int_validator_rejects_bool_before_handler.FakeVol.Schema",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_energy_last_good_isolation.py",
+      "symbol": "energy_module.UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_entity_icon_gate.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 9
+    },
+    {
+      "path": "tests/test_entity_icon_gate.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 38
+    },
+    {
+      "path": "tests/test_entity_icon_gate.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 115
+    },
+    {
+      "path": "tests/test_entity_icon_gate.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_entity_icon_gate.py",
+      "symbol": "test_all_icons_are_mdi_prefixed",
+      "rule": "C901",
+      "count": 22
+    },
+    {
+      "path": "tests/test_entry_cleanup_retry_isolation.py",
+      "symbol": "test_unload_retry_cleans_only_target_once",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "tests/test_entry_cleanup_retry_isolation.py",
+      "symbol": "test_unload_retry_cleans_only_target_once",
+      "rule": "PLR0915",
+      "count": 66
+    },
+    {
+      "path": "tests/test_evse_binding_single_faults.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_identity_join_residuals.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_revision_recovery.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_semreg.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_semreg.py",
+      "symbol": "test_client_uses_only_the_fixed_mtls_operation.Content.read",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_semreg.py",
+      "symbol": "test_client_uses_only_the_fixed_mtls_operation.Session.post",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "tests/test_evse_semreg.py",
+      "symbol": "test_rejected_update_does_not_advance_accepted_coordinator_state.Client.async_current_snapshot",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_evse_semreg.py",
+      "symbol": "test_reordered_multi_connector_snapshot_preserves_deterministic_entity_identity",
+      "rule": "E731",
+      "count": 1
+    },
+    {
+      "path": "tests/test_fan.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_fan.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "tests/test_fan.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_forward_compat_m4b.py",
+      "symbol": "_UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_m2m_persistence_publication_order.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "tests/test_m2m_persistence_publication_order.py",
+      "symbol": "test_persistence_failure_blocks_publication_then_retry_preserves_identity",
+      "rule": "C901",
+      "count": 15
+    },
+    {
+      "path": "tests/test_m2m_persistence_publication_order.py",
+      "symbol": "test_persistence_failure_blocks_publication_then_retry_preserves_identity",
+      "rule": "PLR0915",
+      "count": 112
+    },
+    {
+      "path": "tests/test_m2m_persistence_publication_order.py",
+      "symbol": "test_persistence_failure_blocks_publication_then_retry_preserves_identity.scenario",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "tests/test_m2m_persistence_publication_order.py",
+      "symbol": "test_persistence_failure_blocks_publication_then_retry_preserves_identity.scenario",
+      "rule": "PLR0915",
+      "count": 110
+    },
+    {
+      "path": "tests/test_m2m_revision_vector_axes.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_m2m_task_cancellation.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_number.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_number_dhw_bivalence.py",
+      "symbol": "modules.UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_optional_query_sequences.py",
+      "symbol": "coordinator_module.UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_post_parity_adoption_checks.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_decimal_exponent_boundaries.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "<module>",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "_Content.read",
+      "rule": "E702",
+      "count": 2
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "_Session.post",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "_payload",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_client_uses_exact_fixed_gateway_operation",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_closed_error_is_terminal",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_descriptor_store_rejects_invalid_dimension_values",
+      "rule": "E701",
+      "count": 2
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_descriptor_store_rejects_invalid_dimension_values",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_descriptor_store_rejects_non_scalar_schema_version",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_descriptor_store_rejects_unknown_or_incompatible_identity",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_energy_wh_conversion_is_context_independent",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_non_energy_publishes_when_energy_is_validly_withheld",
+      "rule": "E702",
+      "count": 5
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_accepts_observed_candidate_assertion",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_contract_drift",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_contract_drift",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_crossed_energy_dimension_value",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_duplicate_or_missing_projection_disposition",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_duplicate_semantic_key_before_publication",
+      "rule": "E702",
+      "count": 3
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_inner_fact_asset_mismatch",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_invalid_candidate_assertion",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_invalid_candidate_assertion",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_invalid_candidate_quality_lifecycle",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_invalid_candidate_quality_lifecycle",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_malformed_fact_envelope_revision",
+      "rule": "E701",
+      "count": 3
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_malformed_fact_envelope_revision",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_non_scalar_evaluation_state",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_non_scalar_evaluation_state",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_selection_not_bound_to_candidate",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_unbound_energy_projection_loss",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_unhashable_projection_pair_members",
+      "rule": "E701",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m.py",
+      "symbol": "test_parser_rejects_unhashable_projection_pair_members",
+      "rule": "E702",
+      "count": 1
+    },
+    {
+      "path": "tests/test_pv_m2m_options.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_pv_m2m_wiring.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_pv_selection_binding_joins.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_radio_device.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 5
+    },
+    {
+      "path": "tests/test_radio_device.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 21
+    },
+    {
+      "path": "tests/test_radio_device.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 59
+    },
+    {
+      "path": "tests/test_radio_device.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_readme_options.py",
+      "symbol": "form_contract",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "tests/test_semantic_poll_background_task.py",
+      "symbol": "test_close_cancels_and_joins_poll_and_late_refresh_without_notification",
+      "rule": "PLR0915",
+      "count": 60
+    },
+    {
+      "path": "tests/test_semantic_poll_background_task.py",
+      "symbol": "test_close_cancels_and_joins_poll_and_late_refresh_without_notification.exercise",
+      "rule": "PLR0915",
+      "count": 58
+    },
+    {
+      "path": "tests/test_semantic_snapshot_client.py",
+      "symbol": "test_candidate_join_preserves_every_fact_key_field",
+      "rule": "E701",
+      "count": 5
+    },
+    {
+      "path": "tests/test_semantic_snapshot_client.py",
+      "symbol": "test_malformed_attempt_rejected_atomically_without_input_mutation",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "tests/test_semantic_snapshot_client.py",
+      "symbol": "test_malformed_attempt_rejected_atomically_without_input_mutation",
+      "rule": "E701",
+      "count": 11
+    },
+    {
+      "path": "tests/test_semantic_snapshot_client.py",
+      "symbol": "test_retained_evaluation_matches_complete_snapshot_audit_records",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "tests/test_semantic_snapshot_coordinator.py",
+      "symbol": "test_entry_setup_publication_unload_and_fresh_setup",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "tests/test_semantic_snapshot_coordinator.py",
+      "symbol": "test_entry_setup_publication_unload_and_fresh_setup",
+      "rule": "PLR0915",
+      "count": 84
+    },
+    {
+      "path": "tests/test_semantic_snapshot_coordinator.py",
+      "symbol": "test_graphql_support_state_and_poll_suppression",
+      "rule": "PLR0915",
+      "count": 51
+    },
+    {
+      "path": "tests/test_sensor.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_sensor.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 19
+    },
+    {
+      "path": "tests/test_sensor.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "fake_startup_dns_context",
+      "rule": "C901",
+      "count": 14
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "fake_startup_dns_context.install",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "fake_startup_dns_context.install.FakeResolverContext.Pipe",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "fake_startup_dns_context.install.FakeResolverContext.Process",
+      "rule": "N802",
+      "count": 1
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing",
+      "rule": "C901",
+      "count": 12
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "test_startup_budgeted_urlopen_preserves_redirect_and_proxy_routing",
+      "rule": "PLR0915",
+      "count": 54
+    },
+    {
+      "path": "tests/test_smoke_profile.py",
+      "symbol": "test_startup_http_reader_rejects_oversized_headers_and_body_framing",
+      "rule": "C901",
+      "count": 17
+    },
+    {
+      "path": "tests/test_solar_cylinder.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 6
+    },
+    {
+      "path": "tests/test_solar_cylinder.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 23
+    },
+    {
+      "path": "tests/test_solar_cylinder.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 68
+    },
+    {
+      "path": "tests/test_solar_cylinder.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_storage_m2m.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 1
+    },
+    {
+      "path": "tests/test_system.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 6
+    },
+    {
+      "path": "tests/test_system.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 26
+    },
+    {
+      "path": "tests/test_system.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 79
+    },
+    {
+      "path": "tests/test_system.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    },
+    {
+      "path": "tests/test_system_bound_reprobe.py",
+      "symbol": "<module>",
+      "rule": "F401",
+      "count": 1
+    },
+    {
+      "path": "tests/test_system_bound_reprobe.py",
+      "symbol": "harness",
+      "rule": "F811",
+      "count": 1
+    },
+    {
+      "path": "tests/test_text_listener.py",
+      "symbol": "_ensure_text_stubs",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "tests/test_valve.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 2
+    },
+    {
+      "path": "tests/test_water_heater_admission.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 3
+    },
+    {
+      "path": "tests/test_zone_valve.py",
+      "symbol": "<module>",
+      "rule": "E402",
+      "count": 5
+    },
+    {
+      "path": "tests/test_zone_valve.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "C901",
+      "count": 21
+    },
+    {
+      "path": "tests/test_zone_valve.py",
+      "symbol": "_ensure_homeassistant_stubs",
+      "rule": "PLR0915",
+      "count": 59
+    },
+    {
+      "path": "tests/test_zone_valve.py",
+      "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
+      "rule": "N818",
+      "count": 1
+    }
+  ]
+}
