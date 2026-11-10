@@ -10,9 +10,35 @@ from test_radio_device import (
     binary_sensor_platform,
 )
 from custom_components.helianthus.const import RADIO_STALE_GRACE_CYCLES
+from custom_components.helianthus.device_ids import exportable_radio_bus_keys
 
 HelianthusRadioSensor = sensor_platform.HelianthusRadioSensor
 HelianthusRadioConnectedBinarySensor = binary_sensor_platform.HelianthusRadioConnectedBinarySensor
+
+
+@pytest.mark.parametrize("address, accepted", [
+    (0x26, True), ("38", True), ("0x26", True), (" 0x26 ", True),
+    ("0o46", True), ("0b100110", True),
+    ("038", False), (True, False), (False, False), (None, False),
+    (-1, False), (256, False), ("0x100", False), (38.5, False),
+])
+def test_inventory_class_address_contract_through_materialization(address, accepted):
+    coordinator = object.__new__(HelianthusRadioDeviceCoordinator)
+    coordinator._last_by_slot = {}
+    coordinator._stale_cycles = {}
+    snapshot = coordinator._materialize_snapshot([{
+        "group": 12, "instance": 1, "device_class_address": address,
+    }])
+    devices = snapshot["radio_devices"]
+    if accepted:
+        assert len(devices) == 1
+        assert devices[0]["device_class_address"] == 0x26
+        assert devices[0]["radio_bus_key"] == "g0c-i01"
+        assert devices[0]["stale_cycles"] == 0
+        assert exportable_radio_bus_keys(devices) == {"g0c-i01"}
+    else:
+        assert devices == []
+        assert exportable_radio_bus_keys(devices) == set()
 
 
 def entities(coordinator):

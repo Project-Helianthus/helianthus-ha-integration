@@ -109,7 +109,7 @@ Required future behavior must be evaluated against the published API; missing au
 
 ## Bus addresses and radio grace
 
-The shared [address parser](../custom_components/helianthus/address.py) rejects
+The shared [address parser](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/address.py) rejects
 `None`, booleans and values outside 0..255. Integers in that byte range are
 accepted. Text is trimmed and parsed with Python base-zero conversion: decimal,
 `0x` hexadecimal, `0o` octal and `0b` binary prefixes are accepted; nonzero
@@ -122,7 +122,7 @@ retain their separate decimal/hex integer parsing, including leading-zero
 decimal strings and integers beyond a byte. Valid canonical address serialization
 and existing entity unique IDs are unchanged.
 
-The shared `RADIO_STALE_GRACE_CYCLES` in [constants](../custom_components/helianthus/const.py)
+The shared `RADIO_STALE_GRACE_CYCLES` in [constants](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/const.py)
 is 3. Radio sensor and connected binary sensor availability requires
 `stale_cycles < 3`; coordinator cleanup requires `stale_cycles > 3`. Thus counts
 0 and 2 remain available, count 3 retains an unavailable slot, and count 4 removes
@@ -130,8 +130,8 @@ it. Positive recovery resets the count. Partial inactive observations preserve
 last-known-good fields during retention; this is consumer policy, not native
 expiry or physical qualification.
 
-**Proven:** [synthetic parser tests](../tests/test_bus_address.py) and
-[radio boundary tests](../tests/test_radio_grace.py) encode these local rules.
+**Proven:** [synthetic parser tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_bus_address.py) and
+[radio boundary tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_radio_grace.py) encode these local rules.
 **Unknown:** physical behavior and resulting candidate security/hardware acceptance.
 This artifact-changing behavior correction requires renewed security and hardware
 evidence against the resulting candidate before shipping. Offline tests provide
