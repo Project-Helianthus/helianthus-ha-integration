@@ -62,10 +62,10 @@ def payload(*, allocated: bool = True) -> dict:
                 "facts": facts, "services": [], "capabilities": [], "fences": [], "cursors": []}
     evaluation = {"contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one", "revisions": REVISIONS, "context": {}, "facts": [{"candidate_id": item["candidates"][0]["candidate_id"], "candidate_revision": "1", "freshness": "fresh", "effective_availability": "available"} for item in facts], "evaluation_digest": DIGEST}
     projection = {"contract": "helianthus.semantic.projection/v1", "manifest": {"target_id": "target:gateway-semantic-evse", "target_version": "1.0.0", "kernel_version": "helianthus.semantic.kernel/v1", "pack_versions": [{"id": "helianthus.pack.evse", "version": "1.0.0"}], "mapping_revision": "1"}, "snapshot_id": "snapshot:one", "revisions": REVISIONS, "requested": [{"kind": "fact", "item_id": item[0]} for item in FACTS], "dispositions": dispositions}
-    return {"data": {"semanticEVSECurrent": {"snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection}}}
+    return {"data": {"semantic_evse_current": {"snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection}}}
 
 def add_allocated_connector(value: dict, connector: str, amps: str) -> None:
-    current = value["data"]["semanticEVSECurrent"]
+    current = value["data"]["semantic_evse_current"]
     source = deepcopy(current["snapshot"]["facts"][1])
     key = _key("evse.limit.allocated_current", "connector", connector)
     candidate = source["candidates"][0]
@@ -107,7 +107,7 @@ def test_reordered_multi_connector_snapshot_preserves_deterministic_entity_ident
     value = payload()
     add_allocated_connector(value, "connector-b", "16")
     reordered = deepcopy(value)
-    current = reordered["data"]["semanticEVSECurrent"]
+    current = reordered["data"]["semantic_evse_current"]
     current["snapshot"]["facts"].reverse()
     current["evaluation"]["facts"].reverse()
     current["projection"]["dispositions"][1]["source_keys"].reverse()
@@ -147,8 +147,8 @@ def test_multi_connector_refresh_persists_one_descriptor_per_connector() -> None
     "mutate",
     [
         lambda value: add_allocated_connector(value, "connector-a", "16"),
-        lambda value: value["data"]["semanticEVSECurrent"]["snapshot"]["facts"][1].update(conflicts=[{"candidate_id": "candidate:conflict"}]),
-        lambda value: value["data"]["semanticEVSECurrent"]["snapshot"]["facts"][1]["key"]["dimensions"][0]["value"].update(text=""),
+        lambda value: value["data"]["semantic_evse_current"]["snapshot"]["facts"][1].update(conflicts=[{"candidate_id": "candidate:conflict"}]),
+        lambda value: value["data"]["semantic_evse_current"]["snapshot"]["facts"][1]["key"]["dimensions"][0]["value"].update(text=""),
     ],
 )
 def test_duplicate_conflicting_or_malformed_connector_records_fail_closed(mutate) -> None:
@@ -163,7 +163,7 @@ def test_partial_projection_retains_configured_and_withholds_allocated() -> None
 
 def test_non_tesla_promoted_pack_record_uses_its_own_lifecycle_and_loss_metadata() -> None:
     value = payload(allocated=False)
-    current = value["data"]["semanticEVSECurrent"]
+    current = value["data"]["semantic_evse_current"]
     source = current["snapshot"]["sources"][0]
     source.update(source_id="source:ocpp-evse-a", protocol_id="ocpp", profile_id="ocpp.evse.current-limit", profile_version="2.0.1")
     binding = current["snapshot"]["bindings"][0]
@@ -194,7 +194,7 @@ def test_non_tesla_promoted_pack_record_uses_its_own_lifecycle_and_loss_metadata
 )
 def test_malformed_public_lifecycle_metadata_fails_closed(field: str, invalid: str) -> None:
     value = payload()
-    value["data"]["semanticEVSECurrent"]["snapshot"]["facts"][0]["candidates"][0][
+    value["data"]["semantic_evse_current"]["snapshot"]["facts"][0]["candidates"][0][
         "freshness_policy"
     ][field] = invalid
     with pytest.raises(evse_m2m.EVSEM2MProtocolError):
@@ -215,7 +215,7 @@ def test_each_candidate_evidence_record_requires_a_complete_evidence_reference(
     fact_index: int, evidence: list[object]
 ) -> None:
     value = payload()
-    value["data"]["semanticEVSECurrent"]["snapshot"]["facts"][fact_index]["candidates"][0][
+    value["data"]["semantic_evse_current"]["snapshot"]["facts"][fact_index]["candidates"][0][
         "evidence"
     ] = evidence
     with pytest.raises(evse_m2m.EVSEM2MProtocolError):
@@ -228,10 +228,10 @@ def test_persisted_entity_identity_keeps_the_evse_or_connector_dimension() -> No
     assert restored == (descriptor,)
 
 @pytest.mark.parametrize("mutate", [
-    lambda value: value["data"]["semanticEVSECurrent"]["snapshot"]["identity_links"][0].update(state="candidate"),
-    lambda value: value["data"]["semanticEVSECurrent"]["snapshot"]["facts"][0]["candidates"][0]["origin"].update(binding_id="binding:other"),
-    lambda value: value["data"]["semanticEVSECurrent"]["projection"]["manifest"].update(mapping_revision="2"),
-    lambda value: value["data"]["semanticEVSECurrent"]["evaluation"]["facts"][0].update(freshness="stale"),
+    lambda value: value["data"]["semantic_evse_current"]["snapshot"]["identity_links"][0].update(state="candidate"),
+    lambda value: value["data"]["semantic_evse_current"]["snapshot"]["facts"][0]["candidates"][0]["origin"].update(binding_id="binding:other"),
+    lambda value: value["data"]["semantic_evse_current"]["projection"]["manifest"].update(mapping_revision="2"),
+    lambda value: value["data"]["semantic_evse_current"]["evaluation"]["facts"][0].update(freshness="stale"),
 ])
 def test_identity_provenance_manifest_and_stale_reports_fail_closed(mutate) -> None:
     value = payload()
@@ -258,7 +258,7 @@ def test_client_uses_only_the_fixed_mtls_operation() -> None:
     session = Session()
     assert asyncio.run(evse_m2m.EVSEM2MClient(session=session, endpoint="https://evse.example.test/graphql/m2m/v1", asset_ref=ASSET).async_current_snapshot()).facts
     assert session.kwargs["json"]["operationName"] == "SemanticEVSECurrent"
-    assert session.kwargs["json"]["variables"]["request"]["contractId"] == evse_m2m.PUBLIC_GRAPHQL_SEMANTIC_EVSE_V1
+    assert session.kwargs["json"]["variables"]["request"]["contract_id"] == evse_m2m.PUBLIC_GRAPHQL_SEMANTIC_EVSE_V1
     assert "modbus.v1" not in session.kwargs["json"]["query"]
 
 def test_rejected_update_does_not_advance_accepted_coordinator_state() -> None:
@@ -268,7 +268,7 @@ def test_rejected_update_does_not_advance_accepted_coordinator_state() -> None:
             self.calls += 1
             if self.calls == 1: return evse_m2m.parse_m2m_response(payload(), expected_asset_ref=ASSET)
             invalid = payload()
-            invalid["data"]["semanticEVSECurrent"]["snapshot"]["facts"][1]["candidates"][0]["evidence"] = [None]
+            invalid["data"]["semantic_evse_current"]["snapshot"]["facts"][1]["candidates"][0]["evidence"] = [None]
             return evse_m2m.parse_m2m_response(invalid, expected_asset_ref=ASSET)
     async def persist(_descriptors): return None
     value = evse_m2m.HelianthusEVSEM2MCoordinator(hass=object(), client=Client(), scan_interval=60, entry_id="entry-1", asset_ref=ASSET, descriptors=(), persist_descriptors=persist)

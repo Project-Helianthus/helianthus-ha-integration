@@ -107,7 +107,7 @@ def _payload(*, asset_ref: str = ASSET, operating_withdrawn: bool = False, alter
     snapshot = {"contract": "helianthus.semantic.kernel/v1", "snapshot_id": "snapshot:one", "asset_id": asset_ref, "revisions": REVISIONS, "evaluated_at": {}, "evaluate_monotonic": {}, "sources": [source], "bindings": [binding], "identity_links": [identity], "facts": facts, "services": [], "capabilities": [], "fences": [], "cursors": []}
     evaluation = {"contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one", "revisions": REVISIONS, "context": {}, "facts": evaluation_facts, "evaluation_digest": DIGEST}
     projection = {"contract": "helianthus.semantic.projection/v1", "manifest": {"target_id": "target:gateway-semantic-storage", "target_version": "1.0.0", "kernel_version": "helianthus.semantic.kernel/v1", "pack_versions": [{"id": "helianthus.pack.storage", "version": "1.1.0"}], "mapping_revision": "1"}, "snapshot_id": "snapshot:one", "revisions": REVISIONS, "requested": requested, "dispositions": dispositions}
-    return {"data": {"semanticStorageCurrent": {"snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection}}}
+    return {"data": {"semantic_storage_current": {"snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection}}}
 
 
 def test_exact_gateway_fixture_maps_the_seven_public_storage_facts() -> None:
@@ -169,7 +169,7 @@ def test_soft_start_withdraws_only_operating_state() -> None:
 ])
 def test_identity_digest_and_manifest_mismatches_reject(path) -> None:
     payload = _payload()
-    current = payload["data"]["semanticStorageCurrent"]
+    current = payload["data"]["semantic_storage_current"]
     if path[0] == "projection":
         current["projection"][path[1]] = path[2]
     else:
@@ -180,7 +180,7 @@ def test_identity_digest_and_manifest_mismatches_reject(path) -> None:
 
 def test_source_and_binding_identity_mismatches_reject() -> None:
     payload = _payload()
-    snapshot = payload["data"]["semanticStorageCurrent"]["snapshot"]
+    snapshot = payload["data"]["semantic_storage_current"]["snapshot"]
     snapshot["bindings"][0]["source_id"] = "source:other"
     with pytest.raises(storage_m2m.StorageM2MProtocolError, match="identity"):
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
@@ -188,7 +188,7 @@ def test_source_and_binding_identity_mismatches_reject() -> None:
 
 def test_candidate_provenance_must_match_the_verified_binding() -> None:
     payload = _payload()
-    candidate = payload["data"]["semanticStorageCurrent"]["snapshot"]["facts"][0]["candidates"][0]
+    candidate = payload["data"]["semantic_storage_current"]["snapshot"]["facts"][0]["candidates"][0]
     candidate["origin"]["binding_id"] = "binding:other"
     with pytest.raises(storage_m2m.StorageM2MProtocolError, match="provenance"):
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
@@ -196,7 +196,7 @@ def test_candidate_provenance_must_match_the_verified_binding() -> None:
 
 def test_candidate_generation_must_exactly_match_the_verified_binding() -> None:
     payload = _payload()
-    candidate = payload["data"]["semanticStorageCurrent"]["snapshot"]["facts"][0]["candidates"][0]
+    candidate = payload["data"]["semantic_storage_current"]["snapshot"]["facts"][0]["candidates"][0]
     candidate["driver_generation"] = "2"
     with pytest.raises(storage_m2m.StorageM2MProtocolError, match="driver generation"):
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
@@ -212,7 +212,7 @@ def test_candidate_generation_must_exactly_match_the_verified_binding() -> None:
 ])
 def test_driver_generation_absent_or_malformed_rejects(target, value) -> None:
     payload = _payload()
-    snapshot = payload["data"]["semanticStorageCurrent"]["snapshot"]
+    snapshot = payload["data"]["semantic_storage_current"]["snapshot"]
     item = snapshot["bindings"][0] if target == "binding" else snapshot["facts"][0]["candidates"][0]
     if value is None:
         del item["driver_generation"]
@@ -236,7 +236,7 @@ def test_qualified_non_modbus_source_uses_the_same_public_storage_contract() -> 
 ])
 def test_loss_source_items_must_be_one_canonical_definition_id(source_items) -> None:
     payload = _payload(alternate_protocol=True)
-    loss = payload["data"]["semanticStorageCurrent"]["projection"]["dispositions"][2]["loss"][0]
+    loss = payload["data"]["semantic_storage_current"]["projection"]["dispositions"][2]["loss"][0]
     loss["source_items"] = source_items
     with pytest.raises(storage_m2m.StorageM2MProtocolError, match="source items"):
         storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)
@@ -334,9 +334,9 @@ def test_descriptor_serializer_rejects_a_different_pack_asset() -> None:
 
 
 @pytest.mark.parametrize("mutate", [
-    lambda payload: payload["data"]["semanticStorageCurrent"].update({"selections": [{}]}),
-    lambda payload: payload["data"]["semanticStorageCurrent"]["projection"]["dispositions"][2].update({"loss": []}),
-    lambda payload: payload["data"]["semanticStorageCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"].update({"qualification": "unqualified"}),
+    lambda payload: payload["data"]["semantic_storage_current"].update({"selections": [{}]}),
+    lambda payload: payload["data"]["semantic_storage_current"]["projection"]["dispositions"][2].update({"loss": []}),
+    lambda payload: payload["data"]["semantic_storage_current"]["snapshot"]["facts"][0]["candidates"][0]["quality"].update({"qualification": "unqualified"}),
 ])
 def test_selection_loss_and_quality_rejections_do_not_parse(mutate) -> None:
     payload = _payload()
@@ -347,7 +347,7 @@ def test_selection_loss_and_quality_rejections_do_not_parse(mutate) -> None:
 
 def test_stale_is_retained_but_expired_is_not_available() -> None:
     payload = _payload()
-    evaluations = payload["data"]["semanticStorageCurrent"]["evaluation"]["facts"]
+    evaluations = payload["data"]["semantic_storage_current"]["evaluation"]["facts"]
     evaluations[0]["freshness"] = "stale"
     evaluations[1]["freshness"] = "expired"
     snapshot = storage_m2m.parse_m2m_response(payload, expected_asset_ref=ASSET)

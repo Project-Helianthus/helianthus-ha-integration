@@ -200,7 +200,7 @@ query Devices {
 
 QUERY_STATUS = """
 query Status {
-  busSummary {
+  bus_summary {
     status {
       bus_admission {
         source_selection {
@@ -246,7 +246,7 @@ query Status {
 
 QUERY_STATUS_NO_INITIATOR = """
 query Status {
-  busSummary {
+  bus_summary {
     status {
       bus_admission {
         source_selection {
@@ -325,8 +325,8 @@ query Semantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
       special_function
       heating_demand_pct
@@ -377,8 +377,8 @@ query Semantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
       special_function
       heating_demand_pct
@@ -430,8 +430,8 @@ query Semantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
       special_function
       heating_demand_pct
@@ -472,8 +472,8 @@ query Semantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
       special_function
       heating_demand_pct
@@ -510,8 +510,8 @@ query Semantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
       special_function
       heating_demand_pct
@@ -563,7 +563,7 @@ _PROMOTED_SEMANTIC_FIELDS = [
     "overrun_active",
 ]
 _STATUS_SCHEMA_FIELDS = [
-    "busSummary",
+    "bus_summary",
     "status",
     "bus_admission",
     "source_selection",
@@ -1403,7 +1403,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 payload = await self._client.execute(query)
             except GraphQLResponseError as exc:
                 if not probe_bounds or not _is_missing_field_error(
-                    exc.errors, ["dhw_bivalence_point_bound", "dhwBivalencePointBound"]
+                    exc.errors, ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"]
                 ):
                     raise
                 self._system_dhw_bound_next_probe = (

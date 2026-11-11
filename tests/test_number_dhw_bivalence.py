@@ -237,7 +237,7 @@ def test_refresh_uses_same_snapshot_for_limits_and_writes(modules):
             _set(number, maximum)
 
 
-@pytest.mark.parametrize("missing_field", ["dhw_bivalence_point_bound", "dhwBivalencePointBound"])
+@pytest.mark.parametrize("missing_field", ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"])
 def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, missing_field):
     module = modules.coordinator
     missing = module.GraphQLResponseError([

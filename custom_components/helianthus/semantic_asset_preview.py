@@ -33,7 +33,7 @@ def preview_semantic_assets(
         options={CONF_SEMANTIC_ASSET_IDS: selected_ids}, data={}
     ))
     assets = {} if snapshot is None else {
-        asset["assetId"]: asset for asset in snapshot["assets"]
+        asset["asset_id"]: asset for asset in snapshot["assets"]
     }
     rows = []
     for asset_id in ids:
@@ -42,14 +42,14 @@ def preview_semantic_assets(
             status = "unknown"
         elif asset is None:
             status = "selected-not-in-this-snapshot"
-        elif asset["unavailableReason"] is not None:
+        elif asset["unavailable_reason"] is not None:
             status = "selected-unavailable"
         else:
             status = "selected-readable"
         rows.append({
-            "assetId": asset_id,
+            "asset_id": asset_id,
             "status": status,
-            "unavailableReason": None if asset is None else asset["unavailableReason"],
+            "unavailable_reason": None if asset is None else asset["unavailable_reason"],
             "asset": _detach(asset),
         })
     return rows

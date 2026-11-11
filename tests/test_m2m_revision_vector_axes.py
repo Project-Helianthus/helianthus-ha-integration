@@ -116,7 +116,7 @@ def _response(consumer):
                     {"id": f"helianthus.pack.{consumer}", "version": "1.0.0"}], "mapping_revision": "1"},
             "snapshot_id": "snapshot:synthetic", "revisions": deepcopy(revisions),
             "requested": requested, "dispositions": dispositions}}
-    field = "semanticPVCurrent" if consumer == "pv" else "semanticEVSECurrent"
+    field = "semantic_pv_current" if consumer == "pv" else "semantic_evse_current"
     return {"data": {field: current}}, current
 
 

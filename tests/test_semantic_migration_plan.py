@@ -38,8 +38,8 @@ WITHHELD = (
 def fixture(row=CANDIDATES[0]):
     family, fact, dim, value, old_fact, old_kind, old_value, unit, device_class = row
     uid = "entry-synthetic-" + family + "-saved-opaque"
-    key = {"packId": "helianthus.pack." + family,
-           "packVersion": "1.0.0" if family == "pv" else "1.1.0", "factId": fact,
+    key = {"pack_id": "helianthus.pack." + family,
+           "pack_version": "1.0.0" if family == "pv" else "1.1.0", "fact_id": fact,
            "dimensions": [{"id": family + ".dimension." + dim, "value": {
                "kind": "text", "text": value, "quantity": None, "boolean": None,
                "symbol": None, "symbols": None, "time": None}}]}
@@ -95,8 +95,8 @@ OLD = ("persisted_descriptors", 0)
 REG = ("registry_inventory", 0)
 AXES = (
     (REQUEST, "entry_id", "entry:other"), (REQUEST, "asset_ref", "asset:other"),
-    (KEY, "packId", "helianthus.pack.other"), (KEY, "packVersion", "9.0.0"),
-    (KEY, "factId", "fact.other"), (KEY, "dimensions", []),
+    (KEY, "pack_id", "helianthus.pack.other"), (KEY, "pack_version", "9.0.0"),
+    (KEY, "fact_id", "fact.other"), (KEY, "dimensions", []),
     (DIM, "id", "dimension.other"), (DIM + ("value",), "kind", "boolean"),
     (DIM + ("value",), "text", "other"),
     (OLD, "fact_id", "fact.other"), (OLD + ("dimension",), "kind", "other"),
@@ -126,7 +126,7 @@ def test_explicit_configuration_is_binding(row, field):
 
 
 OMIT = [(REQUEST, f) for f in ("entry_id", "asset_ref", "key")]
-OMIT += [(KEY, f) for f in ("packId", "packVersion", "factId", "dimensions")]
+OMIT += [(KEY, f) for f in ("pack_id", "pack_version", "fact_id", "dimensions")]
 OMIT += [(DIM, f) for f in ("id", "value")]
 OMIT += [(DIM + ("value",), f) for f in ("kind", "text", "quantity", "boolean", "symbol", "symbols", "time")]
 OMIT += [(OLD, f) for f in ("fact_id", "dimension", "unique_id")]
@@ -215,7 +215,7 @@ def test_missing_identity_or_nonexact_shape_withheld(case):
 def test_partial_plan_keeps_valid_sibling_and_is_deterministic():
     data = fixture()
     invalid = deepcopy(data["requests"][0])
-    invalid["key"]["factId"] = "pv.energy.generated"
+    invalid["key"]["fact_id"] = "pv.energy.generated"
     data["requests"].append(invalid)
     result = build_migration_plan(**data)
     assert len(result["proposed"]) == 1
@@ -254,7 +254,7 @@ def test_normalized_readonly_graphql_key_supported():
     data["requests"][0]["key"] = freeze(expected)
     result = build_migration_plan(**data)
     assert not result["rejected"]
-    assert result["proposed"][0]["key"]["factId"] == "pv.ac.voltage"
+    assert result["proposed"][0]["key"]["fact_id"] == "pv.ac.voltage"
     assert result["proposed"][0]["key"]["dimensions"][0]["value"]["text"] == "phase:L1"
 
 
@@ -302,7 +302,7 @@ def test_registry_settings_are_preserved_without_enabling_or_unhiding(disabled, 
 def test_same_family_alternative_fact_does_not_join_by_position(row):
     data = fixture(row)
     other = next(r for r in CANDIDATES if r[0] == row[0] and r[1] != row[1])
-    at(data, KEY)["factId"] = other[1]
+    at(data, KEY)["fact_id"] = other[1]
     reject(data)
 
 
@@ -324,7 +324,7 @@ def test_inventory_retains_unrelated_multidimension_shared_reservations():
 
 ARMS = ("quantity", "boolean", "text", "symbol", "symbols", "time")
 SYMBOL = {"namespace": "symbol.synthetic", "token": "", "known": False}
-TIME = {"unixNanoseconds": "0", "clockId": "clock.synthetic", "uncertaintyNs": "0"}
+TIME = {"unix_nanoseconds": "0", "clock_id": "clock.synthetic", "uncertainty_ns": "0"}
 VALID_VALUES = (
     ("text", "synthetic"), ("text", ""), ("boolean", False),
     ("quantity", {"number": Decimal(0), "unit": "unit.synthetic"}),
@@ -332,8 +332,8 @@ VALID_VALUES = (
     ("quantity", {"number": Decimal("1E+30"), "unit": "unit.synthetic"}),
     ("symbol", SYMBOL), ("symbols", [SYMBOL]), ("symbols", (SYMBOL,)),
     ("time", TIME),
-    ("time", {**TIME, "unixNanoseconds": str(-(2**63)), "uncertaintyNs": str(2**64 - 1)}),
-    ("time", {**TIME, "unixNanoseconds": str(2**63 - 1)}),
+    ("time", {**TIME, "unix_nanoseconds": str(-(2**63)), "uncertainty_ns": str(2**64 - 1)}),
+    ("time", {**TIME, "unix_nanoseconds": str(2**63 - 1)}),
 )
 
 
@@ -342,14 +342,14 @@ def reservation_fixture(kind="text", value="synthetic"):
     # One admissible candidate and a withheld sibling: global errors must reject
     # both with the inventory reason, rather than preserving a partial proposal.
     invalid = deepcopy(data["requests"][0])
-    invalid["key"]["factId"] = "pv.energy.generated"
+    invalid["key"]["fact_id"] = "pv.energy.generated"
     data["requests"].append(invalid)
     other = deepcopy(data["registry_inventory"][0])
     other.update(entry_id="entry-other", asset_ref="asset:other",
                  unique_id="other-shared", entity_id="sensor.other",
                  device_id="device:other", device_identifier=["helianthus", "other"])
     other["semantic_key"] = {
-        "packId": "pack.synthetic", "packVersion": "1.0.0", "factId": "fact.synthetic",
+        "pack_id": "pack.synthetic", "pack_version": "1.0.0", "fact_id": "fact.synthetic",
         "dimensions": [{"id": "dimension.synthetic", "value": {
             **dict.fromkeys(ARMS), "kind": kind, kind: deepcopy(value)}}],
     }
@@ -395,12 +395,12 @@ BAD_VALUES = (
     + [("time", v) for v in ("0", {}, {**TIME, "extra": False})]
     + [("time", {k: v for k, v in TIME.items() if k != field}) for field in TIME]
     + [("time", {**TIME, field: v}) for field, v in (
-        ("clockId", ""), ("clockId", 7),
-        ("unixNanoseconds", 0), ("unixNanoseconds", False),
-        ("unixNanoseconds", "00"), ("unixNanoseconds", "-0"),
-        ("unixNanoseconds", str(-(2**63) - 1)), ("unixNanoseconds", str(2**63)),
-        ("uncertaintyNs", 0), ("uncertaintyNs", "-1"),
-        ("uncertaintyNs", "01"), ("uncertaintyNs", str(2**64)))])
+        ("clock_id", ""), ("clock_id", 7),
+        ("unix_nanoseconds", 0), ("unix_nanoseconds", False),
+        ("unix_nanoseconds", "00"), ("unix_nanoseconds", "-0"),
+        ("unix_nanoseconds", str(-(2**63) - 1)), ("unix_nanoseconds", str(2**63)),
+        ("uncertainty_ns", 0), ("uncertainty_ns", "-1"),
+        ("uncertainty_ns", "01"), ("uncertainty_ns", str(2**64)))])
 
 
 @pytest.mark.parametrize("kind,value", BAD_VALUES)
@@ -420,7 +420,7 @@ def test_null_active_or_nonnull_inactive_reservation_arm_rejects_every_request(k
 
 
 @pytest.mark.parametrize("path,field", [
-    ((), "packId"), ((), "packVersion"), ((), "factId"), ((), "dimensions"),
+    ((), "pack_id"), ((), "pack_version"), ((), "fact_id"), ((), "dimensions"),
     (("dimensions", 0), "id"), (("dimensions", 0), "value"),
     *(((("dimensions", 0, "value"), field)) for field in ("kind", *ARMS)),
 ])
@@ -455,8 +455,8 @@ def test_malformed_unrelated_device_identifier_rejects_every_request(identifier)
 
 
 @pytest.mark.parametrize("path,field,value", [
-    ((), "packId", "pack.other"), ((), "packVersion", "2.0.0"),
-    ((), "factId", "fact.other"), (("dimensions", 0), "id", "dimension.other"),
+    ((), "pack_id", "pack.other"), ((), "pack_version", "2.0.0"),
+    ((), "fact_id", "fact.other"), (("dimensions", 0), "id", "dimension.other"),
     (("dimensions", 0, "value"), "text", "phase:L2"),
     (("dimensions", 0, "value"), "text", ""),
 ])
@@ -473,7 +473,7 @@ def test_each_reservation_key_identity_component_prevents_false_collision(path, 
 
 
 @pytest.mark.parametrize("path,field", [
-    ((), "packId"), ((), "packVersion"), ((), "factId"),
+    ((), "pack_id"), ((), "pack_version"), ((), "fact_id"),
     (("dimensions", 0), "id"),
 ])
 def test_empty_reservation_identity_still_rejects_global_inventory(path, field):

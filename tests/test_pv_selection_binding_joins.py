@@ -85,7 +85,7 @@ def _response():
         "dispositions": [{"kind": "fact", "item_id": "inverter.ac.power.active",
                           "outcome": "exact", "source_keys": [deepcopy(key)], "loss": []}],
     }
-    return {"data": {"semanticPVCurrent": {"snapshot": snapshot, "evaluation": evaluation,
+    return {"data": {"semantic_pv_current": {"snapshot": snapshot, "evaluation": evaluation,
             "selections": [selection], "projection": projection}}}
 
 
@@ -117,7 +117,7 @@ def test_pv_selection_single_binding_mismatch_rejects_without_publication(axis):
     last_good = pv_m2m.parse_m2m_response(baseline, expected_asset_ref="pv-asset")
     _assert_zero_snapshot(last_good)
     payload = deepcopy(baseline)
-    current = payload["data"]["semanticPVCurrent"]
+    current = payload["data"]["semantic_pv_current"]
     selection = current["selections"][0]
     if axis == "snapshot_id":
         selection["snapshot_id"] = "snapshot:other"
@@ -126,7 +126,7 @@ def test_pv_selection_single_binding_mismatch_rejects_without_publication(axis):
 
     # Rebuild the expected single-leaf change independently of parser internals.
     expected = deepcopy(detached)
-    expected_selection = expected["data"]["semanticPVCurrent"]["selections"][0]
+    expected_selection = expected["data"]["semantic_pv_current"]["selections"][0]
     expected_selection["snapshot_id"] = (
         "snapshot:other" if axis == "snapshot_id" else "snapshot:synthetic")
     expected_selection["revisions"] = {
@@ -135,7 +135,7 @@ def test_pv_selection_single_binding_mismatch_rejects_without_publication(axis):
     }
     assert payload == expected
     for section in ("snapshot", "evaluation", "projection"):
-        assert current[section] == detached["data"]["semanticPVCurrent"][section]
+        assert current[section] == detached["data"]["semantic_pv_current"][section]
 
     published = []
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="^invalid selection$"):

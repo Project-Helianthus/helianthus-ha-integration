@@ -29,10 +29,10 @@ def hass():
 
 
 def unavailable(*ids):
-    return {"semanticSnapshot": {"assets": [
-        {"assetId": aid, "snapshot": None, "evaluation": None,
+    return {"semantic_snapshot": {"assets": [
+        {"asset_id": aid, "snapshot": None, "evaluation": None,
          "projection": None, "selections": [],
-         "unavailableReason": "semantic.read.reason.asset_unknown"}
+         "unavailable_reason": "semantic.read.reason.asset_unknown"}
         for aid in ids
     ]}}
 
@@ -105,11 +105,11 @@ def test_whole_snapshot_once_retention_failure_and_recovery():
         await coordinator.async_request_refresh()
         retained = coordinator.data
         assert seen == [(retained, True)]
-        assert tuple(a["assetId"] for a in retained["assets"]) == ids
-        assert client.calls == [(SEMANTIC_SNAPSHOT_QUERY, {"assetIds": list(ids)})]
+        assert tuple(a["asset_id"] for a in retained["assets"]) == ids
+        assert client.calls == [(SEMANTIC_SNAPSHOT_QUERY, {"asset_ids": list(ids)})]
         # A valid first sibling cannot leak out of a malformed whole response.
         client.payload = unavailable(*ids)
-        client.payload["semanticSnapshot"]["assets"][1]["snapshot"] = {}
+        client.payload["semantic_snapshot"]["assets"][1]["snapshot"] = {}
         await coordinator.async_request_refresh()
         assert coordinator.data is retained
         assert seen == [(retained, True), (retained, False)]
@@ -273,7 +273,7 @@ def test_five_pack_value_quality_and_evaluation_published_together():
 
 
 @pytest.mark.parametrize("initial_success", [False, True])
-@pytest.mark.parametrize("missing", ["semanticSnapshot", "assets", None])
+@pytest.mark.parametrize("missing", ["semantic_snapshot", "assets", None])
 def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial_success, missing):
     from custom_components.helianthus import semantic_snapshot_coordinator as module
     from custom_components.helianthus.graphql import GraphQLResponseError
@@ -302,7 +302,7 @@ def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial
             updated.clear()
             tick.set()
             await updated.wait()
-        expected = False if missing == "semanticSnapshot" else (True if initial_success else None)
+        expected = False if missing == "semantic_snapshot" else (True if initial_success else None)
         assert coordinator.supported is expected
         assert not coordinator.last_update_success
         assert coordinator.last_exception is error
@@ -396,7 +396,6 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
     install("custom_components.helianthus.entry_services",
             async_setup_optional_eebus_admin_service=AsyncMock(return_value=(admin, None, False)))
     monkeypatch.setattr(entry_setup, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
-    monkeypatch.setattr(entry_setup, "_migrate_unique_ids_to_snake_case", lambda *args: 0)
     monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
 
     async def exercise():
@@ -405,9 +404,9 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
                            options={"use_subscriptions": False, "scan_interval": 17})
         configured.unique_id = None
         client = Client(GraphQLResponseError([
-            {"message": 'Cannot query field "semanticSnapshot" on type "Query".'}]))
+            {"message": 'Cannot query field "semantic_snapshot" on type "Query".'}]))
         if readable_snapshot:
-            client.payload = {"semanticSnapshot": {"assets": [readable(*ROWS[0])]}}
+            client.payload = {"semantic_snapshot": {"assets": [readable(*ROWS[0])]}}
         monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: client)
         tracked = []
         def create_task(coro):
@@ -437,7 +436,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         if readable_snapshot:
             sensor, = shared(entities)
             assert sensor.available and sensor.native_value == Decimal("12.5")
-            client.payload = {"semanticSnapshot": {"assets": [
+            client.payload = {"semantic_snapshot": {"assets": [
                 readable(*ROWS[0], number="0", exponent=0)]}}
             await first.async_request_refresh()
             assert shared(entities) == [sensor]

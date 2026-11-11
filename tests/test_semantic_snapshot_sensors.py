@@ -27,8 +27,8 @@ ROWS = (
 
 def readable(pack, version, fact_id, dimension_id, unit, *, number="125", exponent=-1):
     record = asset(pack)
-    key = {"packId": "helianthus.pack." + pack, "packVersion": version,
-           "factId": fact_id, "dimensions": [{"id": dimension_id, "value": value("text", "scope:synthetic")} ]}
+    key = {"pack_id": "helianthus.pack." + pack, "pack_version": version,
+           "fact_id": fact_id, "dimensions": [{"id": dimension_id, "value": value("text", "scope:synthetic")} ]}
     fact = record["snapshot"]["facts"][0]
     fact["key"] = deepcopy(key)
     candidate = fact["candidates"][0]
@@ -38,38 +38,38 @@ def readable(pack, version, fact_id, dimension_id, unit, *, number="125", expone
     candidate["quality"].update(qualification="qualified", promotion="promoted")
     evidence = {"owner": "synthetic.public", "kind": "test", "digest": digest("synthetic evidence"),
                 "contract": "helianthus.semantic.kernel/v1", "access": "public", "redaction": "none"}
-    candidate.update(bindingId="binding:synthetic", sourceEpochId="epoch:synthetic", driverGeneration="1",
+    candidate.update(binding_id="binding:synthetic", source_epoch_id="epoch:synthetic", driver_generation="1",
                      evidence=[deepcopy(evidence)])
-    candidate["origin"].update(kind="native_observation", sourceId="source:synthetic",
-                                sourceEpochId="epoch:synthetic", bindingId="binding:synthetic",
+    candidate["origin"].update(kind="native_observation", source_id="source:synthetic",
+                                source_epoch_id="epoch:synthetic", binding_id="binding:synthetic",
                                 evidence=[deepcopy(evidence)])
     record["snapshot"]["sources"] = [{
-        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic", "protocolId": "protocol.synthetic",
-        "profileId": "profile.synthetic", "profileVersion": "1", "registryEvidence": deepcopy(evidence),
-        "startedAt": point(), "state": "current", "revision": "1"}]
+        "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic", "protocol_id": "protocol.synthetic",
+        "profile_id": "profile.synthetic", "profile_version": "1", "registry_evidence": deepcopy(evidence),
+        "started_at": point(), "state": "current", "revision": "1"}]
     record["snapshot"]["bindings"] = [{
-        "bindingId": "binding:synthetic", "assetId": record["assetId"], "sourceId": "source:synthetic",
-        "sourceEpochId": "epoch:synthetic", "driverGeneration": "1", "nativeResource": deepcopy(evidence),
+        "binding_id": "binding:synthetic", "asset_id": record["asset_id"], "source_id": "source:synthetic",
+        "source_epoch_id": "epoch:synthetic", "driver_generation": "1", "native_resource": deepcopy(evidence),
         "state": "current", "revision": "1"}]
-    record["snapshot"]["identityLinks"] = [{
-        "assetId": record["assetId"], "bindingId": "binding:synthetic", "state": "qualified",
+    record["snapshot"]["identity_links"] = [{
+        "asset_id": record["asset_id"], "binding_id": "binding:synthetic", "state": "qualified",
         "basis": [deepcopy(evidence)], "revision": "1"}]
     if not unit:
         descriptor = next(d for d in DESCRIPTORS if d.fact_id == fact_id)
         candidate["value"] = value("symbol", {"namespace": fact_id,
                                                "token": descriptor.symbols[0], "known": True})
-    record["evaluation"]["facts"][0].update(freshness="fresh", effectiveAvailability="available")
+    record["evaluation"]["facts"][0].update(freshness="fresh", effective_availability="available")
     projection = record["projection"]
-    projection["manifest"]["packVersions"][0]["version"] = version
-    projection["requested"][0]["itemId"] = fact_id
-    projection["dispositions"][0].update(itemId=fact_id, sourceKeys=[deepcopy(key)],
+    projection["manifest"]["pack_versions"][0]["version"] = version
+    projection["requested"][0]["item_id"] = fact_id
+    projection["dispositions"][0].update(item_id=fact_id, source_keys=[deepcopy(key)],
                                           outcome="exact", reason=None)
     return record
 
 
 class Client:
     def __init__(self, records):
-        self.payload = {"semanticSnapshot": {"assets": records}}
+        self.payload = {"semantic_snapshot": {"assets": records}}
         self.calls = []
 
     async def execute(self, query, variables):
@@ -86,7 +86,7 @@ def setup(records, runtime=None):
                         "status_coordinator": _FakeCoordinator({})})
         ha.data[DOMAIN]["entry-1"].update(runtime or {})
         ha.async_create_task = asyncio.create_task
-        coordinator = SemanticSnapshotCoordinator(ha, client, tuple(r["assetId"] for r in records))
+        coordinator = SemanticSnapshotCoordinator(ha, client, tuple(r["asset_id"] for r in records))
         await coordinator.async_request_refresh()
         assert coordinator.last_update_success, coordinator.last_exception
         ha.data[DOMAIN]["entry-1"]["semantic_snapshot_coordinator"] = coordinator
@@ -112,20 +112,20 @@ def test_real_setup_coherent_refresh_zero_unknown_loss_and_recovery():
     assert all(e.available and e.native_value == Decimal("12.5") for e in sensors)
     observed = []
     coordinator.async_add_listener(lambda: observed.append(tuple(e.native_value for e in sensors)))
-    client.payload = {"semanticSnapshot": {"assets": [readable(*row, number="0", exponent=0) for row in ROWS]}}
+    client.payload = {"semantic_snapshot": {"assets": [readable(*row, number="0", exponent=0) for row in ROWS]}}
     refresh(coordinator)
     assert observed == [(Decimal(0),) * 3]
     assert all(e.available for e in sensors)
     assert len(client.calls) == 2
-    assert all("semanticSnapshot(assetIds:" in query for query, _ in client.calls)
+    assert all("semantic_snapshot(asset_ids:" in query for query, _ in client.calls)
     assert all(not hasattr(e, "async_set_native_value") for e in sensors)
 
     failed = deepcopy(client.payload)
-    failed["semanticSnapshot"]["assets"][0] = {
-        "assetId": "asset:pv", "snapshot": None, "evaluation": None, "projection": None,
-        "selections": [], "unavailableReason": "semantic.read.reason.asset_unknown"}
-    failed["semanticSnapshot"]["assets"][1]["projection"]["dispositions"][0].update(
-        outcome="transformed", loss=[{"kind": "precision", "sourceItems": [],
+    failed["semantic_snapshot"]["assets"][0] = {
+        "asset_id": "asset:pv", "snapshot": None, "evaluation": None, "projection": None,
+        "selections": [], "unavailable_reason": "semantic.read.reason.asset_unknown"}
+    failed["semantic_snapshot"]["assets"][1]["projection"]["dispositions"][0].update(
+        outcome="transformed", loss=[{"kind": "precision", "source_items": [],
                                      "description": "synthetic loss", "reversible": False}])
     client.payload = failed
     refresh(coordinator)
@@ -136,7 +136,7 @@ def test_real_setup_coherent_refresh_zero_unknown_loss_and_recovery():
     refresh(coordinator)
     assert coordinator.data is retained
     assert not any(e.available for e in sensors)
-    client.payload = {"semanticSnapshot": {"assets": [readable(*row) for row in ROWS]}}
+    client.payload = {"semantic_snapshot": {"assets": [readable(*row) for row in ROWS]}}
     refresh(coordinator)
     assert all(e.available for e in sensors)
     coordinator.supported = False
@@ -168,22 +168,22 @@ def test_admission_axes_fail_closed_without_identity_churn(axis, invalid):
         record["projection"]["dispositions"][0].update(outcome=invalid, reason="reason.synthetic")
     elif axis.startswith("evaluated"):
         record["evaluation"]["facts"][0][
-            "freshness" if axis == "evaluatedFreshness" else "effectiveAvailability"] = invalid
+            "freshness" if axis == "evaluatedFreshness" else "effective_availability"] = invalid
     elif axis == "conflicts":
-        fact["conflicts"] = [{"conflictId": "conflict:synthetic", "kind": "value",
-                              "candidates": [candidate["candidateId"]], "evidence": [], "state": "open"}]
+        fact["conflicts"] = [{"conflict_id": "conflict:synthetic", "kind": "value",
+                              "candidates": [candidate["candidate_id"]], "evidence": [], "state": "open"}]
     elif axis == "alternatives":
         other = deepcopy(candidate)
-        other["candidateId"] = "candidate:alternative"
+        other["candidate_id"] = "candidate:alternative"
         fact["candidates"].append(other)
         evaluated = deepcopy(record["evaluation"]["facts"][0])
-        evaluated["candidateId"] = other["candidateId"]
+        evaluated["candidate_id"] = other["candidate_id"]
         record["evaluation"]["facts"].append(evaluated)
     elif axis == "unit":
         candidate["value"]["quantity"]["unit"] = invalid
     else:
         candidate["value"]["quantity"]["number"] = {"coefficient": invalid, "exponent10": 0}
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert coordinator.last_update_success, coordinator.last_exception
     assert sensor.native_value is None and not sensor.available
@@ -202,7 +202,7 @@ def test_legacy_rows_never_create_duplicate_entities():
         record = readable(*row)
         owner = {"helianthus.pack.pv": "pv_m2m_coordinator",
                  "helianthus.pack.storage": "storage_m2m_coordinator"}[descriptor.pack_id]
-        _, _, _, entities = setup([record], {owner: _legacy(record["assetId"])})
+        _, _, _, entities = setup([record], {owner: _legacy(record["asset_id"])})
         assert shared(entities) == []
         _, _, _, entities = setup([record])
         assert len(shared(entities)) == 1
@@ -213,18 +213,18 @@ def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
     empty = deepcopy(record)
     empty["snapshot"]["facts"] = []
     empty["evaluation"]["facts"] = []
-    empty["projection"]["manifest"]["packVersions"] = []
+    empty["projection"]["manifest"]["pack_versions"] = []
     empty["projection"]["dispositions"] = []
     empty["projection"]["requested"] = []
     client, coordinator, ha, entities = setup([empty])
     assert shared(entities) == []
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     sensor = shared(entities)[0]
-    client.payload = {"semanticSnapshot": {"assets": [empty]}}
+    client.payload = {"semantic_snapshot": {"assets": [empty]}}
     refresh(coordinator)
     assert not sensor.available
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert shared(entities) == [sensor] and sensor.available
     for remove in ha.data[DOMAIN]["entry-1"]["unsub_listeners"]:
@@ -232,7 +232,7 @@ def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
     assert coordinator._listeners == []
 
 
-@pytest.mark.parametrize("component", ["entry", "asset", "packId", "packVersion", "factId", "dimensionId", "dimensionValue", "dimensionKind"])
+@pytest.mark.parametrize("component", ["entry", "asset", "pack_id", "pack_version", "fact_id", "dimensionId", "dimensionValue", "dimensionKind"])
 def test_complete_identity_components(component):
     key = readable(*ROWS[0])["snapshot"]["facts"][0]["key"]
     identity = semantic_unique_id("entry", "asset", key)
@@ -242,7 +242,7 @@ def test_complete_identity_components(component):
         entry = "other-entry"
     elif component == "asset":
         asset_id = "other-asset"
-    elif component in ("packId", "packVersion", "factId"):
+    elif component in ("pack_id", "pack_version", "fact_id"):
         changed[component] += "-other"
     elif component == "dimensionId":
         changed["dimensions"][0]["id"] += ".other"
@@ -298,16 +298,16 @@ def test_native_admission_is_independent_of_exact_projection(axis):
     elif axis == "binding":
         snapshot["bindings"][0]["state"] = "fenced"
     elif axis == "link":
-        snapshot["identityLinks"][0]["state"] = "candidate"
+        snapshot["identity_links"][0]["state"] = "candidate"
     elif axis == "basis":
-        snapshot["identityLinks"][0]["basis"] = []
+        snapshot["identity_links"][0]["basis"] = []
     elif axis == "origin":
-        candidate["origin"]["sourceId"] = "source:other"
+        candidate["origin"]["source_id"] = "source:other"
     elif axis == "evidence":
         candidate["evidence"] = []
     else:
         candidate["quality"]["assertion"] = "inferred"
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert coordinator.last_update_success, coordinator.last_exception
     assert not sensor.available and sensor.native_value is None
@@ -330,19 +330,19 @@ def test_each_uncovered_public_mapping_has_a_read_only_sensor(descriptor):
 def test_same_fact_on_distinct_assets_and_dimensions_stays_distinct():
     first = readable(*ROWS[0])
     second = deepcopy(first)
-    second["assetId"] = second["snapshot"]["assetId"] = "asset:other"
-    second["snapshot"]["facts"][0]["assetId"] = "asset:other"
-    second["snapshot"]["bindings"][0]["assetId"] = "asset:other"
-    second["snapshot"]["identityLinks"][0]["assetId"] = "asset:other"
+    second["asset_id"] = second["snapshot"]["asset_id"] = "asset:other"
+    second["snapshot"]["facts"][0]["asset_id"] = "asset:other"
+    second["snapshot"]["bindings"][0]["asset_id"] = "asset:other"
+    second["snapshot"]["identity_links"][0]["asset_id"] = "asset:other"
     fact = deepcopy(first["snapshot"]["facts"][0])
     fact["key"]["dimensions"][0]["value"]["text"] = "scope:other"
     fact["candidates"][0]["key"] = deepcopy(fact["key"])
-    fact["candidates"][0]["candidateId"] = "candidate:other"
+    fact["candidates"][0]["candidate_id"] = "candidate:other"
     first["snapshot"]["facts"].append(fact)
     evaluated = deepcopy(first["evaluation"]["facts"][0])
-    evaluated["candidateId"] = "candidate:other"
+    evaluated["candidate_id"] = "candidate:other"
     first["evaluation"]["facts"].append(evaluated)
-    first["projection"]["dispositions"][0]["sourceKeys"].append(deepcopy(fact["key"]))
+    first["projection"]["dispositions"][0]["source_keys"].append(deepcopy(fact["key"]))
     _, _, _, entities = setup([first, second])
     sensors = shared(entities)
     assert len(sensors) == len({e._attr_unique_id for e in sensors}) == 3
@@ -364,7 +364,7 @@ def test_unknown_symbol_is_withheld(member, invalid):
     assert sensor.native_value == "closed"
     record = deepcopy(record)
     record["snapshot"]["facts"][0]["candidates"][0]["value"]["symbol"][member] = invalid
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert coordinator.last_update_success
     assert not sensor.available and sensor.native_value is None
@@ -384,7 +384,7 @@ def test_unknown_symbol_is_withheld(member, invalid):
        value("symbol", {"namespace": "symbol.synthetic", "token": "zero", "known": False, **{member: other}}))
       for member, other in (("namespace", "symbol.other"), ("token", "other"), ("known", True))],
     *[(value("time", point()), value("time", {**point(), member: other}))
-      for member, other in (("unixNanoseconds", "1"), ("clockId", "clock.other"), ("uncertaintyNs", "1"))],
+      for member, other in (("unix_nanoseconds", "1"), ("clock_id", "clock.other"), ("uncertainty_ns", "1"))],
     (value("symbols", [{"namespace": "symbol.synthetic", "token": "zero", "known": False}]),
      value("symbols", [{"namespace": "symbol.synthetic", "token": "other", "known": False}])),
 ])
@@ -403,10 +403,10 @@ def test_refresh_provenance_changes_do_not_rekey_entity():
     identity = sensor._attr_unique_id
     record = deepcopy(record)
     candidate = record["snapshot"]["facts"][0]["candidates"][0]
-    candidate["candidateId"] = "candidate:replacement"
+    candidate["candidate_id"] = "candidate:replacement"
     candidate["revision"] = "8"
-    record["evaluation"]["facts"][0].update(candidateId="candidate:replacement", candidateRevision="8")
-    client.payload = {"semanticSnapshot": {"assets": [record]}}
+    record["evaluation"]["facts"][0].update(candidate_id="candidate:replacement", candidate_revision="8")
+    client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert sensor.available and sensor._attr_unique_id == identity
     assert shared(entities) == [sensor]
@@ -432,7 +432,7 @@ def test_pack_valid_empty_dimension_text_is_not_missing():
     fact = record["snapshot"]["facts"][0]
     fact["key"]["dimensions"][0]["value"]["text"] = ""
     fact["candidates"][0]["key"] = deepcopy(fact["key"])
-    record["projection"]["dispositions"][0]["sourceKeys"] = [deepcopy(fact["key"])]
+    record["projection"]["dispositions"][0]["source_keys"] = [deepcopy(fact["key"])]
     _, _, _, entities = setup([record])
     sensor, = shared(entities)
     assert sensor.available and sensor.native_value == Decimal("12.5")
@@ -460,13 +460,13 @@ def test_discovery_waits_for_first_admitted_reading(axis):
     assert shared(entities) == []
     refresh(coordinator)
     assert shared(entities) == []
-    client.payload = {"semanticSnapshot": {"assets": [admitted]}}
+    client.payload = {"semantic_snapshot": {"assets": [admitted]}}
     refresh(coordinator)
     sensor, = shared(entities)
     assert sensor.available
     refresh(coordinator)
     assert shared(entities) == [sensor]
-    client.payload = {"semanticSnapshot": {"assets": [rejected]}}
+    client.payload = {"semantic_snapshot": {"assets": [rejected]}}
     refresh(coordinator)
     assert shared(entities) == [sensor] and not sensor.available
 
@@ -480,10 +480,10 @@ def test_operation_argument_fields_have_no_measurement_state_class():
 
 def _as_asset(record, asset_id):
     record = deepcopy(record)
-    record["assetId"] = record["snapshot"]["assetId"] = asset_id
-    record["snapshot"]["facts"][0]["assetId"] = asset_id
-    record["snapshot"]["bindings"][0]["assetId"] = asset_id
-    record["snapshot"]["identityLinks"][0]["assetId"] = asset_id
+    record["asset_id"] = record["snapshot"]["asset_id"] = asset_id
+    record["snapshot"]["facts"][0]["asset_id"] = asset_id
+    record["snapshot"]["bindings"][0]["asset_id"] = asset_id
+    record["snapshot"]["identity_links"][0]["asset_id"] = asset_id
     return record
 
 
@@ -546,14 +546,14 @@ def test_legacy_bound_asset_keeps_its_uncovered_facts():
     uncovered = readable("pv", "1.0.0", "pv.dc.power", "pv.dimension.input", "unit.watt")
     record = covered
     fact = deepcopy(uncovered["snapshot"]["facts"][0])
-    fact["candidates"][0]["candidateId"] = "candidate:uncovered"
+    fact["candidates"][0]["candidate_id"] = "candidate:uncovered"
     record["snapshot"]["facts"].append(fact)
     evaluated = deepcopy(record["evaluation"]["facts"][0])
-    evaluated["candidateId"] = "candidate:uncovered"
+    evaluated["candidate_id"] = "candidate:uncovered"
     record["evaluation"]["facts"].append(evaluated)
-    record["projection"]["requested"].append({"kind": "fact", "itemId": "pv.dc.power"})
+    record["projection"]["requested"].append({"kind": "fact", "item_id": "pv.dc.power"})
     record["projection"]["dispositions"].append(deepcopy(uncovered["projection"]["dispositions"][0]))
-    _, _, _, entities = setup([record], {"pv_m2m_coordinator": _legacy(record["assetId"])})
+    _, _, _, entities = setup([record], {"pv_m2m_coordinator": _legacy(record["asset_id"])})
     assert [e.descriptor.fact_id for e in shared(entities)] == ["pv.dc.power"]
 
 
@@ -575,8 +575,8 @@ def test_withheld_fact_is_unavailable_never_zero(row):
     sensor = shared(entities)[0]
     assert sensor.available and sensor.native_value is not None
     for freshness, availability in (("stale", "available"), ("fresh", "unavailable")):
-        client.payload["semanticSnapshot"]["assets"][0]["evaluation"]["facts"][0].update(
-            freshness=freshness, effectiveAvailability=availability)
+        client.payload["semantic_snapshot"]["assets"][0]["evaluation"]["facts"][0].update(
+            freshness=freshness, effective_availability=availability)
         refresh(coordinator)
         assert not sensor.available and sensor.native_value is None
 
@@ -595,15 +595,15 @@ def test_legacy_bound_asset_shares_its_legacy_device_with_shared_sensors():
     covered = readable(*PV_AC)
     uncovered = readable("pv", "1.0.0", "pv.dc.power", "pv.dimension.input", "unit.watt")
     fact = deepcopy(uncovered["snapshot"]["facts"][0])
-    fact["candidates"][0]["candidateId"] = "candidate:uncovered"
+    fact["candidates"][0]["candidate_id"] = "candidate:uncovered"
     covered["snapshot"]["facts"].append(fact)
     evaluated = deepcopy(covered["evaluation"]["facts"][0])
-    evaluated["candidateId"] = "candidate:uncovered"
+    evaluated["candidate_id"] = "candidate:uncovered"
     covered["evaluation"]["facts"].append(evaluated)
-    covered["projection"]["requested"].append({"kind": "fact", "itemId": "pv.dc.power"})
+    covered["projection"]["requested"].append({"kind": "fact", "item_id": "pv.dc.power"})
     covered["projection"]["dispositions"].append(deepcopy(uncovered["projection"]["dispositions"][0]))
     other = _as_asset(readable(*PV_AC), "asset:pv-other")
-    asset_id = covered["assetId"]
+    asset_id = covered["asset_id"]
     _, _, _, entities = setup([covered, other], {"pv_m2m_coordinator": _legacy(asset_id)})
     ids = {e._asset_id: next(iter(e.device_info["identifiers"])) for e in shared(entities)}
     assert ids[asset_id] == build_pv_device_identifier("entry-1", asset_id)

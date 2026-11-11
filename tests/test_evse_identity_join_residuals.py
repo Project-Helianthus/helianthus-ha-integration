@@ -118,7 +118,7 @@ def _identity_join_public_payload(generation: str = "1") -> dict:
         "evaluate_monotonic": {}, "facts": facts, "services": [], "capabilities": [],
         "fences": [], "cursors": [],
     })
-    return {"data": {"semanticEVSECurrent": {
+    return {"data": {"semantic_evse_current": {
         "snapshot": snapshot,
         "evaluation": {
             "contract": "helianthus.semantic.evaluation/v1", "snapshot_id": "snapshot:one",
@@ -228,9 +228,9 @@ def test_u06_public_parse_rejects_identity_faults(
     control = _identity_join_public_payload()
     _identity_join_assert_public_control(control)
     malformed = deepcopy(control)
-    malformed["data"]["semanticEVSECurrent"]["snapshot"][section][0][field] = replacement
+    malformed["data"]["semantic_evse_current"]["snapshot"][section][0][field] = replacement
     assert _identity_join_changed_paths(control, malformed) == [
-        ("data", "semanticEVSECurrent", "snapshot", section, 0, field),
+        ("data", "semantic_evse_current", "snapshot", section, 0, field),
     ]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=f"^{reason}$"):
         evse_m2m.parse_m2m_response(malformed, expected_asset_ref=_IDENTITY_JOIN_ASSET)
@@ -277,9 +277,9 @@ def test_public_parse_rejects_asset_and_state_identity_faults(
     control = _identity_join_public_payload()
     _identity_join_assert_public_control(control)
     malformed = deepcopy(control)
-    malformed["data"]["semanticEVSECurrent"]["snapshot"][section][0][field] = replacement
+    malformed["data"]["semantic_evse_current"]["snapshot"][section][0][field] = replacement
     assert _identity_join_changed_paths(control, malformed) == [
-        ("data", "semanticEVSECurrent", "snapshot", section, 0, field),
+        ("data", "semantic_evse_current", "snapshot", section, 0, field),
     ]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=r"^invalid evse identity$"):
         evse_m2m.parse_m2m_response(malformed, expected_asset_ref=_IDENTITY_JOIN_ASSET)

@@ -55,18 +55,18 @@ def test_sparse_zone_delivery_sequence(subscriptions, coordinator_type):
             {
                 "id": "zone-a",
                 "name": "Zone A",
-                "state": {"current_temp_c": 20.0, "heating_demand_pct": 65},
+                "state": {"zone_room_temperature": 20.0, "heating_demand_pct": 65},
                 "config": {"target_temp_c": 22.0, "enabled": True, "preset": "comfort"},
             },
             {
                 "id": "zone-b",
                 "name": "Zone B",
-                "state": {"current_temp_c": 18.0},
+                "state": {"zone_room_temperature": 18.0},
                 "config": {"target_temp_c": 19.0},
             },
         ],
         "dhw": {
-            "state": {"current_temp_c": 45.0},
+            "state": {"zone_room_temperature": 45.0},
             "config": {"target_temp_c": 50.0, "operating_mode": "auto"},
         },
     }
@@ -78,26 +78,26 @@ def test_sparse_zone_delivery_sequence(subscriptions, coordinator_type):
     first_zone = {
         "id": "zone-a",
         "name": "Zone A",
-        "state": {"current_temp_c": 21.0, "heating_demand_pct": 0},
+        "state": {"zone_room_temperature": 21.0, "heating_demand_pct": 0},
         "config": {"target_temp_c": 22.0, "enabled": False, "preset": "comfort"},
     }
     second_zone = {
         "id": "zone-a",
         "name": "Zone A",
-        "state": {"current_temp_c": 23.0, "heating_demand_pct": 0},
+        "state": {"zone_room_temperature": 23.0, "heating_demand_pct": 0},
         "config": {"target_temp_c": 0, "enabled": False, "preset": "comfort"},
     }
     new_zone = {
         "id": "zone-c",
         "name": "Zone C",
-        "state": {"current_temp_c": 17.0},
+        "state": {"zone_room_temperature": 17.0},
     }
     sequence = [
         (
             {
                 "id": "zone-a",
                 "name": None,
-                "state": {"current_temp_c": 21.0, "heating_demand_pct": 0},
+                "state": {"zone_room_temperature": 21.0, "heating_demand_pct": 0},
                 "config": {"target_temp_c": None, "enabled": False},
             },
             [first_zone, initial["zones"][1]],
@@ -105,16 +105,16 @@ def test_sparse_zone_delivery_sequence(subscriptions, coordinator_type):
         (
             {
                 "id": "zone-a",
-                "state": {"current_temp_c": 23.0, "heating_demand_pct": None},
+                "state": {"zone_room_temperature": 23.0, "heating_demand_pct": None},
                 "config": {"target_temp_c": 0, "enabled": None},
             },
             [second_zone, initial["zones"][1]],
         ),
         (new_zone, [second_zone, initial["zones"][1], new_zone]),
-        ({"name": "Ignored", "state": {"current_temp_c": 99.0}},
+        ({"name": "Ignored", "state": {"zone_room_temperature": 99.0}},
          [second_zone, initial["zones"][1], new_zone]),
         # Repeat both an existing-zone update and the newly inserted zone.
-        ({"id": "zone-a", "state": {"current_temp_c": 23.0}},
+        ({"id": "zone-a", "state": {"zone_room_temperature": 23.0}},
          [second_zone, initial["zones"][1], new_zone]),
         (new_zone, [second_zone, initial["zones"][1], new_zone]),
     ]

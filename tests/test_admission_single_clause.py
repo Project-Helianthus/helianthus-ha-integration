@@ -63,7 +63,7 @@ def test_source_trust_clause_and_diagnostic(
 ) -> None:
     selection = {"state": state, "outcome": outcome, **source_fields}
     payload = {
-        "busSummary": {
+        "bus_summary": {
             "status": {"bus_admission": {"source_selection": selection}},
         },
     }

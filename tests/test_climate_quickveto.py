@@ -242,7 +242,7 @@ def _make_entity(
             {
                 "id": "zone-1",
                 "name": "Living Room",
-                "state": {"current_temp_c": 20.0},
+                "state": {"zone_room_temperature": 20.0},
                 "config": config,
             }
         ],
@@ -335,7 +335,7 @@ def test_climate_partial_zone_refresh_does_not_authorize_stale_sibling_write() -
         {
             "id": "zone-2",
             "name": "Office",
-            "state": {"current_temp_c": 19.0},
+            "state": {"zone_room_temperature": 19.0},
             "config": {"operating_mode": "manual"},
         }
     )

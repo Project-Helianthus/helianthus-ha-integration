@@ -15,7 +15,7 @@ from custom_components.helianthus.admission import (
 def test_source_selection_from_status_payload_trusts_active_probe_passed() -> None:
     admission = source_selection_from_status_payload(
         {
-            "busSummary": {
+            "bus_summary": {
                 "status": {
                     "bus_admission": {
                         "source_selection": {
@@ -47,7 +47,7 @@ def test_source_selection_from_status_payload_marks_missing_schema_incompatible(
     "payload",
     [
         {
-            "busSummary": {
+            "bus_summary": {
                 "status": {
                     "busAdmission": {
                         "sourceSelection": {
@@ -60,7 +60,7 @@ def test_source_selection_from_status_payload_marks_missing_schema_incompatible(
             }
         },
         {
-            "busSummary": {
+            "bus_summary": {
                 "status": {
                     "bus_admission": {
                         "sourceSelection": {
@@ -73,7 +73,7 @@ def test_source_selection_from_status_payload_marks_missing_schema_incompatible(
             }
         },
         {
-            "busSummary": {
+            "bus_summary": {
                 "status": {
                     "admission": {
                         "trusted": True,

@@ -31,7 +31,7 @@ def _payload(*, freshness="fresh", availability="available", selected=True):
     evaluation = {"contract":"helianthus.semantic.evaluation/v1","snapshot_id":"snapshot:one","revisions":REVISIONS,"context":{},"facts":[{"candidate_id":"candidate:one","candidate_revision":"1","freshness":freshness,"effective_availability":availability}],"evaluation_digest":DIGEST}
     selections = [] if not selected else [{"contract":"helianthus.semantic.selection/v1","snapshot_id":"snapshot:one","revisions":REVISIONS,"evaluation_digest":DIGEST,"context":{},"key":_key(),"policy_id":"policy:gateway-pv-single-qualified","policy_version":"1.0.0","selected_candidate":"candidate:one","candidate_revision":"1","presentation_only":True}]
     projection = {"contract":"helianthus.semantic.projection/v1","manifest":{"target_id":"target:gateway-semantic-pv","target_version":"1.0.0","kernel_version":"helianthus.semantic.kernel/v1","pack_versions":[{"id":"helianthus.pack.pv","version":"1.0.0"}],"mapping_revision":"1"},"snapshot_id":"snapshot:one","revisions":REVISIONS,"requested":[{"item_id":"inverter.ac.energy_lifetime","kind":"fact"}],"dispositions":[{"kind":"fact","item_id":"inverter.ac.energy_lifetime","outcome":"transformed","source_keys":[_key()],"loss":[{"kind":"policy"}],"reason":"counter_continuity_unavailable"}]}
-    return {"data":{"semanticPVCurrent":{"snapshot":snapshot,"evaluation":evaluation,"selections":selections,"projection":projection}}}
+    return {"data":{"semantic_pv_current":{"snapshot":snapshot,"evaluation":evaluation,"selections":selections,"projection":projection}}}
 
 def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
     snapshot = pv_m2m.parse_m2m_response(_payload(), expected_asset_ref="pv-asset-01")
@@ -41,11 +41,11 @@ def test_parser_maps_generated_energy_without_legacy_continuity() -> None:
     assert not hasattr(fact, "continuity")
 @pytest.mark.parametrize("coefficient, exponent, expected", [("0", 0, "0E+3"), ("900719925474099312345678901234567890", -18, "900719925474099312345.678901234567890")])
 def test_energy_wh_conversion_is_context_independent(coefficient, exponent, expected) -> None:
-    payload = _payload(); number = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"]
+    payload = _payload(); number = payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"]
     number["coefficient"], number["exponent10"] = coefficient, exponent
     assert str(pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01").facts[0].value) == expected
 def test_non_energy_publishes_when_energy_is_validly_withheld() -> None:
-    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    payload = _payload(); current = payload["data"]["semantic_pv_current"]
     fact = current["snapshot"]["facts"][0]; key = _key("pv.ac.frequency", "pv.dimension.inverter", "inverter")
     fact["key"] = key; candidate = fact["candidates"][0]; candidate["key"] = deepcopy(key)
     candidate["value"] = {"kind":"quantity","quantity":{"number":{"coefficient":"50","exponent10":0},"unit":"unit.hertz"}}
@@ -64,27 +64,27 @@ def test_parser_rejects_fresh_available_fact_without_selection() -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
         pv_m2m.parse_m2m_response(_payload(selected=False), expected_asset_ref="pv-asset-01")
 def test_parser_rejects_inner_fact_asset_mismatch() -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["asset_id"] = "pv-asset-other"
+    payload = _payload(); payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["asset_id"] = "pv-asset-other"
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="asset"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("value", ["inverter", "phase:L1"])
 def test_parser_rejects_crossed_energy_dimension_value(value) -> None:
-    payload = _payload(); key = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["key"]
+    payload = _payload(); key = payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["key"]
     key["dimensions"][0]["value"]["text"] = value
-    payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["key"] = deepcopy(key)
+    payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["candidates"][0]["key"] = deepcopy(key)
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="dimension"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("mutate", [
-    lambda payload: payload["data"]["semanticPVCurrent"]["projection"].update({"requested":[]}),
-    lambda payload: payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0].update({"source_keys":[_key("pv.ac.frequency", "pv.dimension.inverter", "inverter")]}),
+    lambda payload: payload["data"]["semantic_pv_current"]["projection"].update({"requested":[]}),
+    lambda payload: payload["data"]["semantic_pv_current"]["projection"]["dispositions"][0].update({"source_keys":[_key("pv.ac.frequency", "pv.dimension.inverter", "inverter")]}),
 ])
 def test_parser_rejects_unbound_energy_projection_loss(mutate) -> None:
     payload = _payload(); mutate(payload)
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="projection"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("mutate", [
-    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
-    lambda payload: (payload["data"]["semanticPVCurrent"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semanticPVCurrent"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semanticPVCurrent"]["projection"]["dispositions"][0]))),
+    lambda payload: (payload["data"]["semantic_pv_current"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semantic_pv_current"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semantic_pv_current"]["projection"]["dispositions"][0]))),
+    lambda payload: (payload["data"]["semantic_pv_current"]["projection"]["requested"].append({"item_id":"inverter.ac.frequency","kind":"fact"}), payload["data"]["semantic_pv_current"]["projection"]["dispositions"].append(deepcopy(payload["data"]["semantic_pv_current"]["projection"]["dispositions"][0]))),
 ])
 def test_parser_rejects_duplicate_or_missing_projection_disposition(mutate) -> None:
     payload = _payload(); mutate(payload)
@@ -104,25 +104,25 @@ def test_descriptor_graphql_wire_dimensions_preserve_id(wire, internal, fact_id,
     assert descriptors[0].dimension == (internal, value) and descriptors[0].unique_id == "entry-1-pv-saved"
 @pytest.mark.parametrize("path", [("requested", 0, "item_id"), ("dispositions", 0, "kind")])
 def test_parser_rejects_unhashable_projection_pair_members(path) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["projection"][path[0]][path[1]][path[2]] = []
+    payload = _payload(); payload["data"]["semantic_pv_current"]["projection"][path[0]][path[1]][path[2]] = []
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field", ["freshness", "effective_availability"])
 def test_parser_rejects_non_scalar_evaluation_state(field) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["evaluation"]["facts"][0][field] = []
+    payload = _payload(); payload["data"]["semantic_pv_current"]["evaluation"]["facts"][0][field] = []
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field, value", [("availability", []), ("freshness", {}), ("availability", "invalid")])
 def test_parser_rejects_invalid_candidate_quality_lifecycle(field, value) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"][field] = value
+    payload = _payload(); payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["candidates"][0]["quality"][field] = value
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 def test_parser_accepts_observed_candidate_assertion() -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = "observed"
+    payload = _payload(); payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = "observed"
     assert pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("assertion", [None, "", [], {}, "inferred", "unknown"])
 def test_parser_rejects_invalid_candidate_assertion(assertion) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
+    payload = _payload(); payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]["candidates"][0]["quality"]["assertion"] = assertion
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 def test_parser_rejects_duplicate_semantic_key_before_publication() -> None:
-    payload = _payload(); current = payload["data"]["semanticPVCurrent"]
+    payload = _payload(); current = payload["data"]["semantic_pv_current"]
     duplicate = deepcopy(current["snapshot"]["facts"][0]); candidate = duplicate["candidates"][0]
     candidate["candidate_id"], candidate["revision"] = "candidate:two", "2"
     candidate["quality"]["availability"] = "degraded"
@@ -135,7 +135,7 @@ def test_descriptor_store_rejects_non_scalar_schema_version(version) -> None:
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[]}, entry_id="entry-1", asset_ref="pv-asset-01")
 @pytest.mark.parametrize("revision", [None, "", [], {}, "x" * 33])
 def test_parser_rejects_malformed_fact_envelope_revision(revision) -> None:
-    payload = _payload(); fact = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][0]
+    payload = _payload(); fact = payload["data"]["semantic_pv_current"]["snapshot"]["facts"][0]
     if revision is None: del fact["revision"]
     else: fact["revision"] = revision
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
@@ -166,20 +166,20 @@ def test_descriptor_store_rejects_invalid_dimension_values(version, dimension) -
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.load_pv_descriptor_store({"schema_version":version,"asset_ref":"pv-asset-01","descriptors":[row]}, entry_id="entry-1", asset_ref="pv-asset-01")
 @pytest.mark.parametrize("field, value", [("candidate_revision", "2"), ("key", _key("pv.ac.frequency", "pv.dimension.inverter", "inverter"))])
 def test_parser_rejects_selection_not_bound_to_candidate(field, value) -> None:
-    payload = _payload(); payload["data"]["semanticPVCurrent"]["selections"][0][field] = value
+    payload = _payload(); payload["data"]["semantic_pv_current"]["selections"][0][field] = value
     with pytest.raises(pv_m2m.PVM2MProtocolError, match="selection"):
         pv_m2m.parse_m2m_response(payload, expected_asset_ref="pv-asset-01")
 @pytest.mark.parametrize("mutate", [
-    lambda value: value["data"]["semanticPVCurrent"].update({"legacy":True}),
-    lambda value: value["data"]["semanticPVCurrent"]["snapshot"].update({"asset_id":"other"}),
-    lambda value: value["data"]["semanticPVCurrent"]["evaluation"].update({"evaluation_digest":"bad"}),
-    lambda value: value["data"]["semanticPVCurrent"]["projection"]["dispositions"][0].update({"reason":"other"}),
+    lambda value: value["data"]["semantic_pv_current"].update({"legacy":True}),
+    lambda value: value["data"]["semantic_pv_current"]["snapshot"].update({"asset_id":"other"}),
+    lambda value: value["data"]["semantic_pv_current"]["evaluation"].update({"evaluation_digest":"bad"}),
+    lambda value: value["data"]["semantic_pv_current"]["projection"]["dispositions"][0].update({"reason":"other"}),
 ])
 def test_parser_rejects_contract_drift(mutate) -> None:
     value = _payload(); mutate(value)
     with pytest.raises(pv_m2m.PVM2MProtocolError): pv_m2m.parse_m2m_response(value, expected_asset_ref="pv-asset-01")
 def test_closed_error_is_terminal() -> None:
-    with pytest.raises(pv_m2m.PVM2MRemoteError): pv_m2m.parse_m2m_response({"data":None,"errors":[{"message":"M2M request failed","path":["semanticPVCurrent"],"extensions":{"code":"SOURCE_UNAVAILABLE"}}]}, expected_asset_ref="pv-asset-01")
+    with pytest.raises(pv_m2m.PVM2MRemoteError): pv_m2m.parse_m2m_response({"data":None,"errors":[{"message":"M2M request failed","path":["semantic_pv_current"],"extensions":{"code":"SOURCE_UNAVAILABLE"}}]}, expected_asset_ref="pv-asset-01")
 class _Content:
     def __init__(self, raw): self.raw, self.offset = raw, 0
     async def read(self, size):
@@ -196,4 +196,4 @@ class _Session:
 def test_client_uses_exact_fixed_gateway_operation() -> None:
     session = _Session(); client = pv_m2m.PVM2MClient(session=session, endpoint="https://pv.example.test/graphql/m2m/v1", asset_ref="pv-asset-01")
     asyncio.run(client.async_current_snapshot())
-    assert session.kwargs["json"] == {"operationName":"SemanticPVCurrent","query":pv_m2m.SEMANTIC_PV_CURRENT_QUERY,"variables":{"request":{"contractId":"PUBLIC_GRAPHQL_SEMANTIC_PV_V1","assetRef":"pv-asset-01"}}}
+    assert session.kwargs["json"] == {"operationName":"SemanticPVCurrent","query":pv_m2m.SEMANTIC_PV_CURRENT_QUERY,"variables":{"request":{"contract_id":"PUBLIC_GRAPHQL_SEMANTIC_PV_V1","asset_ref":"pv-asset-01"}}}

@@ -64,6 +64,7 @@ class CircuitNumberField:
     step: float
     unit: str | None = None
     icon: str | None = None
+    config_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -104,42 +105,36 @@ class BoilerNumberField:
 
 
 _CIRCUIT_NUMBER_FIELDS = [
-    CircuitNumberField("heating_curve", "Heating Curve", 0.1, 4.0, 0.1, icon="mdi:chart-bell-curve-cumulative"),
+    CircuitNumberField("circuit_heating_curve_factor", "Heating Curve", 0.1, 4.0, 0.1, config_key="heating_curve", icon="mdi:chart-bell-curve-cumulative"),
     CircuitNumberField(
-        "flow_temp_max_c",
+        "heating_circuit_flow_temperature_setpoint_maximum",
         "Flow Temperature Maximum",
         15.0,
         80.0,
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:thermometer-chevron-up",
+        config_key="flow_temp_max_c",
     ),
     CircuitNumberField(
-        "flow_temp_min_c",
+        "circuit_flow_temperature_setpoint_minimum",
         "Flow Temperature Minimum",
         5.0,
         30.0,
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:thermometer-chevron-down",
+        config_key="flow_temp_min_c",
     ),
     CircuitNumberField(
-        "summer_limit_c",
+        "heating_circuit_outdoor_temperature_limit_maximum",
         "Summer Limit",
         15.0,
         30.0,
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:weather-sunny",
-    ),
-    CircuitNumberField(
-        "frost_prot_c",
-        "Frost Protection",
-        -20.0,
-        10.0,
-        1.0,
-        UnitOfTemperature.CELSIUS,
-        icon="mdi:snowflake-thermometer",
+        config_key="summer_limit_c",
     ),
 ]
 
@@ -540,7 +535,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
     def native_value(self) -> float | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
-        value = config.get(self._field.key)
+        value = config.get(self._field.config_key or self._field.key)
         if value is None:
             return None
         try:
@@ -553,6 +548,8 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
             raise HomeAssistantError(
                 f"Value {value} outside allowed range [{self._field.minimum}, {self._field.maximum}]"
             )
+        if self._field.key not in {field.key for field in _CIRCUIT_NUMBER_FIELDS}:
+            raise HomeAssistantError("Unsupported circuit control")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
         _assert_admission_trusted(self._status_coordinator)

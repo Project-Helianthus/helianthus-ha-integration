@@ -169,7 +169,7 @@ def _identity_value(value):
 def semantic_unique_id(entry_id, asset_id, key):
     """Join escaped opaque components and canonical complete typed dimensions."""
     dimensions = sorted(key["dimensions"], key=lambda dimension: dimension["id"])
-    components = [entry_id, asset_id, key["packId"], key["packVersion"], key["factId"]]
+    components = [entry_id, asset_id, key["pack_id"], key["pack_version"], key["fact_id"]]
     for dimension in dimensions:
         components.extend((dimension["id"], json.dumps(
             _identity_value(dimension["value"]), sort_keys=True,
@@ -179,7 +179,7 @@ def semantic_unique_id(entry_id, asset_id, key):
 
 def _descriptor(key):
     for descriptor in DESCRIPTORS:
-        if ((key["packId"], key["packVersion"], key["factId"])
+        if ((key["pack_id"], key["pack_version"], key["fact_id"])
                 == (descriptor.pack_id, descriptor.pack_version, descriptor.fact_id)
                 and len(key["dimensions"]) == 1
                 and key["dimensions"][0]["id"] == descriptor.dimension_id
@@ -194,22 +194,22 @@ def _source_admitted(snapshot, candidate):
     if (origin["kind"] != "native_observation" or not origin["evidence"]
             or not candidate["evidence"] or candidate["quality"]["assertion"] != "observed"):
         return False
-    bindings = [b for b in snapshot["bindings"] if b["bindingId"] == candidate["bindingId"]]
+    bindings = [b for b in snapshot["bindings"] if b["binding_id"] == candidate["binding_id"]]
     if len(bindings) != 1:
         return False
     binding = bindings[0]
     if (binding["state"] != "current"
-            or candidate["sourceEpochId"] != binding["sourceEpochId"]
-            or candidate["driverGeneration"] != binding["driverGeneration"]
-            or origin["bindingId"] != binding["bindingId"]
-            or origin["sourceId"] != binding["sourceId"]
-            or origin["sourceEpochId"] != binding["sourceEpochId"]):
+            or candidate["source_epoch_id"] != binding["source_epoch_id"]
+            or candidate["driver_generation"] != binding["driver_generation"]
+            or origin["binding_id"] != binding["binding_id"]
+            or origin["source_id"] != binding["source_id"]
+            or origin["source_epoch_id"] != binding["source_epoch_id"]):
         return False
     sources = [s for s in snapshot["sources"]
-               if (s["sourceId"], s["sourceEpochId"])
-               == (binding["sourceId"], binding["sourceEpochId"])]
-    links = [link for link in snapshot["identityLinks"]
-             if link["bindingId"] == binding["bindingId"]]
+               if (s["source_id"], s["source_epoch_id"])
+               == (binding["source_id"], binding["source_epoch_id"])]
+    links = [link for link in snapshot["identity_links"]
+             if link["binding_id"] == binding["binding_id"]]
     return (len(sources) == 1 and sources[0]["state"] == "current"
             and len(links) == 1 and links[0]["state"] == "qualified" and bool(links[0]["basis"]))
 
@@ -251,15 +251,15 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
         if not coordinator.last_update_success or coordinator.supported is not True:
             return None
         for asset in (coordinator.data or {}).get("assets", ()):
-            if asset["assetId"] != self._asset_id:
+            if asset["asset_id"] != self._asset_id:
                 continue
-            if asset["unavailableReason"] or asset["snapshot"] is None:
+            if asset["unavailable_reason"] or asset["snapshot"] is None:
                 return None
             # An exact projection is representation evidence, never qualification.
             dispositions = [d for d in asset["projection"]["dispositions"]
-                            if d["kind"] == "fact" and d["itemId"] == self._key["factId"]]
+                            if d["kind"] == "fact" and d["item_id"] == self._key["fact_id"]]
             if (len(dispositions) != 1 or dispositions[0]["outcome"] != "exact"
-                    or dispositions[0]["loss"] or self._key not in dispositions[0]["sourceKeys"]):
+                    or dispositions[0]["loss"] or self._key not in dispositions[0]["source_keys"]):
                 return None
             facts = [f for f in asset["snapshot"]["facts"] if f["key"] == self._key]
             if len(facts) != 1 or facts[0]["conflicts"] or len(facts[0]["candidates"]) != 1:
@@ -272,10 +272,10 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
                     or quality["validity"] != "good" or quality["availability"] != "available"):
                 return None
             evaluations = [e for e in asset["evaluation"]["facts"]
-                           if (e["candidateId"], e["candidateRevision"])
-                           == (candidate["candidateId"], candidate["revision"])]
+                           if (e["candidate_id"], e["candidate_revision"])
+                           == (candidate["candidate_id"], candidate["revision"])]
             if (len(evaluations) != 1 or evaluations[0]["freshness"] != "fresh"
-                    or evaluations[0]["effectiveAvailability"] != "available"):
+                    or evaluations[0]["effective_availability"] != "available"):
                 return None
             value = candidate["value"]
             if value is None:
@@ -329,20 +329,20 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
             if asset["snapshot"] is None:
                 continue
             model = semantic_device_model(asset)
-            device_identifier = _device_identifier(data, entry_id, asset["assetId"])
+            device_identifier = _device_identifier(data, entry_id, asset["asset_id"])
             for fact in asset["snapshot"]["facts"]:
                 key = fact["key"]
                 descriptor = _descriptor(key)
                 if descriptor is None:
                     continue
                 if (descriptor.legacy_covered
-                        and asset["assetId"] == _legacy_bound_asset(data, descriptor.pack_id)):
+                        and asset["asset_id"] == _legacy_bound_asset(data, descriptor.pack_id)):
                     continue
-                unique_id = semantic_unique_id(entry_id, asset["assetId"], key)
+                unique_id = semantic_unique_id(entry_id, asset["asset_id"], key)
                 if unique_id in known:
                     continue
                 sensor = SemanticSnapshotSensor(
-                    coordinator, entry_id, asset["assetId"], key, descriptor, model,
+                    coordinator, entry_id, asset["asset_id"], key, descriptor, model,
                     device_identifier)
                 if not sensor.available:
                     continue

@@ -26,11 +26,11 @@ def digest(label):
 
 
 def point():
-    return {"unixNanoseconds": "0", "clockId": "clock.synthetic", "uncertaintyNs": "0"}
+    return {"unix_nanoseconds": "0", "clock_id": "clock.synthetic", "uncertainty_ns": "0"}
 
 
 def mono():
-    return {"clockEpochId": "clock:synthetic", "nanoseconds": "0"}
+    return {"clock_epoch_id": "clock:synthetic", "nanoseconds": "0"}
 
 
 def value(kind="quantity", payload=None):
@@ -43,8 +43,8 @@ def value(kind="quantity", payload=None):
 
 def key(pack):
     return {
-        "packId": "helianthus.pack." + pack, "packVersion": "1.0.0",
-        "factId": "fact.synthetic", "dimensions": [
+        "pack_id": "helianthus.pack." + pack, "pack_version": "1.0.0",
+        "fact_id": "fact.synthetic", "dimensions": [
             {"id": "dimension.phase", "value": value("text", "a")},
             {"id": "dimension.channel", "value": value("boolean", False)},
         ],
@@ -53,31 +53,31 @@ def key(pack):
 
 def candidate(pack):
     return {
-        "candidateId": "candidate:" + pack, "key": key(pack), "value": value(),
+        "candidate_id": "candidate:" + pack, "key": key(pack), "value": value(),
         "quality": {"assertion": "observed", "qualification": "candidate",
                     "promotion": "unpromoted", "validity": "good",
                     "availability": "available", "freshness": "fresh",
                     "reasons": ["reason.synthetic"]},
-        "times": {"phenomenonAt": None, "sourceAt": None, "receivedAt": point(),
-                  "receiptMonotonic": mono(), "evaluatedAt": point(), "evaluateMonotonic": mono()},
-        "freshnessPolicy": {"policyId": "policy:synthetic", "version": "1.0.0",
-                            "freshForNs": "1", "retainForNs": "2", "maxWallUncertaintyNs": "0"},
-        "bindingId": None, "sourceEpochId": None, "driverGeneration": None,
-        "origin": {"originId": "origin:synthetic", "kind": "operator",
-                   "sourceId": None, "sourceEpochId": None, "bindingId": None, "evidence": []},
+        "times": {"phenomenon_at": None, "source_at": None, "received_at": point(),
+                  "receipt_monotonic": mono(), "evaluated_at": point(), "evaluate_monotonic": mono()},
+        "freshness_policy": {"policy_id": "policy:synthetic", "version": "1.0.0",
+                            "fresh_for_ns": "1", "retain_for_ns": "2", "max_wall_uncertainty_ns": "0"},
+        "binding_id": None, "source_epoch_id": None, "driver_generation": None,
+        "origin": {"origin_id": "origin:synthetic", "kind": "operator",
+                   "source_id": None, "source_epoch_id": None, "binding_id": None, "evidence": []},
         "causal": None, "evidence": [], "derivation": None, "revision": "7",
     }
 
 
 def source():
     return {
-        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
-        "protocolId": "protocol.synthetic", "profileId": "profile.synthetic",
-        "profileVersion": "synthetic",
-        "registryEvidence": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+        "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic",
+        "protocol_id": "protocol.synthetic", "profile_id": "profile.synthetic",
+        "profile_version": "synthetic",
+        "registry_evidence": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
                              "digest": digest("source"), "contract": "synthetic.evidence/v1",
                              "access": "restricted", "redaction": "metadata_only"},
-        "startedAt": point(), "state": "current", "revision": "1",
+        "started_at": point(), "state": "current", "revision": "1",
     }
 
 
@@ -87,36 +87,36 @@ def asset(pack):
     sid = digest(pack)
     c = candidate(pack)
     snapshot = {
-        "contract": "helianthus.semantic.kernel/v1", "snapshotId": sid,
-        "assetId": aid, "revisions": revisions, "evaluatedAt": point(), "evaluateMonotonic": mono(),
-        "sources": [], "bindings": [], "identityLinks": [],
-        "facts": [{"assetId": aid, "key": key(pack), "candidates": [c], "conflicts": [], "revision": "3"}],
-        "retainedObservations": [], "services": [], "capabilities": [], "fences": [], "cursors": [],
+        "contract": "helianthus.semantic.kernel/v1", "snapshot_id": sid,
+        "asset_id": aid, "revisions": revisions, "evaluated_at": point(), "evaluate_monotonic": mono(),
+        "sources": [], "bindings": [], "identity_links": [],
+        "facts": [{"asset_id": aid, "key": key(pack), "candidates": [c], "conflicts": [], "revision": "3"}],
+        "retained_observations": [], "services": [], "capabilities": [], "fences": [], "cursors": [],
     }
     evaluation = {
-        "contract": "helianthus.semantic.evaluation/v1", "snapshotId": sid,
-        "revisions": deepcopy(revisions), "context": {"evaluatedAt": point(), "evaluateMonotonic": mono()},
-        "facts": [{"candidateId": c["candidateId"], "candidateRevision": "7",
-                   "freshness": "stale", "effectiveAvailability": "unavailable"}],
-        "retainedObservations": [], "evaluationDigest": digest("evaluation"),
+        "contract": "helianthus.semantic.evaluation/v1", "snapshot_id": sid,
+        "revisions": deepcopy(revisions), "context": {"evaluated_at": point(), "evaluate_monotonic": mono()},
+        "facts": [{"candidate_id": c["candidate_id"], "candidate_revision": "7",
+                   "freshness": "stale", "effective_availability": "unavailable"}],
+        "retained_observations": [], "evaluation_digest": digest("evaluation"),
     }
     projection = {
-        "contract": "helianthus.semantic.projection/v1", "snapshotId": sid,
+        "contract": "helianthus.semantic.projection/v1", "snapshot_id": sid,
         "revisions": deepcopy(revisions), "causal": None,
-        "manifest": {"targetId": "target:semantic-snapshot-read", "targetVersion": "1",
-                     "kernelVersion": "helianthus.semantic.kernel/v1",
-                     "packVersions": [{"id": "helianthus.pack." + pack, "version": "1.0.0"}],
-                     "mappingRevision": "1"},
-        "requested": [{"kind": "fact", "itemId": "fact.synthetic"}],
-        "dispositions": [{"kind": "fact", "itemId": "fact.synthetic", "outcome": "withheld",
-                          "sourceKeys": [key(pack)], "loss": [], "reason": "reason.synthetic"}],
+        "manifest": {"target_id": "target:semantic-snapshot-read", "target_version": "1",
+                     "kernel_version": "helianthus.semantic.kernel/v1",
+                     "pack_versions": [{"id": "helianthus.pack." + pack, "version": "1.0.0"}],
+                     "mapping_revision": "1"},
+        "requested": [{"kind": "fact", "item_id": "fact.synthetic"}],
+        "dispositions": [{"kind": "fact", "item_id": "fact.synthetic", "outcome": "withheld",
+                          "source_keys": [key(pack)], "loss": [], "reason": "reason.synthetic"}],
     }
-    return {"assetId": aid, "snapshot": snapshot, "evaluation": evaluation,
-            "projection": projection, "selections": [], "unavailableReason": None}
+    return {"asset_id": aid, "snapshot": snapshot, "evaluation": evaluation,
+            "projection": projection, "selections": [], "unavailable_reason": None}
 
 
 def response():
-    return {"semanticSnapshot": {"assets": [asset(p) for p in PACKS]}}
+    return {"semantic_snapshot": {"assets": [asset(p) for p in PACKS]}}
 
 
 def normalize(data):
@@ -160,10 +160,10 @@ def test_all_five_packs_one_existing_graphql_client_read_is_detached():
     client = GraphQLClient(session, "synthetic", retries=0)
     result = asyncio.run(fetch_semantic_snapshot(client, ["asset:" + p for p in PACKS]))
     assert len(session.calls) == 1
-    assert session.calls[0] == {"query": SEMANTIC_SNAPSHOT_QUERY, "variables": {"assetIds": ["asset:" + p for p in PACKS]}}
+    assert session.calls[0] == {"query": SEMANTIC_SNAPSHOT_QUERY, "variables": {"asset_ids": ["asset:" + p for p in PACKS]}}
     assert data == before
-    for original, normalized in zip(data["semanticSnapshot"]["assets"], result["assets"]):
-        assert normalized["assetId"] == original["assetId"]
+    for original, normalized in zip(data["semantic_snapshot"]["assets"], result["assets"]):
+        assert normalized["asset_id"] == original["asset_id"]
         assert normalized["snapshot"]["revisions"] == original["snapshot"]["revisions"]
         c = normalized["snapshot"]["facts"][0]["candidates"][0]
         assert c["value"]["quantity"]["number"] == Decimal(0)
@@ -174,8 +174,8 @@ def test_all_five_packs_one_existing_graphql_client_read_is_detached():
         assert normalized["projection"]["dispositions"][0]["outcome"] == "withheld"
         assert c["key"]["dimensions"][1]["value"]["boolean"] is False
     with pytest.raises(TypeError):
-        result["assets"][0]["assetId"] = "changed"
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"].clear()
+        result["assets"][0]["asset_id"] = "changed"
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"].clear()
     assert len(result["assets"][0]["snapshot"]["facts"]) == 1
 
 
@@ -184,7 +184,7 @@ def test_all_five_packs_one_existing_graphql_client_read_is_detached():
 @pytest.mark.parametrize("record", ("evaluation", "projection"))
 def test_each_pack_each_revision_axis_rejects_a_mixed_response(pack, axis, record):
     data = response()
-    data["semanticSnapshot"]["assets"][PACKS.index(pack)][record]["revisions"][axis] = "9"
+    data["semantic_snapshot"]["assets"][PACKS.index(pack)][record]["revisions"][axis] = "9"
     with pytest.raises(SemanticSnapshotError, match="revision mismatch"):
         normalize(data)
 
@@ -197,7 +197,7 @@ def test_each_pack_each_revision_axis_rejects_a_mixed_response(pack, axis, recor
 ])
 def test_value_arms_preserve_false_empty_text_and_unknown_symbols(arm, payload):
     data = response()
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = value(arm, payload)
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = value(arm, payload)
     out = normalize(data)["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"]
     assert out["kind"] == arm
     if arm in ("boolean", "text"):
@@ -213,7 +213,7 @@ def test_value_arms_preserve_false_empty_text_and_unknown_symbols(arm, payload):
 def test_exact_decimal_ignores_ambient_context_and_preserves_source():
     data = response()
     number = {"coefficient": "123456789012345678901234567890123456789", "exponent10": -18}
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"] = number
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"] = number
     before = deepcopy(data)
     with localcontext() as context:
         context.prec = 2
@@ -226,7 +226,7 @@ def test_exact_decimal_ignores_ambient_context_and_preserves_source():
 @pytest.mark.parametrize("coefficient,exponent", [("01", 0), ("10", 0), ("-0", 0), ("0", 1), ("1", 19), ("1", -19), ("1", True), (1, 0), ("1.1", 0)])
 def test_malformed_decimal_rejected(coefficient, exponent):
     data = response()
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"] = {"coefficient": coefficient, "exponent10": exponent}
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"]["quantity"]["number"] = {"coefficient": coefficient, "exponent10": exponent}
     with pytest.raises(SemanticSnapshotError):
         normalize(data)
 
@@ -235,7 +235,7 @@ def test_malformed_decimal_rejected(coefficient, exponent):
 @pytest.mark.parametrize("bad", [0, False, "-1", "01", str(2**64)])
 def test_revision_scalars_are_bounded_decimal_strings(axis, bad):
     data = response()
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["revisions"][axis] = bad
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["revisions"][axis] = bad
     with pytest.raises(SemanticSnapshotError):
         normalize(data)
 
@@ -243,18 +243,18 @@ def test_revision_scalars_are_bounded_decimal_strings(axis, bad):
 @pytest.mark.parametrize("field", ("assertion", "qualification", "promotion", "validity", "availability", "freshness", "reasons"))
 def test_missing_quality_axis_is_not_defaulted(field):
     data = response()
-    del data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["quality"][field]
+    del data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["quality"][field]
     with pytest.raises(SemanticSnapshotError, match="unselected member"):
         normalize(data)
 
 
 def test_unavailable_sibling_and_absent_value_remain_distinct():
     data = response()
-    data["semanticSnapshot"]["assets"][1] = {
-        "assetId": "asset:storage", "snapshot": None, "evaluation": None, "projection": None,
-        "selections": [], "unavailableReason": "semantic.read.reason.publication_withheld",
+    data["semantic_snapshot"]["assets"][1] = {
+        "asset_id": "asset:storage", "snapshot": None, "evaluation": None, "projection": None,
+        "selections": [], "unavailable_reason": "semantic.read.reason.publication_withheld",
     }
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = None
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = None
     out = normalize(data)
     assert out["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] is None
     assert out["assets"][1]["snapshot"] is None
@@ -263,7 +263,7 @@ def test_unavailable_sibling_and_absent_value_remain_distinct():
 
 @pytest.mark.parametrize("errors", [
     [{"message": "private " * 10000}],
-    [{"message": 'Cannot query field "semanticSnapshot" on type "Query".'}],
+    [{"message": 'Cannot query field "semantic_snapshot" on type "Query".'}],
     [{"message": 'Cannot query field "quality" on type "Candidate".'}],
 ])
 def test_graphql_partial_data_errors_are_bounded_and_never_fallback(errors):
@@ -275,10 +275,10 @@ def test_graphql_partial_data_errors_are_bounded_and_never_fallback(errors):
     assert len(session.calls) == 1
 
 
-@pytest.mark.parametrize("field", ("candidateId", "candidateRevision"))
+@pytest.mark.parametrize("field", ("candidate_id", "candidate_revision"))
 def test_evaluation_join_uses_both_identity_fields(field):
     data = response()
-    data["semanticSnapshot"]["assets"][0]["evaluation"]["facts"][0][field] = "other" if field == "candidateId" else "8"
+    data["semantic_snapshot"]["assets"][0]["evaluation"]["facts"][0][field] = "other" if field == "candidate_id" else "8"
     with pytest.raises(SemanticSnapshotError, match="candidate mismatch"):
         normalize(data)
 
@@ -286,14 +286,14 @@ def test_evaluation_join_uses_both_identity_fields(field):
 @pytest.mark.parametrize("mutation", ("duplicate", "missing", "substitute", "null_root", "mixed_context", "source_key", "missing_disposition", "duplicate_disposition", "missing_loss", "two_arms", "empty_symbols"))
 def test_malformed_attempt_rejected_atomically_without_input_mutation(mutation):
     data = response()
-    assets = data["semanticSnapshot"]["assets"]
+    assets = data["semantic_snapshot"]["assets"]
     first = assets[0]
     if mutation == "duplicate": assets[1] = deepcopy(first)
     elif mutation == "missing": assets.pop()
-    elif mutation == "substitute": first["assetId"] = "asset:other"
-    elif mutation == "null_root": data["semanticSnapshot"] = None
-    elif mutation == "mixed_context": first["evaluation"]["context"]["evaluateMonotonic"]["nanoseconds"] = "1"
-    elif mutation == "source_key": first["projection"]["dispositions"][0]["sourceKeys"][0]["factId"] = "fact.other"
+    elif mutation == "substitute": first["asset_id"] = "asset:other"
+    elif mutation == "null_root": data["semantic_snapshot"] = None
+    elif mutation == "mixed_context": first["evaluation"]["context"]["evaluate_monotonic"]["nanoseconds"] = "1"
+    elif mutation == "source_key": first["projection"]["dispositions"][0]["source_keys"][0]["fact_id"] = "fact.other"
     elif mutation == "missing_disposition": first["projection"]["dispositions"].clear()
     elif mutation == "duplicate_disposition": first["projection"]["dispositions"] *= 2
     elif mutation == "missing_loss": del first["projection"]["dispositions"][0]["loss"]
@@ -314,12 +314,12 @@ def test_invalid_selection_never_calls_client(ids):
     assert session.calls == []
 
 
-@pytest.mark.parametrize("field", ("packId", "packVersion", "factId", "dimensionId", "dimensionKind", "dimensionValue", "secondDimensionId", "secondDimensionValue"))
+@pytest.mark.parametrize("field", ("pack_id", "pack_version", "fact_id", "dimensionId", "dimensionKind", "dimensionValue", "secondDimensionId", "secondDimensionValue"))
 def test_candidate_join_preserves_every_fact_key_field(field):
     data = response()
-    k = data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["key"]
-    if field in ("packId", "packVersion", "factId"):
-        k[field] = "2.0.0" if field == "packVersion" else "definition.other"
+    k = data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["key"]
+    if field in ("pack_id", "pack_version", "fact_id"):
+        k[field] = "2.0.0" if field == "pack_version" else "definition.other"
     elif field == "dimensionId": k["dimensions"][0]["id"] = "dimension.other"
     elif field == "dimensionKind": k["dimensions"][0]["value"] = value("symbol", {"namespace": "symbol.synthetic", "token": "a", "known": True})
     elif field == "dimensionValue": k["dimensions"][0]["value"]["text"] = "b"
@@ -329,10 +329,10 @@ def test_candidate_join_preserves_every_fact_key_field(field):
         normalize(data)
 
 
-@pytest.mark.parametrize("field,record", (("assetId", "snapshot"), ("snapshotId", "snapshot"), ("snapshotId", "evaluation"), ("snapshotId", "projection")))
+@pytest.mark.parametrize("field,record", (("asset_id", "snapshot"), ("snapshot_id", "snapshot"), ("snapshot_id", "evaluation"), ("snapshot_id", "projection")))
 def test_wrapper_identity_fields_are_checked(field, record):
     data = response()
-    data["semanticSnapshot"]["assets"][0][record][field] = "identity:other"
+    data["semantic_snapshot"]["assets"][0][record][field] = "identity:other"
     with pytest.raises(SemanticSnapshotError, match="mismatch"):
         normalize(data)
 
@@ -340,7 +340,7 @@ def test_wrapper_identity_fields_are_checked(field, record):
 @pytest.mark.parametrize("axis", AXES)
 def test_coherent_revision_change_is_accepted_per_asset(axis):
     data = response()
-    first = data["semanticSnapshot"]["assets"][0]
+    first = data["semantic_snapshot"]["assets"][0]
     for record in ("snapshot", "evaluation", "projection"):
         first[record]["revisions"][axis] = "19"
     result = normalize(data)
@@ -351,10 +351,10 @@ def test_coherent_revision_change_is_accepted_per_asset(axis):
 @pytest.mark.parametrize("pack", PACKS)
 def test_each_pack_preserves_explicit_loss_quality_and_evidence(pack):
     data = response()
-    a = data["semanticSnapshot"]["assets"][PACKS.index(pack)]
+    a = data["semantic_snapshot"]["assets"][PACKS.index(pack)]
     disposition = a["projection"]["dispositions"][0]
     disposition["outcome"] = "unrepresentable"
-    disposition["loss"] = [{"kind": "precision", "sourceItems": ["fact.synthetic"],
+    disposition["loss"] = [{"kind": "precision", "source_items": ["fact.synthetic"],
                             "description": "Synthetic display boundary", "reversible": False}]
     evidence = {"owner": "owner.synthetic", "kind": "evidence.synthetic", "digest": digest("evidence"),
                 "contract": "synthetic.evidence/v1", "access": "restricted", "redaction": "metadata_only"}
@@ -368,82 +368,82 @@ def test_each_pack_preserves_explicit_loss_quality_and_evidence(pack):
     assert normalized["evidence"][0] == evidence
     for axis in ("assertion", "qualification", "promotion", "validity", "availability", "freshness"):
         assert normalized["quality"][axis] == c["quality"][axis]
-    assert normalized["times"]["receivedAt"] == c["times"]["receivedAt"]
-    assert normalized["freshnessPolicy"] == c["freshnessPolicy"]
+    assert normalized["times"]["received_at"] == c["times"]["received_at"]
+    assert normalized["freshness_policy"] == c["freshness_policy"]
     assert data == before
 
 
 def test_alternatives_conflicts_and_historical_observations_are_audit_state():
     data = response()
-    a = data["semanticSnapshot"]["assets"][0]
+    a = data["semantic_snapshot"]["assets"][0]
     fact = a["snapshot"]["facts"][0]
     other = deepcopy(fact["candidates"][0])
-    other["candidateId"] = "candidate:alternative"
+    other["candidate_id"] = "candidate:alternative"
     other["value"] = None
     fact["candidates"].append(other)
-    fact["conflicts"] = [{"conflictId": "conflict:synthetic", "kind": "value",
+    fact["conflicts"] = [{"conflict_id": "conflict:synthetic", "kind": "value",
                           "candidates": ["candidate:pv", "candidate:alternative"], "evidence": [], "state": "open"}]
-    a["evaluation"]["facts"].append({"candidateId": other["candidateId"], "candidateRevision": "7",
-                                     "freshness": "unknown", "effectiveAvailability": "unavailable"})
+    a["evaluation"]["facts"].append({"candidate_id": other["candidate_id"], "candidate_revision": "7",
+                                     "freshness": "unknown", "effective_availability": "unavailable"})
     retained = {"contract": "helianthus.semantic.retained-observation/v1",
                 "candidate": deepcopy(other), "removal": "source_retirement"}
-    retained["candidate"]["candidateId"] = "candidate:historical"
-    a["snapshot"]["retainedObservations"] = [retained]
-    a["evaluation"]["retainedObservations"] = [{"observation": deepcopy(retained), "freshness": "expired"}]
+    retained["candidate"]["candidate_id"] = "candidate:historical"
+    a["snapshot"]["retained_observations"] = [retained]
+    a["evaluation"]["retained_observations"] = [{"observation": deepcopy(retained), "freshness": "expired"}]
     out = normalize(data)["assets"][0]
     assert len(out["snapshot"]["facts"][0]["candidates"]) == 2
     assert out["snapshot"]["facts"][0]["conflicts"][0]["state"] == "open"
     assert out["selections"] == ()
-    assert out["snapshot"]["retainedObservations"][0]["candidate"]["candidateId"] == "candidate:historical"
+    assert out["snapshot"]["retained_observations"][0]["candidate"]["candidate_id"] == "candidate:historical"
     assert len(out["evaluation"]["facts"]) == 2
 
 
 def test_selection_is_provenance_bound_and_presentation_only():
     data = response()
-    a = data["semanticSnapshot"]["assets"][0]
+    a = data["semantic_snapshot"]["assets"][0]
     a["selections"] = [{"contract": "helianthus.semantic.selection/v1",
-                         "snapshotId": a["snapshot"]["snapshotId"], "revisions": deepcopy(a["snapshot"]["revisions"]),
-                         "evaluationDigest": a["evaluation"]["evaluationDigest"], "context": deepcopy(a["evaluation"]["context"]),
-                         "key": key("pv"), "policyId": "policy:synthetic", "policyVersion": "1.0.0",
-                         "selectedCandidate": "candidate:pv", "candidateRevision": "7", "presentationOnly": True}]
-    assert normalize(data)["assets"][0]["selections"][0]["presentationOnly"] is True
+                         "snapshot_id": a["snapshot"]["snapshot_id"], "revisions": deepcopy(a["snapshot"]["revisions"]),
+                         "evaluation_digest": a["evaluation"]["evaluation_digest"], "context": deepcopy(a["evaluation"]["context"]),
+                         "key": key("pv"), "policy_id": "policy:synthetic", "policy_version": "1.0.0",
+                         "selected_candidate": "candidate:pv", "candidate_revision": "7", "presentation_only": True}]
+    assert normalize(data)["assets"][0]["selections"][0]["presentation_only"] is True
     for field, bad in (("contract", "wrong-contract"),
-                       ("selectedCandidate", "candidate:other"), ("candidateRevision", "8"),
-                       ("evaluationDigest", digest("other")), ("presentationOnly", False),
-                       ("snapshotId", "snapshot:other")):
+                       ("selected_candidate", "candidate:other"), ("candidate_revision", "8"),
+                       ("evaluation_digest", digest("other")), ("presentation_only", False),
+                       ("snapshot_id", "snapshot:other")):
         changed = deepcopy(data)
-        changed["semanticSnapshot"]["assets"][0]["selections"][0][field] = bad
+        changed["semantic_snapshot"]["assets"][0]["selections"][0][field] = bad
         with pytest.raises(SemanticSnapshotError):
             normalize(changed)
 
 
 def test_view_overflow_is_a_whole_attempt_error():
     data = response()
-    data["semanticSnapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = value("text", "x" * (4 * 1024 * 1024))
+    data["semantic_snapshot"]["assets"][0]["snapshot"]["facts"][0]["candidates"][0]["value"] = value("text", "x" * (4 * 1024 * 1024))
     with pytest.raises(SemanticSnapshotError, match="view size exceeded"):
         normalize(data)
 
 
 @pytest.mark.parametrize("aid", ["asset:é", "é" * 128, "a" * 256, "*", "opaque://identifier", " a b "])
 def test_opaque_asset_ids_are_preserved_through_graphql(aid):
-    data = {"semanticSnapshot": {"assets": [{
-        "assetId": aid, "snapshot": None, "evaluation": None, "projection": None,
-        "selections": [], "unavailableReason": "semantic.read.reason.asset_unknown",
+    data = {"semantic_snapshot": {"assets": [{
+        "asset_id": aid, "snapshot": None, "evaluation": None, "projection": None,
+        "selections": [], "unavailable_reason": "semantic.read.reason.asset_unknown",
     }]}}
     session = FakeSession({"data": data})
     result = asyncio.run(fetch_semantic_snapshot(GraphQLClient(session, "synthetic"), [aid]))
-    assert session.calls[0]["variables"] == {"assetIds": [aid]}
-    assert result["assets"][0]["assetId"] == aid
+    assert session.calls[0]["variables"] == {"asset_ids": [aid]}
+    assert result["assets"][0]["asset_id"] == aid
 
 
 @pytest.mark.parametrize("kind", ["capability", "relation", "operation"])
 @pytest.mark.parametrize("accounting", ["complete", "missing", "duplicate", "unknown_kind"])
 def test_projection_item_kinds_preserve_accounted_siblings(kind, accounting):
     data = response()
-    projection = data["semanticSnapshot"]["assets"][0]["projection"]
-    projection["requested"].append({"kind": kind, "itemId": "item.synthetic"})
-    disposition = {"kind": kind, "itemId": "item.synthetic", "outcome": "withheld",
-                   "sourceKeys": [key("pv")], "loss": [], "reason": "reason.synthetic"}
+    projection = data["semantic_snapshot"]["assets"][0]["projection"]
+    projection["requested"].append({"kind": kind, "item_id": "item.synthetic"})
+    disposition = {"kind": kind, "item_id": "item.synthetic", "outcome": "withheld",
+                   "source_keys": [key("pv")], "loss": [], "reason": "reason.synthetic"}
     if accounting != "missing":
         projection["dispositions"].append(disposition)
     if accounting == "duplicate":
@@ -458,22 +458,22 @@ def test_projection_item_kinds_preserve_accounted_siblings(kind, accounting):
     result = normalize(data)
     assert result["assets"][0]["projection"]["dispositions"][-1]["kind"] == kind
     assert len(result["assets"]) == len(PACKS)
-    assert result["assets"][1]["snapshot"]["assetId"] == "asset:storage"
+    assert result["assets"][1]["snapshot"]["asset_id"] == "asset:storage"
 
 
 @pytest.mark.parametrize("binding_asset", ["asset:pv", "asset:storage"])
 def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
     data = response()
-    snapshot = data["semanticSnapshot"]["assets"][0]["snapshot"]
+    snapshot = data["semantic_snapshot"]["assets"][0]["snapshot"]
     snapshot["sources"] = [source()]
     bindings = snapshot["bindings"]
-    binding = {"bindingId": "binding:synthetic", "assetId": "asset:pv",
-               "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
-               "driverGeneration": "1", "state": "current", "revision": "1",
-               "nativeResource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+    binding = {"binding_id": "binding:synthetic", "asset_id": "asset:pv",
+               "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic",
+               "driver_generation": "1", "state": "current", "revision": "1",
+               "native_resource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
                                   "digest": digest("binding"), "contract": "synthetic.evidence/v1",
                                   "access": "restricted", "redaction": "metadata_only"}}
-    bindings.extend([deepcopy(binding), {**binding, "bindingId": "binding:second", "assetId": binding_asset}])
+    bindings.extend([deepcopy(binding), {**binding, "binding_id": "binding:second", "asset_id": binding_asset}])
     before = deepcopy(data)
     if binding_asset == "asset:pv":
         assert len(normalize(data)["assets"][0]["snapshot"]["bindings"]) == 2
@@ -487,26 +487,26 @@ def test_native_binding_must_belong_to_enclosing_asset(binding_asset):
 @pytest.mark.parametrize("mutation", ("none", "asset", "binding", "both"))
 def test_identity_links_resolve_within_the_enclosing_asset(state, mutation):
     data = response()
-    snapshot = data["semanticSnapshot"]["assets"][0]["snapshot"]
+    snapshot = data["semantic_snapshot"]["assets"][0]["snapshot"]
     snapshot["sources"] = [source()]
     snapshot["bindings"] = [{
-        "bindingId": "binding:synthetic", "assetId": "asset:pv",
-        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
-        "driverGeneration": "1", "state": "current", "revision": "1",
-        "nativeResource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
+        "binding_id": "binding:synthetic", "asset_id": "asset:pv",
+        "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic",
+        "driver_generation": "1", "state": "current", "revision": "1",
+        "native_resource": {"owner": "owner.synthetic", "kind": "evidence.synthetic",
                            "digest": digest("binding"), "contract": "synthetic.evidence/v1",
                            "access": "restricted", "redaction": "metadata_only"},
     }]
-    link = {"assetId": "asset:pv", "bindingId": "binding:synthetic",
+    link = {"asset_id": "asset:pv", "binding_id": "binding:synthetic",
             "state": state, "basis": [], "revision": "1"}
-    snapshot["identityLinks"] = [link]
+    snapshot["identity_links"] = [link]
     if mutation in ("asset", "both"):
-        link["assetId"] = "asset:storage"
+        link["asset_id"] = "asset:storage"
     if mutation in ("binding", "both"):
-        link["bindingId"] = "binding:absent"
+        link["binding_id"] = "binding:absent"
     before = deepcopy(data)
     if mutation == "none":
-        assert normalize(data)["assets"][0]["snapshot"]["identityLinks"][0] == {**link, "basis": ()}
+        assert normalize(data)["assets"][0]["snapshot"]["identity_links"][0] == {**link, "basis": ()}
     else:
         with pytest.raises(SemanticSnapshotError, match="identity link mismatch"):
             normalize(data)
@@ -519,22 +519,22 @@ def test_identity_links_resolve_within_the_enclosing_asset(state, mutation):
 ))
 def test_retained_evaluation_matches_complete_snapshot_audit_records(mutation):
     data = response()
-    a = data["semanticSnapshot"]["assets"][0]
+    a = data["semantic_snapshot"]["assets"][0]
     retained = []
     for suffix in ("first", "second"):
         c = candidate("pv")
-        c["candidateId"] = "candidate:historical:" + suffix
+        c["candidate_id"] = "candidate:historical:" + suffix
         retained.append({"contract": "helianthus.semantic.retained-observation/v1",
                          "candidate": c, "removal": "source_retirement"})
-    a["snapshot"]["retainedObservations"] = retained
+    a["snapshot"]["retained_observations"] = retained
     evaluated = [{"observation": deepcopy(r), "freshness": "expired"} for r in retained]
-    a["evaluation"]["retainedObservations"] = evaluated
+    a["evaluation"]["retained_observations"] = evaluated
     if mutation == "reordered":
         evaluated.reverse()
     elif mutation == "revision":
         evaluated[0]["observation"]["candidate"]["revision"] = "999"
     elif mutation == "identity":
-        evaluated[0]["observation"]["candidate"]["candidateId"] = "candidate:absent"
+        evaluated[0]["observation"]["candidate"]["candidate_id"] = "candidate:absent"
     elif mutation == "value":
         evaluated[0]["observation"]["candidate"]["value"] = None
     elif mutation == "removal":
@@ -542,21 +542,21 @@ def test_retained_evaluation_matches_complete_snapshot_audit_records(mutation):
     elif mutation == "missing":
         evaluated.pop()
     elif mutation == "extra":
-        a["snapshot"]["retainedObservations"] = retained[:1]
+        a["snapshot"]["retained_observations"] = retained[:1]
     elif mutation == "duplicate":
         evaluated.append(deepcopy(evaluated[0]))
     elif mutation == "snapshot_duplicate":
         retained.append(deepcopy(retained[0]))
     elif mutation == "snapshot_null":
-        a["snapshot"]["retainedObservations"] = None
+        a["snapshot"]["retained_observations"] = None
     elif mutation == "evaluation_null":
-        a["evaluation"]["retainedObservations"] = None
+        a["evaluation"]["retained_observations"] = None
     before = deepcopy(data)
     if mutation in ("none", "reordered"):
         out = normalize(data)["assets"][0]
-        assert len(out["snapshot"]["retainedObservations"]) == 2
+        assert len(out["snapshot"]["retained_observations"]) == 2
         assert len(out["evaluation"]["facts"]) == 1
-        assert out["evaluation"]["retainedObservations"][0]["freshness"] == "expired"
+        assert out["evaluation"]["retained_observations"][0]["freshness"] == "expired"
     else:
         with pytest.raises(SemanticSnapshotError, match="retained .*mismatch"):
             normalize(data)
@@ -567,10 +567,10 @@ def test_retained_evaluation_matches_complete_snapshot_audit_records(mutation):
 @pytest.mark.parametrize("evaluation_empty", (None, []))
 def test_empty_nullable_retained_arrays_remain_accepted(snapshot_empty, evaluation_empty):
     data = response()
-    a = data["semanticSnapshot"]["assets"][0]
-    a["snapshot"]["retainedObservations"] = snapshot_empty
-    a["evaluation"]["retainedObservations"] = evaluation_empty
-    assert normalize(data)["assets"][0]["snapshot"]["retainedObservations"] == (
+    a = data["semantic_snapshot"]["assets"][0]
+    a["snapshot"]["retained_observations"] = snapshot_empty
+    a["evaluation"]["retained_observations"] = evaluation_empty
+    assert normalize(data)["assets"][0]["snapshot"]["retained_observations"] == (
         None if snapshot_empty is None else ())
 
 
@@ -580,46 +580,46 @@ def test_empty_nullable_retained_arrays_remain_accepted(snapshot_empty, evaluati
 ))
 def test_active_candidate_provenance_resolves_within_snapshot(mutation):
     data = response()
-    snapshot = data["semanticSnapshot"]["assets"][-1]["snapshot"]
+    snapshot = data["semantic_snapshot"]["assets"][-1]["snapshot"]
     evidence = {"owner": "owner.synthetic", "kind": "evidence.synthetic",
                 "digest": digest("provenance"), "contract": "synthetic.evidence/v1",
                 "access": "restricted", "redaction": "metadata_only"}
     snapshot["sources"] = [{
-        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
-        "protocolId": "protocol.synthetic", "profileId": "profile.synthetic",
-        "profileVersion": "synthetic", "registryEvidence": evidence,
-        "startedAt": point(), "state": "current", "revision": "1",
+        "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic",
+        "protocol_id": "protocol.synthetic", "profile_id": "profile.synthetic",
+        "profile_version": "synthetic", "registry_evidence": evidence,
+        "started_at": point(), "state": "current", "revision": "1",
     }]
     snapshot["bindings"] = [{
-        "bindingId": "binding:synthetic", "assetId": "asset:infrastructure",
-        "sourceId": "source:synthetic", "sourceEpochId": "epoch:synthetic",
-        "driverGeneration": "1", "nativeResource": evidence, "state": "current", "revision": "1",
+        "binding_id": "binding:synthetic", "asset_id": "asset:infrastructure",
+        "source_id": "source:synthetic", "source_epoch_id": "epoch:synthetic",
+        "driver_generation": "1", "native_resource": evidence, "state": "current", "revision": "1",
     }]
     c = snapshot["facts"][0]["candidates"][0]
-    c.update(bindingId="binding:synthetic", sourceEpochId="epoch:synthetic", driverGeneration="1")
+    c.update(binding_id="binding:synthetic", source_epoch_id="epoch:synthetic", driver_generation="1")
     if mutation in ("binding", "both"):
-        c["bindingId"] = "binding:absent"
+        c["binding_id"] = "binding:absent"
     if mutation in ("epoch", "both", "absent_epoch_only"):
-        c["sourceEpochId"] = "epoch:absent"
+        c["source_epoch_id"] = "epoch:absent"
     if mutation == "different_epoch":
-        snapshot["sources"].append({**snapshot["sources"][0], "sourceEpochId": "epoch:other"})
-        c["sourceEpochId"] = "epoch:other"
+        snapshot["sources"].append({**snapshot["sources"][0], "source_epoch_id": "epoch:other"})
+        c["source_epoch_id"] = "epoch:other"
     if mutation == "generation":
-        c["driverGeneration"] = "2"
+        c["driver_generation"] = "2"
     if mutation == "source":
-        snapshot["sources"][0]["sourceId"] = "source:other"
+        snapshot["sources"][0]["source_id"] = "source:other"
     if mutation == "source_epoch":
-        snapshot["sources"][0]["sourceEpochId"] = "epoch:other"
+        snapshot["sources"][0]["source_epoch_id"] = "epoch:other"
     if mutation in ("epoch_only", "absent_epoch_only"):
-        c["bindingId"] = c["driverGeneration"] = None
+        c["binding_id"] = c["driver_generation"] = None
     if mutation == "nullable_epoch_generation":
-        c["sourceEpochId"] = c["driverGeneration"] = None
+        c["source_epoch_id"] = c["driver_generation"] = None
     before = deepcopy(data)
     if mutation in ("none", "epoch_only", "nullable_epoch_generation"):
         out = normalize(data)["assets"][-1]["snapshot"]["facts"][0]["candidates"][0]
-        assert out["bindingId"] == c["bindingId"]
-        assert out["sourceEpochId"] == c["sourceEpochId"]
-        assert out["driverGeneration"] == c["driverGeneration"]
+        assert out["binding_id"] == c["binding_id"]
+        assert out["source_epoch_id"] == c["source_epoch_id"]
+        assert out["driver_generation"] == c["driver_generation"]
     else:
         with pytest.raises(SemanticSnapshotError, match=(
                 "binding provenance mismatch" if mutation in ("source", "source_epoch")

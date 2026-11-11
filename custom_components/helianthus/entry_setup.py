@@ -32,7 +32,6 @@ from . import (
     _find_verified_entry_by_configured_instance_guid,
     _format_hex4_version,
     _iter_identifier_pairs,
-    _migrate_unique_ids_to_snake_case,
     _parse_zone_schedule_helper_bindings,
     _select_bus_migration_target,
     _update_entry_endpoint_if_changed,
@@ -308,15 +307,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.entry_id,
             )
         return False
-
-    # Phase C2: migrate camelCase unique_ids to snake_case before platform setup.
-    uid_migrated = _migrate_unique_ids_to_snake_case(hass, entry)
-    if uid_migrated:
-        _LOGGER.info(
-            "Migrated %d entity unique_ids from camelCase to snake_case for entry %s",
-            uid_migrated,
-            entry.entry_id,
-        )
 
     active_entry_ids = {
         config_entry.entry_id for config_entry in hass.config_entries.async_entries(DOMAIN)
@@ -753,7 +743,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ]
 
     # ADR-027: Merge B524 function-module enrichment into physical bus devices.
-    # Group 0x0C entries whose deviceClassAddress matches a known bus address
+    # Group 0x0C entries whose device_class_address matches a known bus address
     # are enrichment metadata for that bus device, not standalone devices.
     _B524_FUNCTION_MODULE_GROUP = 0x0C
     b524_merge_targets: dict[str, tuple[str, str]] = {}

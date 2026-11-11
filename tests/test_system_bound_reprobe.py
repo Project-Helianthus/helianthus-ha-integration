@@ -78,7 +78,7 @@ def test_cooldown_boundary_and_upgrade(harness, elapsed):
         _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-6, 34))
 
 
-@pytest.mark.parametrize("field", ["dhw_bivalence_point_bound", "dhwBivalencePointBound"])
+@pytest.mark.parametrize("field", ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"])
 def test_repeated_unsupported_reschedules_from_response(harness, field):
     h = harness
     pair = h.make()
