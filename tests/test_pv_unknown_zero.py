@@ -27,7 +27,7 @@ def _pv_payload(*, power="73125", energy="12345", freshness="fresh",
         availability=availability,
         selected=(freshness, availability) == ("fresh", "available"),
     )
-    current = payload["data"]["semanticPVCurrent"]
+    current = payload["data"]["semantic_pv_current"]
     energy_fact = current["snapshot"]["facts"][0]
     energy_fact["candidates"][0]["value"]["quantity"]["number"] = {
         "coefficient": energy, "exponent10": -2,
@@ -48,7 +48,7 @@ def _pv_payload(*, power="73125", energy="12345", freshness="fresh",
         "candidate_id": "candidate:power", "candidate_revision": "1",
         "freshness": "fresh", "effective_availability": "available",
     })
-    selection = deepcopy(_payload()["data"]["semanticPVCurrent"]["selections"][0])
+    selection = deepcopy(_payload()["data"]["semantic_pv_current"]["selections"][0])
     selection.update(key=deepcopy(key), selected_candidate="candidate:power")
     current["selections"].append(selection)
     current["projection"]["requested"].append({
@@ -152,7 +152,7 @@ def test_omitted_total_becomes_unknown_without_zero_or_identity_churn():
     consumer.update(_pv_payload())
     identities = consumer.identities()
     payload = _pv_payload(power="0")
-    current = payload["data"]["semanticPVCurrent"]
+    current = payload["data"]["semantic_pv_current"]
     current["snapshot"]["facts"].pop(0)
     current["evaluation"]["facts"].pop(0)
     current["selections"].pop(0)
@@ -204,13 +204,13 @@ def test_invalid_value_fails_closed_preserving_last_accepted_fields(fact_index, 
     previous = consumer.coordinator.data
     identities = consumer.identities()
     payload = _pv_payload(power="0")
-    candidate = payload["data"]["semanticPVCurrent"]["snapshot"]["facts"][fact_index]["candidates"][0]
+    candidate = payload["data"]["semantic_pv_current"]["snapshot"]["facts"][fact_index]["candidates"][0]
     if missing == "absent":
         del candidate["value"]
     elif missing == "unknown-freshness":
         # The public evaluation accepts fresh/stale/expired only. Unknown
         # evaluation freshness must fail admission, retaining accepted values.
-        payload["data"]["semanticPVCurrent"]["evaluation"]["facts"][fact_index]["freshness"] = "unknown"
+        payload["data"]["semantic_pv_current"]["evaluation"]["facts"][fact_index]["freshness"] = "unknown"
     else:
         candidate["value"] = None if missing == "null" else {"kind": "unknown"}
     consumer.update(payload)

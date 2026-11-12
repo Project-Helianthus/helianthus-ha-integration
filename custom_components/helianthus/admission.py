@@ -12,9 +12,7 @@ REPAIR_EMPTY_INVENTORY_UNTRUSTED = "empty_inventory_untrusted"
 
 
 def _source_selection_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
-    bus_summary = payload.get("busSummary")
-    if not isinstance(bus_summary, dict):
-        bus_summary = payload.get("bus_summary")
+    bus_summary = payload.get("bus_summary")
     if not isinstance(bus_summary, dict):
         return None
     status = bus_summary.get("status")

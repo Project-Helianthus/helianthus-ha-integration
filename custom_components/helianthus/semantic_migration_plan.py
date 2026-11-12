@@ -50,8 +50,8 @@ def _detach(value):
 
 
 def _key(value):
-    key = _fields(value, "packId packVersion factId dimensions")
-    for field in ("packId", "packVersion", "factId"):
+    key = _fields(value, "pack_id pack_version fact_id dimensions")
+    for field in ("pack_id", "pack_version", "fact_id"):
         _text(key[field])
     dims = key["dimensions"]
     if not isinstance(dims, (list, tuple)) or len(dims) != 1:
@@ -120,17 +120,17 @@ def _reservation_value(typed):
         for symbol in value:
             _symbol(symbol)
     else:
-        time = _fields(value, "unixNanoseconds clockId uncertaintyNs")
-        _integer_string(time["unixNanoseconds"], -(2**63), 2**63 - 1)
-        _text(time["clockId"])
-        _integer_string(time["uncertaintyNs"], 0, 2**64 - 1)
+        time = _fields(value, "unix_nanoseconds clock_id uncertainty_ns")
+        _integer_string(time["unix_nanoseconds"], -(2**63), 2**63 - 1)
+        _text(time["clock_id"])
+        _integer_string(time["uncertainty_ns"], 0, 2**64 - 1)
 
 
 def _reservation_key(value):
     # Other shared entities may reserve keys outside the candidate row shapes.
     # Validate the identity envelope without interpreting their measurements.
-    key = _fields(value, "packId packVersion factId dimensions")
-    for field in ("packId", "packVersion", "factId"):
+    key = _fields(value, "pack_id pack_version fact_id dimensions")
+    for field in ("pack_id", "pack_version", "fact_id"):
         _text(key[field])
     if not isinstance(key["dimensions"], (list, tuple)):
         raise ValueError("invalid reservation dimensions")
@@ -161,12 +161,12 @@ def _inventory(records):
 
 
 def _expected(family, asset_ref, key):
-    if (key["packId"] != "helianthus.pack." + family
-            or key["packVersion"] != {"pv": "1.0.0", "storage": "1.1.0"}[family]):
+    if (key["pack_id"] != "helianthus.pack." + family
+            or key["pack_version"] != {"pv": "1.0.0", "storage": "1.1.0"}[family]):
         raise ValueError("pack mismatch")
-    if key["factId"] in _WITHHELD:
+    if key["fact_id"] in _WITHHELD:
         raise ValueError("withheld row")
-    row = next((r for r in _ROWS if r[:2] == (family, key["factId"])), None)
+    row = next((r for r in _ROWS if r[:2] == (family, key["fact_id"])), None)
     if row is None:
         raise ValueError("outside candidate rows")
     _, _, dimension, old_fact, old_kind, unit, device_class = row

@@ -12,8 +12,8 @@ from custom_components.helianthus.semantic_snapshot_coordinator import semantic_
 
 def readable(asset_id):
     return {
-        "assetId": asset_id, "unavailableReason": None,
-        "snapshot": {"assetId": asset_id, "facts": [
+        "asset_id": asset_id, "unavailable_reason": None,
+        "snapshot": {"asset_id": asset_id, "facts": [
             {"value": {"boolean": False, "quantity": Decimal(0)}}]},
         "evaluation": {"facts": ()}, "projection": {"dispositions": ()},
         "selections": (),
@@ -21,7 +21,7 @@ def readable(asset_id):
 
 
 def unavailable(asset_id, reason):
-    return {"assetId": asset_id, "unavailableReason": reason,
+    return {"asset_id": asset_id, "unavailable_reason": reason,
             "snapshot": None, "evaluation": None, "projection": None,
             "selections": ()}
 
@@ -32,13 +32,13 @@ def test_sparse_snapshot_preserves_every_selection_in_selected_order():
         "blocked", "semantic.read.reason.publication_withheld")]}
     before = deepcopy(source)
     assert preview_semantic_assets(source, selected) == [
-        {"assetId": "missing", "status": "selected-not-in-this-snapshot",
-         "unavailableReason": None, "asset": None},
-        {"assetId": "blocked", "status": "selected-unavailable",
-         "unavailableReason": "semantic.read.reason.publication_withheld",
+        {"asset_id": "missing", "status": "selected-not-in-this-snapshot",
+         "unavailable_reason": None, "asset": None},
+        {"asset_id": "blocked", "status": "selected-unavailable",
+         "unavailable_reason": "semantic.read.reason.publication_withheld",
          "asset": before["assets"][2]},
-        {"assetId": "readable", "status": "selected-readable",
-         "unavailableReason": None, "asset": before["assets"][1]},
+        {"asset_id": "readable", "status": "selected-readable",
+         "unavailable_reason": None, "asset": before["assets"][1]},
     ]
     assert source == before
     assert selected == ["missing", "blocked", "readable"]
@@ -49,8 +49,8 @@ def test_sparse_snapshot_preserves_every_selection_in_selected_order():
 def test_explicit_unavailable_reason_is_preserved_even_for_asset_unknown(suffix):
     reason = "semantic.read.reason." + suffix
     assert preview_semantic_assets({"assets": [unavailable("a", reason)]}, ["a"]) == [
-        {"assetId": "a", "status": "selected-unavailable",
-         "unavailableReason": reason, "asset": unavailable("a", reason)}]
+        {"asset_id": "a", "status": "selected-unavailable",
+         "unavailable_reason": reason, "asset": unavailable("a", reason)}]
 
 
 @pytest.mark.parametrize("snapshot,status", [
@@ -59,8 +59,8 @@ def test_explicit_unavailable_reason_is_preserved_even_for_asset_unknown(suffix)
 def test_missing_current_read_is_unknown_rather_than_absence(snapshot, status):
     selected = ["b", "a"]
     assert preview_semantic_assets(snapshot, selected) == [
-        {"assetId": "b", "status": status, "unavailableReason": None, "asset": None},
-        {"assetId": "a", "status": status, "unavailableReason": None, "asset": None},
+        {"asset_id": "b", "status": status, "unavailable_reason": None, "asset": None},
+        {"asset_id": "a", "status": status, "unavailable_reason": None, "asset": None},
     ]
     assert selected == ["b", "a"]
 
@@ -76,7 +76,7 @@ INVALID = [None, "a", ("a",), {}, 7, True, [1], [False], [None], [[]], [{}],
 def test_valid_selection_limits_and_opaque_bytes_match_existing_helper(ids):
     assert semantic_asset_ids(SimpleNamespace(options={"semantic_asset_ids": ids}, data={})) == tuple(ids)
     rows = preview_semantic_assets(None, ids)
-    assert [row["assetId"].encode("utf-8") for row in rows] == [s.encode("utf-8") for s in ids]
+    assert [row["asset_id"].encode("utf-8") for row in rows] == [s.encode("utf-8") for s in ids]
     assert len(rows) == len(ids)
 
 
@@ -96,8 +96,8 @@ def test_asset_id_is_the_only_lookup_key_and_is_never_coerced(selected_id):
     foreign = readable("foreign")
     target = readable(selected_id)
     rows = preview_semantic_assets({"assets": [foreign, target]}, [selected_id])
-    assert rows == [{"assetId": selected_id, "status": "selected-readable",
-                     "unavailableReason": None, "asset": target}]
+    assert rows == [{"asset_id": selected_id, "status": "selected-readable",
+                     "unavailable_reason": None, "asset": target}]
     others = [name for name in ("asset:A", "asset:a", " asset:A ", "e\u0301", "é")
               if name != selected_id]
     assert all(row["status"] == "selected-not-in-this-snapshot" for row in
@@ -122,16 +122,16 @@ def test_unrelated_asset_changes_cannot_change_selected_result(foreign):
     target = readable("a")
     source = {"assets": [target] if foreign is None else [foreign, target]}
     assert preview_semantic_assets(source, ["a"]) == [
-        {"assetId": "a", "status": "selected-readable",
-         "unavailableReason": None, "asset": readable("a")}]
+        {"asset_id": "a", "status": "selected-readable",
+         "unavailable_reason": None, "asset": readable("a")}]
 
 
 def test_successive_previews_do_not_remove_or_reattach_saved_ids():
     selected = ["a", "b"]
     previous = preview_semantic_assets({"assets": [readable("a")]}, selected)
     assert preview_semantic_assets(None, selected) == [
-        {"assetId": "a", "status": "unknown", "unavailableReason": None, "asset": None},
-        {"assetId": "b", "status": "unknown", "unavailableReason": None, "asset": None}]
+        {"asset_id": "a", "status": "unknown", "unavailable_reason": None, "asset": None},
+        {"asset_id": "b", "status": "unknown", "unavailable_reason": None, "asset": None}]
     assert previous[0]["asset"] == readable("a")
     assert previous[1]["asset"] is None
     assert selected == ["a", "b"]

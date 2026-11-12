@@ -15,7 +15,7 @@ from custom_components.helianthus.admission import (
 def _raw_admission(*, degraded: bool = False) -> dict:
     return source_selection_from_status_payload(
         {
-            "busSummary": {
+            "bus_summary": {
                 "status": {
                     "bus_admission": {
                         "source_selection": {

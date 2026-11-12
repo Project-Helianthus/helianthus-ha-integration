@@ -16,12 +16,12 @@ from custom_components.helianthus import evse_m2m, pv_m2m, storage_m2m
 
 CONSUMERS = [
     pytest.param(pv_m2m, pv_m2m.PVM2MClient, pv_m2m.PVM2MProtocolError,
-                 pv_fixture._payload, "pv-asset-01", "semanticPVCurrent", id="pv"),
+                 pv_fixture._payload, "pv-asset-01", "semantic_pv_current", id="pv"),
     pytest.param(storage_m2m, storage_m2m.StorageM2MClient,
                  storage_m2m.StorageM2MProtocolError, storage_fixture._payload,
-                 storage_fixture.ASSET, "semanticStorageCurrent", id="storage"),
+                 storage_fixture.ASSET, "semantic_storage_current", id="storage"),
     pytest.param(evse_m2m, evse_m2m.EVSEM2MClient, evse_m2m.EVSEM2MProtocolError,
-                 evse_fixture.payload, evse_fixture.ASSET, "semanticEVSECurrent", id="evse"),
+                 evse_fixture.payload, evse_fixture.ASSET, "semantic_evse_current", id="evse"),
 ]
 QUOTED_TEXT = [
     pytest.param("{[" * 80, id="quoted-openers"),

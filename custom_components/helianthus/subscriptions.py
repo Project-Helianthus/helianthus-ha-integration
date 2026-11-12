@@ -18,8 +18,8 @@ SUBSCRIPTIONS = {
         id
         name
         state {
-          current_temp_c
-          current_humidity_pct
+          zone_room_temperature
+          zone_room_humidity
           hvac_action
           special_function
           heating_demand_pct

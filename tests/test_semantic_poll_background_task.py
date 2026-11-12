@@ -36,10 +36,10 @@ class Client:
 
     async def execute(self, query, variables):
         self.calls += 1
-        return {"semanticSnapshot": {"assets": [{
-            "assetId": "asset:synthetic", "snapshot": None, "evaluation": None,
+        return {"semantic_snapshot": {"assets": [{
+            "asset_id": "asset:synthetic", "snapshot": None, "evaluation": None,
             "projection": None, "selections": [],
-            "unavailableReason": "semantic.read.reason.asset_unknown",
+            "unavailable_reason": "semantic.read.reason.asset_unknown",
         }]}}
 
 

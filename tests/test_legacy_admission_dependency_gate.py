@@ -201,4 +201,4 @@ async def write(client, admitted_source):
 
     _, offenders = _write_source_offenders([module])
 
-    assert offenders == [f"{module}:4: params.source"]
+    assert offenders == [f"{_display_path(module)}:4: params.source"]

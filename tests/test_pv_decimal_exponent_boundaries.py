@@ -148,7 +148,7 @@ def _public_response():
         "dispositions": [{"kind": "fact", "item_id": "inverter.ac.frequency", "outcome": "exact",
                           "source_keys": [deepcopy(key)], "loss": []}],
     }
-    return {"data": {"semanticPVCurrent": {
+    return {"data": {"semantic_pv_current": {
         "snapshot": snapshot, "evaluation": evaluation, "selections": [], "projection": projection,
     }}}
 

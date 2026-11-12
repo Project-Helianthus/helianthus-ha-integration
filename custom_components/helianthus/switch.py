@@ -88,7 +88,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         self._status_coordinator = status_coordinator
         self._circuit_index = circuit_index
         self._initial_name = initial_name
-        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-cooling-enabled"
+        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-circuit_cooling_enabled"
         self._attr_name = "Cooling Enabled"
 
     def _circuit(self) -> dict[str, Any]:
@@ -141,7 +141,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
 
         variables = {
             "index": int(self._circuit_index),
-            "field": "cooling_enabled",
+            "field": "circuit_cooling_enabled",
             "value": "true" if enabled else "false",
         }
         try:

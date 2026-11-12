@@ -89,7 +89,7 @@ class _Session:
 
 
 def _fetch(module, family, raw):
-    current = json.loads(raw)["data"][f"semantic{family}Current"]
+    current = json.loads(raw)["data"][f"semantic_{family.lower()}_current"]
     client = getattr(module, f"{family}M2MClient")(
         session=_Session(raw), endpoint="https://example.test/graphql/m2m/v1",
         asset_ref=current["snapshot"]["asset_id"],
@@ -126,7 +126,7 @@ def test_duplicate_raw_keys_fail_before_semantic_decoding(
         corrupt = raw[:-1] + "," + key + ":" + raw[len('{"data":'):-1] + "}"
     else:
         # The first candidate id occurs in the candidate, before its evaluation.
-        candidate = json.loads(raw)["data"][f"semantic{family}Current"]["snapshot"]["facts"][0]["candidates"][0]
+        candidate = json.loads(raw)["data"][f"semantic_{family.lower()}_current"]["snapshot"]["facts"][0]["candidates"][0]
         member = '"candidate_id":' + json.dumps(candidate["candidate_id"])
         key = r'"candidate_\u0069d"' if escaped else '"candidate_id"'
         corrupt = raw.replace(member, member + "," + key + ":" + json.dumps(candidate["candidate_id"]), 1)
@@ -138,7 +138,7 @@ def test_duplicate_raw_keys_fail_before_semantic_decoding(
     assert corrupt != raw
     assert decoded == json.loads(raw)
     _assert_facts(module.parse_m2m_response(
-        decoded, expected_asset_ref=decoded["data"][f"semantic{family}Current"]["snapshot"]["asset_id"],
+        decoded, expected_asset_ref=decoded["data"][f"semantic_{family.lower()}_current"]["snapshot"]["asset_id"],
     ), family)
     with pytest.raises(getattr(module, f"{family}M2MProtocolError"),
                        match="^duplicate response object key$"):

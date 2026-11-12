@@ -23,8 +23,8 @@ from .const import (CONF_PV_M2M_ASSET_REF, CONF_PV_M2M_CA_CERT_FILE,
 
 _LOGGER = logging.getLogger(__name__)
 PUBLIC_GRAPHQL_SEMANTIC_PV_V1 = "PUBLIC_GRAPHQL_SEMANTIC_PV_V1"
-SEMANTIC_PV_CURRENT_QUERY = """query SemanticPVCurrent($request: M2MCurrentSnapshotRequest!) {
-  semanticPVCurrent(request: $request) { snapshot evaluation selections projection }
+SEMANTIC_PV_CURRENT_QUERY = """query SemanticPVCurrent($request: m2m_current_snapshot_request!) {
+  semantic_pv_current(request: $request) { snapshot evaluation selections projection }
 }"""
 M2M_MAX_FACTS = 256
 M2M_MAX_RESPONSE_BYTES = 1_048_576
@@ -186,7 +186,7 @@ def _error(payload: Mapping[str, Any]) -> None:
     if item["data"] is not None or not isinstance(item["errors"], list) or len(item["errors"]) != 1: raise PVM2MProtocolError("invalid error envelope")
     error = _map(item["errors"][0], {"message", "path", "extensions"}, "error")
     code = _map(error["extensions"], {"code"}, "error")["code"]
-    if error["message"] != "M2M request failed" or error["path"] != ["semanticPVCurrent"] or not isinstance(code, str): raise PVM2MProtocolError("invalid error envelope")
+    if error["message"] != "M2M request failed" or error["path"] != ["semantic_pv_current"] or not isinstance(code, str): raise PVM2MProtocolError("invalid error envelope")
     raise PVM2MRemoteError(code)
 def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], energy_key: tuple[str, str, str] | None, published: set[tuple[str, str, str]]) -> None:
     item = _map(value, {"contract", "manifest", "snapshot_id", "revisions", "requested", "dispositions"}, "projection")
@@ -227,7 +227,7 @@ def _projection(value: object, snapshot_id: str, revisions: tuple[str, ...], ene
 def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> PVM2MSnapshot:
     if not isinstance(payload, Mapping): raise PVM2MProtocolError("response envelope must be an object")
     if "errors" in payload: _error(payload)
-    current = _map(_map(_map(payload, {"data"}, "success envelope")["data"], {"semanticPVCurrent"}, "success data")["semanticPVCurrent"], {"snapshot", "evaluation", "selections", "projection"}, "semantic PV current")
+    current = _map(_map(_map(payload, {"data"}, "success envelope")["data"], {"semantic_pv_current"}, "success data")["semantic_pv_current"], {"snapshot", "evaluation", "selections", "projection"}, "semantic PV current")
     snapshot = _map(current["snapshot"], {"contract", "snapshot_id", "asset_id", "revisions", "evaluated_at", "evaluate_monotonic", "sources", "bindings", "identity_links", "facts", "services", "capabilities", "fences", "cursors"}, "snapshot", {"retained_observations"})
     if snapshot["contract"] != "helianthus.semantic.kernel/v1" or snapshot["asset_id"] != expected_asset_ref or not isinstance(snapshot["facts"], list) or len(snapshot["facts"]) > M2M_MAX_FACTS: raise PVM2MProtocolError("invalid snapshot")
     snapshot_id, revisions = _text(snapshot["snapshot_id"], "snapshot id", 255), _revisions(snapshot["revisions"], "snapshot revisions")
@@ -288,7 +288,7 @@ class PVM2MClient:
     def __init__(self, *, session: object, endpoint: str, asset_ref: str) -> None:
         _validate_endpoint(endpoint); self._session, self._endpoint, self._asset_ref = session, endpoint, _text(asset_ref, "asset reference")
     async def async_current_snapshot(self) -> PVM2MSnapshot:
-        body = {"operationName": "SemanticPVCurrent", "query": SEMANTIC_PV_CURRENT_QUERY, "variables": {"request": {"contractId": PUBLIC_GRAPHQL_SEMANTIC_PV_V1, "assetRef": self._asset_ref}}}
+        body = {"operationName": "SemanticPVCurrent", "query": SEMANTIC_PV_CURRENT_QUERY, "variables": {"request": {"contract_id": PUBLIC_GRAPHQL_SEMANTIC_PV_V1, "asset_ref": self._asset_ref}}}
         try:
             async with self._session.post(self._endpoint, json=body, headers={"Accept": "application/json", "Content-Type": "application/json"}, allow_redirects=False) as response:
                 if response.status != 200: raise PVM2MTransportError(f"unexpected HTTP status {response.status}")

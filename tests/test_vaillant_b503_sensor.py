@@ -1,8 +1,8 @@
 """Tests for the B503 boiler_active_error diagnostic sensor.
 
 Covers plan §M4_HA + AD11 (3-poll hysteresis) + AD15 (lifecycle) + AD05
-(no F.xxx translation). GraphQL-driven: ``vaillantCapabilities.vaillantB503`` +
-``vaillantErrors``.
+(no F.xxx translation). GraphQL-driven: ``vaillant_capabilities.vaillant_b503`` +
+``vaillant_errors``.
 """
 
 from __future__ import annotations
@@ -95,13 +95,13 @@ class _FakeGraphQLClient:
 
 
 def _payload(reason, first_active=None, slots=None):
-    """Build an accepted gateway reply for vaillantCapabilities.vaillantB503."""
+    """Build an accepted gateway reply for vaillant_capabilities.vaillant_b503."""
     return {
-        "vaillantCapabilities": {
-            "vaillantB503": {"reason": reason},
+        "vaillant_capabilities": {
+            "vaillant_b503": {"reason": reason},
         },
-        "vaillantErrors": {
-            "firstActiveError": first_active,
+        "vaillant_errors": {
+            "first_active_error": first_active,
             "slots": slots if slots is not None else [None, None, None, None, None],
         },
     }
@@ -109,7 +109,7 @@ def _payload(reason, first_active=None, slots=None):
 
 def test_b503_contract_uses_accepted_gateway_field_name() -> None:
     """The integration must consume the accepted gateway field, not its old alias."""
-    assert "vaillantB503 {" in vaillant_b503.QUERY_B503_STATE
+    assert "vaillant_b503 {" in vaillant_b503.QUERY_B503_STATE
     assert "\n    b503 {" not in vaillant_b503.QUERY_B503_STATE
 
     client = _FakeGraphQLClient([_payload("AVAILABLE")])

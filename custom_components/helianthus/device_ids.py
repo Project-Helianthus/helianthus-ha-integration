@@ -365,7 +365,7 @@ def managing_device_identifier(
     """Resolve the physical manager device for a semantic sub-device.
 
     R6 rules:
-    - circuits use the explicit semantic `managingDevice` contract;
+    - circuits use the explicit semantic `managing_device` contract;
     - `UNKNOWN` ownership does not fall back to a guessed physical parent;
     - non-circuit groups keep the controller/adapter fallback.
     """

@@ -84,7 +84,7 @@ class SemanticSnapshotCoordinator:
             self.supported = next_optional_query_state(
                 self.supported,
                 schema_field_missing=isinstance(exc, GraphQLResponseError)
-                and _is_missing_field_error(exc.errors, ["semanticSnapshot"]),
+                and _is_missing_field_error(exc.errors, ["semantic_snapshot"]),
             )
         else:
             if self._closed:

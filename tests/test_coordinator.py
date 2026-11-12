@@ -303,7 +303,7 @@ def test_status_query_uses_initiator_field_when_available() -> None:
     client = _ScriptedClient(
         [
             {
-                "busSummary": {
+                "bus_summary": {
                     "status": {
                         "bus_admission": {
                             "source_selection": {
@@ -391,7 +391,7 @@ def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error()
                 ]
             ),
             GraphQLResponseError(
-                [{"message": 'Cannot query field "busSummary" on type "Query".'}]
+                [{"message": 'Cannot query field "bus_summary" on type "Query".'}]
             ),
             {
                 "daemon_status": {
@@ -482,7 +482,7 @@ def test_status_query_marks_degraded_admission_untrusted() -> None:
     client = _ScriptedClient(
         [
             {
-                "busSummary": {
+                "bus_summary": {
                     "status": {
                         "bus_admission": {
                             "source_selection": {

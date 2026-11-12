@@ -1,7 +1,7 @@
 """B503 boiler active-error diagnostic sensor (plan §M4_HA).
 
-Surfaces :code:`vaillantErrors.firstActiveError` as a HA sensor entity
-gated by :code:`vaillantCapabilities.vaillantB503.reason`. Follows the lifecycle
+Surfaces :code:`vaillant_errors.first_active_error` as a HA sensor entity
+gated by :code:`vaillant_capabilities.vaillant_b503.reason`. Follows the lifecycle
 rules from plan AD11 (3-poll hysteresis on NOT_SUPPORTED flips) and
 AD15 (state transitions per capability reason). No F.xxx translation
 (AD05) — native_value is the raw decimal integer from GraphQL.
@@ -44,13 +44,13 @@ _NOT_SUPPORTED_REASON = "NOT_SUPPORTED"
 
 QUERY_B503_STATE = """
 query VaillantB503State {
-  vaillantCapabilities {
-    vaillantB503 {
+  vaillant_capabilities {
+    vaillant_b503 {
       reason
     }
   }
-  vaillantErrors {
-    firstActiveError
+  vaillant_errors {
+    first_active_error
     slots
   }
 }
@@ -131,11 +131,11 @@ class VaillantB503Coordinator:
             return
 
         reason = _extract_reason(payload)
-        errors = payload.get("vaillantErrors") if isinstance(payload, dict) else None
+        errors = payload.get("vaillant_errors") if isinstance(payload, dict) else None
         first_active: int | None = None
         slots: list[int | None] = [None, None, None, None, None]
         if isinstance(errors, dict):
-            first_active = _coerce_int(errors.get("firstActiveError"))
+            first_active = _coerce_int(errors.get("first_active_error"))
             slots = _normalize_slots(errors.get("slots"))
 
         self._apply_reason(reason)
@@ -284,10 +284,10 @@ async def async_setup_b503(
 def _extract_reason(payload: Any) -> str:
     if not isinstance(payload, dict):
         return "UNKNOWN"
-    caps = payload.get("vaillantCapabilities")
+    caps = payload.get("vaillant_capabilities")
     if not isinstance(caps, dict):
         return "UNKNOWN"
-    b503 = caps.get("vaillantB503")
+    b503 = caps.get("vaillant_b503")
     if not isinstance(b503, dict):
         return "UNKNOWN"
     reason = b503.get("reason")

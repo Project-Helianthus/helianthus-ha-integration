@@ -103,7 +103,7 @@ class _WideJSONSession:
 @pytest.mark.parametrize("form", ["arrays", "objects", "alternating"])
 def test_pv_client_accepts_existing_schema_with_wide_context(form):
     value = pv_payload_fixture._payload()
-    current = value["data"]["semanticPVCurrent"]
+    current = value["data"]["semantic_pv_current"]
     # Context is already accepted by this client as an open mapping. Keep all
     # fact, selection and projection bindings from the established fixture.
     current["evaluation"]["context"] = {

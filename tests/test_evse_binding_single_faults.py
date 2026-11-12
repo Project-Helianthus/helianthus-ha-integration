@@ -139,7 +139,7 @@ def _payload() -> dict:
                       for fact_id in (CONFIGURED, ALLOCATED)],
         "dispositions": dispositions,
     }
-    return {"data": {"semanticEVSECurrent": {
+    return {"data": {"semantic_evse_current": {
         "snapshot": snapshot, "evaluation": evaluation, "selections": [],
         "projection": projection,
     }}}
@@ -187,13 +187,13 @@ def test_each_connector_requires_every_candidate_join(
     control = _payload()
     _assert_control(control)
     malformed = deepcopy(control)
-    candidate = malformed["data"]["semanticEVSECurrent"]["snapshot"]["facts"][fact_index]["candidates"][0]
+    candidate = malformed["data"]["semantic_evse_current"]["snapshot"]["facts"][fact_index]["candidates"][0]
     parent = candidate["origin"] if len(path) == 2 else candidate
     original = parent[path[-1]]
     assert original != replacement
     parent[path[-1]] = replacement
     assert _changed_paths(control, malformed) == [
-        ("data", "semanticEVSECurrent", "snapshot", "facts", fact_index,
+        ("data", "semantic_evse_current", "snapshot", "facts", fact_index,
          "candidates", 0, *path),
     ]
 
@@ -208,9 +208,9 @@ def test_binding_epoch_must_match_its_source() -> None:
     control = _payload()
     _assert_control(control)
     malformed = deepcopy(control)
-    malformed["data"]["semanticEVSECurrent"]["snapshot"]["bindings"][0]["source_epoch_id"] = "epoch:other"
+    malformed["data"]["semantic_evse_current"]["snapshot"]["bindings"][0]["source_epoch_id"] = "epoch:other"
     assert _changed_paths(control, malformed) == [
-        ("data", "semanticEVSECurrent", "snapshot", "bindings", 0, "source_epoch_id"),
+        ("data", "semantic_evse_current", "snapshot", "bindings", 0, "source_epoch_id"),
     ]
     with pytest.raises(evse_m2m.EVSEM2MProtocolError, match=r"^invalid evse identity$"):
         evse_m2m.parse_m2m_response(malformed, expected_asset_ref=ASSET)

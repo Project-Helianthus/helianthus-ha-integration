@@ -28,8 +28,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1 = "PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1"
-SEMANTIC_STORAGE_CURRENT_QUERY = """query SemanticStorageCurrent($request: M2MCurrentSnapshotRequest!) {
-  semanticStorageCurrent(request: $request) { snapshot evaluation selections projection }
+SEMANTIC_STORAGE_CURRENT_QUERY = """query SemanticStorageCurrent($request: m2m_current_snapshot_request!) {
+  semantic_storage_current(request: $request) { snapshot evaluation selections projection }
 }"""
 M2M_MAX_FACTS = 256
 M2M_MAX_RESPONSE_BYTES = 1_048_576
@@ -186,7 +186,7 @@ def _error(payload: Mapping[str, Any]) -> None:
     if item["data"] is not None or not isinstance(item["errors"], list) or len(item["errors"]) != 1: raise StorageM2MProtocolError("invalid error envelope")
     error = _map(item["errors"][0], {"message", "path", "extensions"}, "error")
     code = _map(error["extensions"], {"code"}, "error")["code"]
-    if error["message"] != "M2M request failed" or error["path"] != ["semanticStorageCurrent"] or not isinstance(code, str): raise StorageM2MProtocolError("invalid error envelope")
+    if error["message"] != "M2M request failed" or error["path"] != ["semantic_storage_current"] or not isinstance(code, str): raise StorageM2MProtocolError("invalid error envelope")
     raise StorageM2MRemoteError(code)
 
 
@@ -278,7 +278,7 @@ def parse_m2m_response(payload: object, *, expected_asset_ref: str) -> StorageM2
     expected_asset_ref = _asset_ref(expected_asset_ref, "asset reference")
     if not isinstance(payload, Mapping): raise StorageM2MProtocolError("response envelope must be an object")
     if "errors" in payload: _error(payload)
-    current = _map(_map(_map(payload, {"data"}, "success envelope")["data"], {"semanticStorageCurrent"}, "success data")["semanticStorageCurrent"], {"snapshot", "evaluation", "selections", "projection"}, "semantic Storage current")
+    current = _map(_map(_map(payload, {"data"}, "success envelope")["data"], {"semantic_storage_current"}, "success data")["semantic_storage_current"], {"snapshot", "evaluation", "selections", "projection"}, "semantic Storage current")
     snapshot = _map(current["snapshot"], {"contract", "snapshot_id", "asset_id", "revisions", "evaluated_at", "evaluate_monotonic", "sources", "bindings", "identity_links", "facts", "services", "capabilities", "fences", "cursors"}, "snapshot", {"retained_observations"})
     if snapshot["contract"] != "helianthus.semantic.kernel/v1" or snapshot["asset_id"] != expected_asset_ref or not isinstance(snapshot["facts"], list) or len(snapshot["facts"]) > M2M_MAX_FACTS: raise StorageM2MProtocolError("invalid snapshot")
     snapshot_id, revisions = _text(snapshot["snapshot_id"], "snapshot id", 255), _revisions(snapshot["revisions"], "snapshot revisions")
@@ -333,7 +333,7 @@ class StorageM2MClient:
     def __init__(self, *, session: object, endpoint: str, asset_ref: str) -> None:
         _validate_endpoint(endpoint); self._session, self._endpoint, self._asset_ref = session, endpoint, _asset_ref(asset_ref, "asset reference")
     async def async_current_snapshot(self) -> StorageM2MSnapshot:
-        body = {"operationName": "SemanticStorageCurrent", "query": SEMANTIC_STORAGE_CURRENT_QUERY, "variables": {"request": {"contractId": PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1, "assetRef": self._asset_ref}}}
+        body = {"operationName": "SemanticStorageCurrent", "query": SEMANTIC_STORAGE_CURRENT_QUERY, "variables": {"request": {"contract_id": PUBLIC_GRAPHQL_SEMANTIC_STORAGE_V1, "asset_ref": self._asset_ref}}}
         try:
             async with self._session.post(self._endpoint, json=body, headers={"Accept": "application/json", "Content-Type": "application/json"}, allow_redirects=False) as response:
                 if response.status != 200: raise StorageM2MTransportError(f"unexpected HTTP status {response.status}")

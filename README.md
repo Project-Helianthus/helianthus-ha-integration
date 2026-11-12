@@ -1,5 +1,29 @@
 # helianthus-ha-integration
 
+## Coordinated public name adoption
+
+The integration consumes the gateway's snake_case GraphQL fields, including
+`semantic_snapshot`, its nested identity/provenance members, `bus_summary`,
+and the PV, storage and EVSE M2M roots. Zone room readings use
+`zone_room_temperature` and `zone_room_humidity`; DHW readings keep their
+separate published keys. `target_temp_c` remains provisional: the gateway's
+manual/heating/cooling source selection still needs a public naming decision.
+
+Circuit setters use their full canonical register names. The published circuit
+read keys remain distinct from the setter keys. Renamed writable entities use
+new canonical unique-ID components and are recreated; there is no unique-ID or
+entity-registry migration, alias or old/new entity pair. Unrelated IDs remain.
+
+The writable Frost Protection number is withdrawn. Its raw provisional read
+representation remains available to the consumer; no replacement special-function
+control is published pending the public value table. This change performs no
+installed-state deletion or live registry operation.
+
+This changes shipped artifacts (evidence class S). Affected security, hardware
+and release-candidate evidence must be renewed before release. Synthetic tests
+do not establish native qualification or physical validation. The coordinated
+release remains subject to the public documentation gate.
+
 `helianthus-ha-integration` is the Home Assistant custom integration for Helianthus GraphQL endpoints. It maps Helianthus runtime data to HA devices and entities (diagnostics, climate, DHW, energy).
 
 ## Purpose and Scope

@@ -409,15 +409,11 @@ def test_circuit_sparse_sensors_and_numbers_are_disabled_by_default_when_value_n
         if isinstance(entity, sensor_platform.HelianthusCircuitSensor)
         and entity._attr_unique_id == "entry-1-circuit-0-sensor-calc_flow_temp_c"
     )
-    frost = next(
-        entity
+    assert not any(
+        entity._attr_unique_id.endswith("-frost_prot_c")
         for entity in number_entities
-        if isinstance(entity, number_platform.HelianthusCircuitNumber)
-        and entity._attr_unique_id == "entry-1-circuit-0-number-frost_prot_c"
     )
-
     assert calc_flow._attr_entity_registry_enabled_default is False
-    assert frost._attr_entity_registry_enabled_default is False
 
 
 def test_circuit_number_select_entities_call_circuit_config_mutation_without_cooling_enabled() -> None:
@@ -435,20 +431,20 @@ def test_circuit_number_select_entities_call_circuit_config_mutation_without_coo
     heating_curve = next(
         entity
         for entity in number_entities
-        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "heating_curve"
+        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "circuit_heating_curve_factor"
     )
     room_temp_control = next(
         entity
         for entity in select_entities
         if isinstance(entity, select_platform.HelianthusCircuitRoomTempControlSelect)
-        and entity._attr_unique_id == "entry-1-circuit-0-room-temp-control"
+        and entity._attr_unique_id == "entry-1-circuit-0-circuit_room_temperature_influence_mode"
     )
 
     asyncio.run(heating_curve.async_set_native_value(1.7))
     asyncio.run(room_temp_control.async_select_option("thermostat"))
 
     fields_written = [call["variables"]["field"] for call in client.calls]
-    assert fields_written == ["heating_curve", "room_temp_control"]
+    assert fields_written == ["circuit_heating_curve_factor", "circuit_room_temperature_influence_mode"]
     assert switch_entities == []
     assert circuit_coordinator.refresh_requests == 2
 
@@ -467,7 +463,7 @@ def test_circuit_writable_entities_fail_closed_when_admission_untrusted() -> Non
     heating_curve = next(
         entity
         for entity in number_entities
-        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "heating_curve"
+        if isinstance(entity, number_platform.HelianthusCircuitNumber) and entity._field.key == "circuit_heating_curve_factor"
     )
     room_temp_control = next(
         entity

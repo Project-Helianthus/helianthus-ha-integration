@@ -382,7 +382,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        value = self._zone_state().get("current_temp_c")
+        value = self._zone_state().get("zone_room_temperature")
         return float(value) if value is not None else None
 
     @property
@@ -392,7 +392,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_humidity(self) -> float | None:
-        value = self._zone_state().get("current_humidity_pct")
+        value = self._zone_state().get("zone_room_humidity")
         return float(value) if value is not None else None
 
     @property
