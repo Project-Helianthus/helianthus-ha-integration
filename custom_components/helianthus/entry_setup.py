@@ -190,6 +190,16 @@ async def _async_apply_dhw_schedule(
         return False
 
 
+def _cylinder_count_is_published(setup_fm5_mode: str, current_fm5_mode: str) -> bool:
+    """Return whether the FM5 cylinder count can prune cylinder registry rows.
+
+    Only an INTERPRETED mode publishes a cylinder count; any other mode carries
+    no cylinder evidence. The count read at setup is used only while the mode
+    was INTERPRETED then and still is.
+    """
+    return setup_fm5_mode == "INTERPRETED" and current_fm5_mode == "INTERPRETED"
+
+
 async def _async_forward_platforms_and_finalize(
     hass: object,
     entry: object,
@@ -1187,7 +1197,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             else:
                 cylinder_match = cylinder_unique_id_re.match(unique_id)
-                if cylinder_match and int(cylinder_match.group("index")) not in known_cylinder_indexes:
+                if (
+                    cylinder_match
+                    and int(cylinder_match.group("index")) not in known_cylinder_indexes
+                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
+                ):
                     remove_entry = True
             if remove_entry:
                 entity_registry.async_remove(entity_entry.entity_id)
@@ -1297,7 +1311,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     remove_device = True
                     break
                 cylinder_index = _parse_identifier_index(token, f"{entry.entry_id}-cylinder-")
-                if cylinder_index is not None and cylinder_index not in known_cylinder_indexes:
+                if (
+                    cylinder_index is not None
+                    and cylinder_index not in known_cylinder_indexes
+                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
+                ):
                     remove_device = True
                     break
                 # ADR-027: remove shadow radio device for merged B524 function modules.

@@ -14,12 +14,19 @@
 - Renew affected security, hardware and candidate evidence before release.
 - Import the names that entry setup and six sensor classes used without
   importing them. Circuit, cylinder, DHW and energy sensors attach to their
-  devices again; the duplicate-entry refusal, the start-of-setup and trusted
-  registry clean-ups and the first trusted setup no longer raise `NameError`.
-  Unique IDs and device identifiers are unchanged. The readability baseline
-  no longer accepts an undefined name in shipped code. The start-of-setup
-  clean-up keeps every device of an active entry, including the eeBUS
-  administration and the semantic-snapshot, PV, storage and EVSE asset devices.
+  devices again. Before this change, setting up an entry failed with
+  `NameError` whenever the registry already held devices of this
+  integration, and the first trusted setup failed after its platforms were
+  set up. These paths run again: the start-of-setup registry clean-up, the
+  trusted clean-up of bus, cylinder and retired boiler rows, the
+  duplicate-entry handling, and the automatic disabling of sparse entities
+  whose values are null. Unique IDs and device identifiers are unchanged. The
+  readability baseline no longer accepts an undefined name in shipped code.
+  The start-of-setup clean-up keeps every device of an active entry,
+  including the eeBUS administration and the semantic-snapshot, PV, storage
+  and EVSE asset devices. The trusted clean-up removes cylinder rows beyond
+  the published count only while the FM5 mode is interpreted, both when the
+  count is read and when the clean-up runs.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use

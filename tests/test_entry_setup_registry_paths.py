@@ -29,6 +29,7 @@ from custom_components.helianthus.device_ids import (
     adapter_identifier,
     build_bus_device_key,
     bus_identifier,
+    cylinder_identifier,
     daemon_identifier,
     stable_bus_identity_model,
 )
@@ -308,7 +309,7 @@ def _trusted_registry(harness):
     harness.data.update({
         "HelianthusCoordinator": [INVENTORY_DEVICE],
         "HelianthusStatusCoordinator": TRUSTED_STATUS,
-        "HelianthusFM5Coordinator": {"cylinders": [{"index": 0}]},
+        "HelianthusFM5Coordinator": {"fm5_semantic_mode": "INTERPRETED", "cylinders": [{"index": 0}]},
     })
     return harness.devices.tokens(), harness.entities.unique_ids()
 
@@ -337,6 +338,93 @@ def test_trusted_cleanup_removes_only_stale_rows_of_a_registry_with_current_devi
     assert "Helianthus cleanup removed 1 obsolete entities for entry entry-a" in messages
     assert any(m.startswith("Helianthus cleanup removed 3 obsolete devices for entry entry-a")
                for m in messages)
+
+
+def _cylinder_registry(harness, fm5):
+    """Registry of entry-a with cylinders 0 and 5 (device and temperature entity each)."""
+    current = harness.devices.add("entry-a", bus_identifier("entry-a", CURRENT_BUS_KEY))
+    harness.entities.add("entry-a", f"entry-a-bus-{CURRENT_BUS_KEY}-ebus-address", device_id=current.id)
+    retired = harness.devices.add("entry-a", (DOMAIN, "entry-a-boiler-burner"))
+    cylinders = {index: harness.devices.add("entry-a", cylinder_identifier("entry-a", index))
+                 for index in (0, 5)}
+    for index, device in cylinders.items():
+        harness.entities.add("entry-a", f"entry-a-cylinder-{index}-temperature", device_id=device.id)
+    harness.data.update({
+        "HelianthusCoordinator": [INVENTORY_DEVICE],
+        "HelianthusStatusCoordinator": TRUSTED_STATUS,
+        "HelianthusFM5Coordinator": fm5,
+    })
+    return cylinders, retired
+
+
+def _trusted_setup(harness):
+    """A setup whose post-platform clean-up runs (second trusted observation)."""
+    setup = harness.build(config_entry("entry-a"))
+    setup.hass.data[DOMAIN] = {"_admission_cleanup_counts": {"entry-a": 1}}
+    return setup
+
+
+INTERPRETED_ONE_CYLINDER = {"fm5_semantic_mode": "INTERPRETED",
+                            "cylinders": [{"index": 0, "temperature_c": 41.5}]}
+
+
+@pytest.mark.parametrize("mode", ("ABSENT", "GPIO_ONLY", None))
+def test_trusted_cleanup_keeps_cylinder_rows_while_fm5_is_not_interpreted(harness, mode):
+    """No published cylinder count: cylinder rows stay and keep their device IDs.
+
+    A later reload with FM5 interpreted then removes only the cylinder beyond
+    the published count.
+    """
+    fm5 = {"cylinders": []} if mode is None else {"fm5_semantic_mode": mode, "cylinders": []}
+    cylinders, retired = _cylinder_registry(harness, fm5)
+
+    assert run(_trusted_setup(harness), config_entry("entry-a")) is True
+
+    assert retired.id not in harness.devices.devices  # the clean-up ran
+    assert {index: harness.devices.devices.get(device.id) for index, device in cylinders.items()} == (
+        cylinders)
+    assert {"entry-a-cylinder-0-temperature", "entry-a-cylinder-5-temperature"} <= (
+        harness.entities.unique_ids())
+
+    harness.data["HelianthusFM5Coordinator"] = INTERPRETED_ONE_CYLINDER
+    assert run(_trusted_setup(harness), config_entry("entry-a")) is True
+
+    assert harness.devices.devices.get(cylinders[0].id) is cylinders[0]
+    assert cylinders[5].id not in harness.devices.devices
+    unique_ids = harness.entities.unique_ids()
+    assert "entry-a-cylinder-0-temperature" in unique_ids
+    assert "entry-a-cylinder-5-temperature" not in unique_ids
+
+
+def test_trusted_cleanup_removes_a_cylinder_beyond_the_interpreted_count(harness):
+    cylinders, _ = _cylinder_registry(harness, INTERPRETED_ONE_CYLINDER)
+
+    assert run(_trusted_setup(harness), config_entry("entry-a")) is True
+
+    assert harness.devices.devices.get(cylinders[0].id) is cylinders[0]
+    assert cylinders[5].id not in harness.devices.devices
+    unique_ids = harness.entities.unique_ids()
+    assert "entry-a-cylinder-0-temperature" in unique_ids
+    assert "entry-a-cylinder-5-temperature" not in unique_ids
+
+
+def test_trusted_cleanup_keeps_cylinder_rows_when_fm5_leaves_interpreted_before_it_runs(harness):
+    """Interpreted when the count was read, not when the clean-up runs: rows stay."""
+    cylinders, retired = _cylinder_registry(harness, INTERPRETED_ONE_CYLINDER)
+    setup = _trusted_setup(harness)
+
+    async def forward(entry, platforms):
+        runtime = setup.hass.data[DOMAIN][entry.entry_id]
+        runtime["fm5_coordinator"].data = {"fm5_semantic_mode": "ABSENT", "cylinders": []}
+    setup.hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=forward)
+
+    assert run(setup, config_entry("entry-a")) is True
+
+    assert retired.id not in harness.devices.devices  # the clean-up ran
+    assert {index: harness.devices.devices.get(device.id) for index, device in cylinders.items()} == (
+        cylinders)
+    assert {"entry-a-cylinder-0-temperature", "entry-a-cylinder-5-temperature"} <= (
+        harness.entities.unique_ids())
 
 
 @pytest.mark.parametrize("case", ("first-trusted-setup", "untrusted-empty-inventory"))
@@ -423,3 +511,28 @@ def test_every_identifier_family_of_an_active_entry_survives_setup(harness):
 
     assert set(harness.devices.devices) == before
     assert not set(device.id for device in gone.values()) & set(harness.devices.devices)
+
+
+@pytest.mark.parametrize("links", (set(), {"other-integration-entry"}), ids=("unlinked", "foreign-link"))
+def test_identifier_alone_keeps_a_device_of_every_family_of_an_active_entry(harness, links):
+    """Without a registry link to an active entry, the identifier decides.
+
+    Each device carries only the identifier the integration creates; the
+    ownership predicate must recognise every family for the active entry and
+    none for a removed entry.
+    """
+    families = _families_created_for("entry-a")
+    kept = {}
+    for name, ident in families.items():
+        kept[name] = harness.devices.add("entry-a", ident)
+        kept[name].config_entries = set(links)
+    gone = {}
+    for name, (domain, token) in families.items():
+        gone[name] = harness.devices.add("entry-gone", (domain, token.replace("entry-a", "entry-gone")))
+        gone[name].config_entries = set()
+    setup = harness.build(config_entry("entry-a", host=False))
+
+    assert run(setup, config_entry("entry-a", host=False)) is True
+
+    assert sorted(name for name, device in kept.items() if device.id not in harness.devices.devices) == []
+    assert sorted(name for name, device in gone.items() if device.id in harness.devices.devices) == []
