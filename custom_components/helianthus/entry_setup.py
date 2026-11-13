@@ -218,6 +218,17 @@ async def _async_forward_platforms_and_finalize(
     run_trusted_cleanup("post-platform setup")
 
 
+def _device_linked_to_live_entry(hass, device_entry, active_entry_ids) -> bool:
+    """Return True if the device is linked to an active entry or a live foreign entry."""
+    linked_entry_ids = set(getattr(device_entry, "config_entries", None) or ())
+    if active_entry_ids & linked_entry_ids:
+        return True
+    get_entry = getattr(hass.config_entries, "async_get_entry", None)
+    return get_entry is not None and any(
+        get_entry(linked_id) is not None for linked_id in linked_entry_ids
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -354,7 +365,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ]
         if not domain_tokens:
             continue
-        if active_entry_ids & set(getattr(device_entry, "config_entries", None) or ()):
+        if _device_linked_to_live_entry(hass, device_entry, active_entry_ids):
             continue
         if any(_identifier_matches_any_entry(token, active_entry_ids) for token in domain_tokens):
             continue

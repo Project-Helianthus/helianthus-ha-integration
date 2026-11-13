@@ -213,7 +213,9 @@ def _build_hass(*entries):
         config_entries=SimpleNamespace(
             async_entries=lambda domain: list(entries), async_update_entry=update,
             async_forward_entry_setups=AsyncMock(), async_remove=async_remove,
-            async_reload=AsyncMock()))
+            async_reload=AsyncMock(),
+            async_get_entry=lambda entry_id: (
+                SimpleNamespace(entry_id=entry_id) if entry_id == "foreign-live-entry" else None)))
     return SimpleNamespace(hass=hass, removed=removed, tasks=tasks, updates=updates)
 
 
@@ -536,3 +538,17 @@ def test_identifier_alone_keeps_a_device_of_every_family_of_an_active_entry(harn
 
     assert sorted(name for name, device in kept.items() if device.id not in harness.devices.devices) == []
     assert sorted(name for name, device in gone.items() if device.id in harness.devices.devices) == []
+
+
+def test_stale_device_shared_with_a_live_foreign_entry_is_kept(harness):
+    """A device of a removed Helianthus entry that another integration still links is not removed."""
+    shared = harness.devices.add("entry-gone", (DOMAIN, "entry-gone-daemon"))
+    shared.config_entries = {"foreign-live-entry"}
+    own = harness.devices.add("entry-gone", (DOMAIN, "entry-gone-adapter"))
+    own.config_entries = {"entry-gone"}
+    setup = harness.build(config_entry("entry-a", host=False))
+
+    assert run(setup, config_entry("entry-a", host=False)) is True
+
+    assert shared.id in harness.devices.devices
+    assert own.id not in harness.devices.devices
