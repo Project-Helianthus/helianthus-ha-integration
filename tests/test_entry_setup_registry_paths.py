@@ -150,11 +150,13 @@ def _coordinator_class(name, coordinator_data):
             value = coordinator_data.get(name)
             self.data = dict(value) if isinstance(value, dict) else value
             self.last_update_success = True
+            self.listeners = []
 
         async def async_config_entry_first_refresh(self) -> None:
             return None
 
-        def async_add_listener(self, *args):
+        def async_add_listener(self, listener, *args):
+            self.listeners.append(listener)
             return lambda: None
     return Coordinator
 

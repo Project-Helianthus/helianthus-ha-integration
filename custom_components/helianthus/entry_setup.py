@@ -218,6 +218,38 @@ async def _async_forward_platforms_and_finalize(
     run_trusted_cleanup("post-platform setup")
 
 
+_SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
+
+
+def _sparse_reload_unique_ids(hass: object, entry_id: str) -> set[str]:
+    """Return the sparse unique IDs of one entry that have caused a reload.
+
+    The set lives in the domain data next to the admission clean-up counts.
+    Unloading the entry does not remove it, so it holds across reloads and
+    ends with the Home Assistant run.
+    """
+    store = hass.data.setdefault(DOMAIN, {}).setdefault(_SPARSE_RELOAD_KEY, {})
+    return store.setdefault(entry_id, set())
+
+
+def _claim_sparse_reloads(reloaded: set[str], unique_ids: list[str]) -> list[str]:
+    """Record and return the IDs that have not caused a reload in this run."""
+    claimed = sorted(set(unique_ids) - reloaded)
+    reloaded.update(claimed)
+    return claimed
+
+
+def _schedule_unclaimed_sparse_reload(
+    reloaded: set[str],
+    unique_ids: list[str],
+    schedule_reload: Callable[[str], None],
+    reason: str,
+) -> None:
+    """Schedule a reload only for IDs that have not caused one in this run."""
+    if _claim_sparse_reloads(reloaded, unique_ids):
+        schedule_reload(reason)
+
+
 def _device_linked_to_live_entry(hass, device_entry, active_entry_ids) -> bool:
     """Return True if the device is linked to an active entry or a live foreign entry."""
     linked_entry_ids = set(getattr(device_entry, "config_entries", None) or ())
@@ -922,6 +954,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"daemon-{entry.entry_id}-admission_repair_code",
         }
     )
+    sparse_reloaded_ids = _sparse_reload_unique_ids(hass, entry.entry_id)
     boiler_temp_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
     )
@@ -1186,7 +1219,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             remove_entry = False
             if entity_entry.domain in {"fan", "valve", "switch"}:
                 remove_entry = True
-            elif unique_id in status_sparse_unique_ids and not _is_sparse_entity_live(unique_id):
+            elif (
+                unique_id in status_sparse_unique_ids - sparse_reloaded_ids
+                and not _is_sparse_entity_live(unique_id)
+            ):
                 remove_entry = True
             elif _stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
                 remove_entry = True
@@ -1368,11 +1404,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for entity_entry in _entry_entities()
             if entity_entry.platform == DOMAIN
         }
-        missing_live_status_ids = [
+        missing_live_status_ids = _claim_sparse_reloads(sparse_reloaded_ids, [
             unique_id
             for unique_id in status_sparse_unique_ids
             if unique_id not in existing_unique_ids and _is_sparse_entity_live(unique_id)
-        ]
+        ])
         if missing_live_status_ids:
             _LOGGER.info(
                 "Helianthus scheduling reload for %d live sparse status entities for entry %s (%s)",
@@ -1382,7 +1418,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             schedule_reload("sparse status entities became live")
             return
-        enabled = 0
+        enabled: list[str] = []
         for entity_entry in _entry_entities():
             if entity_entry.platform != DOMAIN:
                 continue
@@ -1391,15 +1427,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not _is_sparse_entity_live(str(entity_entry.unique_id or "")):
                 continue
             entity_registry.async_update_entity(entity_entry.entity_id, disabled_by=None)
-            enabled += 1
+            enabled.append(str(entity_entry.unique_id or ""))
         if enabled:
             _LOGGER.info(
                 "Helianthus auto-enabled %d sparse entities for entry %s (%s)",
-                enabled,
+                len(enabled),
                 entry.entry_id,
                 reason,
             )
-            schedule_reload("sparse entities became live")
+            _schedule_unclaimed_sparse_reload(
+                sparse_reloaded_ids, enabled, schedule_reload, "sparse entities became live"
+            )
 
     def auto_disable_sparse_entities(reason: str) -> None:
         registry_disabler = getattr(er, "RegistryEntryDisabler", None)
@@ -1417,7 +1455,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if entity_entry.disabled_by is not None:
                 continue
             unique_id = str(entity_entry.unique_id or "")
-            if not _is_sparse_entity_candidate(unique_id):
+            # An entity that has caused a reload in this run stays enabled.
+            if unique_id in sparse_reloaded_ids or not _is_sparse_entity_candidate(unique_id):
                 continue
             if _is_sparse_entity_live(unique_id):
                 continue
@@ -1426,6 +1465,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 disabled_by=integration_disabler,
             )
             disabled += 1
+        # Home Assistant removes an entity disabled in the registry by itself;
+        # no reload is needed.
         if disabled:
             _LOGGER.info(
                 "Helianthus auto-disabled %d sparse entities for entry %s (%s)",
@@ -1433,7 +1474,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.entry_id,
                 reason,
             )
-            schedule_reload("sparse entities became null")
 
     def run_trusted_cleanup(reason: str) -> None:
         nonlocal cleanup_ran
