@@ -250,7 +250,7 @@ def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discover
     assert "HelianthusPVM2MSensor" in facade_source
     assert 'data.get("pv_m2m_coordinator")' in factory_source
     assert "async_add_listener" in factory_source
-    assert "known_pv_descriptor_keys" in factory_source
+    assert "known_descriptor_keys" in factory_source
 
 
 @pytest.mark.parametrize("family", ["pv", "storage", "evse"])
