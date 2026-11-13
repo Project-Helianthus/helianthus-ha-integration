@@ -12,6 +12,12 @@
 - Remove the historical unique-ID registry rewrite. Unrelated identifiers remain.
 - Keep `target_temp_c` provisional until source-selection semantics are resolved.
 - Renew affected security, hardware and candidate evidence before release.
+- Import the names that entry setup and six sensor classes used without
+  importing them. Circuit, cylinder, DHW and energy sensors attach to their
+  devices again; the duplicate-entry refusal, the start-of-setup and trusted
+  registry clean-ups and the first trusted setup no longer raise `NameError`.
+  Unique IDs and device identifiers are unchanged. The readability baseline
+  no longer accepts an undefined name in shipped code.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use

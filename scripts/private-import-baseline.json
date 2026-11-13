@@ -291,6 +291,34 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
+      "symbol": "_identifier_matches_any_entry",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_identifier_matches_any_entry",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_is_stale_bus_identifier",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_is_stale_bus_identifier",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
       "symbol": "_iter_identifier_pairs",
       "kind": "package",
       "count": 1
@@ -299,6 +327,20 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "_iter_identifier_pairs",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_merge_duplicate_config_entry_options",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_merge_duplicate_config_entry_options",
       "kind": "private",
       "count": 1
     },
@@ -319,6 +361,20 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
+      "symbol": "_parse_identifier_index",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_parse_identifier_index",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
       "symbol": "_parse_zone_schedule_helper_bindings",
       "kind": "package",
       "count": 1
@@ -333,6 +389,34 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
+      "symbol": "_remove_config_entry_registry_state",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_remove_config_entry_registry_state",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_schedule_duplicate_config_entry_removal",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_schedule_duplicate_config_entry_removal",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
       "symbol": "_select_bus_migration_target",
       "kind": "package",
       "count": 1
@@ -341,6 +425,20 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "_select_bus_migration_target",
+      "kind": "private",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_stale_bus_address_unique_id",
+      "kind": "package",
+      "count": 1
+    },
+    {
+      "importer": "custom_components.helianthus.entry_setup",
+      "module": "custom_components.helianthus",
+      "symbol": "_stale_bus_address_unique_id",
       "kind": "private",
       "count": 1
     },

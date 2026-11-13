@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from . import (
@@ -31,9 +32,16 @@ from . import (
     _entry_identity_probe_addresses,
     _find_verified_entry_by_configured_instance_guid,
     _format_hex4_version,
+    _identifier_matches_any_entry,
+    _is_stale_bus_identifier,
     _iter_identifier_pairs,
+    _merge_duplicate_config_entry_options,
+    _parse_identifier_index,
     _parse_zone_schedule_helper_bindings,
+    _remove_config_entry_registry_state,
+    _schedule_duplicate_config_entry_removal,
     _select_bus_migration_target,
+    _stale_bus_address_unique_id,
     _update_entry_endpoint_if_changed,
     _zone_instance_from_id,
     async_sanitize_legacy_eebus_admin_entry,
@@ -42,9 +50,14 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
+from .admission import REPAIR_EMPTY_INVENTORY_UNTRUSTED
 from .entry_runtime import EntryRuntime
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 
 def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:

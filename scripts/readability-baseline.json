@@ -164,12 +164,6 @@
       "count": 14
     },
     {
-      "path": "custom_components/helianthus/entry_cleanup.py",
-      "symbol": "async_unload_entry",
-      "rule": "F821",
-      "count": 2
-    },
-    {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "<module>",
       "rule": "F401",
@@ -186,12 +180,6 @@
       "symbol": "async_setup_entry",
       "rule": "F401",
       "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "F821",
-      "count": 4
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
@@ -213,12 +201,6 @@
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry._reload_on_pv_m2m_option_change",
-      "rule": "F821",
-      "count": 2
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry.cleanup_nonexportable_radio_registry_entries",
       "rule": "C901",
       "count": 13
@@ -231,33 +213,9 @@
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.cleanup_obsolete_devices",
-      "rule": "F821",
-      "count": 2
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry.cleanup_obsolete_entity_registry_entries",
       "rule": "C901",
       "count": 12
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.cleanup_obsolete_entity_registry_entries",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.refuse_duplicate_setup",
-      "rule": "F821",
-      "count": 3
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.run_trusted_cleanup",
-      "rule": "F821",
-      "count": 1
     },
     {
       "path": "custom_components/helianthus/evse_m2m.py",
@@ -936,42 +894,6 @@
       "symbol": "<module>",
       "rule": "F401",
       "count": 12
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusCircuitSensor.device_info",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusCylinderConfigSensor.device_info",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusCylinderSensor.device_info",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusDHWStatusSensor.device_info",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusDemandSensor.device_info",
-      "rule": "F821",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor.py",
-      "symbol": "HelianthusEnergySensor.device_info",
-      "rule": "F821",
-      "count": 1
     },
     {
       "path": "custom_components/helianthus/sensor_descriptors.py",
