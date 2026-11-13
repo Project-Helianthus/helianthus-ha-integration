@@ -573,6 +573,8 @@ def _remove_config_entry_registry_state(
 
     removed_devices = 0
     for device_entry in tuple(device_entries_for_config_entry(device_registry, entry_id)):
+        if set(getattr(device_entry, "config_entries", ()) or ()) - {entry_id}:
+            continue
         device_registry.async_remove_device(device_entry.id)
         removed_devices += 1
 

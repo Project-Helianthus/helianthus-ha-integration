@@ -264,8 +264,11 @@ def test_start_of_setup_cleanup_keeps_rows_of_configured_entries(harness, templa
 
 
 @pytest.mark.parametrize("with_device", (False, True), ids=("entity-only", "entity-and-device"))
+@pytest.mark.parametrize("shared_with", (None, "entry-a", "foreign-entry"))
 @pytest.mark.parametrize("branch", ("rebound-guid", "same-guid-later-entry"))
-def test_duplicate_entry_is_refused_and_its_registry_rows_removed(harness, branch, with_device):
+def test_duplicate_entry_is_refused_and_its_registry_rows_removed(
+    harness, branch, with_device, shared_with
+):
     owner = config_entry("entry-a", unique_id=GUID_OWNER, options={"scan_interval": 30})
     alias = config_entry(
         "entry-b", unique_id=GUID_ALIAS if branch == "rebound-guid" else GUID_OWNER,
@@ -274,7 +277,12 @@ def test_duplicate_entry_is_refused_and_its_registry_rows_removed(harness, branc
     harness.entities.add("entry-b", "entry-b-alias")
     if with_device:
         harness.devices.add("entry-a", (DOMAIN, "entry-a-dhw"))
-        harness.devices.add("entry-b", (DOMAIN, "entry-b-dhw"))
+        alias_device = harness.devices.add("entry-b", (DOMAIN, "entry-b-dhw"))
+        if shared_with:
+            alias_device.config_entries.add(shared_with)
+            harness.entities.add(
+                shared_with, "shared-survivor", device_id=alias_device.id,
+                platform="other_domain" if shared_with == "foreign-entry" else DOMAIN)
     endpoint = identity.VerifiedHelianthusEndpoint(
         instance_guid=GUID_OWNER, host="gateway.invalid", port=1, path="/graphql", transport="http")
     harness.monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(return_value=endpoint))
@@ -291,8 +299,16 @@ def test_duplicate_entry_is_refused_and_its_registry_rows_removed(harness, branc
     assert lookups == [(GUID_OWNER, "entry-b")]
     assert owner.options == {"scan_interval": 30, "alias_only": {"synthetic": True}}
     assert setup.updates == [("entry-a", {"options": owner.options})]
-    assert harness.entities.unique_ids() == {"entry-a-owned"}
-    assert harness.devices.tokens() == ({"entry-a-dhw"} if with_device else set())
+    expected_entities = {"entry-a-owned"}
+    if with_device and shared_with:
+        expected_entities.add("shared-survivor")
+        assert harness.devices.devices[alias_device.id] is alias_device
+        assert shared_with in alias_device.config_entries
+    assert harness.entities.unique_ids() == expected_entities
+    expected_devices = {"entry-a-dhw"} if with_device else set()
+    if with_device and shared_with:
+        expected_devices.add("entry-b-dhw")
+    assert harness.devices.tokens() == expected_devices
     assert setup.removed == ["entry-b"]
     assert DOMAIN not in setup.hass.data or "entry-b" not in setup.hass.data[DOMAIN]
 
