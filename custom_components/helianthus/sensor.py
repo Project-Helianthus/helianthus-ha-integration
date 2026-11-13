@@ -19,20 +19,18 @@ from .device_ids import (
     energy_identifier,
 )
 from . import sensor_setup
+from .asset_device import AssetDevice
 from .pv_m2m import (
     PVM2MDescriptor,
     PVM2MFact,
-    build_pv_device_identifier,
 )
 from .storage_m2m import (
     StorageM2MDescriptor,
     StorageM2MFact,
-    build_storage_device_identifier,
 )
 from .evse_m2m import (
     EVSEM2MDescriptor,
     EVSEM2MFact,
-    build_evse_device_identifier,
 )
 from .sensor_descriptors import (
     ADAPTER_STATUS_FIELDS,
@@ -1211,11 +1209,13 @@ class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
         entry_id: str,
         asset_ref: str,
         descriptor: PVM2MDescriptor,
+        device: AssetDevice,
     ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._asset_ref = asset_ref
         self._descriptor = descriptor
+        self._device = device
         self._attr_unique_id = descriptor.unique_id
         dimension = f"{descriptor.dimension[0]} {descriptor.dimension[1]}"
         self._attr_name = f"{descriptor.fact_id.removeprefix('pv.').replace('.', ' ').replace('_', ' ').title()} {dimension}"
@@ -1283,12 +1283,7 @@ class HelianthusPVM2MSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={build_pv_device_identifier(self._entry_id, self._asset_ref)},
-            manufacturer="Helianthus",
-            model="Canonical PV Asset",
-            name="Solar PV",
-        )
+        return self._device.device_info()
 
 
 def _pv_expected_unit(fact_id: str) -> str:
@@ -1316,11 +1311,13 @@ class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: StorageM2MDescriptor) -> None:
+    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: StorageM2MDescriptor,
+                 device: AssetDevice) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._asset_ref = asset_ref
         self._descriptor = descriptor
+        self._device = device
         self._attr_unique_id = descriptor.unique_id
         self._attr_name = descriptor.fact_id.removeprefix("storage.").replace(".", " ").replace("_", " ").title()
         fact = self._fact()
@@ -1375,12 +1372,7 @@ class HelianthusStorageM2MSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={build_storage_device_identifier(self._entry_id, self._asset_ref)},
-            manufacturer="Helianthus",
-            model="Canonical Electrical Storage",
-            name="Electrical Storage",
-        )
+        return self._device.device_info()
 
 
 class HelianthusEVSEM2MSensor(CoordinatorEntity, SensorEntity):
@@ -1391,9 +1383,11 @@ class HelianthusEVSEM2MSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "A"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: EVSEM2MDescriptor) -> None:
+    def __init__(self, *, coordinator, entry_id: str, asset_ref: str, descriptor: EVSEM2MDescriptor,
+                 device: AssetDevice) -> None:
         super().__init__(coordinator)
         self._entry_id, self._asset_ref, self._descriptor = entry_id, asset_ref, descriptor
+        self._device = device
         self._attr_unique_id = descriptor.unique_id
         label = descriptor.fact_id.removeprefix("evse.limit.").replace("_", " ").title()
         if descriptor.fact_id == "evse.limit.allocated_current":
@@ -1428,7 +1422,7 @@ class HelianthusEVSEM2MSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={build_evse_device_identifier(self._entry_id, self._asset_ref)}, manufacturer="Helianthus", model="Canonical EVSE Current Limits", name="EVSE")
+        return self._device.device_info()
 
 
 def _storage_sensor_metadata(fact_id: str, unit: str | None) -> tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]:

@@ -728,6 +728,7 @@ def _pv_entity(
     availability: str = "AVAILABLE",
 ):
     from custom_components.helianthus import pv_m2m
+    from custom_components.helianthus.asset_device import bound_asset_device
 
     descriptor = pv_m2m.PVM2MDescriptor(
         fact_id=fact_id,
@@ -758,11 +759,14 @@ def _pv_entity(
         error=None,
     )
     coordinator = _FakeCoordinator(data)
+    coordinator.asset_ref = "pv-asset-01"
     return sensor_platform.HelianthusPVM2MSensor(
         coordinator=coordinator,
         entry_id="entry-1",
         asset_ref="pv-asset-01",
         descriptor=descriptor,
+        device=bound_asset_device(
+            {"pv_m2m_coordinator": coordinator}, "entry-1", "pv-asset-01"),
     )
 
 
@@ -827,6 +831,7 @@ def test_pv_m2m_entity_respects_coordinator_update_failure() -> None:
 
 def _evse_allocated_current_entity(connector: str):
     from custom_components.helianthus import evse_m2m
+    from custom_components.helianthus.asset_device import bound_asset_device
 
     descriptor = evse_m2m.EVSEM2MDescriptor(
         fact_id="evse.limit.allocated_current",
@@ -852,11 +857,15 @@ def _evse_allocated_current_entity(connector: str):
         source_available=True,
         error=None,
     )
+    coordinator = _FakeCoordinator(data)
+    coordinator.asset_ref = "asset:evse-01"
     return sensor_platform.HelianthusEVSEM2MSensor(
-        coordinator=_FakeCoordinator(data),
+        coordinator=coordinator,
         entry_id="entry-1",
         asset_ref="asset:evse-01",
         descriptor=descriptor,
+        device=bound_asset_device(
+            {"evse_m2m_coordinator": coordinator}, "entry-1", "asset:evse-01"),
     )
 
 
@@ -870,6 +879,7 @@ def test_evse_allocated_current_name_identifies_its_connector_dimension() -> Non
 
 def _storage_entity(*, fact_id: str, value: Decimal | str, unit: str):
     from custom_components.helianthus import storage_m2m
+    from custom_components.helianthus.asset_device import bound_asset_device
 
     descriptor = storage_m2m.StorageM2MDescriptor(
         fact_id=fact_id,
@@ -895,11 +905,15 @@ def _storage_entity(*, fact_id: str, value: Decimal | str, unit: str):
         source_available=True,
         error=None,
     )
+    coordinator = _FakeCoordinator(data)
+    coordinator.asset_ref = "asset:storage-01"
     return sensor_platform.HelianthusStorageM2MSensor(
-        coordinator=_FakeCoordinator(data),
+        coordinator=coordinator,
         entry_id="entry-1",
         asset_ref="asset:storage-01",
         descriptor=descriptor,
+        device=bound_asset_device(
+            {"storage_m2m_coordinator": coordinator}, "entry-1", "asset:storage-01"),
     )
 
 

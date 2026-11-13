@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfTemperature
 
+from .asset_device import AssetDevice, bound_asset_device
 from .const import DOMAIN
 from .device_ids import (
     build_radio_bus_key,
@@ -213,8 +214,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     ):
         if coordinator is not None:
             sensors.extend(_build_descriptor_sensors(
-                coordinator, entity_class, entry_id, async_add_entities,
-                data.setdefault("unsub_listeners", [])))
+                coordinator, entity_class, entry_id,
+                bound_asset_device(data, entry_id, coordinator.asset_ref),
+                async_add_entities, data.setdefault("unsub_listeners", [])))
     sensors.extend(_build_adapter_info_sensors(
         data.get("adapter_info_coordinator"), entry_id, adapter_device_id))
 
@@ -789,12 +791,15 @@ def _build_energy_sensors(
 
 
 def _build_descriptor_sensors(
-    coordinator, entity_class, entry_id: str, async_add_entities, unsub_listeners: list
+    coordinator, entity_class, entry_id: str, device: AssetDevice,
+    async_add_entities, unsub_listeners: list,
 ) -> list[SensorEntity]:
     """Return one entity per known descriptor and add later descriptors on update.
 
-    The listener adds only descriptor keys not seen before, in one call per
-    update, and its unsubscribe callback is appended to ``unsub_listeners``.
+    Every entity, including those the listener adds later, reports ``device``:
+    the one device of the coordinator's asset. The listener adds only
+    descriptor keys not seen before, in one call per update, and its
+    unsubscribe callback is appended to ``unsub_listeners``.
     """
     descriptors = tuple(getattr(coordinator.data, "descriptors", ()) or ())
     known_descriptor_keys = {descriptor.key for descriptor in descriptors}
@@ -806,6 +811,7 @@ def _build_descriptor_sensors(
                 entry_id=entry_id,
                 asset_ref=coordinator.asset_ref,
                 descriptor=descriptor,
+                device=device,
             )
             for descriptor in new_descriptors
         ]

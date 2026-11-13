@@ -292,6 +292,28 @@ give `Inverter`, Storage facts `Battery`, and Infrastructure facts `Meter` (mete
 dimension present) or `Grid connection`. An asset with no mapped fact is
 `Semantic asset`.
 
+An asset that the PV, Storage or EVSE consumer also binds uses that consumer's
+device instead: its identifier, model and name. When several of these consumers
+bind the same asset, the first of PV, Storage, EVSE owns the device; this fixed
+order never depends on the order in which the consumers were set up. When the
+owning consumer is turned off and the entry reloads, the asset's entities report
+the device of the next consumer in that order; turning it back on moves them
+back. Every
+entity of the asset, from each consumer and from the shared path, reports that
+one device's identifier, model and name, so one asset is one HA device. Entity
+unique IDs are unaffected, and so are the device of an asset that only the
+shared path shows and the device a consumer reports when it binds the asset
+alone.
+
+For an asset reached through two or more of these paths, the moved entities
+take the owning device's name in their displayed name and the owning device's
+area. A custom name, area or labels given to the device they leave do not carry
+over. Entity IDs and unique IDs do not change. On an installation that already
+had several devices for one asset, the entities move to the owning device, and
+the device they leave (a second consumer's device, or the shared device of an
+asset that the EVSE consumer binds) stays in the device registry without
+entities. Removing it is an operator action outside the integration.
+
 Selection stays at 1–32 distinct opaque IDs per entry; more than 32 is rejected
 at configuration. Operators find the published asset IDs in the gateway's
 status tool or the Portal and enter them verbatim in the options flow. There is
