@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
@@ -147,6 +148,18 @@ def _zone_instance(zone_id: object | None) -> int | None:
     return value - 1
 
 
+def _daemon_field_wanted(has_reloaded, daemon_device_id, daemon_status, field) -> bool:
+    """Return whether the daemon status sensor of ``field`` is created.
+
+    An optional field is created while it has a value, and once its sparse
+    entity has had its one reload whether or not the value is null then.
+    ``has_reloaded(unique_id)`` reads the record kept by entry setup.
+    """
+    if not field.optional or daemon_status.get(field.key) is not None:
+        return True
+    return bool(daemon_device_id) and has_reloaded(f"{daemon_device_id[1]}-{field.key}")
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Add the sensor entities of every domain in one call, then wire B503."""
     from .sensor import (
@@ -154,10 +167,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         HelianthusPVM2MSensor,
         HelianthusStorageM2MSensor,
     )
+    from .entry_setup import sparse_entity_has_reloaded
     from .semantic_snapshot_sensors import setup_semantic_snapshot_sensors
 
     data = hass.data[DOMAIN][entry.entry_id]
     entry_id = entry.entry_id
+    has_reloaded = partial(sparse_entity_has_reloaded, hass, entry_id)
     device_coordinator = data["device_coordinator"]
     status_coordinator = data["status_coordinator"]
     boiler_device_id = data.get("boiler_device_id")
@@ -171,7 +186,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     sensors.extend(_build_eebus_admin_sensors(data.get("eebus_admin_coordinator"), entry))
     sensors.extend(_build_bus_address_sensors(device_coordinator, entry_id))
     sensors.extend(_build_status_sensors(
-        status_coordinator, data.get("daemon_device_id"), adapter_device_id))
+        status_coordinator, data.get("daemon_device_id"), adapter_device_id,
+        has_reloaded))
     sensors.extend(_build_boiler_sensors(
         data.get("boiler_coordinator"), entry_id, manufacturer, boiler_device_id))
     sensors.extend(_build_circuit_sensors(
@@ -180,7 +196,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         data.get("system_coordinator"), entry_id, manufacturer, regulator_device_id))
     sensors.extend(_build_radio_sensors(
         data.get("radio_coordinator"), entry_id, manufacturer,
-        data.get("radio_device_zone_names") or {}, data.get("b524_merge_targets") or {}))
+        data.get("radio_device_zone_names") or {}, data.get("b524_merge_targets") or {},
+        has_reloaded))
     sensors.extend(_build_fm5_sensors(
         data.get("fm5_coordinator"), entry_id, manufacturer,
         data.get("vr71_device_id") or regulator_device_id))
@@ -251,9 +268,9 @@ def _build_bus_address_sensors(device_coordinator, entry_id: str) -> list[Sensor
 
 
 def _build_status_sensors(
-    status_coordinator, daemon_device_id, adapter_device_id
+    status_coordinator, daemon_device_id, adapter_device_id, has_reloaded
 ) -> list[SensorEntity]:
-    """Return the daemon and adapter status sensors; skip absent optional fields."""
+    """Return the daemon and adapter status sensors; skip unwanted optional fields."""
     from .sensor import HelianthusStatusSensor
 
     status_entries = status_coordinator.data or {}
@@ -264,7 +281,7 @@ def _build_status_sensors(
             status_coordinator, "Daemon", daemon_status, daemon_device_id, field
         )
         for field in DAEMON_STATUS_FIELDS
-        if not (field.optional and daemon_status.get(field.key) is None)
+        if _daemon_field_wanted(has_reloaded, daemon_device_id, daemon_status, field)
     ]
     sensors.extend(
         HelianthusStatusSensor(
@@ -381,6 +398,7 @@ def _build_radio_sensors(
     manufacturer: str,
     radio_device_zone_names: dict[tuple[str, str], str],
     b524_merge_targets: dict[str, tuple[str, str]],
+    has_reloaded,
 ) -> list[SensorEntity]:
     """Return the sensors of every exported radio device."""
     if not (radio_coordinator and radio_coordinator.data):
@@ -395,6 +413,7 @@ def _build_radio_sensors(
                 radio,
                 radio_device_zone_names,
                 b524_merge_targets,
+                has_reloaded,
             )
         )
     return sensors
@@ -423,6 +442,7 @@ def _build_radio_device_sensors(
     radio: object,
     radio_device_zone_names: dict[tuple[str, str], str],
     b524_merge_targets: dict[str, tuple[str, str]],
+    has_reloaded,
 ) -> list[SensorEntity]:
     """Return the sensors of one radio device, or none when it is not exported."""
     from .sensor import HelianthusRadioSensor
@@ -448,12 +468,25 @@ def _build_radio_device_sensors(
             zone_name=radio_zone_name,
             **spec,
         )
-        for spec in _radio_sensor_specs(radio, group, is_room)
+        for spec in _radio_sensor_specs(
+            radio,
+            group,
+            is_room,
+            lambda key: has_reloaded(
+                f"{entry_id}-radio-{group:02x}-{instance:02d}-sensor-{key}"
+            ),
+        )
     ]
 
 
-def _radio_sensor_specs(radio: dict[str, Any], group: int, is_room: bool) -> list[dict]:
-    """Return the per-sensor arguments that one radio device gets, in order."""
+def _radio_sensor_specs(
+    radio: dict[str, Any], group: int, is_room: bool, has_reloaded
+) -> list[dict]:
+    """Return the per-sensor arguments that one radio device gets, in order.
+
+    ``has_reloaded(key)`` tells whether the sparse metadata sensor of ``key``
+    has already had its one reload.
+    """
     specs: list[dict] = []
     if is_room or radio.get("reception_strength") is not None:
         specs.append(
@@ -484,12 +517,16 @@ def _radio_sensor_specs(radio: dict[str, Any], group: int, is_room: bool) -> lis
             }
         )
     elif group == 0x0C:
-        specs.extend(_radio_metadata_specs(radio))
+        specs.extend(_radio_metadata_specs(radio, has_reloaded))
     return specs
 
 
-def _radio_metadata_specs(radio: dict[str, Any]) -> list[dict]:
-    """Return the metadata sensor arguments of a B524 inventory radio slot."""
+def _radio_metadata_specs(radio: dict[str, Any], has_reloaded) -> list[dict]:
+    """Return the metadata sensor arguments of a B524 inventory radio slot.
+
+    A metadata sensor is created while its value is present, and once its
+    sparse entity has had its one reload whether or not the value is null then.
+    """
     return [
         {
             "key": key,
@@ -504,7 +541,7 @@ def _radio_metadata_specs(radio: dict[str, Any]) -> list[dict]:
             ("remote_control_address", "Remote Control Address", "mdi:remote"),
             ("zone_assignment", "Zone Assignment", "mdi:home-map-marker"),
         )
-        if radio.get(key) is not None
+        if radio.get(key) is not None or has_reloaded(key)
     ]
 
 

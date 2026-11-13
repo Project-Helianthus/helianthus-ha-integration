@@ -191,7 +191,7 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "PLR0915",
-      "count": 846
+      "count": 845
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
