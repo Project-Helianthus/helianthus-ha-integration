@@ -193,21 +193,16 @@ def _stable_bus_identity_model(device: dict) -> str:
 
 
 def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
-    return token in {
-        f"daemon-{entry_id}",
-        f"adapter-{entry_id}",
-        f"{entry_id}-dhw",
-        f"{entry_id}-energy",
-        f"{entry_id}-boiler-burner",
-        f"{entry_id}-boiler-hydraulics",
-    } or (
-        token.startswith(f"{entry_id}-bus-")
-        or token.startswith(f"{entry_id}-zone-")
-        or token.startswith(f"{entry_id}-circuit-")
-        or token.startswith(f"{entry_id}-radio-")
-        or token.startswith(f"{entry_id}-cylinder-")
-        or token == f"{entry_id}-solar"
-    )
+    """Return whether a device identifier token is of a family created for the entry.
+
+    Known families: daemon, adapter, bus, zone, circuit, radio, cylinder, solar,
+    DHW, energy, boiler, eeBUS administration, and the semantic-snapshot, PV,
+    storage and EVSE asset devices. Fail-safe: any other token that is scoped
+    to the entry id is kept as well.
+    """
+    if token in {f"daemon-{entry_id}", f"adapter-{entry_id}"}:
+        return True
+    return token.startswith(f"{entry_id}-")
 
 
 def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> bool:
@@ -578,6 +573,8 @@ def _remove_config_entry_registry_state(
 
     removed_devices = 0
     for device_entry in tuple(device_entries_for_config_entry(device_registry, entry_id)):
+        if set(getattr(device_entry, "config_entries", ()) or ()) - {entry_id}:
+            continue
         device_registry.async_remove_device(device_entry.id)
         removed_devices += 1
 

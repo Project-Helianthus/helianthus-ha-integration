@@ -12,6 +12,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .energy import compute_total
 from .const import DOMAIN, RADIO_STALE_GRACE_CYCLES
+from .device_ids import (
+    circuit_identifier,
+    cylinder_identifier,
+    dhw_identifier,
+    energy_identifier,
+)
 from . import sensor_setup
 from .pv_m2m import (
     PVM2MDescriptor,

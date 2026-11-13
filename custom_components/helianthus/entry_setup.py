@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from . import (
@@ -31,9 +32,16 @@ from . import (
     _entry_identity_probe_addresses,
     _find_verified_entry_by_configured_instance_guid,
     _format_hex4_version,
+    _identifier_matches_any_entry,
+    _is_stale_bus_identifier,
     _iter_identifier_pairs,
+    _merge_duplicate_config_entry_options,
+    _parse_identifier_index,
     _parse_zone_schedule_helper_bindings,
+    _remove_config_entry_registry_state,
+    _schedule_duplicate_config_entry_removal,
     _select_bus_migration_target,
+    _stale_bus_address_unique_id,
     _update_entry_endpoint_if_changed,
     _zone_instance_from_id,
     async_sanitize_legacy_eebus_admin_entry,
@@ -42,9 +50,14 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
+from .admission import REPAIR_EMPTY_INVENTORY_UNTRUSTED
 from .entry_runtime import EntryRuntime
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 
 def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
@@ -177,6 +190,16 @@ async def _async_apply_dhw_schedule(
         return False
 
 
+def _cylinder_count_is_published(setup_fm5_mode: str, current_fm5_mode: str) -> bool:
+    """Return whether the FM5 cylinder count can prune cylinder registry rows.
+
+    Only an INTERPRETED mode publishes a cylinder count; any other mode carries
+    no cylinder evidence. The count read at setup is used only while the mode
+    was INTERPRETED then and still is.
+    """
+    return setup_fm5_mode == "INTERPRETED" and current_fm5_mode == "INTERPRETED"
+
+
 async def _async_forward_platforms_and_finalize(
     hass: object,
     entry: object,
@@ -193,6 +216,17 @@ async def _async_forward_platforms_and_finalize(
         "post-platform setup",
     )
     run_trusted_cleanup("post-platform setup")
+
+
+def _device_linked_to_live_entry(hass, device_entry, active_entry_ids) -> bool:
+    """Return True if the device is linked to an active entry or a live foreign entry."""
+    linked_entry_ids = set(getattr(device_entry, "config_entries", None) or ())
+    if active_entry_ids & linked_entry_ids:
+        return True
+    get_entry = getattr(hass.config_entries, "async_get_entry", None)
+    return get_entry is not None and any(
+        get_entry(linked_id) is not None for linked_id in linked_entry_ids
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -330,6 +364,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if identifier_domain == DOMAIN
         ]
         if not domain_tokens:
+            continue
+        if _device_linked_to_live_entry(hass, device_entry, active_entry_ids):
             continue
         if any(_identifier_matches_any_entry(token, active_entry_ids) for token in domain_tokens):
             continue
@@ -1172,7 +1208,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             else:
                 cylinder_match = cylinder_unique_id_re.match(unique_id)
-                if cylinder_match and int(cylinder_match.group("index")) not in known_cylinder_indexes:
+                if (
+                    cylinder_match
+                    and int(cylinder_match.group("index")) not in known_cylinder_indexes
+                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
+                ):
                     remove_entry = True
             if remove_entry:
                 entity_registry.async_remove(entity_entry.entity_id)
@@ -1282,7 +1322,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     remove_device = True
                     break
                 cylinder_index = _parse_identifier_index(token, f"{entry.entry_id}-cylinder-")
-                if cylinder_index is not None and cylinder_index not in known_cylinder_indexes:
+                if (
+                    cylinder_index is not None
+                    and cylinder_index not in known_cylinder_indexes
+                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
+                ):
                     remove_device = True
                     break
                 # ADR-027: remove shadow radio device for merged B524 function modules.

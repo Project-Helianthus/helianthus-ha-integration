@@ -5,6 +5,7 @@ Identity is relative path, qualified enclosing symbol and rule. Counts are Ruff'
 observed complexity/statement metric for size rules and occurrence totals for
 other rules. Moving a symbol within a file preserves identity; moving it to a
 different scope or file requires review. Reductions pass; stale rows fail closed.
+An undefined name (F821) under custom_components/ is never accepted as debt.
 """
 from __future__ import annotations
 
@@ -51,6 +52,8 @@ def load_baseline(path):
             raise ValueError("baseline path must be canonical and relative")
         if not re.fullmatch(r"[A-Z]+[0-9]{3,4}", row["rule"]):
             raise ValueError("invalid baseline rule")
+        if row["rule"] == "F821" and path.parts[0] == "custom_components":
+            raise ValueError("undefined name in shipped code cannot be baseline debt")
         key = tuple(row[k] for k in FIELDS)
         if key in result or type(row["count"]) is not int or row["count"] <= 0:
             raise ValueError("duplicate baseline record or invalid count")
