@@ -221,14 +221,19 @@ async def _async_forward_platforms_and_finalize(
 _SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
 
 
-def _sparse_reload_unique_ids(hass: object, entry_id: str) -> set[str]:
+def _sparse_reload_unique_ids(
+    hass: object, entry_id: str, active_entry_ids: set[str]
+) -> set[str]:
     """Return the sparse unique IDs of one entry that have caused a reload.
 
     The set lives in the domain data next to the admission clean-up counts.
     Unloading the entry does not remove it, so it holds across reloads and
-    ends with the Home Assistant run.
+    ends with the Home Assistant run. The sets of entries that are no longer
+    configured are dropped here.
     """
     store = hass.data.setdefault(DOMAIN, {}).setdefault(_SPARSE_RELOAD_KEY, {})
+    for removed_entry_id in set(store) - set(active_entry_ids) - {entry_id}:
+        del store[removed_entry_id]
     return store.setdefault(entry_id, set())
 
 
@@ -954,7 +959,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"daemon-{entry.entry_id}-admission_repair_code",
         }
     )
-    sparse_reloaded_ids = _sparse_reload_unique_ids(hass, entry.entry_id)
+    sparse_reloaded_ids = _sparse_reload_unique_ids(hass, entry.entry_id, active_entry_ids)
     boiler_temp_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
     )

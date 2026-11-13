@@ -13,6 +13,8 @@ asked for.
 
 The stated rule: the integration schedules at most one reload per sparse
 entity per Home Assistant run, and an entity that alternates settles enabled.
+Home Assistant itself reloads the entry once more after an entity is enabled;
+that reload is counted apart from the integration's own.
 """
 
 from __future__ import annotations
@@ -200,7 +202,7 @@ def boiler_bench(harness, *, disabled_by, entry_id=ENTRY, setup=None):
 @pytest.mark.parametrize("phase", (1, 3), ids=("every-poll", "every-third-poll"))
 @pytest.mark.parametrize("value_first", (False, True), ids=("null-first", "value-first"))
 @pytest.mark.parametrize("disabled_by", (None, "integration"), ids=("enabled", "disabled"))
-def test_alternating_sparse_entity_settles_enabled_after_one_reload(
+def test_alternating_sparse_entity_settles_enabled_after_one_integration_reload(
         paths_harness, logs, disabled_by, value_first, phase):
     bench = boiler_bench(paths_harness, disabled_by=disabled_by)
     values = [alternating(i, VALUE["boiler"], value_first=value_first, phase=phase)
@@ -225,7 +227,7 @@ def test_alternating_sparse_entity_settles_enabled_after_one_reload(
 @pytest.mark.parametrize("phase", (1, 3), ids=("every-poll", "every-third-poll"))
 @pytest.mark.parametrize("value_first", (False, True), ids=("null-first", "value-first"))
 @pytest.mark.parametrize("present", (False, True), ids=("absent", "present"))
-def test_alternating_repair_code_sensor_settles_present_after_one_reload(
+def test_alternating_repair_code_sensor_settles_present_after_one_integration_reload(
         paths_harness, logs, present, value_first, phase):
     paths_harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
     if present:
@@ -261,8 +263,11 @@ def test_null_from_the_start_is_disabled_once_without_a_reload(paths_harness, lo
     assert (bench.ha_reloads, bench.setups) == (0, 1)
 
 
-def test_value_gained_once_is_enabled_once_with_one_reload(paths_harness, logs):
-    """Pinned: an integration-disabled entity that gains a value is enabled once."""
+def test_value_gained_once_is_enabled_once_with_one_integration_reload(paths_harness, logs):
+    """Pinned: an integration-disabled entity that gains a value is enabled once.
+
+    One reload is the integration's; Home Assistant adds its own deferred one.
+    """
     bench = boiler_bench(paths_harness, disabled_by="integration")
     values = [None] * 6 + [VALUE["boiler"]] * (POLLS - 6)
 
@@ -287,7 +292,7 @@ def test_repair_code_null_from_the_start_is_removed_once_without_a_reload(paths_
     assert reload_reasons(logs) == []
 
 
-def test_repair_code_gained_once_is_added_once_with_one_reload(paths_harness, logs):
+def test_repair_code_gained_once_is_added_once_with_one_integration_reload(paths_harness, logs):
     paths_harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
     setup, (entry,) = shared_hass(ENTRY)
     bench = Bench(paths_harness, setup, entry, "repair")
@@ -362,6 +367,26 @@ def test_a_new_home_assistant_run_starts_a_new_period(paths_harness, logs):
     assert reload_reasons(logs) == [LIVE_SPARSE, LIVE_SPARSE]
     assert (first.ha_reloads, second.ha_reloads) == (1, 1)
     assert history[-1] == (f"sensor.{boiler_uid().replace('-', '_')}", None)
+
+
+def test_the_record_of_a_removed_entry_is_dropped(paths_harness, logs):
+    """A later setup drops the record of an entry that is no longer configured."""
+    setup, entries = shared_hass("entry-a", "entry-b")
+    benches = [boiler_bench(paths_harness, disabled_by=None, entry_id=entry_id, setup=setup)
+               for entry_id in ("entry-a", "entry-b")]
+    values = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
+    for bench in benches:
+        drive(paths_harness, bench, values, boiler_uid(bench.entry.entry_id))
+    assert set(setup.hass.data[DOMAIN][SETTLED_KEY]) == {"entry-a", "entry-b"}
+    entry_a = entries[0]
+    setup.hass.config_entries.async_entries = lambda domain: [entry_a]
+
+    async def reload_entry_a():
+        assert await entry_cleanup.async_unload_entry(setup.hass, entry_a) is True
+        await benches[0].start(VALUE["boiler"])
+    asyncio.run(asyncio.wait_for(reload_entry_a(), timeout=20))
+
+    assert setup.hass.data[DOMAIN][SETTLED_KEY] == {"entry-a": {boiler_uid("entry-a")}}
 
 
 @pytest.fixture

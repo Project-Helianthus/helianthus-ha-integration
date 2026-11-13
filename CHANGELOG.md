@@ -31,15 +31,20 @@
   sparse entities. A sparse entity whose value is null at the trusted
   clean-up is still disabled once, now without a reload, because Home
   Assistant removes an entity disabled in the registry by itself. When a
-  value appears, the entity is enabled (the daemon admission repair-code
-  sensor is added) through one reload. The integration schedules at most one
-  such reload per sparse entity per Home Assistant run. An entity that has
-  caused it is not disabled or removed again during that run, so an entity
-  whose value alternates between null and a value settles enabled and shows
-  a null value as unknown. The record of these entities is kept in the
-  integration's domain data, which survives a reload of the entry and is
-  cleared when Home Assistant restarts. Unique IDs, entity IDs, device
-  identifiers and names are unchanged.
+  value appears, the integration enables the entity and schedules a reload
+  of the entry; Home Assistant itself reloads the entry once more after an
+  entity is enabled. When the daemon admission repair code appears and its
+  sensor is missing, the integration schedules a reload, which adds the
+  sensor when the code is still live as the sensor platform sets up. The
+  integration schedules at most one reload per sparse entity per Home
+  Assistant run. An entity that has caused it is not disabled or removed
+  again during that run, so an entity whose value alternates between null
+  and a value settles enabled and shows a null value as unknown. The record
+  of these entities is kept in the integration's domain data, which survives
+  a reload of the entry and is cleared when Home Assistant restarts; the
+  record of an entry that is no longer configured is dropped when an entry
+  of the integration sets up. Unique IDs, entity IDs, device identifiers and
+  names are unchanged.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use
