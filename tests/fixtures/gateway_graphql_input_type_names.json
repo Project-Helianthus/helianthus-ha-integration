@@ -1,0 +1,12 @@
+{
+  "source": "Input type names of the public gateway main branch schema that the integration's GraphQL documents may declare, recorded 2026-11-13.",
+  "type_names": [
+    "Boolean",
+    "Float",
+    "ID",
+    "Int",
+    "String",
+    "json",
+    "m2m_current_snapshot_request"
+  ]
+}

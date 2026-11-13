@@ -52,6 +52,8 @@
   sensor platform reads the record through a public, documented helper of
   entry setup. Unique IDs, entity IDs, device identifiers and names are
   unchanged.
+- Declare the `invoke` parameters of zone, hot-water and schedule-helper writes
+  with the gateway's `json` scalar so the gateway accepts these writes again.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use

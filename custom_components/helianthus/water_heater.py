@@ -21,7 +21,7 @@ from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
 
 _INVOKE_SET_EXT_REGISTER = """
-mutation SetExtRegister($address:Int!, $params:JSON!){
+mutation SetExtRegister($address:Int!, $params:json!){
   invoke(address:$address, plane:"system", method:"set_ext_register", params:$params){
     ok
     error {
