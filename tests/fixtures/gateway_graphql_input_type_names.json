@@ -1,5 +1,5 @@
 {
-  "source": "Input type names of the public gateway main branch schema that the integration's GraphQL documents may declare, recorded 2026-11-13.",
+  "source": "Input type names of the published GraphQL contract (helianthus-docs-ebus, api/graphql.md, which declares the invoke mutation with params of type json and states that owned GraphQL type names use snake_case) that the integration's GraphQL documents may declare; cross-checked with the gateway schema, recorded 2026-11-13.",
   "type_names": [
     "Boolean",
     "Float",
