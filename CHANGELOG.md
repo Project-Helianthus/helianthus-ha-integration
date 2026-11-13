@@ -54,6 +54,26 @@
   unchanged.
 - Declare the `invoke` parameters of zone, hot-water and schedule-helper writes
   with the gateway's `json` scalar so the gateway accepts these writes again.
+- Give one asset one Home Assistant device across the PV, Storage and EVSE
+  consumers and the shared semantic path. When several consumers bind the
+  same asset, the first of PV, Storage, EVSE owns the device, whatever the
+  order in which the consumers were set up, and every entity of the asset
+  reports that device's identifier, model and name. Before this change an
+  asset bound by two consumers was two devices, the shared path ignored the
+  EVSE consumer, and shared entities wrote their own model and name onto a
+  consumer's device. Entity unique IDs and the formats of every device
+  identifier are unchanged; so are the device identifier and metadata of
+  each consumer's entities when one consumer binds the asset alone, and the
+  device of an asset that only the shared path shows. Home Assistant device
+  grouping changes for assets bound by more than one consumer, and for an
+  asset bound by the EVSE consumer that the shared path also shows. For such
+  an asset the moved entities take the owning device's name in their
+  displayed name and the owning device's area; a custom name, area or labels
+  of the device they leave do not carry over; entity IDs and unique IDs do
+  not change. On an installation that already had several devices for one
+  asset, the entities move to the owning device and the device they leave
+  stays in the device registry without entities; removing it is an operator
+  action outside the integration.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use

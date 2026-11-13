@@ -10,11 +10,9 @@ import json
 from urllib.parse import quote
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .pv_m2m import build_pv_device_identifier
-from .storage_m2m import build_storage_device_identifier
+from .asset_device import AssetDevice, bound_asset_device
 
 
 @dataclass(frozen=True)
@@ -133,18 +131,11 @@ def semantic_device_model(asset):
     return 'Semantic asset'
 
 
-LEGACY_DEVICE_BUILDERS = {
-    'helianthus.pack.pv': build_pv_device_identifier,
-    'helianthus.pack.storage': build_storage_device_identifier,
-}
-
-
-def _device_identifier(data, entry_id, asset_id):
-    """Reuse the legacy device of a bound asset so one asset stays one HA device."""
-    for pack_id, build in LEGACY_DEVICE_BUILDERS.items():
-        if asset_id == _legacy_bound_asset(data, pack_id):
-            return build(entry_id, asset_id)
-    return semantic_device_identifier(entry_id, asset_id)
+def _asset_device(data, entry_id, asset):
+    """The device of a consumer bound to the asset, else the asset's own device."""
+    asset_id = asset["asset_id"]
+    return bound_asset_device(data, entry_id, asset_id) or AssetDevice(
+        semantic_device_identifier(entry_id, asset_id), semantic_device_model(asset), asset_id)
 
 
 def _legacy_bound_asset(data, pack_id):
@@ -221,11 +212,9 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_icon = "mdi:chart-line"
 
-    def __init__(self, coordinator, entry_id, asset_id, key, descriptor, model='Semantic asset',
-                 device_identifier=None):
+    def __init__(self, coordinator, entry_id, asset_id, key, descriptor, device):
         super().__init__(coordinator)
-        self._device_identifier = device_identifier or semantic_device_identifier(entry_id, asset_id)
-        self._model = model
+        self._device = device
         self._entry_id = entry_id
         self._asset_id = asset_id
         self._key = key
@@ -242,9 +231,7 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self):
-        return DeviceInfo(
-            identifiers={self._device_identifier},
-            manufacturer="Helianthus", model=self._model, name=self._asset_id)
+        return self._device.device_info()
 
     def _reading(self):
         coordinator = self.coordinator
@@ -328,8 +315,7 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
         for asset in (coordinator.data or {}).get("assets", ()):
             if asset["snapshot"] is None:
                 continue
-            model = semantic_device_model(asset)
-            device_identifier = _device_identifier(data, entry_id, asset["asset_id"])
+            device = _asset_device(data, entry_id, asset)
             for fact in asset["snapshot"]["facts"]:
                 key = fact["key"]
                 descriptor = _descriptor(key)
@@ -342,8 +328,7 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
                 if unique_id in known:
                     continue
                 sensor = SemanticSnapshotSensor(
-                    coordinator, entry_id, asset["asset_id"], key, descriptor, model,
-                    device_identifier)
+                    coordinator, entry_id, asset["asset_id"], key, descriptor, device)
                 if not sensor.available:
                     continue
                 known.add(unique_id)
