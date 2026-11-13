@@ -902,30 +902,6 @@
       "count": 1
     },
     {
-      "path": "custom_components/helianthus/sensor_setup.py",
-      "symbol": "<module>",
-      "rule": "F401",
-      "count": 7
-    },
-    {
-      "path": "custom_components/helianthus/sensor_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "C901",
-      "count": 61
-    },
-    {
-      "path": "custom_components/helianthus/sensor_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "F841",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/sensor_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "PLR0915",
-      "count": 200
-    },
-    {
       "path": "scripts/smoke_profile.py",
       "symbol": "_check_dual_topology_path",
       "rule": "C901",
