@@ -17,7 +17,9 @@
   devices again; the duplicate-entry refusal, the start-of-setup and trusted
   registry clean-ups and the first trusted setup no longer raise `NameError`.
   Unique IDs and device identifiers are unchanged. The readability baseline
-  no longer accepts an undefined name in shipped code.
+  no longer accepts an undefined name in shipped code. The start-of-setup
+  clean-up keeps every device of an active entry, including the eeBUS
+  administration and the semantic-snapshot, PV, storage and EVSE asset devices.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use

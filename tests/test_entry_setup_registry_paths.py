@@ -364,3 +364,62 @@ def test_cleanup_is_skipped_until_evidence_is_trusted(harness, caplog, case):
         "trusted (empty_inventory_untrusted)"]
     assert setup.hass.data[DOMAIN]["_admission_cleanup_counts"] == {
         "entry-a": 1 if case == "first-trusted-setup" else 0}
+
+
+def _creating_function(module_file, name):
+    """Compile one identifier builder from its source (its module needs Home Assistant)."""
+    import ast
+    import hashlib
+    from pathlib import Path
+
+    path = Path(entry_setup.__file__).with_name(module_file)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    scope = {"hashlib": hashlib, "_asset_ref": lambda value, _label: value}
+    exec(compile(ast.Module([node], []), str(path), "exec"), scope)
+    return scope[name]
+
+
+def _families_created_for(entry_id):
+    """Identifiers produced by the creating code, one per family."""
+    import inspect
+
+    from custom_components.helianthus import device_ids
+
+    found = {}
+    for name, func in inspect.getmembers(device_ids, inspect.isfunction):
+        if not name.endswith("_identifier") or func.__module__ != device_ids.__name__:
+            continue
+        params = list(inspect.signature(func).parameters)
+        if params[:1] != ["config_entry_id"]:
+            continue
+        args = [entry_id] + ["g15-i01" if "radio" in name else "0" for _ in params[1:]]
+        found[name] = func(*args)
+    found["semantic_asset"] = _creating_function(
+        "semantic_snapshot_sensors.py", "semantic_device_identifier")(entry_id, "asset-1")
+    for family, module_file, name in (
+        ("pv_asset", "pv_m2m.py", "build_pv_device_identifier"),
+        ("storage_asset", "storage_m2m.py", "build_storage_device_identifier"),
+        ("evse_asset", "evse_m2m.py", "build_evse_device_identifier"),
+    ):
+        found[family] = _creating_function(module_file, name)(entry_id, "asset-1")
+    found["eebus_admin"] = (DOMAIN, f"{entry_id}-eebus-admin")
+    return found
+
+
+def test_every_identifier_family_of_an_active_entry_survives_setup(harness):
+    families = _families_created_for("entry-a")
+    assert len(families) >= 17
+    kept = {name: harness.devices.add("entry-a", ident) for name, ident in families.items()}
+    unknown = harness.devices.add("entry-a", (DOMAIN, "entry-a-future-family-x"))
+    linked = harness.devices.add("entry-a", (DOMAIN, "unrecognised-token"))
+    gone = {name: harness.devices.add("entry-gone", tuple(
+        (d, t.replace("entry-a", "entry-gone")) for d, t in [ident])[0])
+        for name, ident in families.items()}
+    before = {device.id for device in kept.values()} | {unknown.id, linked.id}
+    setup = harness.build(config_entry("entry-a", host=False))
+
+    assert run(setup, config_entry("entry-a", host=False)) is True
+
+    assert set(harness.devices.devices) == before
+    assert not set(device.id for device in gone.values()) & set(harness.devices.devices)

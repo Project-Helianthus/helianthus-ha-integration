@@ -344,6 +344,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ]
         if not domain_tokens:
             continue
+        if active_entry_ids & set(getattr(device_entry, "config_entries", None) or ()):
+            continue
         if any(_identifier_matches_any_entry(token, active_entry_ids) for token in domain_tokens):
             continue
         device_registry.async_remove_device(device_entry.id)
