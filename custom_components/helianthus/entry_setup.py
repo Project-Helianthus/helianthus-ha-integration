@@ -219,10 +219,14 @@ async def _async_forward_platforms_and_finalize(
 
 
 _SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
+_SPARSE_PENDING_KEY = "_sparse_pending_unique_ids"
 
 
 def _sparse_reload_unique_ids(
-    hass: object, entry_id: str, active_entry_ids: set[str]
+    hass: object,
+    entry_id: str,
+    active_entry_ids: set[str],
+    key: str = _SPARSE_RELOAD_KEY,
 ) -> set[str]:
     """Return the sparse unique IDs of one entry that have caused a reload.
 
@@ -231,7 +235,7 @@ def _sparse_reload_unique_ids(
     ends with the Home Assistant run. The sets of entries that are no longer
     configured are dropped here.
     """
-    store = hass.data.setdefault(DOMAIN, {}).setdefault(_SPARSE_RELOAD_KEY, {})
+    store = hass.data.setdefault(DOMAIN, {}).setdefault(key, {})
     for removed_entry_id in set(store) - set(active_entry_ids) - {entry_id}:
         del store[removed_entry_id]
     return store.setdefault(entry_id, set())
@@ -242,6 +246,46 @@ def _claim_sparse_reloads(reloaded: set[str], unique_ids: list[str]) -> list[str
     claimed = sorted(set(unique_ids) - reloaded)
     reloaded.update(claimed)
     return claimed
+
+
+def _settle_pending_sparse_ids(
+    reloaded: set[str], pending: set[str], entity_entries: tuple
+) -> None:
+    """Spend the allowance of a status ID only once its entity exists."""
+    existing = {
+        str(entity_entry.unique_id or "")
+        for entity_entry in entity_entries
+        if entity_entry.platform == DOMAIN
+    }
+    created = pending & existing
+    reloaded.update(created)
+    pending.difference_update(created)
+
+
+def _pending_missing_live_sparse_ids(
+    candidates: set[str],
+    reloaded: set[str],
+    pending: set[str],
+    entity_entries: tuple,
+    is_live: Callable[[str], bool],
+) -> list[str]:
+    """Return live status IDs without an entity and keep them pending.
+
+    The allowance is spent once the entity exists, so a reload that sees the
+    value null again leaves the retry path open.
+    """
+    existing_unique_ids = {
+        str(entity_entry.unique_id or "")
+        for entity_entry in entity_entries
+        if entity_entry.platform == DOMAIN
+    }
+    missing = sorted(
+        unique_id
+        for unique_id in candidates - reloaded
+        if unique_id not in existing_unique_ids and is_live(unique_id)
+    )
+    pending.update(missing)
+    return missing
 
 
 def _schedule_unclaimed_sparse_reload(
@@ -959,7 +1003,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"daemon-{entry.entry_id}-admission_repair_code",
         }
     )
-    sparse_reloaded_ids = _sparse_reload_unique_ids(hass, entry.entry_id, active_entry_ids)
+    sparse_reloaded_ids, sparse_pending_ids = (
+        _sparse_reload_unique_ids(hass, entry.entry_id, active_entry_ids, key)
+        for key in (_SPARSE_RELOAD_KEY, _SPARSE_PENDING_KEY)
+    )
     boiler_temp_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
     )
@@ -1404,16 +1451,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "INTEGRATION",
                 integration_disabler,
             )
-        existing_unique_ids = {
-            str(entity_entry.unique_id or "")
-            for entity_entry in _entry_entities()
-            if entity_entry.platform == DOMAIN
-        }
-        missing_live_status_ids = _claim_sparse_reloads(sparse_reloaded_ids, [
-            unique_id
-            for unique_id in status_sparse_unique_ids
-            if unique_id not in existing_unique_ids and _is_sparse_entity_live(unique_id)
-        ])
+        missing_live_status_ids = _pending_missing_live_sparse_ids(
+            status_sparse_unique_ids,
+            sparse_reloaded_ids,
+            sparse_pending_ids,
+            _entry_entities(),
+            _is_sparse_entity_live,
+        )
         if missing_live_status_ids:
             _LOGGER.info(
                 "Helianthus scheduling reload for %d live sparse status entities for entry %s (%s)",
@@ -1491,6 +1535,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 admission.get("repair_code") or REPAIR_EMPTY_INVENTORY_UNTRUSTED,
             )
             return
+        _settle_pending_sparse_ids(sparse_reloaded_ids, sparse_pending_ids, _entry_entities())
         cleanup_obsolete_entity_registry_entries()
         auto_disable_sparse_entities(reason)
         auto_enable_sparse_entities(reason)

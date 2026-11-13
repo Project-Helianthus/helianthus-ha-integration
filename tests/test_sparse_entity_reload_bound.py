@@ -305,6 +305,36 @@ def test_repair_code_gained_once_is_added_once_with_one_integration_reload(paths
     assert reload_reasons(logs) == [LIVE_STATUS]
 
 
+def test_repair_code_reload_that_sees_null_keeps_its_allowance_until_the_sensor_exists(
+        paths_harness, logs):
+    """The allowance is spent when the sensor exists, not when the reload is scheduled."""
+    paths_harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
+    setup, (entry,) = shared_hass(ENTRY)
+
+    class NullOnFirstReload(Bench):
+        reloads_seen_null = 0
+
+        async def _reload_if_requested(self, value):
+            integration = take(self.setup.requests, self.entry.entry_id)
+            for _ in range(integration):
+                assert await entry_cleanup.async_unload_entry(self.setup.hass, self.entry) is True
+                seen = None if self.reloads_seen_null == 0 else value
+                self.reloads_seen_null += 1
+                await self.start(seen)
+
+    bench = NullOnFirstReload(paths_harness, setup, entry, "repair")
+    values = [None] * 6 + [VALUE["repair"]] * (POLLS - 6)
+
+    history = drive(paths_harness, bench, values, repair_uid())
+
+    entity_id = f"sensor.{repair_uid().replace('-', '_')}"
+    assert history[-1] == (entity_id, None)
+    # The reload that saw null created nothing and left the retry open; the
+    # reload after the next live value created the sensor, which ends the cycle.
+    assert reload_reasons(logs) == [LIVE_STATUS, LIVE_STATUS]
+    assert settled_ids(setup) == {repair_uid()}
+
+
 def test_each_unique_id_of_an_entry_has_its_own_bound(paths_harness, logs):
     """A settled entity does not use up the reload of another entity of the entry."""
     number_uid = boiler_uid(key="flowset_hc_max_c")

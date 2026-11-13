@@ -37,7 +37,8 @@
   sensor is missing, the integration schedules a reload, which adds the
   sensor when the code is still live as the sensor platform sets up. The
   integration schedules at most one reload per sparse entity per Home
-  Assistant run. An entity that has caused it is not disabled or removed
+  Assistant run; the allowance of the repair-code sensor is spent once the
+  sensor exists, so a reload that sees the code null again can be retried. An entity that has caused it is not disabled or removed
   again during that run, so an entity whose value alternates between null
   and a value settles enabled and shows a null value as unknown. The record
   of these entities is kept in the integration's domain data, which survives
