@@ -27,7 +27,24 @@ from unittest.mock import AsyncMock
 import pytest
 
 import test_entry_setup_registry_paths as paths
-from custom_components.helianthus import DOMAIN, entry_cleanup, entry_setup
+from test_sensor import _ensure_homeassistant_stubs
+
+_ensure_homeassistant_stubs()
+
+from homeassistant.components.sensor import SensorDeviceClass  # noqa: E402
+
+if not hasattr(SensorDeviceClass, "SIGNAL_STRENGTH"):
+    SensorDeviceClass.SIGNAL_STRENGTH = "signal_strength"
+
+# The real sensor platform, bound to the doubles above before any test swaps them.
+from custom_components.helianthus import (  # noqa: E402
+    DOMAIN,
+    entry_cleanup,
+    entry_setup,
+    semantic_snapshot_sensors,  # noqa: F401
+    sensor_setup,
+    vaillant_b503,  # noqa: F401
+)
 
 ENTRY = "entry-a"
 SETTLED_KEY = "_sparse_reload_unique_ids"
@@ -53,10 +70,21 @@ def status_payload(repair_code):
     return {"admission": {**paths.TRUSTED_STATUS["admission"], "repair_code": repair_code}}
 
 
+def radio_device(zone_assignment):
+    """One exported B524 inventory radio slot; only its zone assignment varies."""
+    return {"group": 0x0C, "instance": 1, "radio_bus_key": "g0c-i01",
+            "device_class_address": None, "hardware_identifier": 7,
+            "remote_control_address": None, "zone_assignment": zone_assignment}
+
+
 def payload(kind, value, extra=None):
     """Coordinator data of one poll; only the sparse field of ``kind`` varies."""
     if kind == "repair":
         return {"HelianthusStatusCoordinator": status_payload(value)}
+    if kind == "radio":
+        return {"HelianthusRadioDeviceCoordinator": {
+                    "radio_devices": [radio_device(value)], "radio_zone_candidates": {}},
+                "HelianthusStatusCoordinator": status_payload(None)}
     config = {"hours_till_service": value, **(extra or {})}
     return {"HelianthusBoilerCoordinator": {"boiler_status": {"config": config}},
             "HelianthusStatusCoordinator": status_payload(None)}
@@ -92,6 +120,9 @@ def take(pending, entry_id):
 class Bench:
     """One config entry; each requested reload runs the real unload and setup."""
 
+    runtime_keys = RUNTIME_KEYS
+    listened = LISTENED
+
     def __init__(self, harness, setup, entry, kind, extra=None):
         self.harness, self.setup, self.entry = harness, setup, entry
         self.kind, self.extra = kind, extra
@@ -126,10 +157,10 @@ class Bench:
         """One trusted poll; a requested reload of this entry runs before the next."""
         fresh = payload(self.kind, value, self.extra)
         self.harness.data.update(payload(self.kind, value, self.extra))
-        for name, key in RUNTIME_KEYS.items():
+        for name, key in self.runtime_keys.items():
             if name in fresh:
                 self.runtime[key].data = fresh[name]
-        for key in LISTENED:
+        for key in self.listened:
             for listener in list(self.runtime[key].listeners):
                 listener()
         await self._drain()
@@ -358,9 +389,16 @@ def test_sensor_platform_still_skips_a_null_repair_code_sensor_before_its_reload
     assert "daemon-entry-1-admission_repair_code" not in _sensor_platform_unique_ids(False, None)
 
 
-def test_sensor_platform_and_entry_setup_share_the_record_key():
-    from custom_components.helianthus import sensor_setup
-    assert sensor_setup._SPARSE_RELOAD_KEY == entry_setup._SPARSE_RELOAD_KEY == SETTLED_KEY
+def test_the_public_record_reader_is_entry_scoped_and_read_only():
+    """The sensor platform reads the record only through this documented helper."""
+    empty = SimpleNamespace(data={})
+    assert entry_setup.sparse_entity_has_reloaded(empty, ENTRY, repair_uid()) is False
+    assert empty.data == {}
+    recorded = SimpleNamespace(data={DOMAIN: {SETTLED_KEY: {ENTRY: {repair_uid()}}}})
+    assert entry_setup.sparse_entity_has_reloaded(recorded, ENTRY, repair_uid()) is True
+    assert entry_setup.sparse_entity_has_reloaded(recorded, "entry-b", repair_uid()) is False
+    assert entry_setup.sparse_entity_has_reloaded(recorded, ENTRY, boiler_uid()) is False
+    assert not hasattr(sensor_setup, "_SPARSE_RELOAD_KEY")
 
 
 def test_each_unique_id_of_an_entry_has_its_own_bound(paths_harness, logs):
@@ -506,3 +544,112 @@ def test_sensor_platform_creates_reloaded_radio_metadata_sensors_whether_or_not_
 def test_sensor_platform_still_skips_null_radio_metadata_sensors_before_their_reload():
     assert set(_radio_metadata_unique_ids(False, {})) == {
         "entry-1-radio-0c-01-sensor-hardware_identifier"}
+
+
+RADIO_ZONE = 2
+
+
+def radio_uid(entry_id=ENTRY, key="zone_assignment"):
+    return f"{entry_id}-radio-0c-01-sensor-{key}"
+
+
+class PlatformBench(Bench):
+    """The bench with the real sensor platform in place of the modelled one.
+
+    Home Assistant behaviour that it models: an entity handed to the platform
+    callback gets a registry row when its unique ID has none, and becomes a live
+    entity only while its row is enabled; unloading the entry drops every live
+    entity. ``null_at_reload`` makes every reload, the integration's and the one
+    Home Assistant defers, set up while the sparse value is null.
+    """
+
+    runtime_keys = {**RUNTIME_KEYS, "HelianthusRadioDeviceCoordinator": "radio_coordinator"}
+    listened = (*LISTENED, "radio_coordinator")
+
+    def __init__(self, harness, setup, entry, kind, *, null_at_reload=False):
+        super().__init__(harness, setup, entry, kind)
+        self.null_at_reload = null_at_reload
+        self.created: dict[str, object] = {}
+
+    async def _forward(self, entry, platforms):
+        self.created = {}
+        registry = self.harness.entities
+
+        def add_entities(entities):
+            for entity in entities:
+                unique_id = getattr(entity, "_attr_unique_id", None)
+                if not unique_id:
+                    continue
+                if unique_id not in registry.unique_ids():
+                    registry.add(entry.entry_id, unique_id)
+                self.created[unique_id] = entity
+
+        await sensor_setup.async_setup_entry(self.setup.hass, entry, add_entities)
+
+    async def _reload_if_requested(self, value):
+        await super()._reload_if_requested(None if self.null_at_reload else value)
+
+    def live_entity(self, unique_id):
+        """The entity Home Assistant shows for ``unique_id``, or None."""
+        state = entity_state(self.harness, unique_id)
+        if state is None or state[1] is not None:
+            return None
+        return self.created.get(unique_id)
+
+
+def platform_bench(harness, kind, **kwargs):
+    harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
+    setup, (entry,) = shared_hass(ENTRY)
+    return PlatformBench(harness, setup, entry, kind, **kwargs)
+
+
+def test_real_platform_repair_code_null_at_its_reload_then_shown_without_more_reloads(
+        paths_harness, logs):
+    """The reviewer's case: the one reload sees null, then the code appears and stays."""
+    bench = platform_bench(paths_harness, "repair", null_at_reload=True)
+    values = [None] * 4 + [VALUE["repair"]] * (POLLS - 4)
+
+    history = drive(paths_harness, bench, values, repair_uid())
+
+    entity = bench.live_entity(repair_uid())
+    assert entity is not None, history
+    assert entity.native_value == VALUE["repair"]
+    assert reload_reasons(logs) == [LIVE_STATUS]
+    assert bench.setups == 2
+    assert entry_setup.sparse_entity_has_reloaded(bench.setup.hass, ENTRY, repair_uid())
+
+
+def test_real_platform_radio_metadata_null_at_its_reload_then_shown_without_more_reloads(
+        paths_harness, logs):
+    """The same for an optional radio metadata sensor disabled while null."""
+    bench = platform_bench(paths_harness, "radio", null_at_reload=True)
+    paths_harness.entities.add(ENTRY, radio_uid())
+    values = [None] * 4 + [RADIO_ZONE] * (POLLS - 4)
+
+    history = drive(paths_harness, bench, values, radio_uid())
+
+    entity_id = f"sensor.{radio_uid().replace('-', '_')}"
+    assert (entity_id, "integration") in history  # disabled once while null
+    entity = bench.live_entity(radio_uid())
+    assert entity is not None, history
+    assert entity.native_value == RADIO_ZONE
+    assert history[-1] == (entity_id, None)
+    assert reload_reasons(logs) == [LIVE_SPARSE]
+    assert (bench.ha_reloads, bench.setups) == (1, 3)
+    assert entry_setup.sparse_entity_has_reloaded(bench.setup.hass, ENTRY, radio_uid())
+
+
+@pytest.mark.parametrize(("kind", "unique_id"), (("repair", repair_uid()), ("radio", radio_uid())),
+                         ids=("repair-code", "radio-metadata"))
+def test_real_platform_never_creates_a_sparse_sensor_that_stays_null(
+        paths_harness, logs, kind, unique_id):
+    bench = platform_bench(paths_harness, kind)
+
+    history = drive(paths_harness, bench, [None] * POLLS, unique_id)
+
+    assert set(history) == {None}
+    assert unique_id not in bench.created
+    assert reload_reasons(logs) == []
+    assert bench.setups == 1
+    if kind == "radio":
+        assert radio_uid(key="hardware_identifier") in bench.created

@@ -240,6 +240,20 @@ def _sparse_reload_unique_ids(
     return store.setdefault(entry_id, set())
 
 
+def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> bool:
+    """Return whether a sparse entity of one entry has had its one reload in this run.
+
+    Entry setup records a sparse entity (by entry and unique ID) when it
+    schedules the one reload that the entity is allowed per Home Assistant
+    run. The sensor platform reads the record through this function: a
+    recorded entity is created whether or not its value is null, so a null
+    value at that reload cannot leave it absent for the rest of the run. This
+    function only reads; it never creates or changes the record.
+    """
+    store = getattr(hass, "data", {}).get(DOMAIN, {}).get(_SPARSE_RELOAD_KEY, {})
+    return unique_id in store.get(entry_id, ())
+
+
 def _claim_sparse_reloads(reloaded: set[str], unique_ids: list[str]) -> list[str]:
     """Record and return the IDs that have not caused a reload in this run."""
     claimed = sorted(set(unique_ids) - reloaded)
