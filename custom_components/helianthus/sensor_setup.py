@@ -434,7 +434,11 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     ("remote_control_address", "Remote Control Address"),
                     ("zone_assignment", "Zone Assignment"),
                 ]:
-                    if radio.get(key) is None:
+                    if radio.get(key) is None and not _sparse_status_has_reloaded(
+                        hass,
+                        entry.entry_id,
+                        f"{entry.entry_id}-radio-{group:02x}-{instance:02d}-sensor-{key}",
+                    ):
                         continue
                     sensors.append(
                         HelianthusRadioSensor(

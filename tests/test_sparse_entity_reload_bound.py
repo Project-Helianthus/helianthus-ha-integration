@@ -469,3 +469,40 @@ def paths_harness(monkeypatch):
     entities.async_update_entity = update_entity
     return SimpleNamespace(devices=devices, entities=entities, data=coordinator_data,
                            enabled_entries=enabled_entries)
+
+
+def _radio_metadata_unique_ids(reloaded, values):
+    import test_radio_device as radio_tests
+    import test_sensor as sensor_tests
+    from custom_components.helianthus import sensor_setup
+
+    device = {"group": 0x0C, "instance": 1, "radio_bus_key": "g0c-i01",
+              "device_class_address": None, "hardware_identifier": 7,
+              "remote_control_address": None, "zone_assignment": None, **values}
+    payload = radio_tests._base_payload([device])
+    hass = sensor_tests._FakeHass(payload)
+    if reloaded:
+        hass.data[DOMAIN][SETTLED_KEY] = {"entry-1": {
+            f"entry-1-radio-0c-01-sensor-{key}" for key in
+            ("device_class_address", "hardware_identifier",
+             "remote_control_address", "zone_assignment")}}
+    entities: list = []
+    asyncio.run(sensor_setup.async_setup_entry(
+        hass, sensor_tests._FakeEntry("entry-1"), entities.extend))
+    return {getattr(e, "_attr_unique_id", ""): e for e in entities
+            if "-radio-0c-" in getattr(e, "_attr_unique_id", "")}
+
+
+def test_sensor_platform_creates_reloaded_radio_metadata_sensors_whether_or_not_null():
+    created = _radio_metadata_unique_ids(True, {})
+    assert set(created) == {
+        f"entry-1-radio-0c-01-sensor-{key}" for key in
+        ("device_class_address", "hardware_identifier",
+         "remote_control_address", "zone_assignment")}
+    assert created["entry-1-radio-0c-01-sensor-zone_assignment"].native_value is None
+    assert created["entry-1-radio-0c-01-sensor-hardware_identifier"].native_value == 7
+
+
+def test_sensor_platform_still_skips_null_radio_metadata_sensors_before_their_reload():
+    assert set(_radio_metadata_unique_ids(False, {})) == {
+        "entry-1-radio-0c-01-sensor-hardware_identifier"}
