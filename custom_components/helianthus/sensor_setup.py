@@ -147,6 +147,29 @@ def _zone_instance(zone_id: object | None) -> int | None:
     return value - 1
 
 
+_SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
+
+
+def _sparse_status_has_reloaded(hass, entry_id: str, unique_id: str) -> bool:
+    """Return whether a sparse status entity has already had its one reload."""
+    store = hass.data.get(DOMAIN, {}).get(_SPARSE_RELOAD_KEY, {})
+    return unique_id in store.get(entry_id, ())
+
+
+def _daemon_field_wanted(hass, entry_id, data, daemon_status, field) -> bool:
+    """Return whether the daemon status sensor of ``field`` is created.
+
+    An optional field is created while it has a value, and once its sparse
+    entity has had its one reload whether or not the value is null then.
+    """
+    if not field.optional or daemon_status.get(field.key) is not None:
+        return True
+    device_id = data.get("daemon_device_id")
+    return bool(device_id) and _sparse_status_has_reloaded(
+        hass, entry_id, f"{device_id[1]}-{field.key}"
+    )
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     from .sensor import (
         HelianthusAdapterInfoSensor,
@@ -228,7 +251,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     adapter_status = status_entries.get("adapter", {})
 
     for field in DAEMON_STATUS_FIELDS:
-        if field.optional and daemon_status.get(field.key) is None:
+        if not _daemon_field_wanted(hass, entry.entry_id, data, daemon_status, field):
             continue
         sensors.append(
             HelianthusStatusSensor(

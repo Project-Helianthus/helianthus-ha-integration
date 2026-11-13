@@ -104,10 +104,11 @@ class Bench:
         return self.setup.hass.data[DOMAIN][self.entry.entry_id]
 
     async def _forward(self, entry, platforms):
-        """Sensor platform: the repair-code sensor is created only while live."""
+        """Sensor platform: the repair-code sensor is created while live or once reloaded."""
         daemon = self.setup.hass.data[DOMAIN][entry.entry_id]["status_coordinator"].data["daemon"]
         uid = repair_uid(entry.entry_id)
-        if daemon.get("admission_repair_code") is not None and uid not in (
+        if (daemon.get("admission_repair_code") is not None
+                or uid in settled_ids(self.setup, entry.entry_id)) and uid not in (
                 self.harness.entities.unique_ids()):
             self.harness.entities.add(entry.entry_id, uid)
 
@@ -305,34 +306,61 @@ def test_repair_code_gained_once_is_added_once_with_one_integration_reload(paths
     assert reload_reasons(logs) == [LIVE_STATUS]
 
 
-def test_repair_code_reload_that_sees_null_keeps_its_allowance_until_the_sensor_exists(
+def test_repair_code_reload_that_sees_null_still_creates_the_sensor_once(
         paths_harness, logs):
-    """The allowance is spent when the sensor exists, not when the reload is scheduled."""
+    """The allowance is spent when the reload is scheduled; a null at reload creates it too."""
     paths_harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
     setup, (entry,) = shared_hass(ENTRY)
 
-    class NullOnFirstReload(Bench):
-        reloads_seen_null = 0
-
+    class NullAtEveryReload(Bench):
         async def _reload_if_requested(self, value):
             integration = take(self.setup.requests, self.entry.entry_id)
             for _ in range(integration):
                 assert await entry_cleanup.async_unload_entry(self.setup.hass, self.entry) is True
-                seen = None if self.reloads_seen_null == 0 else value
-                self.reloads_seen_null += 1
-                await self.start(seen)
+                await self.start(None)
 
-    bench = NullOnFirstReload(paths_harness, setup, entry, "repair")
-    values = [None] * 6 + [VALUE["repair"]] * (POLLS - 6)
+    bench = NullAtEveryReload(paths_harness, setup, entry, "repair")
+    values = [alternating(i, VALUE["repair"], value_first=False) for i in range(POLLS)]
 
     history = drive(paths_harness, bench, values, repair_uid())
 
     entity_id = f"sensor.{repair_uid().replace('-', '_')}"
     assert history[-1] == (entity_id, None)
-    # The reload that saw null created nothing and left the retry open; the
-    # reload after the next live value created the sensor, which ends the cycle.
-    assert reload_reasons(logs) == [LIVE_STATUS, LIVE_STATUS]
+    assert reload_reasons(logs) == [LIVE_STATUS]
     assert settled_ids(setup) == {repair_uid()}
+
+
+def _sensor_platform_unique_ids(reloaded, repair_code):
+    import test_sensor as sensor_tests
+    from custom_components.helianthus import sensor_setup
+
+    payload = sensor_tests._build_payload(boiler_device_id=None)
+    payload["status_coordinator"] = sensor_tests._FakeCoordinator(
+        {"daemon": {"admission_repair_code": repair_code}, "adapter": {}})
+    payload["daemon_device_id"] = ("helianthus", "daemon-entry-1")
+    hass = sensor_tests._FakeHass(payload)
+    if reloaded:
+        hass.data[DOMAIN][SETTLED_KEY] = {"entry-1": {"daemon-entry-1-admission_repair_code"}}
+    entities: list = []
+    asyncio.run(sensor_setup.async_setup_entry(
+        hass, sensor_tests._FakeEntry("entry-1"), entities.extend))
+    return {getattr(e, "_attr_unique_id", ""): e for e in entities}
+
+
+@pytest.mark.parametrize("repair_code", (None, "admission_degraded"), ids=("null", "live"))
+def test_sensor_platform_creates_a_reloaded_repair_code_sensor_whether_or_not_null(repair_code):
+    created = _sensor_platform_unique_ids(True, repair_code)
+    entity = created["daemon-entry-1-admission_repair_code"]
+    assert entity.native_value == repair_code
+
+
+def test_sensor_platform_still_skips_a_null_repair_code_sensor_before_its_reload():
+    assert "daemon-entry-1-admission_repair_code" not in _sensor_platform_unique_ids(False, None)
+
+
+def test_sensor_platform_and_entry_setup_share_the_record_key():
+    from custom_components.helianthus import sensor_setup
+    assert sensor_setup._SPARSE_RELOAD_KEY == entry_setup._SPARSE_RELOAD_KEY == SETTLED_KEY
 
 
 def test_each_unique_id_of_an_entry_has_its_own_bound(paths_harness, logs):

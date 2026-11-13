@@ -34,18 +34,18 @@
   value appears, the integration enables the entity and schedules a reload
   of the entry; Home Assistant itself reloads the entry once more after an
   entity is enabled. When the daemon admission repair code appears and its
-  sensor is missing, the integration schedules a reload, which adds the
-  sensor when the code is still live as the sensor platform sets up. The
-  integration schedules at most one reload per sparse entity per Home
-  Assistant run; the allowance of the repair-code sensor is spent once the
-  sensor exists, so a reload that sees the code null again can be retried. An entity that has caused it is not disabled or removed
-  again during that run, so an entity whose value alternates between null
-  and a value settles enabled and shows a null value as unknown. The record
-  of these entities is kept in the integration's domain data, which survives
-  a reload of the entry and is cleared when Home Assistant restarts; the
-  record of an entry that is no longer configured is dropped when an entry
-  of the integration sets up. Unique IDs, entity IDs, device identifiers and
-  names are unchanged.
+  sensor is missing, the integration schedules a reload. The integration
+  schedules at most one reload per sparse entity per Home Assistant run,
+  and the allowance is spent when that reload is scheduled. Once it is
+  spent, the sensor platform creates the repair-code sensor whether or not
+  the code is null at that moment, and the entity is not disabled or
+  removed again during that run. An entity whose value alternates between
+  null and a value therefore settles enabled and shows a null value as
+  unknown. The record of these entities is kept in the integration's
+  domain data, which survives a reload of the entry and is cleared when
+  Home Assistant restarts; the record of an entry that is no longer
+  configured is dropped when an entry of the integration sets up. Unique
+  IDs, entity IDs, device identifiers and names are unchanged.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use
