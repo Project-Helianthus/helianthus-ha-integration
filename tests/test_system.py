@@ -233,29 +233,29 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
     system_coordinator = _FakeCoordinator(
         {
             "state": {
-                "system_water_pressure": 1.8,
+                "water_pressure": 1.8,
                 "outdoor_temperature": 6.2,
                 "outdoor_temperature_avg24h": 4.1,
-                "system_flow_temperature": 48.0,
+                "flow_temperature": 48.0,
                 "hwc_cylinder_temperature_top": 46.5,
                 "hwc_cylinder_temperature_bottom": 38.0,
                 "maintenance_due": True,
             },
             "config": {
-                "adaptive_heating_curve": False,
-                "heating_circuit_bivalence_point": -2.0,
+                "adaptive_heating_curve_enabled": False,
+                "heating_outdoor_bivalence_temperature_limit": -2.0,
                 "dhw_bivalence_point": 5.0,
                 "hc_emergency_temperature": 55.0,
                 "hwc_max_flow_temp_desired": 62.0,
-                "max_room_humidity": 65,
+                "room_humidity_limit_maximum": 65,
                 "maintenance_date": "2026-05-05",
                 "installer_name": "Installer",
                 "installer_phone": "+401234",
-                "installer_menu_code": 12,
+                "installer_access_code": 12,
             },
             "properties": {
-                "system_scheme": 3,
-                "module_configuration_vr71": 1,
+                "hydraulic_scheme_code": 3,
+                "functional_module_configuration_code": 1,
             },
             "metadata": {"gateway_brand": "Helianthus", "gateway_vendor": "Gateway Vendor"},
         }
@@ -292,23 +292,23 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
     ]
     assert len(system_entities) == len(sensor_platform.SYSTEM_SENSOR_FIELDS)
     assert {entity._attr_unique_id for entity in system_entities} == {
-        "entry-1-system-sensor-system_water_pressure",
+        "entry-1-system-sensor-water_pressure",
         "entry-1-system-sensor-outdoor_temperature",
         "entry-1-system-sensor-outdoor_temperature_avg24h",
-        "entry-1-system-sensor-system_flow_temperature",
+        "entry-1-system-sensor-flow_temperature",
         "entry-1-system-sensor-hwc_cylinder_temperature_top",
         "entry-1-system-sensor-hwc_cylinder_temperature_bottom",
-        "entry-1-system-sensor-system_scheme",
+        "entry-1-system-sensor-hydraulic_scheme_code",
     }
     pressure = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-sensor-system_water_pressure"
+        if entity._attr_unique_id == "entry-1-system-sensor-water_pressure"
     )
     scheme = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-sensor-system_scheme"
+        if entity._attr_unique_id == "entry-1-system-sensor-hydraulic_scheme_code"
     )
     assert pressure.native_value == 1.8
     assert scheme.native_value == 3
@@ -318,7 +318,7 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
         "gateway_brand": "Helianthus",
         "gateway_vendor": "Gateway Vendor",
     }
-    assert pressure._attr_unique_id == "entry-1-system-sensor-system_water_pressure"
+    assert pressure._attr_unique_id == "entry-1-system-sensor-water_pressure"
 
 
 def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
@@ -343,7 +343,7 @@ def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
     adaptive = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-binary-adaptive_heating_curve"
+        if entity._attr_unique_id == "entry-1-system-binary-adaptive_heating_curve_enabled"
     )
     assert maintenance.is_on is True
     assert adaptive.is_on is False
@@ -366,18 +366,18 @@ def test_system_number_entities_write_set_system_config_mutation() -> None:
     assert len(system_numbers) == 5
 
     hc_bivalence = next(
-        entity for entity in system_numbers if entity._field.mutation_field == "hc_bivalence_point_c"
+        entity for entity in system_numbers if entity._field.mutation_field == "heating_outdoor_bivalence_temperature_limit"
     )
     max_humidity = next(
-        entity for entity in system_numbers if entity._field.mutation_field == "max_room_humidity_pct"
+        entity for entity in system_numbers if entity._field.mutation_field == "room_humidity_limit_maximum"
     )
 
     asyncio.run(hc_bivalence.async_set_native_value(-1.0))
     asyncio.run(max_humidity.async_set_native_value(70.0))
 
     assert [call["variables"]["field"] for call in client.calls] == [
-        "hc_bivalence_point_c",
-        "max_room_humidity_pct",
+        "heating_outdoor_bivalence_temperature_limit",
+        "room_humidity_limit_maximum",
     ]
     assert [call["variables"]["value"] for call in client.calls] == ["-1.0", "70"]
     assert system_coordinator.refresh_requests == 2
@@ -405,7 +405,7 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
         entity
         for entity in number_entities
         if isinstance(entity, number_platform.HelianthusSystemNumber)
-        and entity._field.mutation_field == "hc_bivalence_point_c"
+        and entity._field.mutation_field == "heating_outdoor_bivalence_temperature_limit"
     )
     maintenance_date = next(
         entity
@@ -416,7 +416,7 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
         entity
         for entity in text_entities
         if isinstance(entity, text_platform.HelianthusSystemText)
-        and entity._field.key == "installer_name"
+        and entity._field.write_key == "installer_name"
     )
     menu_code = next(
         entity

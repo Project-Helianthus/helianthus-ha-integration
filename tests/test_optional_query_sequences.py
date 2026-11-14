@@ -86,9 +86,9 @@ def test_optional_query_interleaved_failures(
     }
     configs = {
         "installer": {"maintenance_date": "2030-01-01"},
-        "sensitive": {"installer_menu_code": "0000"},
+        "sensitive": {"installer_access_code": "0000"},
     }
-    fields = {"installer": "maintenance_date", "sensitive": "installer_menu_code"}
+    fields = {"installer": "maintenance_date", "sensitive": "installer_access_code"}
     other = "sensitive" if missing_first == "installer" else "installer"
 
     def transient():
@@ -108,7 +108,7 @@ def test_optional_query_interleaved_failures(
 
     async def cycle(number, actions, states, expected_optional):
         # Fresh nonempty base data makes accidental erasure or stale reuse visible.
-        base_config = {"max_room_humidity": 40 + number}
+        base_config = {"room_humidity_limit_maximum": 40 + number}
         client.actions = [
             (
                 module.QUERY_SYSTEM,
@@ -116,7 +116,7 @@ def test_optional_query_interleaved_failures(
                     "system": {
                         "state": {"outdoor_temperature": number},
                         "config": base_config,
-                        "properties": {"system_scheme": number},
+                        "properties": {"hydraulic_scheme_code": number},
                     }
                 },
             ),
@@ -131,8 +131,8 @@ def test_optional_query_interleaved_failures(
         assert client.actions == []
         assert result == {
             "state": {"outdoor_temperature": number},
-            "config": {"max_room_humidity": 40 + number, **expected_optional},
-            "properties": {"system_scheme": number},
+            "config": {"room_humidity_limit_maximum": 40 + number, **expected_optional},
+            "properties": {"hydraulic_scheme_code": number},
             "metadata": {},
         }
         assert coordinator._system_installer_available is states["installer"]

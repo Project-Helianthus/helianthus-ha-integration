@@ -38,7 +38,7 @@ def _missing(module, field="dhw_bivalence_point_bound"):
 
 def _refresh(h, pair, query, *, unsupported=False, field="dhw_bivalence_point_bound", bound=None):
     coordinator, client = pair
-    config = {"dhw_bivalence_point": 3, "max_room_humidity": 45}
+    config = {"dhw_bivalence_point": 3, "room_humidity_limit_maximum": 45}
     if bound is not None:
         config["dhw_bivalence_point_bound"] = bound
     client.actions = _cycle(h.module, query, config)
@@ -51,8 +51,8 @@ def _refresh(h, pair, query, *, unsupported=False, field="dhw_bivalence_point_bo
     assert client.actions == []
     assert coordinator.data == {
         "state": {"outdoor_temperature": 1},
-        "config": {**config, "maintenance_date": None, "installer_menu_code": None},
-        "properties": {"system_scheme": 1},
+        "config": {**config, "maintenance_date": None, "installer_access_code": None},
+        "properties": {"hydraulic_scheme_code": 1},
         "metadata": {"gateway_brand": "Synthetic"},
     }
     number, _, _, _ = _entity(h.modules, {})

@@ -60,6 +60,21 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
+# The unique ID of a boiler number or text and of a system text carries the
+# key the control writes; its value is read from the field named here.
+SPARSE_BOILER_CONFIG_READ_KEYS: dict[str, str] = {
+    "maximum_heating_flow_temperature_setpoint": "flowset_hc_max_c",
+    "maximum_dhw_flow_temperature_setpoint": "flowset_hwc_max_c",
+    "heating_partial_load_power": "partload_hc_kw",
+    "dhw_partial_load_power": "partload_hwc_kw",
+    "installer_phone_number": "phone_number",
+}
+SPARSE_SYSTEM_TEXT_READ_KEYS: dict[str, str] = {
+    "installer_name": "installer_name",
+    "installer_phone_number": "installer_phone",
+}
+
+
 def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
     """Retain exact validated IDs, or one bounded invalid-selection sentinel."""
     try:
@@ -1006,7 +1021,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         rf"^{re.escape(entry.entry_id)}-boiler-number-(?P<key>.+)$"
     )
     boiler_text_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-boiler-text-(?P<key>phone_number)$"
+        rf"^{re.escape(entry.entry_id)}-boiler-text-(?P<key>installer_phone_number)$"
     )
     circuit_sensor_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-circuit-(?P<index>\d+)-sensor-(?P<key>.+)$"
@@ -1025,7 +1040,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     dhw_demand_unique_id = f"{entry.entry_id}-dhw-dhw-heating-demand"
     system_text_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-system-text-(?P<key>installer_name|installer_phone)$"
+        rf"^{re.escape(entry.entry_id)}-system-text-(?P<key>installer_name|installer_phone_number)$"
     )
 
     def _entry_entities() -> tuple:
@@ -1167,11 +1182,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         boiler_number_match = boiler_number_unique_id_re.match(unique_id)
         if boiler_number_match:
-            return boiler_number_match.group("key") in _current_boiler_bucket_live_keys("config")
+            return SPARSE_BOILER_CONFIG_READ_KEYS.get(
+                boiler_number_match.group("key"), boiler_number_match.group("key")
+            ) in _current_boiler_bucket_live_keys("config")
 
         boiler_text_match = boiler_text_unique_id_re.match(unique_id)
         if boiler_text_match:
-            return boiler_text_match.group("key") in _current_boiler_bucket_live_keys("config")
+            return SPARSE_BOILER_CONFIG_READ_KEYS[
+                boiler_text_match.group("key")
+            ] in _current_boiler_bucket_live_keys("config")
 
         circuit_sensor_match = circuit_sensor_unique_id_re.match(unique_id)
         if circuit_sensor_match:
@@ -1197,7 +1216,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         system_text_match = system_text_unique_id_re.match(unique_id)
         if system_text_match:
-            return system_text_match.group("key") in _current_system_config_live_keys()
+            return SPARSE_SYSTEM_TEXT_READ_KEYS[
+                system_text_match.group("key")
+            ] in _current_system_config_live_keys()
 
         radio_match = radio_sensor_unique_id_re.match(unique_id)
         if radio_match:

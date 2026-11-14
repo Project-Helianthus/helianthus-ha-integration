@@ -2,6 +2,74 @@
 
 ## Unreleased
 
+- Send the canonical config-write keys of the system and boiler setters and
+  read the renamed system fields, with no alias, no fallback to a former name
+  and no unique-ID migration. Sixteen entities are recreated under their new
+  unique IDs; their display names, devices, categories, units, bounds and
+  icons are unchanged. Writes before this change failed because the gateway
+  accepted neither the former values nor a second spelling.
+
+  | Setter | Control | Former key | Key sent |
+  |---|---|---|---|
+  | `set_system_config` | HC Bivalence Point | `hc_bivalence_point_c` | `heating_outdoor_bivalence_temperature_limit` |
+  | `set_system_config` | DHW Bivalence Point | `dhw_bivalence_point_c` | `dhw_outdoor_bivalence_temperature_limit` |
+  | `set_system_config` | HC Emergency Temperature | `hc_emergency_temp_c` | `heating_flow_temperature_setpoint_maximum_at_heat_pump_fault` |
+  | `set_system_config` | HWC Max Flow Temperature | `hwc_max_flow_temp_c` | `dhw_flow_temperature_setpoint_maximum` |
+  | `set_system_config` | Max Room Humidity | `max_room_humidity_pct` | `room_humidity_limit_maximum` |
+  | `set_system_config` | Installer Phone | `installer_phone` | `installer_phone_number` |
+  | `set_system_config` | Installer Menu Code | `installer_menu_code` | `installer_access_code` |
+  | `set_boiler_config` | CH Max Flow Setpoint | `flowset_hc_max_c` | `maximum_heating_flow_temperature_setpoint` |
+  | `set_boiler_config` | DHW Max Flow Setpoint | `flowset_hwc_max_c` | `maximum_dhw_flow_temperature_setpoint` |
+  | `set_boiler_config` | CH Partload | `partload_hc_kw` | `heating_partial_load_power` |
+  | `set_boiler_config` | DHW Partload | `partload_hwc_kw` | `dhw_partial_load_power` |
+  | `set_boiler_config` | Boiler Installer Phone | `phone_number` | `installer_phone_number` |
+
+  `maintenance_date` and `installer_name` were already canonical. The Boiler
+  Installer Menu Code control keeps sending `installer_menu_code`: the meaning
+  of its register (B509 selector 0x4904) is open, so the gateway keeps its
+  current key for it and this write keeps failing as before.
+
+  | Published system field (former) | Field read |
+  |---|---|
+  | `system.state.system_water_pressure` | `system.state.water_pressure` |
+  | `system.state.system_flow_temperature` | `system.state.flow_temperature` |
+  | `system.config.adaptive_heating_curve` | `system.config.adaptive_heating_curve_enabled` |
+  | `system.config.heating_circuit_bivalence_point` | `system.config.heating_outdoor_bivalence_temperature_limit` |
+  | `system.config.max_room_humidity` | `system.config.room_humidity_limit_maximum` |
+  | `system.config.installer_menu_code` | `system.config.installer_access_code` |
+  | `system.properties.system_scheme` | `system.properties.hydraulic_scheme_code` |
+  | `system.properties.module_configuration_vr71` | `system.properties.functional_module_configuration_code` |
+
+  The boiler numbers and the two installer phone texts read their
+  unchanged fields (`flowset_hc_max_c`, `flowset_hwc_max_c`,
+  `partload_hc_kw`, `partload_hwc_kw`, `phone_number`, `installer_phone`)
+  and write the keys above.
+
+  | Former unique ID (after `<entry_id>-`) | New unique ID |
+  |---|---|
+  | `system-sensor-system_water_pressure` | `system-sensor-water_pressure` |
+  | `system-sensor-system_flow_temperature` | `system-sensor-flow_temperature` |
+  | `system-sensor-system_scheme` | `system-sensor-hydraulic_scheme_code` |
+  | `system-binary-adaptive_heating_curve` | `system-binary-adaptive_heating_curve_enabled` |
+  | `system-number-hc_bivalence_point_c` | `system-number-heating_outdoor_bivalence_temperature_limit` |
+  | `system-number-dhw_bivalence_point_c` | `system-number-dhw_outdoor_bivalence_temperature_limit` |
+  | `system-number-hc_emergency_temp_c` | `system-number-heating_flow_temperature_setpoint_maximum_at_heat_pump_fault` |
+  | `system-number-hwc_max_flow_temp_c` | `system-number-dhw_flow_temperature_setpoint_maximum` |
+  | `system-number-max_room_humidity_pct` | `system-number-room_humidity_limit_maximum` |
+  | `system-text-installer_phone` | `system-text-installer_phone_number` |
+  | `system-text-installer_menu_code` | `system-text-installer_access_code` |
+  | `boiler-number-flowset_hc_max_c` | `boiler-number-maximum_heating_flow_temperature_setpoint` |
+  | `boiler-number-flowset_hwc_max_c` | `boiler-number-maximum_dhw_flow_temperature_setpoint` |
+  | `boiler-number-partload_hc_kw` | `boiler-number-heating_partial_load_power` |
+  | `boiler-number-partload_hwc_kw` | `boiler-number-dhw_partial_load_power` |
+  | `boiler-text-phone_number` | `boiler-text-installer_phone_number` |
+
+  `system-text-installer_name`, `system-date-maintenance_date`,
+  `boiler-text-installer_menu_code` and every other unique ID are unchanged.
+  The registry entries under the former unique IDs are no longer provided.
+  The automatic enabling and disabling of sparse entities follows the new
+  unique IDs of the system and boiler installer texts and of the boiler
+  numbers.
 - Consume snake_case GraphQL roots, identity/provenance keys and the canonical
   zone room temperature and humidity fields; preserve unknown/zero values,
   revision vectors and partial last-known-good data.

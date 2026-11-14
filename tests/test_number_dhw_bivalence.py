@@ -107,7 +107,7 @@ def _bound(minimum=-20, maximum=20, source="controller_profile"):
     return {"min_c": minimum, "max_c": maximum, "source": source}
 
 
-def _entity(modules, config, *, field="dhw_bivalence_point_c", entry_id="synthetic-entry"):
+def _entity(modules, config, *, field="dhw_outdoor_bivalence_temperature_limit", entry_id="synthetic-entry"):
     coordinator = _Coordinator({"config": config})
     client = _Client()
     status = _Coordinator({"admission": {"trusted": True}})
@@ -147,7 +147,7 @@ def test_supplied_bound_controls_limits_and_validation(modules, minimum, maximum
         _set(number, value)
     assert client.writes == [
         (modules.number._SET_SYSTEM_CONFIG_MUTATION, {
-            "field": "dhw_bivalence_point_c", "value": str(float(value)),
+            "field": "dhw_outdoor_bivalence_temperature_limit", "value": str(float(value)),
         }) for value in (minimum, maximum)
     ]
     assert coordinator.refresh_requests == 2
@@ -193,11 +193,11 @@ def _cycle(module, query, config, *, marker=1):
         (query, {"system": {
             "state": {"outdoor_temperature": marker},
             "config": config,
-            "properties": {"system_scheme": marker},
+            "properties": {"hydraulic_scheme_code": marker},
         }}),
         (module.QUERY_SYSTEM_GATEWAY_METADATA, {"system": {"gateway_brand": "Synthetic"}}),
         (module.QUERY_SYSTEM_INSTALLER, {"system": {"config": {"maintenance_date": None}}}),
-        (module.QUERY_SYSTEM_SENSITIVE, {"system": {"config": {"installer_menu_code": None}}}),
+        (module.QUERY_SYSTEM_SENSITIVE, {"system": {"config": {"installer_access_code": None}}}),
     ]
 
 
@@ -250,7 +250,7 @@ def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, mi
     assert "source\n" in module.QUERY_SYSTEM
     assert "dhw_bivalence_point_bound" not in module.QUERY_SYSTEM_LEGACY
     for marker in (1, 2):
-        config = {"dhw_bivalence_point": marker, "max_room_humidity": 40 + marker}
+        config = {"dhw_bivalence_point": marker, "room_humidity_limit_maximum": 40 + marker}
         client.actions = _cycle(module, module.QUERY_SYSTEM_LEGACY, config, marker=marker)
         if marker == 1:
             client.actions.insert(0, (module.QUERY_SYSTEM, missing))
@@ -261,8 +261,8 @@ def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, mi
         assert client.actions == []
         assert result == {
             "state": {"outdoor_temperature": marker},
-            "config": {**config, "maintenance_date": None, "installer_menu_code": None},
-            "properties": {"system_scheme": marker},
+            "config": {**config, "maintenance_date": None, "installer_access_code": None},
+            "properties": {"hydraulic_scheme_code": marker},
             "metadata": {"gateway_brand": "Synthetic"},
         }
         number, _, _, _ = _entity(modules, result["config"])
@@ -318,18 +318,18 @@ def test_valid_bound_does_not_bypass_admission_or_availability(modules, trusted,
 
 @pytest.mark.parametrize("entry_id", ["synthetic-entry-a", "synthetic-entry-b"])
 @pytest.mark.parametrize("field,minimum,maximum", [
-    ("dhw_bivalence_point_c", -20, 20),
-    ("hc_bivalence_point_c", -20, 30),
-    ("hc_emergency_temp_c", 20, 80),
-    ("hwc_max_flow_temp_c", 15, 80),
-    ("max_room_humidity_pct", 30, 80),
+    ("dhw_outdoor_bivalence_temperature_limit", -20, 20),
+    ("heating_outdoor_bivalence_temperature_limit", -20, 30),
+    ("heating_flow_temperature_setpoint_maximum_at_heat_pump_fault", 20, 80),
+    ("dhw_flow_temperature_setpoint_maximum", 15, 80),
+    ("room_humidity_limit_maximum", 30, 80),
 ])
 def test_system_number_identity_and_other_bounds_stay_scoped(modules, entry_id, field, minimum, maximum):
     number, coordinator, client, _ = _entity(
         modules, {"dhw_bivalence_point_bound": _bound(-3, 4)}, field=field, entry_id=entry_id
     )
     assert number._attr_unique_id == f"{entry_id}-system-number-{field}"
-    if field == "dhw_bivalence_point_c":
+    if field == "dhw_outdoor_bivalence_temperature_limit":
         assert (number.native_min_value, number.native_max_value) == (-3, 4)
         return
     assert (number.native_min_value, number.native_max_value) == (minimum, maximum)
@@ -339,6 +339,6 @@ def test_system_number_identity_and_other_bounds_stay_scoped(modules, entry_id, 
     assert client.writes == []
     _set(number, maximum)
     assert client.writes[0][1] == {
-        "field": field, "value": str(maximum) if field == "max_room_humidity_pct" else str(float(maximum)),
+        "field": field, "value": str(maximum) if field == "room_humidity_limit_maximum" else str(float(maximum)),
     }
     assert coordinator.refresh_requests == 1

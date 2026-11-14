@@ -276,7 +276,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     manufacturer=manufacturer,
                     regulator_device_id=regulator_device_id,
                     source="config",
-                    key="adaptive_heating_curve",
+                    key="adaptive_heating_curve_enabled",
                     label="Adaptive Heating Curve",
                     device_class=None,
                     entity_category=EntityCategory.DIAGNOSTIC,
@@ -678,7 +678,7 @@ class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if entity_category is not None:
             self._attr_entity_category = entity_category
         _SYSTEM_BINARY_ICONS: dict[str, str] = {
-            "adaptive_heating_curve": "mdi:chart-bell-curve-cumulative",
+            "adaptive_heating_curve_enabled": "mdi:chart-bell-curve-cumulative",
         }
         system_icon = _SYSTEM_BINARY_ICONS.get(key)
         if system_icon is not None:

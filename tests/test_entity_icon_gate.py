@@ -587,10 +587,9 @@ def test_status_specific_icons() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_system_scheme_has_icon() -> None:
-    for field in SYSTEM_SENSOR_FIELDS:
-        if field.key == "system_scheme":
-            assert field.icon == "mdi:sitemap-outline"
+def test_hydraulic_scheme_code_has_icon() -> None:
+    field = next(field for field in SYSTEM_SENSOR_FIELDS if field.key == "hydraulic_scheme_code")
+    assert field.icon == "mdi:sitemap-outline"
 
 
 # ---------------------------------------------------------------------------
@@ -842,14 +841,14 @@ def test_solar_binary_sensor_icons() -> None:
 
 
 def test_system_binary_adaptive_heating_curve_icon() -> None:
-    coord = _FakeCoordinator({"config": {"adaptive_heating_curve": True}})
+    coord = _FakeCoordinator({"config": {"adaptive_heating_curve_enabled": True}})
     sensor = HelianthusSystemBinarySensor(
         coordinator=coord,
         entry_id="test",
         manufacturer="V",
         regulator_device_id=("r", "x"),
         source="config",
-        key="adaptive_heating_curve",
+        key="adaptive_heating_curve_enabled",
         label="Adaptive Heating Curve",
         device_class=None,
         entity_category="diagnostic",
@@ -914,12 +913,13 @@ def test_system_number_fields_all_have_icons() -> None:
 
 def test_system_number_specific_icons() -> None:
     expected = {
-        "hc_bivalence_point_c": "mdi:thermometer",
-        "dhw_bivalence_point_c": "mdi:thermometer",
-        "hc_emergency_temp_c": "mdi:thermometer-alert",
-        "hwc_max_flow_temp_c": "mdi:thermometer-chevron-up",
-        "max_room_humidity_pct": "mdi:water-percent",
+        "heating_outdoor_bivalence_temperature_limit": "mdi:thermometer",
+        "dhw_outdoor_bivalence_temperature_limit": "mdi:thermometer",
+        "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault": "mdi:thermometer-alert",
+        "dhw_flow_temperature_setpoint_maximum": "mdi:thermometer-chevron-up",
+        "room_humidity_limit_maximum": "mdi:water-percent",
     }
+    assert {field.mutation_field for field in _SYSTEM_NUMBER_FIELDS} == set(expected)
     for field in _SYSTEM_NUMBER_FIELDS:
         if field.mutation_field in expected:
             assert field.icon == expected[field.mutation_field], (
@@ -937,22 +937,22 @@ def test_cylinder_number_fields_all_have_icons() -> None:
 def test_boiler_number_fields_all_have_icons() -> None:
     for field in _BOILER_NUMBER_FIELDS:
         assert field.icon is not None, (
-            f"BoilerNumber[{field.key}] missing icon (ADR-026)"
+            f"BoilerNumber[{field.mutation_field}] missing icon (ADR-026)"
         )
 
 
 def test_boiler_number_specific_icons() -> None:
     expected = {
-        "flowset_hc_max_c": "mdi:thermometer-chevron-up",
-        "flowset_hwc_max_c": "mdi:thermometer-chevron-up",
-        "partload_hc_kw": "mdi:lightning-bolt",
-        "partload_hwc_kw": "mdi:lightning-bolt",
+        "maximum_heating_flow_temperature_setpoint": "mdi:thermometer-chevron-up",
+        "maximum_dhw_flow_temperature_setpoint": "mdi:thermometer-chevron-up",
+        "heating_partial_load_power": "mdi:lightning-bolt",
+        "dhw_partial_load_power": "mdi:lightning-bolt",
     }
+    assert {field.mutation_field for field in _BOILER_NUMBER_FIELDS} == set(expected)
     for field in _BOILER_NUMBER_FIELDS:
-        if field.key in expected:
-            assert field.icon == expected[field.key], (
-                f"BoilerNumber[{field.key}] icon should be {expected[field.key]}"
-            )
+        assert field.icon == expected[field.mutation_field], (
+            f"BoilerNumber[{field.mutation_field}] icon should be {expected[field.mutation_field]}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1018,7 +1018,7 @@ def test_all_icons_are_mdi_prefixed() -> None:
             all_icons.append((f"CYL_NUM[{field.key}]", field.icon))
     for field in _BOILER_NUMBER_FIELDS:
         if field.icon:
-            all_icons.append((f"BOILER_NUM[{field.key}]", field.icon))
+            all_icons.append((f"BOILER_NUM[{field.mutation_field}]", field.icon))
 
     for label, icon in all_icons:
         assert icon.startswith("mdi:"), f"{label} icon '{icon}' must start with 'mdi:'"
