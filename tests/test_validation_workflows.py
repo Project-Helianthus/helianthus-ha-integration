@@ -1,5 +1,6 @@
 """Static hosted-validation contracts; actionlint validates YAML syntax separately."""
 import ast
+import json
 from pathlib import Path
 import re
 import unittest
@@ -63,14 +64,23 @@ class ValidationWorkflowTests(unittest.TestCase):
         self.assertEqual(text.count("home-assistant/actions/hassfest@"), 1)
         self.assertIn("runs-on: ubuntu-latest", text)
 
-    def test_hassfest_reports_findings_until_follow_up_makes_it_blocking(self):
+    def test_hassfest_job_blocks(self):
         text = job(workflow("ha-validation.yml"), "hassfest")
-        # Step level: the step reports its findings while the job, and so the check run, stays green.
-        self.assertIn("        continue-on-error: true\n", text)
-        self.assertIn("issue #424", text)
-        self.assertIn("then makes this job blocking", text)
-        # Never at job level: a job-level continue-on-error still reports the job as failed.
-        self.assertNotRegex(text, r"(?m)^    continue-on-error:")
+        # Neither the step nor the job may tolerate a hassfest failure.
+        self.assertNotIn("continue-on-error", text)
+
+    def test_manifest_keys_are_in_hassfest_order(self):
+        text = (ROOT / "custom_components/helianthus/manifest.json").read_text()
+        keys = [key for key, _ in json.loads(text, object_pairs_hook=list)]
+        self.assertEqual(keys[:2], ["domain", "name"])
+        self.assertEqual(keys[2:], sorted(keys[2:]))
+
+    def test_services_description_declares_no_response_option(self):
+        text = (ROOT / "custom_components/helianthus/services.yaml").read_text()
+        services = re.findall(r"(?m)^([a-z0-9_]+):\n", text)
+        self.assertGreater(len(services), 0)
+        # Service responses are declared where the service is registered, not in its description.
+        self.assertEqual(re.findall(r"(?m)^\s+response:", text), [])
 
     def test_readability_runs_guard_and_workflow_tests_without_refreshing_debt(self):
         text = job(workflow("readability.yml"), "readability")

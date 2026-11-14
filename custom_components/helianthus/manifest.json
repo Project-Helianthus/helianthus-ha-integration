@@ -1,13 +1,13 @@
 {
   "domain": "helianthus",
   "name": "Helianthus",
-  "version": "0.0.0",
-  "documentation": "https://github.com/Project-Helianthus/helianthus-ha-integration",
-  "requirements": [],
   "codeowners": ["@d3vi1"],
   "config_flow": true,
+  "documentation": "https://github.com/Project-Helianthus/helianthus-ha-integration",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "0.0.0",
   "zeroconf": [
     { "type": "_helianthus-graphql._tcp.local." }
-  ],
-  "iot_class": "local_polling"
+  ]
 }

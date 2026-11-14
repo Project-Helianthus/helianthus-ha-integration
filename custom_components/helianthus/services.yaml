@@ -1,3 +1,5 @@
+# Service responses are not a services description option. Each service below is
+# registered in code as response only; the comment lists the keys it returns.
 eebus_admin_snapshot:
   name: eeBUS snapshot
   description: Read one closed operator view.
@@ -11,14 +13,7 @@ eebus_admin_snapshot:
       selector:
         select:
           options: [status, trusted, connected, discovered, candidate]
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      data:
-        selector:
-          object: {}
+  # response: state_revision: number, data: object
 eebus_admin_spine_root:
   name: eeBUS SPINE root
   description: Read one bounded root page.
@@ -31,14 +26,7 @@ eebus_admin_spine_root:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      data:
-        selector:
-          object: {}
+  # response: state_revision: number, data: object
 eebus_admin_spine_children:
   name: eeBUS SPINE children
   description: Read one bounded child page.
@@ -59,14 +47,7 @@ eebus_admin_spine_children:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      data:
-        selector:
-          object: {}
+  # response: state_revision: number, data: object
 eebus_admin_spine_continue:
   name: eeBUS SPINE continuation
   description: Continue one bounded page.
@@ -91,14 +72,7 @@ eebus_admin_spine_continue:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      data:
-        selector:
-          object: {}
+  # response: state_revision: number, data: object
 eebus_admin_open_pairing_window:
   name: Open eeBUS pairing window
   description: Open a bounded pairing window.
@@ -123,17 +97,7 @@ eebus_admin_open_pairing_window:
         number:
           min: 1
           max: 300
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_close_pairing_window:
   name: Close eeBUS pairing window
   description: Close the current pairing window.
@@ -152,17 +116,7 @@ eebus_admin_close_pairing_window:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_select_observation:
   name: Select eeBUS observation
   description: Select one observed partner after independent SKI comparison.
@@ -189,20 +143,7 @@ eebus_admin_select_observation:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
-      selection_id:
-        selector:
-          text: {}
+  # response: state_revision: number, outcome: text, replayed: boolean, selection_id: text
 eebus_admin_connect_selection:
   name: Connect eeBUS selection
   description: Connect one server-held selection.
@@ -225,17 +166,7 @@ eebus_admin_connect_selection:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_confirm_candidate:
   name: Confirm eeBUS candidate
   description: Confirm the active candidate after independent SKI comparison.
@@ -258,17 +189,7 @@ eebus_admin_confirm_candidate:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_cancel_candidate:
   name: Cancel eeBUS candidate
   description: Cancel the active candidate.
@@ -287,17 +208,7 @@ eebus_admin_cancel_candidate:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_retry_trusted_partner:
   name: Retry eeBUS trusted partner
   description: Request retry for one trusted partner.
@@ -320,17 +231,7 @@ eebus_admin_retry_trusted_partner:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
 eebus_admin_untrust_partner:
   name: Untrust eeBUS partner
   description: Revoke one trusted partner.
@@ -353,14 +254,4 @@ eebus_admin_untrust_partner:
       required: true
       selector:
         text: {}
-  response:
-    fields:
-      state_revision:
-        selector:
-          number: {}
-      outcome:
-        selector:
-          text: {}
-      replayed:
-        selector:
-          boolean: {}
+  # response: state_revision: number, outcome: text, replayed: boolean
