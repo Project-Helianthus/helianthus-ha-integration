@@ -120,6 +120,27 @@
   sensor platform reads the record through a public, documented helper of
   entry setup. Unique IDs, entity IDs, device identifiers and names are
   unchanged.
+- Respect a user's enable of a sparse entity and bound the FM5 mode and
+  zone-parent mapping reloads. The automatic disable of a null sparse entity
+  now acts only on an enabled entity that has not been seen disabled during
+  the Home Assistant run: an entity that was disabled, by the integration,
+  the user or anything else, and is then enabled again stays enabled across
+  trusted clean-ups and reloads. Setup records that enable before forwarding
+  platforms, so optional sensors with null values are created on that reload.
+  The integration still enables only entities
+  it disabled itself, so a user-disabled entity stays disabled. The reloads
+  for an FM5 mode that enters or leaves the interpreted state and for a
+  changed zone-parent mapping are each limited to one per trigger and entry
+  per ten minutes, ten polls at the default scan interval. A lasting change
+  still schedules exactly one reload; when the input still differs at a poll
+  after the ten minutes, one further reload follows and is built from the
+  value observed then, so a flapping input settles on its last observed value
+  at that reload. These records live in the integration's domain data next
+  to the sparse-entity record, hold across reloads, are cleared when Home
+  Assistant restarts and are dropped with it for an entry that is no longer
+  configured; an enable made before a restart is therefore not known to the
+  next run. Unique IDs, entity IDs, device identifiers and names are
+  unchanged.
 - Declare the `invoke` parameters of zone, hot-water and schedule-helper writes
   with the gateway's `json` scalar so the gateway accepts these writes again.
 - Give one asset one Home Assistant device across the PV, Storage and EVSE
