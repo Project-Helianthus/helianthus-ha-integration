@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
@@ -234,6 +235,33 @@ async def _async_forward_platforms_and_finalize(
 
 
 _SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
+_SPARSE_SEEN_DISABLED_KEY = "_sparse_seen_disabled_unique_ids"
+_TRIGGER_RELOAD_KEY = "_trigger_reload_times"
+FM5_MODE_TRIGGER = "fm5_mode"
+ZONE_PARENT_TRIGGER = "zone_parent_mapping"
+# The FM5 mode trigger and the zone-parent mapping trigger each schedule at
+# most one reload per period. The sparse-entity rule bounds by the Home
+# Assistant run; that period cannot serve here, because a later lasting change
+# of the mode or the mapping must still reach the entities. Ten minutes is ten
+# polls at the default scan interval: an input that flips on every poll costs
+# at most six brief unavailabilities of the entry per hour instead of sixty,
+# and a lasting change is applied within ten minutes of the previous reload.
+TRIGGER_RELOAD_PERIOD_SECONDS = 600.0
+
+
+def _reload_clock() -> float:
+    """Return the monotonic seconds in which the trigger period is measured."""
+    return time.monotonic()
+
+
+def _entry_record(
+    hass: object, entry_id: str, active_entry_ids: set[str], key: str, factory: type
+) -> object:
+    """Return one entry's record under ``key``; drop the records of removed entries."""
+    store = hass.data.setdefault(DOMAIN, {}).setdefault(key, {})
+    for removed_entry_id in set(store) - set(active_entry_ids) - {entry_id}:
+        del store[removed_entry_id]
+    return store.setdefault(entry_id, factory())
 
 
 def _sparse_reload_unique_ids(
@@ -249,10 +277,96 @@ def _sparse_reload_unique_ids(
     ends with the Home Assistant run. The sets of entries that are no longer
     configured are dropped here.
     """
-    store = hass.data.setdefault(DOMAIN, {}).setdefault(key, {})
-    for removed_entry_id in set(store) - set(active_entry_ids) - {entry_id}:
-        del store[removed_entry_id]
-    return store.setdefault(entry_id, set())
+    return cast(set, _entry_record(hass, entry_id, active_entry_ids, key, set))
+
+
+def _entry_run_records(
+    hass: object,
+    entry_id: str,
+    active_entry_ids: set[str],
+    entity_entries: object,
+) -> tuple[set[str], set[str], dict[str, float]]:
+    """Return the run records of one entry, kept and pruned together.
+
+    They are the sparse unique IDs that have caused a reload, the unique IDs
+    seen disabled in the registry during this run (the entities disabled now
+    are added here), and the time of the last reload of each bounded trigger.
+    All three live in the domain data, hold across reloads of the entry, end
+    with the Home Assistant run, and are dropped together for an entry that is
+    no longer configured.
+    """
+    seen_disabled = _sparse_reload_unique_ids(
+        hass, entry_id, active_entry_ids, _SPARSE_SEEN_DISABLED_KEY
+    )
+    seen_disabled.update(
+        str(entity_entry.unique_id or "")
+        for entity_entry in entity_entries
+        if entity_entry.platform == DOMAIN and entity_entry.disabled_by is not None
+    )
+    return (
+        _sparse_reload_unique_ids(hass, entry_id, active_entry_ids),
+        seen_disabled,
+        cast(dict, _entry_record(hass, entry_id, active_entry_ids, _TRIGGER_RELOAD_KEY, dict)),
+    )
+
+
+def _schedule_bounded_trigger_reload(
+    reload_times: dict[str, float],
+    trigger: str,
+    schedule_reload: Callable[[str], None],
+    reason: str,
+) -> None:
+    """Schedule the reload of one trigger unless it had one within the period.
+
+    The caller asks on every poll at which the input differs from what the
+    running setup was built with. Inside ``TRIGGER_RELOAD_PERIOD_SECONDS``
+    after the trigger's last reload the request is dropped. At the first poll
+    after the period at which the input still differs, one further reload is
+    scheduled and a new period starts. The setup after that reload is built
+    from the value observed then, so a flapping input settles on its last
+    observed value at the time of that reload.
+    """
+    now = _reload_clock()
+    last = reload_times.get(trigger)
+    if last is not None and now - last < TRIGGER_RELOAD_PERIOD_SECONDS:
+        _LOGGER.debug("Helianthus reload for %s held until its period ends: %s", trigger, reason)
+        return
+    reload_times[trigger] = now
+    schedule_reload(reason)
+
+
+def _sparse_entities_to_disable(
+    entity_entries: tuple,
+    seen_disabled: set[str],
+    reloaded: set[str],
+    is_candidate: Callable[[str], bool],
+    is_live: Callable[[str], bool],
+) -> list:
+    """Return the null sparse entities that the automatic disable may act on.
+
+    Rule: the automatic disable acts only on an enabled sparse entity that
+    has not been seen disabled during this Home Assistant run and has not had
+    its sparse reload. An entity that was disabled, by the integration, the
+    user or anything else, and is enabled again was enabled by an action (the
+    user's, or the integration's own enable, which also spends its reload), so
+    it stays enabled. Every disabled sparse entity, and every entity returned
+    here, is recorded in ``seen_disabled``. The automatic enable acts only on
+    entities that the integration disabled, so a user-disabled entity stays
+    disabled.
+    """
+    selected = []
+    for entity_entry in entity_entries:
+        unique_id = str(entity_entry.unique_id or "")
+        if entity_entry.platform != DOMAIN or not is_candidate(unique_id):
+            continue
+        if entity_entry.disabled_by is not None:
+            seen_disabled.add(unique_id)
+            continue
+        if unique_id in reloaded or unique_id in seen_disabled or is_live(unique_id):
+            continue
+        seen_disabled.add(unique_id)
+        selected.append(entity_entry)
+    return selected
 
 
 def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> bool:
@@ -1010,7 +1124,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"daemon-{entry.entry_id}-admission_repair_code",
         }
     )
-    sparse_reloaded_ids = _sparse_reload_unique_ids(hass, entry.entry_id, active_entry_ids)
+    sparse_reloaded_ids, sparse_seen_disabled_ids, trigger_reload_times = _entry_run_records(
+        hass,
+        entry.entry_id,
+        active_entry_ids,
+        er.async_entries_for_config_entry(entity_registry, entry.entry_id),
+    )
     boiler_temp_unique_id_re = re.compile(
         rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
     )
@@ -1510,17 +1629,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 integration_disabler,
             )
         disabled = 0
-        for entity_entry in _entry_entities():
-            if entity_entry.platform != DOMAIN:
-                continue
-            if entity_entry.disabled_by is not None:
-                continue
-            unique_id = str(entity_entry.unique_id or "")
-            # An entity that has caused a reload in this run stays enabled.
-            if unique_id in sparse_reloaded_ids or not _is_sparse_entity_candidate(unique_id):
-                continue
-            if _is_sparse_entity_live(unique_id):
-                continue
+        # Only an enabled null sparse entity that no action has touched in
+        # this run: one that was disabled and is enabled again (by the user,
+        # or by the integration after its reload) stays enabled. See
+        # _sparse_entities_to_disable for the full rule.
+        for entity_entry in _sparse_entities_to_disable(
+            _entry_entities(),
+            sparse_seen_disabled_ids,
+            sparse_reloaded_ids,
+            _is_sparse_entity_candidate,
+            _is_sparse_entity_live,
+        ):
             entity_registry.async_update_entity(
                 entity_entry.entity_id,
                 disabled_by=integration_disabler,
@@ -1757,7 +1876,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             current_zone_parent_ids,
             unresolved,
         ):
-            schedule_reload("zone parent mapping changed")
+            _schedule_bounded_trigger_reload(
+                trigger_reload_times, ZONE_PARENT_TRIGGER, schedule_reload, "zone parent mapping changed"
+            )
             return
         if _semantic_inventory_became_available(payload, known_zones, known_has_dhw):
             schedule_reload("semantic inventory became available")
@@ -1798,7 +1919,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             current_zone_parent_ids,
             unresolved,
         ):
-            schedule_reload("zone parent mapping changed")
+            _schedule_bounded_trigger_reload(
+                trigger_reload_times, ZONE_PARENT_TRIGGER, schedule_reload, "zone parent mapping changed"
+            )
             return
         auto_enable_sparse_entities("radio update")
         if current_keys - known_radio_bus_keys:
@@ -1814,10 +1937,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             index = parse_optional_int(cylinder.get("index"))
             if index is not None and index >= 0:
                 current_indexes.add(index)
-        if mode != known_fm5_mode:
-            if "INTERPRETED" in {mode, known_fm5_mode}:
-                schedule_reload("fm5 semantic mode changed")
-                return
+        if mode != known_fm5_mode and "INTERPRETED" in {mode, known_fm5_mode}:
+            _schedule_bounded_trigger_reload(
+                trigger_reload_times, FM5_MODE_TRIGGER, schedule_reload, "fm5 semantic mode changed"
+            )
+            return
         if mode == "INTERPRETED" and (current_indexes - known_cylinder_indexes):
             schedule_reload("cylinder inventory became available")
             return
