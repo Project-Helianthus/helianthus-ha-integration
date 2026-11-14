@@ -74,6 +74,12 @@
   asset, the entities move to the owning device and the device they leave
   stays in the device registry without entities; removing it is an operator
   action outside the integration.
+- Fix the two hassfest findings: the manifest keys are now in hassfest's
+  order (domain, name, then alphabetical) with every value unchanged, and
+  `services.yaml` no longer declares the invalid `response` option under the
+  twelve eeBUS administration services; each keeps its returned keys as a
+  comment, and the code still registers it as response only. No runtime code
+  changes. The hassfest job now blocks.
 
 
 - Share byte-address parsing: reject boolean and out-of-range addresses, use
