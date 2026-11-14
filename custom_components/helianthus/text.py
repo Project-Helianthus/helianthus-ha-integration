@@ -38,7 +38,8 @@ mutation SetBoilerConfig($field: String!, $value: String!) {
 
 @dataclass(frozen=True)
 class InstallerTextField:
-    key: str
+    read_key: str
+    write_key: str
     label: str
     max_length: int
     source: str  # "system" or "boiler"
@@ -46,12 +47,12 @@ class InstallerTextField:
 
 
 _SYSTEM_TEXT_FIELDS = [
-    InstallerTextField(key="installer_name", label="Installer Name", max_length=12, source="system"),
-    InstallerTextField(key="installer_phone", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
+    InstallerTextField(read_key="installer_name", write_key="installer_name", label="Installer Name", max_length=12, source="system"),
+    InstallerTextField(read_key="installer_phone", write_key="installer_phone_number", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
 ]
 
 _BOILER_TEXT_FIELDS = [
-    InstallerTextField(key="phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
+    InstallerTextField(read_key="phone_number", write_key="installer_phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
 ]
 
 
@@ -66,7 +67,7 @@ class InstallerMenuCodeField:
 
 
 _SYSTEM_MENU_CODE_FIELD = InstallerMenuCodeField(
-    key="installer_menu_code", label="Installer Menu Code", max_value=999, digits=3, source="system",
+    key="installer_access_code", label="Installer Menu Code", max_value=999, digits=3, source="system",
 )
 
 _BOILER_MENU_CODE_FIELD = InstallerMenuCodeField(
@@ -190,7 +191,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._field = field
-        self._attr_unique_id = f"{entry_id}-system-text-{field.key}"
+        self._attr_unique_id = f"{entry_id}-system-text-{field.write_key}"
         self._attr_name = field.label
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
@@ -213,11 +214,11 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
     def native_value(self) -> str | None:
         payload = self.coordinator.data or {}
         config = payload.get("config", {})
-        value = config.get(self._field.key)
+        value = config.get(self._field.read_key)
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
-        if self._field.key == "installer_phone":
+        if self._field.write_key == "installer_phone_number":
             allowed = set("0123456789+() ")
             for i, ch in enumerate(value):
                 if ch not in allowed:
@@ -232,7 +233,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
             raise HomeAssistantError("GraphQL client is unavailable")
         _assert_admission_trusted(self._status_coordinator)
 
-        variables = {"field": self._field.key, "value": value}
+        variables = {"field": self._field.write_key, "value": value}
         try:
             payload = await self._client.mutation(_SET_SYSTEM_CONFIG_MUTATION, variables)
         except (GraphQLClientError, GraphQLResponseError) as exc:
@@ -271,7 +272,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._field = field
-        self._attr_unique_id = f"{entry_id}-boiler-text-{field.key}"
+        self._attr_unique_id = f"{entry_id}-boiler-text-{field.write_key}"
         self._attr_name = field.label
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
@@ -295,7 +296,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         payload = self.coordinator.data or {}
         boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
-        value = config.get(self._field.key)
+        value = config.get(self._field.read_key)
         return str(value) if value is not None else None
 
     async def async_set_value(self, value: str) -> None:
@@ -313,7 +314,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
             raise HomeAssistantError("GraphQL client is unavailable")
         _assert_admission_trusted(self._status_coordinator)
 
-        variables = {"field": self._field.key, "value": value_clean}
+        variables = {"field": self._field.write_key, "value": value_clean}
         try:
             payload = await self._client.mutation(_SET_BOILER_CONFIG_MUTATION, variables)
         except (GraphQLClientError, GraphQLResponseError) as exc:

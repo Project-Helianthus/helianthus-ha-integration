@@ -745,16 +745,16 @@ def test_system_query_returns_system_payload() -> None:
     payload = {
         "system": {
             "state": {
-                "system_water_pressure": 1.7,
+                "water_pressure": 1.7,
                 "maintenance_due": False,
             },
             "config": {
-                "adaptive_heating_curve": True,
-                "max_room_humidity": 60,
+                "adaptive_heating_curve_enabled": True,
+                "room_humidity_limit_maximum": 60,
             },
             "properties": {
-                "system_scheme": 3,
-                "module_configuration_vr71": 1,
+                "hydraulic_scheme_code": 3,
+                "functional_module_configuration_code": 1,
             },
         }
     }
@@ -763,9 +763,9 @@ def test_system_query_returns_system_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["state"]["system_water_pressure"] == 1.7
-    assert data["config"]["adaptive_heating_curve"] is True
-    assert data["properties"]["system_scheme"] == 3
+    assert data["state"]["water_pressure"] == 1.7
+    assert data["config"]["adaptive_heating_curve_enabled"] is True
+    assert data["properties"]["hydraulic_scheme_code"] == 3
     assert client.calls[0] == QUERY_SYSTEM
 
 
@@ -1575,8 +1575,8 @@ def test_system_gateway_metadata_is_optional_and_preserves_existing_system_paylo
     payload = {
         "system": {
             "state": {"outdoor_temperature": 0.0},
-            "config": {"max_room_humidity": 0},
-            "properties": {"system_scheme": 0},
+            "config": {"room_humidity_limit_maximum": 0},
+            "properties": {"hydraulic_scheme_code": 0},
         }
     }
     client = _ScriptedClient(
@@ -1594,8 +1594,8 @@ def test_system_gateway_metadata_is_optional_and_preserves_existing_system_paylo
     result = asyncio.run(coordinator._async_update_data())
 
     assert result["state"] == {"outdoor_temperature": 0.0}
-    assert result["config"] == {"max_room_humidity": 0}
-    assert result["properties"] == {"system_scheme": 0}
+    assert result["config"] == {"room_humidity_limit_maximum": 0}
+    assert result["properties"] == {"hydraulic_scheme_code": 0}
     assert result["metadata"] == {}
     assert client.calls[:2] == [QUERY_SYSTEM, QUERY_SYSTEM_GATEWAY_METADATA]
 
@@ -1610,8 +1610,8 @@ def test_system_optional_query_schema_failure_preserves_base_payload_and_other_a
             {
                 "system": {
                     "state": {"outdoor_temperature": 4.5},
-                    "config": {"max_room_humidity": 60},
-                    "properties": {"system_scheme": 3},
+                    "config": {"room_humidity_limit_maximum": 60},
+                    "properties": {"hydraulic_scheme_code": 3},
                 }
             },
             {},
@@ -1622,7 +1622,7 @@ def test_system_optional_query_schema_failure_preserves_base_payload_and_other_a
                     }
                 ]
             ),
-            {"system": {"config": {"installer_menu_code": "1234"}}},
+            {"system": {"config": {"installer_access_code": "1234"}}},
         ]
     )
     coordinator = _build_system_coordinator(client)
@@ -1631,8 +1631,8 @@ def test_system_optional_query_schema_failure_preserves_base_payload_and_other_a
 
     assert result == {
         "state": {"outdoor_temperature": 4.5},
-        "config": {"max_room_humidity": 60, "installer_menu_code": "1234"},
-        "properties": {"system_scheme": 3},
+        "config": {"room_humidity_limit_maximum": 60, "installer_access_code": "1234"},
+        "properties": {"hydraulic_scheme_code": 3},
         "metadata": {},
     }
     assert coordinator.system_installer_available is False

@@ -153,7 +153,7 @@ CIRCUIT_SENSOR_FIELDS = [
 
 SYSTEM_SENSOR_FIELDS = [
     SystemSensorField(
-        key="system_water_pressure",
+        key="water_pressure",
         label="System Water Pressure",
         source="state",
         device_class=_SENSOR_DEVICE_CLASS_PRESSURE,
@@ -177,7 +177,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="system_flow_temperature",
+        key="flow_temperature",
         label="System Flow Temperature",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -203,7 +203,7 @@ SYSTEM_SENSOR_FIELDS = [
         optional=True,
     ),
     SystemSensorField(
-        key="system_scheme",
+        key="hydraulic_scheme_code",
         label="System Scheme",
         source="properties",
         entity_category=EntityCategory.DIAGNOSTIC,

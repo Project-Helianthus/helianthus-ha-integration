@@ -187,7 +187,7 @@ def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
 
     boiler_numbers = {
-        entity._field.key: entity
+        entity._field.config_key: entity
         for entity in entities
         if isinstance(entity, number_platform.HelianthusBoilerNumber)
     }
@@ -207,15 +207,15 @@ def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     boiler_numbers = [
         entity for entity in entities if isinstance(entity, number_platform.HelianthusBoilerNumber)
     ]
-    ch_max = next(entity for entity in boiler_numbers if entity._field.key == "flowset_hc_max_c")
-    dhw_partload = next(entity for entity in boiler_numbers if entity._field.key == "partload_hwc_kw")
+    ch_max = next(entity for entity in boiler_numbers if entity._field.config_key == "flowset_hc_max_c")
+    dhw_partload = next(entity for entity in boiler_numbers if entity._field.config_key == "partload_hwc_kw")
 
     asyncio.run(ch_max.async_set_native_value(68.0))
     asyncio.run(dhw_partload.async_set_native_value(21.5))
 
     assert [call["variables"]["field"] for call in client.calls] == [
-        "flowset_hc_max_c",
-        "partload_hwc_kw",
+        "maximum_heating_flow_temperature_setpoint",
+        "dhw_partial_load_power",
     ]
     assert [call["variables"]["value"] for call in client.calls] == ["68.0", "21.5"]
     assert boiler_coordinator.refresh_requests == 2
@@ -236,7 +236,7 @@ def test_boiler_number_write_fails_closed_when_admission_untrusted() -> None:
         entity
         for entity in entities
         if isinstance(entity, number_platform.HelianthusBoilerNumber)
-        and entity._field.key == "flowset_hc_max_c"
+        and entity._field.config_key == "flowset_hc_max_c"
     )
 
     with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):

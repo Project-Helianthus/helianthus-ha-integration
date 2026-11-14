@@ -94,7 +94,8 @@ class CylinderNumberField:
 
 @dataclass(frozen=True)
 class BoilerNumberField:
-    key: str
+    mutation_field: str
+    config_key: str
     label: str
     minimum: float
     maximum: float
@@ -140,8 +141,8 @@ _CIRCUIT_NUMBER_FIELDS = [
 
 _SYSTEM_NUMBER_FIELDS = [
     SystemNumberField(
-        mutation_field="hc_bivalence_point_c",
-        config_key="heating_circuit_bivalence_point",
+        mutation_field="heating_outdoor_bivalence_temperature_limit",
+        config_key="heating_outdoor_bivalence_temperature_limit",
         label="HC Bivalence Point",
         minimum=-20.0,
         maximum=30.0,
@@ -150,7 +151,7 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer",
     ),
     SystemNumberField(
-        mutation_field="dhw_bivalence_point_c",
+        mutation_field="dhw_outdoor_bivalence_temperature_limit",
         config_key="dhw_bivalence_point",
         label="DHW Bivalence Point",
         minimum=-20.0,
@@ -160,7 +161,7 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer",
     ),
     SystemNumberField(
-        mutation_field="hc_emergency_temp_c",
+        mutation_field="heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
         config_key="hc_emergency_temperature",
         label="HC Emergency Temperature",
         minimum=20.0,
@@ -170,7 +171,7 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer-alert",
     ),
     SystemNumberField(
-        mutation_field="hwc_max_flow_temp_c",
+        mutation_field="dhw_flow_temperature_setpoint_maximum",
         config_key="hwc_max_flow_temp_desired",
         label="HWC Max Flow Temperature",
         minimum=15.0,
@@ -180,8 +181,8 @@ _SYSTEM_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     SystemNumberField(
-        mutation_field="max_room_humidity_pct",
-        config_key="max_room_humidity",
+        mutation_field="room_humidity_limit_maximum",
+        config_key="room_humidity_limit_maximum",
         label="Max Room Humidity",
         minimum=30.0,
         maximum=80.0,
@@ -224,7 +225,8 @@ _CYLINDER_NUMBER_FIELDS = [
 
 _BOILER_NUMBER_FIELDS = [
     BoilerNumberField(
-        key="flowset_hc_max_c",
+        mutation_field="maximum_heating_flow_temperature_setpoint",
+        config_key="flowset_hc_max_c",
         label="CH Max Flow Setpoint",
         minimum=20.0,
         maximum=80.0,
@@ -233,7 +235,8 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
-        key="flowset_hwc_max_c",
+        mutation_field="maximum_dhw_flow_temperature_setpoint",
+        config_key="flowset_hwc_max_c",
         label="DHW Max Flow Setpoint",
         minimum=30.0,
         maximum=65.0,
@@ -242,7 +245,8 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:thermometer-chevron-up",
     ),
     BoilerNumberField(
-        key="partload_hc_kw",
+        mutation_field="heating_partial_load_power",
+        config_key="partload_hc_kw",
         label="CH Partload",
         minimum=0.0,
         maximum=40.0,
@@ -251,7 +255,8 @@ _BOILER_NUMBER_FIELDS = [
         icon="mdi:lightning-bolt",
     ),
     BoilerNumberField(
-        key="partload_hwc_kw",
+        mutation_field="dhw_partial_load_power",
+        config_key="partload_hwc_kw",
         label="DHW Partload",
         minimum=0.0,
         maximum=40.0,
@@ -392,7 +397,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         self._status_coordinator = status_coordinator
         self._boiler_device_id = boiler_device_id
         self._field = field
-        self._attr_unique_id = f"{entry_id}-boiler-number-{field.key}"
+        self._attr_unique_id = f"{entry_id}-boiler-number-{field.mutation_field}"
         self._attr_name = field.label
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
@@ -424,7 +429,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         payload = self.coordinator.data or {}
         boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config") if isinstance(boiler_status, dict) else {}
-        value = config.get(self._field.key)
+        value = config.get(self._field.config_key)
         if value is None:
             return None
         try:
@@ -441,7 +446,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
             raise HomeAssistantError("GraphQL client is unavailable")
         _assert_admission_trusted(self._status_coordinator)
 
-        variables = {"field": self._field.key, "value": str(float(value))}
+        variables = {"field": self._field.mutation_field, "value": str(float(value))}
         try:
             payload = await self._client.mutation(_SET_BOILER_CONFIG_MUTATION, variables)
         except (GraphQLClientError, GraphQLResponseError) as exc:
@@ -627,7 +632,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
 
     def _effective_bounds(self) -> tuple[float, float]:
         fallback = (self._field.minimum, self._field.maximum)
-        if self._field.mutation_field != "dhw_bivalence_point_c":
+        if self._field.mutation_field != "dhw_outdoor_bivalence_temperature_limit":
             return fallback
         payload = self.coordinator.data
         config = payload.get("config") if isinstance(payload, dict) else None
@@ -673,7 +678,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         minimum, maximum = self._effective_bounds()
         if value < minimum or value > maximum or (
-            self._field.mutation_field == "dhw_bivalence_point_c" and not math.isfinite(value)
+            self._field.mutation_field == "dhw_outdoor_bivalence_temperature_limit" and not math.isfinite(value)
         ):
             raise HomeAssistantError(
                 f"Value {value} outside allowed range [{minimum}, {maximum}]"

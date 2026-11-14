@@ -670,8 +670,8 @@ QUERY_SYSTEM = """
 query System {
   system {
     state {
-      system_water_pressure
-      system_flow_temperature
+      water_pressure
+      flow_temperature
       outdoor_temperature
       outdoor_temperature_avg24h
       maintenance_due
@@ -679,8 +679,8 @@ query System {
       hwc_cylinder_temperature_bottom
     }
     config {
-      adaptive_heating_curve
-      heating_circuit_bivalence_point
+      adaptive_heating_curve_enabled
+      heating_outdoor_bivalence_temperature_limit
       dhw_bivalence_point
       dhw_bivalence_point_bound {
         min_c
@@ -689,11 +689,11 @@ query System {
       }
       hc_emergency_temperature
       hwc_max_flow_temp_desired
-      max_room_humidity
+      room_humidity_limit_maximum
     }
     properties {
-      system_scheme
-      module_configuration_vr71
+      hydraulic_scheme_code
+      functional_module_configuration_code
     }
   }
 }
@@ -1338,7 +1338,7 @@ QUERY_SYSTEM_SENSITIVE = """
 query SystemSensitive {
   system {
     config {
-      installer_menu_code
+      installer_access_code
     }
   }
 }
@@ -1378,21 +1378,21 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "state",
             "config",
             "properties",
-            "system_water_pressure",
-            "system_flow_temperature",
+            "water_pressure",
+            "flow_temperature",
             "outdoor_temperature",
             "outdoor_temperature_avg24h",
             "maintenance_due",
             "hwc_cylinder_temperature_top",
             "hwc_cylinder_temperature_bottom",
-            "adaptive_heating_curve",
-            "heating_circuit_bivalence_point",
+            "adaptive_heating_curve_enabled",
+            "heating_outdoor_bivalence_temperature_limit",
             "dhw_bivalence_point",
             "hc_emergency_temperature",
             "hwc_max_flow_temp_desired",
-            "max_room_humidity",
-            "system_scheme",
-            "module_configuration_vr71",
+            "room_humidity_limit_maximum",
+            "hydraulic_scheme_code",
+            "functional_module_configuration_code",
         ]
 
         try:
@@ -1509,7 +1509,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     response_received=True,
                 )
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
+                if _is_missing_field_error(exc.errors, ["installer_access_code"]):
                     self._system_sensitive_available = next_optional_query_state(
                         self._system_sensitive_available,
                         schema_field_missing=True,

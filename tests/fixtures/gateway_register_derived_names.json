@@ -1,0 +1,77 @@
+{
+  "description": "The eight published system fields that the Home Assistant integration reads and that the gateway's register-derived names rename, with no alias. Each row carries the published GraphQL name before and after the rename, the GraphQL path after it and the B524 register the field is derived from. Source: the renamed rows of the gateway's register-derived name fixture (graphql/testdata/register_derived_names.json) and the B524 opcode 0x02 register-name fixture of helianthus-docs-ebus (protocols/vaillant/fixtures/b524-op02-register-names.csv). The before column is documentary only; the integration never requests it.",
+  "rows": [
+    {
+      "published_name_before": "system_water_pressure",
+      "published_name_after": "water_pressure",
+      "graphql_path": "system.state.water_pressure",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x0039",
+      "open_question": null
+    },
+    {
+      "published_name_before": "system_flow_temperature",
+      "published_name_after": "flow_temperature",
+      "graphql_path": "system.state.flow_temperature",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x004B",
+      "open_question": null
+    },
+    {
+      "published_name_before": "adaptive_heating_curve",
+      "published_name_after": "adaptive_heating_curve_enabled",
+      "graphql_path": "system.config.adaptive_heating_curve_enabled",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x0014",
+      "open_question": null
+    },
+    {
+      "published_name_before": "heating_circuit_bivalence_point",
+      "published_name_after": "heating_outdoor_bivalence_temperature_limit",
+      "graphql_path": "system.config.heating_outdoor_bivalence_temperature_limit",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x0023",
+      "open_question": null
+    },
+    {
+      "published_name_before": "max_room_humidity",
+      "published_name_after": "room_humidity_limit_maximum",
+      "graphql_path": "system.config.room_humidity_limit_maximum",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x000E",
+      "open_question": null
+    },
+    {
+      "published_name_before": "installer_menu_code",
+      "published_name_after": "installer_access_code",
+      "graphql_path": "system.config.installer_access_code",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x0076",
+      "open_question": null
+    },
+    {
+      "published_name_before": "system_scheme",
+      "published_name_after": "hydraulic_scheme_code",
+      "graphql_path": "system.properties.hydraulic_scheme_code",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x0036",
+      "open_question": null
+    },
+    {
+      "published_name_before": "module_configuration_vr71",
+      "published_name_after": "functional_module_configuration_code",
+      "graphql_path": "system.properties.functional_module_configuration_code",
+      "opcode": "0x02",
+      "group": "0x00",
+      "register": "0x002F",
+      "open_question": "Candidate interpretation, unconfirmed on the wire: a configuration code of a functional module kind (the VR71 module); the code list is not established."
+    }
+  ]
+}
