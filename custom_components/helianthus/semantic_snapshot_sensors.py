@@ -96,17 +96,34 @@ DESCRIPTORS = (
     SemanticSensorDescriptor('helianthus.pack.infrastructure', '1.0.0', 'infrastructure.status.fault', 'infrastructure.dimension.site', '', None, None, None, False, None, None, ('clear', 'present')),
     SemanticSensorDescriptor('helianthus.pack.infrastructure', '1.0.0', 'infrastructure.status.interlock', 'infrastructure.dimension.circuit', '', None, None, None, False, None, None, ('active', 'clear')),
     SemanticSensorDescriptor('helianthus.pack.infrastructure', '1.0.0', 'infrastructure.status.readiness', 'infrastructure.dimension.grid_connection', '', None, None, None, False, None, None, ('not_ready', 'ready')),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.ac.voltage', 'evse.dimension.phase', 'unit.volt', 'V', 'voltage', 'measurement', False, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.ac.current', 'evse.dimension.phase', 'unit.ampere', 'A', 'current', 'measurement', False, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.ac.active_power', 'evse.dimension.phase', 'unit.watt', 'W', 'power', 'measurement', False, '-1e7', '1e7', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.ac.frequency', 'evse.dimension.evse', 'unit.hertz', 'Hz', 'frequency', 'measurement', False, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.energy.session', 'evse.dimension.session', 'unit.kilowatt_hour', 'kWh', 'energy', 'total', False, '0e0', '1e12', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.energy.lifetime', 'evse.dimension.meter', 'unit.kilowatt_hour', 'kWh', 'energy', 'total', False, '0e0', '1e12', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.limit.advertised_current', 'evse.dimension.connector', 'unit.ampere', 'A', 'current', 'measurement', False, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.limit.configured_current', 'evse.dimension.evse', 'unit.ampere', 'A', 'current', 'measurement', True, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.limit.allocated_current', 'evse.dimension.connector', 'unit.ampere', 'A', 'current', None, True, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.limit.actual_current', 'evse.dimension.connector', 'unit.ampere', 'A', 'current', 'measurement', False, '0e0', '1e3', ()),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.status.connection', 'evse.dimension.connector', '', None, None, None, False, None, None, ('connected', 'disconnected')),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.status.charging', 'evse.dimension.connector', '', None, None, None, False, None, None, ('charging', 'complete', 'idle')),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.status.readiness', 'evse.dimension.evse', '', None, None, None, False, None, None, ('not_ready', 'ready')),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.status.fault', 'evse.dimension.evse', '', None, None, None, False, None, None, ('clear', 'present')),
+    SemanticSensorDescriptor('helianthus.pack.evse', '1.0.0', 'evse.status.interlock', 'evse.dimension.connector', '', None, None, None, False, None, None, ('active', 'clear')),
 )
 
 
 DEVICE_MODELS = {
     'helianthus.pack.pv': 'Inverter',
     'helianthus.pack.storage': 'Battery',
+    'helianthus.pack.evse': 'EV charger',
 }
 METER_DIMENSION = 'infrastructure.dimension.meter'
 LEGACY_COORDINATORS = {
     'helianthus.pack.pv': 'pv_m2m_coordinator',
     'helianthus.pack.storage': 'storage_m2m_coordinator',
+    'helianthus.pack.evse': 'evse_m2m_coordinator',
 }
 
 
