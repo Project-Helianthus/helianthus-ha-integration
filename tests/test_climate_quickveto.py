@@ -11,6 +11,8 @@ import types
 
 import pytest
 
+from runtime_fixtures import attach_runtime
+
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
     components_module = sys.modules.setdefault(
@@ -163,9 +165,6 @@ def _isolated_climate_imports(monkeypatch):
             scoped.setitem(globals(), "climate_platform", platform)
             for name in names:
                 scoped.setitem(globals(), name, getattr(platform, name))
-            scoped.setitem(globals(), "DOMAIN", importlib.import_module(
-                "custom_components.helianthus.const"
-            ).DOMAIN)
             scoped.setitem(globals(), "HomeAssistantError", sys.modules[
                 "homeassistant.exceptions"
             ].HomeAssistantError)
@@ -199,7 +198,8 @@ class _FakeStatusCoordinator:
 
 class _FakeHass:
     def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+        self.data = {}
+        attach_runtime(self, "entry-1", payload)
 
 
 class _FakeEntry:

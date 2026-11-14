@@ -10,7 +10,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from custom_components.helianthus.const import DOMAIN
+from runtime_fixtures import attach_runtime
 from custom_components.helianthus.entity_updates import async_write_entity_state_if_enabled
 
 
@@ -72,7 +72,8 @@ def test_admission_listener_rechecks_each_entity_at_every_transition(
         ),
         "status_coordinator": SimpleNamespace(async_add_listener=add_listener),
     }
-    hass = SimpleNamespace(data={DOMAIN: {"synthetic-entry": data}})
+    hass = SimpleNamespace(data={})
+    attach_runtime(hass, "synthetic-entry", data)
     entities = []
     asyncio.run(
         select_platform.async_setup_entry(

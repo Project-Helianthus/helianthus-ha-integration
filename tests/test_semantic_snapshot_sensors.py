@@ -9,9 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from runtime_fixtures import entry_runtime
 from test_sensor import _FakeCoordinator, _FakeEntry, _FakeHass, sensor_platform
 from test_semantic_snapshot_client import asset, value, digest, point
-from custom_components.helianthus.const import DOMAIN
 from custom_components.helianthus.semantic_snapshot_coordinator import SemanticSnapshotCoordinator
 from custom_components.helianthus.semantic_snapshot_sensors import (
     DESCRIPTORS, SemanticSnapshotSensor, semantic_unique_id,
@@ -84,12 +84,12 @@ def setup(records, runtime=None):
         client = Client(records)
         ha = _FakeHass({"device_coordinator": _FakeCoordinator([]),
                         "status_coordinator": _FakeCoordinator({})})
-        ha.data[DOMAIN]["entry-1"].update(runtime or {})
+        entry_runtime(ha, "entry-1").update(runtime or {})
         ha.async_create_task = asyncio.create_task
         coordinator = SemanticSnapshotCoordinator(ha, client, tuple(r["asset_id"] for r in records))
         await coordinator.async_request_refresh()
         assert coordinator.last_update_success, coordinator.last_exception
-        ha.data[DOMAIN]["entry-1"]["semantic_snapshot_coordinator"] = coordinator
+        entry_runtime(ha, "entry-1")["semantic_snapshot_coordinator"] = coordinator
         entities = []
         await sensor_platform.async_setup_entry(ha, _FakeEntry("entry-1"), entities.extend)
         return client, coordinator, ha, entities
@@ -228,7 +228,7 @@ def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
     client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert shared(entities) == [sensor] and sensor.available
-    for remove in ha.data[DOMAIN]["entry-1"]["unsub_listeners"]:
+    for remove in entry_runtime(ha, "entry-1")["unsub_listeners"]:
         remove()
     assert coordinator._listeners == []
 

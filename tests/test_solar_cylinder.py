@@ -7,6 +7,8 @@ import sys
 import types
 from enum import IntFlag
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -170,7 +172,6 @@ from custom_components.helianthus import fan as fan_platform
 from custom_components.helianthus import number as number_platform
 from custom_components.helianthus import sensor as sensor_platform
 from custom_components.helianthus import switch as switch_platform
-from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
@@ -189,7 +190,8 @@ class _FakeEntry:
 
 class _FakeHass:
     def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+        self.data = {}
+        attach_runtime(self, "entry-1", payload)
 
 
 def _payload(mode: str) -> dict:
