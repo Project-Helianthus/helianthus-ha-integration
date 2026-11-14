@@ -8,6 +8,8 @@ import types
 
 import pytest
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -79,7 +81,6 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import water_heater as water_heater_platform
-from custom_components.helianthus.const import DOMAIN
 from custom_components.helianthus.water_heater import HelianthusDhwWaterHeater
 
 
@@ -110,7 +111,8 @@ class _FakeStatusCoordinator:
 
 class _FakeHass:
     def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+        self.data = {}
+        attach_runtime(self, "entry-1", payload)
 
 
 class _FakeEntry:

@@ -6,6 +6,8 @@ import asyncio
 import sys
 import types
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -105,7 +107,6 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import sensor as sensor_platform
-from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
@@ -120,7 +121,8 @@ class _FakeEntry:
 
 class _FakeHass:
     def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+        self.data = {}
+        attach_runtime(self, "entry-1", payload)
 
 
 def test_sensor_platform_adds_dhw_status_sensor() -> None:

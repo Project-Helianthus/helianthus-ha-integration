@@ -10,6 +10,8 @@ import sys
 import pytest
 from types import ModuleType, SimpleNamespace
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_options_flow_stubs() -> None:
     voluptuous_module = sys.modules.setdefault("voluptuous", ModuleType("voluptuous"))
@@ -85,7 +87,6 @@ from custom_components.helianthus.const import (
     CONF_EVSE_M2M_DESCRIPTORS,
     CONF_EVSE_M2M_ENABLED,
     CONF_EVSE_M2M_ENDPOINT,
-    DOMAIN,
 )
 from custom_components.helianthus.options_flow import HelianthusOptionsFlow
 
@@ -356,11 +357,12 @@ def test_options_controller_uses_entry_shared_terminal_broker() -> None:
     client = object()
     entry = SimpleNamespace(entry_id="entry-one", options={})
     hass = SimpleNamespace(
-        data={DOMAIN: {"entry-one": {"eebus_admin_action_broker": broker}}},
+        data={},
         _helianthus_eebus_operator_entries={
             "entry-one": SimpleNamespace(client=client)
         },
     )
+    attach_runtime(hass, "entry-one", {"eebus_admin_action_broker": broker})
     flow = HelianthusOptionsFlow(entry)
     flow.hass = hass
     controller = flow._pairing_controller()

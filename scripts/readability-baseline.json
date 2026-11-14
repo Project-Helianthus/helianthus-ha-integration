@@ -1403,7 +1403,7 @@
       "path": "tests/test_circuit.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 8
+      "count": 7
     },
     {
       "path": "tests/test_circuit.py",
@@ -1421,12 +1421,6 @@
       "path": "tests/test_circuit.py",
       "symbol": "_ensure_homeassistant_stubs._UpdateFailed",
       "rule": "N818",
-      "count": 1
-    },
-    {
-      "path": "tests/test_climate_quickveto.py",
-      "symbol": "_FakeHass.__init__",
-      "rule": "F821",
       "count": 1
     },
     {
@@ -1535,7 +1529,7 @@
       "path": "tests/test_dhw_status.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_dhw_status.py",
@@ -1703,7 +1697,7 @@
       "path": "tests/test_fan.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_fan.py",
@@ -2009,7 +2003,7 @@
       "path": "tests/test_radio_device.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 5
+      "count": 4
     },
     {
       "path": "tests/test_radio_device.py",
@@ -2093,7 +2087,7 @@
       "path": "tests/test_sensor.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_sensor.py",
@@ -2153,7 +2147,7 @@
       "path": "tests/test_solar_cylinder.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 6
+      "count": 5
     },
     {
       "path": "tests/test_solar_cylinder.py",
@@ -2225,19 +2219,19 @@
       "path": "tests/test_valve.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_water_heater_admission.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 3
+      "count": 2
     },
     {
       "path": "tests/test_zone_valve.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 5
+      "count": 4
     },
     {
       "path": "tests/test_zone_valve.py",
