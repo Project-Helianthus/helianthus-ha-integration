@@ -191,8 +191,8 @@ def test_admission_axes_fail_closed_without_identity_churn(axis, invalid):
 
 
 def test_legacy_rows_never_create_duplicate_entities():
-    from custom_components.helianthus import pv_m2m, storage_m2m
-    expected = {key[0] for key in pv_m2m._FACTS} | set(storage_m2m._FACTS)
+    from custom_components.helianthus import evse_m2m, pv_m2m, storage_m2m
+    expected = {key[0] for key in pv_m2m._FACTS} | set(storage_m2m._FACTS) | set(evse_m2m._FACTS)
     assert {d.fact_id for d in DESCRIPTORS if d.legacy_covered} == expected
     for descriptor in DESCRIPTORS:
         if not descriptor.legacy_covered:
@@ -201,7 +201,8 @@ def test_legacy_rows_never_create_duplicate_entities():
                descriptor.fact_id, descriptor.dimension_id, descriptor.unit)
         record = readable(*row)
         owner = {"helianthus.pack.pv": "pv_m2m_coordinator",
-                 "helianthus.pack.storage": "storage_m2m_coordinator"}[descriptor.pack_id]
+                 "helianthus.pack.storage": "storage_m2m_coordinator",
+                 "helianthus.pack.evse": "evse_m2m_coordinator"}[descriptor.pack_id]
         _, _, _, entities = setup([record], {owner: _legacy(record["asset_id"])})
         assert shared(entities) == []
         _, _, _, entities = setup([record])

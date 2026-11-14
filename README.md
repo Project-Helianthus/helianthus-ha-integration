@@ -93,8 +93,8 @@ native Modbus/Growatt query, fallback, dual publication, control, or write path.
 
 ## Shared semantic snapshot sensors
 
-The shared semantic snapshot path creates read-only sensors for the PV, Storage
-and Infrastructure packs from a static descriptor table, using exact decimal
+The shared semantic snapshot path creates read-only sensors for the PV, Storage,
+Infrastructure and EVSE packs from a static descriptor table, using exact decimal
 scaling from each quantity's unit and exponent. It uses only the ordinary
 `semanticSnapshot` GraphQL root; there is no native operation, fallback, control
 or write path.
@@ -103,8 +103,8 @@ An entity is created only after its first admitted reading (qualified, promoted,
 source-admitted and pack-valid) and is then kept. Identity is the config entry,
 opaque asset ID, pack ID, pack version, fact ID and typed dimensions in
 canonical order, joined with a fixed separator; labels and positions never
-contribute. Facts already exposed by the existing PV and Storage consumers create
-no duplicate entity until the explicit migration.
+contribute. Facts already exposed by the existing PV, Storage and EVSE consumers
+create no duplicate entity until the explicit migration.
 
 Zero and false are real values. Withheld readings, loss, a failed refresh or an
 unsupported root make the entity unavailable without changing its identity.

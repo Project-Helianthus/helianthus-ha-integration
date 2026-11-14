@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Map the fifteen EVSE pack facts of the shared semantic snapshot to read-only
+  sensors on an `EV charger` device, so EVSE readings reach Home Assistant
+  through the ordinary GraphQL read. Energy counters use the `total` state
+  class and the allocated current limit has none. On the asset bound to the
+  EVSE consumer the configured and allocated current limits stay with that
+  consumer and the other EVSE facts join its device. Existing unique IDs are
+  unchanged.
 - Send the canonical config-write keys of the system and boiler setters and
   read the renamed system fields, with no alias, no fallback to a former name
   and no unique-ID migration. Sixteen entities are recreated under their new
