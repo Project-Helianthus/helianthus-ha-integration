@@ -456,3 +456,38 @@ def harness(monkeypatch):
     monkeypatch.setattr(entry_setup, "_reload_clock", lambda: clock.now, raising=False)
     return SimpleNamespace(devices=devices, entities=entities, data=coordinator_data,
                            enabled_entries=enabled_entries, clock=clock)
+
+
+@pytest.mark.parametrize("first_disabler", ("integration", "user"))
+def test_user_enabled_null_optional_sensor_materializes_before_forwarding(harness, first_disabler):
+    """The enable reload must build the optional sensor while it remains null."""
+    bench = make_bench(harness, lambda value: {**base(), "HelianthusStatusCoordinator": sparse.status_payload(value)}, ("status_coordinator",))
+    uid = sparse.repair_uid()
+    harness.entities.add(ENTRY, uid)
+    registry_id = next(e.entity_id for e in harness.entities.entities.values()
+                       if e.unique_id == uid)
+    harness.entities.async_update_entity(registry_id, disabled_by=first_disabler)
+    created = []
+
+    async def forward(entry, platforms):
+        sensors = sparse.sensor_setup._build_status_sensors(
+            bench.runtime["status_coordinator"], (DOMAIN, f"daemon-{ENTRY}"), None,
+            lambda unique_id: entry_setup.sparse_entity_has_reloaded(
+                bench.setup.hass, ENTRY, unique_id))
+        created.append({sensor._attr_unique_id: sensor for sensor in sensors})
+
+    bench.setup.hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=forward)
+    drive(bench, "synthetic_repair", [])
+    assert harness.entities.entities[registry_id].disabled_by == first_disabler
+
+    async def enable():
+        harness.entities.async_update_entity(registry_id, disabled_by=None)
+        assert await entry_cleanup.async_unload_entry(bench.setup.hass, bench.entry) is True
+        await bench.start(None)
+    run(enable())
+    assert len(created) == 2
+    assert entry_setup.sparse_entity_has_reloaded(bench.setup.hass, ENTRY, uid), bench.setup.hass.data[DOMAIN]
+    assert uid in created[-1]
+    assert created[-1][uid].native_value is None
+    more_polls(harness, bench, [None] * 3, lambda: None)
+    assert harness.entities.entities[registry_id].disabled_by is None

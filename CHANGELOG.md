@@ -125,7 +125,9 @@
   now acts only on an enabled entity that has not been seen disabled during
   the Home Assistant run: an entity that was disabled, by the integration,
   the user or anything else, and is then enabled again stays enabled across
-  trusted clean-ups and reloads. The integration still enables only entities
+  trusted clean-ups and reloads. Setup records that enable before forwarding
+  platforms, so optional sensors with null values are created on that reload.
+  The integration still enables only entities
   it disabled itself, so a user-disabled entity stays disabled. The reloads
   for an FM5 mode that enters or leaves the interpreted state and for a
   changed zone-parent mapping are each limited to one per trigger and entry

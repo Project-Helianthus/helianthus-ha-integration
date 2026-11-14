@@ -295,16 +295,27 @@ def _entry_run_records(
     with the Home Assistant run, and are dropped together for an entry that is
     no longer configured.
     """
+    entity_entries = tuple(entity_entries)
     seen_disabled = _sparse_reload_unique_ids(
         hass, entry_id, active_entry_ids, _SPARSE_SEEN_DISABLED_KEY
     )
+    reloaded = _sparse_reload_unique_ids(hass, entry_id, active_entry_ids)
+    # Home Assistant already reloads a registry enable. Claim it before the
+    # platforms build optional null sensors, which consult this run record.
+    _claim_sparse_reloads(reloaded, [
+        str(entity_entry.unique_id or "")
+        for entity_entry in entity_entries
+        if entity_entry.platform == DOMAIN
+        and entity_entry.disabled_by is None
+        and str(entity_entry.unique_id or "") in seen_disabled
+    ])
     seen_disabled.update(
         str(entity_entry.unique_id or "")
         for entity_entry in entity_entries
         if entity_entry.platform == DOMAIN and entity_entry.disabled_by is not None
     )
     return (
-        _sparse_reload_unique_ids(hass, entry_id, active_entry_ids),
+        reloaded,
         seen_disabled,
         cast(dict, _entry_record(hass, entry_id, active_entry_ids, _TRIGGER_RELOAD_KEY, dict)),
     )
