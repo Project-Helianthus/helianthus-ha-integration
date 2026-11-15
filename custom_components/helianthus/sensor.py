@@ -18,7 +18,6 @@ from .device_ids import (
     dhw_identifier,
     energy_identifier,
 )
-from . import sensor_setup
 from .asset_device import AssetDevice
 from .pv_m2m import (
     PVM2MDescriptor,
@@ -41,17 +40,19 @@ from .sensor_descriptors import (
     DAEMON_STATUS_FIELDS,
     REDUCED_BOILER_TEMPERATURE_FIELDS,
     STATUS_FIELDS,
+    FM5_MODE_INTERPRETED,
     SYSTEM_SENSOR_FIELDS,
-    _FM5_MODE_INTERPRETED,
-    _RADIO_ROOM_CLASSES,
-    _SENSOR_DEVICE_CLASS_DURATION,
-    _SENSOR_DEVICE_CLASS_HUMIDITY,
-    _SENSOR_DEVICE_CLASS_PRESSURE,
-    _SENSOR_STATE_CLASS_TOTAL_INCREASING,
     BoilerTemperatureField,
     CircuitSensorField,
     InventoryField,
     SystemSensorField,
+)
+from .sensor_values import (
+    circuit_name,
+    fm5_mode,
+    parse_circuit_index,
+    parse_optional_int,
+    radio_slot,
 )
 from .semantic_freshness import (
     semantic_freshness_attributes,
@@ -64,18 +65,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     from .sensor_setup import async_setup_entry as setup_sensor_entry
 
     await setup_sensor_entry(hass, entry, async_add_entities)
-
-
-_clean_text = sensor_setup._clean_text
-_parse_circuit_index = sensor_setup._parse_circuit_index
-_parse_optional_int = sensor_setup._parse_optional_int
-_radio_slot = sensor_setup._radio_slot
-_radio_bus_key = sensor_setup._radio_bus_key
-_radio_model_name = sensor_setup._radio_model_name
-_fm5_mode = sensor_setup._fm5_mode
-_circuit_name = sensor_setup._circuit_name
-_normalize_zone_id = sensor_setup._normalize_zone_id
-_zone_instance = sensor_setup._zone_instance
 
 
 class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
@@ -419,7 +408,7 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
         for circuit in payload.get("circuits", []) or []:
             if not isinstance(circuit, dict):
                 continue
-            if _parse_circuit_index(circuit.get("index")) == self._circuit_index:
+            if parse_circuit_index(circuit.get("index")) == self._circuit_index:
                 return circuit
         return {}
 
@@ -430,7 +419,7 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
     def _device_name(self) -> str:
         circuit = self._circuit()
         if circuit:
-            return _circuit_name(circuit, self._circuit_index)
+            return circuit_name(circuit, self._circuit_index)
         return self._initial_name
 
     @property
@@ -600,7 +589,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         for device in payload.get("radio_devices", []) or []:
             if not isinstance(device, dict):
                 continue
-            slot = _radio_slot(device)
+            slot = radio_slot(device)
             if slot == (self._group, self._instance):
                 return device
         return None
@@ -614,7 +603,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         device = self._device()
         if device is None:
             return False
-        stale = _parse_optional_int(device.get("stale_cycles")) or 0
+        stale = parse_optional_int(device.get("stale_cycles")) or 0
         return stale < RADIO_STALE_GRACE_CYCLES
 
     @property
@@ -693,7 +682,7 @@ class HelianthusFM5ModeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        return _fm5_mode(self.coordinator.data if isinstance(self.coordinator.data, dict) else None)
+        return fm5_mode(self.coordinator.data if isinstance(self.coordinator.data, dict) else None)
 
 
 class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
@@ -736,7 +725,7 @@ class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         payload = self.coordinator.data or {}
-        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+        return fm5_mode(payload if isinstance(payload, dict) else None) == FM5_MODE_INTERPRETED
 
     def _solar_value_present(self) -> bool:
         payload = self.coordinator.data or {}
@@ -800,7 +789,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
         for cylinder in payload.get("cylinders", []) if isinstance(payload, dict) else []:
             if not isinstance(cylinder, dict):
                 continue
-            index = _parse_optional_int(cylinder.get("index"))
+            index = parse_optional_int(cylinder.get("index"))
             if index == self._cylinder_index:
                 return cylinder
         return {}
@@ -808,7 +797,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         payload = self.coordinator.data or {}
-        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+        return fm5_mode(payload if isinstance(payload, dict) else None) == FM5_MODE_INTERPRETED
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -872,7 +861,7 @@ class HelianthusCylinderConfigSensor(CoordinatorEntity, SensorEntity):
         for cylinder in payload.get("cylinders", []) if isinstance(payload, dict) else []:
             if not isinstance(cylinder, dict):
                 continue
-            index = _parse_optional_int(cylinder.get("index"))
+            index = parse_optional_int(cylinder.get("index"))
             if index == self._cylinder_index:
                 return cylinder
         return {}
@@ -880,7 +869,7 @@ class HelianthusCylinderConfigSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         payload = self.coordinator.data or {}
-        return _fm5_mode(payload if isinstance(payload, dict) else None) == _FM5_MODE_INTERPRETED
+        return fm5_mode(payload if isinstance(payload, dict) else None) == FM5_MODE_INTERPRETED
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1120,7 +1109,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = _SENSOR_STATE_CLASS_TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(
@@ -1177,7 +1166,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
 
 def _pv_sensor_metadata(fact_id: str, unit: str) -> tuple[str | None, str | None, str | None]:
     if fact_id in {"pv.energy.active_export_total", "pv.dc.energy.active_total"}:
-        return SensorDeviceClass.ENERGY, "Wh", _SENSOR_STATE_CLASS_TOTAL_INCREASING
+        return SensorDeviceClass.ENERGY, "Wh", SensorStateClass.TOTAL_INCREASING
     if fact_id == "pv.ac.power.apparent":
         return getattr(SensorDeviceClass, "APPARENT_POWER", None), "VA", SensorStateClass.MEASUREMENT
     if fact_id == "pv.ac.power.reactive":
@@ -1500,7 +1489,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_device_class = _SENSOR_DEVICE_CLASS_DURATION
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = "h"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:wrench-clock"

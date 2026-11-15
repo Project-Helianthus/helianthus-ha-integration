@@ -76,12 +76,8 @@ REDUCED_BOILER_TEMPERATURE_FIELDS = [
     BoilerTemperatureField("dhw_storage_temperature_c", "DHW Storage Temperature"),
 ]
 
-_SENSOR_DEVICE_CLASS_HUMIDITY = getattr(SensorDeviceClass, "HUMIDITY", None)
-_SENSOR_DEVICE_CLASS_DURATION = getattr(SensorDeviceClass, "DURATION", None)
-_SENSOR_DEVICE_CLASS_PRESSURE = getattr(SensorDeviceClass, "PRESSURE", None)
-_SENSOR_STATE_CLASS_TOTAL_INCREASING = getattr(SensorStateClass, "TOTAL_INCREASING", None)
-_RADIO_ROOM_CLASSES = {0x15, 0x35}
-_FM5_MODE_INTERPRETED = "INTERPRETED"
+RADIO_ROOM_CLASSES = {0x15, 0x35}
+FM5_MODE_INTERPRETED = "INTERPRETED"
 
 CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
@@ -122,7 +118,7 @@ CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
         key="humidity",
         label="Humidity",
-        device_class=_SENSOR_DEVICE_CLASS_HUMIDITY,
+        device_class=SensorDeviceClass.HUMIDITY,
         native_unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -136,15 +132,15 @@ CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
         key="pump_hours",
         label="Pump Hours",
-        device_class=_SENSOR_DEVICE_CLASS_DURATION,
+        device_class=SensorDeviceClass.DURATION,
         native_unit="h",
-        state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     CircuitSensorField(
         key="pump_starts",
         label="Pump Starts",
-        state_class=_SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         cast_int=True,
         icon="mdi:counter",
@@ -156,7 +152,7 @@ SYSTEM_SENSOR_FIELDS = [
         key="water_pressure",
         label="System Water Pressure",
         source="state",
-        device_class=_SENSOR_DEVICE_CLASS_PRESSURE,
+        device_class=SensorDeviceClass.PRESSURE,
         native_unit="bar",
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -261,39 +257,39 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
     {
         "key": "central_heating_hours",
         "label": "Central Heating Hours",
-        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
         "key": "dhw_hours",
         "label": "DHW Hours",
-        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
         "key": "pump_hours",
         "label": "Pump Hours",
-        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
         "key": "fan_hours",
         "label": "Fan Hours",
-        "device_class": _SENSOR_DEVICE_CLASS_DURATION,
+        "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
         "key": "central_heating_starts",
         "label": "Central Heating Starts",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
         "icon": "mdi:counter",
@@ -301,7 +297,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
     {
         "key": "dhw_starts",
         "label": "DHW Starts",
-        "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
         "icon": "mdi:counter",
