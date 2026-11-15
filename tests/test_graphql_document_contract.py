@@ -13,6 +13,10 @@ What is checked, per document:
     non-null variable may feed a nullable argument, never the reverse);
   - every declared variable type names an input type of the schema.
 
+The introspection types the specification defines, and the query root's
+__schema and __type meta fields, are added to the recorded type map, so the
+capability probe is validated like every other document.
+
 The subset of GraphQL the integration uses is parsed: operations, variable
 definitions, selection sets, arguments with variables and scalar literals.
 Fragments, aliases and directives are refused, so a document that starts using
@@ -44,7 +48,9 @@ _HEADER = re.compile(r"^\s*(query|mutation|subscription)\b")
 _TOKEN = re.compile(
     r"\s*(?:(?P<punct>\.\.\.|[{}()\[\]:!$=@,])"
     r"|(?P<name>[_A-Za-z][_0-9A-Za-z]*)"
-    r"|(?P<string>\"(?:[^\"\\]|\\.)*\")"
+    # A GraphQL StringValue: no raw line terminator or control character (tab
+    # excepted), and only the escapes \" \\ \/ \b \f \n \r \t and \uXXXX.
+    r"|(?P<string>\"(?:[^\"\\\x00-\x08\x0a-\x1f]|\\[\"\\/bfnrt]|\\u[0-9A-Fa-f]{4})*\")"
     r"|(?P<number>-?[0-9]+(?:\.[0-9]+)?))"
 )
 # GraphQL IntValue and the decimal FloatValue subset: no leading zero, and a
@@ -324,12 +330,122 @@ class _Validator:
             self.problems.append(f"{where}: leaf type {field_type} takes no selection set")
 
 
+def _introspection_field(type_text: str, **args: str) -> dict:
+    return {"type": type_text, "args": args} if args else {"type": type_text}
+
+
+# The introspection types every GraphQL schema carries, as the specification
+# defines them; the recorded type map holds only the gateway's own types.
+_INTROSPECTION_TYPES: dict[str, dict] = {
+    "__Schema": {
+        "kind": "object",
+        "fields": {
+            "description": _introspection_field("String"),
+            "types": _introspection_field("[__Type!]!"),
+            "queryType": _introspection_field("__Type!"),
+            "mutationType": _introspection_field("__Type"),
+            "subscriptionType": _introspection_field("__Type"),
+            "directives": _introspection_field("[__Directive!]!"),
+        },
+    },
+    "__Type": {
+        "kind": "object",
+        "fields": {
+            "kind": _introspection_field("__TypeKind!"),
+            "name": _introspection_field("String"),
+            "description": _introspection_field("String"),
+            "specifiedByURL": _introspection_field("String"),
+            "fields": _introspection_field("[__Field!]", includeDeprecated="Boolean"),
+            "interfaces": _introspection_field("[__Type!]"),
+            "possibleTypes": _introspection_field("[__Type!]"),
+            "enumValues": _introspection_field("[__EnumValue!]", includeDeprecated="Boolean"),
+            "inputFields": _introspection_field("[__InputValue!]", includeDeprecated="Boolean"),
+            "ofType": _introspection_field("__Type"),
+        },
+    },
+    "__Field": {
+        "kind": "object",
+        "fields": {
+            "name": _introspection_field("String!"),
+            "description": _introspection_field("String"),
+            "args": _introspection_field("[__InputValue!]!", includeDeprecated="Boolean"),
+            "type": _introspection_field("__Type!"),
+            "isDeprecated": _introspection_field("Boolean!"),
+            "deprecationReason": _introspection_field("String"),
+        },
+    },
+    "__InputValue": {
+        "kind": "object",
+        "fields": {
+            "name": _introspection_field("String!"),
+            "description": _introspection_field("String"),
+            "type": _introspection_field("__Type!"),
+            "defaultValue": _introspection_field("String"),
+            "isDeprecated": _introspection_field("Boolean!"),
+            "deprecationReason": _introspection_field("String"),
+        },
+    },
+    "__EnumValue": {
+        "kind": "object",
+        "fields": {
+            "name": _introspection_field("String!"),
+            "description": _introspection_field("String"),
+            "isDeprecated": _introspection_field("Boolean!"),
+            "deprecationReason": _introspection_field("String"),
+        },
+    },
+    "__Directive": {
+        "kind": "object",
+        "fields": {
+            "name": _introspection_field("String!"),
+            "description": _introspection_field("String"),
+            "locations": _introspection_field("[__DirectiveLocation!]!"),
+            "args": _introspection_field("[__InputValue!]!", includeDeprecated="Boolean"),
+            "isRepeatable": _introspection_field("Boolean!"),
+        },
+    },
+    "__TypeKind": {
+        "kind": "enum",
+        "enum_values": [
+            "SCALAR", "OBJECT", "INTERFACE", "UNION", "ENUM", "INPUT_OBJECT", "LIST", "NON_NULL",
+        ],
+    },
+    "__DirectiveLocation": {
+        "kind": "enum",
+        "enum_values": [
+            "QUERY", "MUTATION", "SUBSCRIPTION", "FIELD", "FRAGMENT_DEFINITION", "FRAGMENT_SPREAD",
+            "INLINE_FRAGMENT", "VARIABLE_DEFINITION", "SCHEMA", "SCALAR", "OBJECT",
+            "FIELD_DEFINITION", "ARGUMENT_DEFINITION", "INTERFACE", "UNION", "ENUM", "ENUM_VALUE",
+            "INPUT_OBJECT", "INPUT_FIELD_DEFINITION",
+        ],
+    },
+}
+
+
+def _with_introspection(schema: dict) -> dict:
+    """The recorded schema plus the introspection types and the query root's meta fields."""
+    types = {**schema["types"], **_INTROSPECTION_TYPES}
+    root = schema.get("query")
+    if root in types:
+        types[root] = {
+            **types[root],
+            "fields": {
+                **types[root].get("fields", {}),
+                "__schema": _introspection_field("__Schema!"),
+                "__type": _introspection_field("__Type", name="String!"),
+            },
+        }
+    return {**schema, "types": types}
+
+
 def validate(operation: Operation, schema: dict) -> list[str]:
     root = schema.get(operation.kind)
     if not root or root not in schema["types"]:
         return [f"no {operation.kind} root in the recorded schema"]
-    validator = _Validator(operation, schema)
-    if operation.kind == "subscription" and len(operation.selections) != 1:
+    validator = _Validator(operation, _with_introspection(schema))
+    # Selections of one response name merge into one root field before the
+    # single-root rule applies.
+    if operation.kind == "subscription" and len({s.name for s in operation.selections}) != 1:
         validator.problems.append("a subscription selects exactly one root field")
     validator.variables()
     validator.selections(root, operation.selections, operation.kind)
@@ -393,11 +509,6 @@ def _computed_documents() -> list[Document]:
     ]
 
 
-def _is_introspection(document: Document) -> bool:
-    """The capability probe selects only the introspection meta field __schema."""
-    return re.match(r"^\s*query\b[^{]*\{\s*__schema\b", document.text) is not None
-
-
 def _is_m2m(document: Document) -> bool:
     return any(re.search(rf"\b{root}\s*\(", document.text) for root in M2M_ROOTS)
 
@@ -411,12 +522,9 @@ def _schema() -> dict:
 
 def test_collection_finds_every_operation_kind() -> None:
     documents = _literal_documents() + _computed_documents()
-    kinds = {
-        parse(document.text).kind
-        for document in documents
-        if not _is_m2m(document) and not _is_introspection(document)
-    }
+    kinds = {parse(document.text).kind for document in documents if not _is_m2m(document)}
     assert kinds == {"query", "mutation", "subscription"}
+    assert any(re.search(r"\b__schema\b", document.text) for document in documents)
     assert len([d for d in documents if _is_m2m(d)]) == len(M2M_ROOTS)
 
 
@@ -424,7 +532,7 @@ def test_every_graphql_document_is_valid_against_the_recorded_gateway_schema() -
     schema = _schema()
     failures: list[str] = []
     for document in _literal_documents() + _computed_documents():
-        if _is_m2m(document) or _is_introspection(document):
+        if _is_m2m(document):
             continue
         try:
             problems = validate(parse(document.text), schema)
@@ -470,6 +578,12 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ("query { device(address: -2147483649) { address } }", "signed 32-bit range"),
         ("query { device(address: 1) { address } device(address: 2) { address } }", "cannot merge"),
         ("subscription { zone_update { id } radio_devices_update { group } }", "exactly one root field"),
+        ("query { __schema { queryType { missing } } }", "__schema.queryType.missing: no such field on __Type"),
+        ("query { __schema { queryType { name } } no_such_root }", "query.no_such_root: no such field"),
+        ("query { __type { name } }", "required argument name is missing"),
+        ('mutation { invoke(address: 1, plane: "\\q", method: "m") { ok } }', "unparsed text"),
+        ('mutation { invoke(address: 1, plane: "a\nb", method: "m") { ok } }', "unparsed text"),
+        ('mutation { invoke(address: 1, plane: "\\u00g0", method: "m") { ok } }', "unparsed text"),
     ],
 )
 def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None:
@@ -488,6 +602,10 @@ def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None
         "query { device(address: 0) { address } }",
         "query { device(address: 1) { address } device(address: 1) { address } }",
         "subscription { zone_update { id } }",
+        "subscription { zone_update { id } zone_update { id } }",
+        "query { __schema { queryType { name } } }",
+        'query { __type(name: "zone") { name kind fields(includeDeprecated: true) { name } } }',
+        'mutation { invoke(address: 1, plane: "\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9\tx", method: "m") { ok } }',
     ],
 )
 def test_the_guard_accepts_valid_edge_documents(text: str) -> None:
