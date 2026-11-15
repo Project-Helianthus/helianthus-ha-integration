@@ -335,7 +335,7 @@ Hypothesis until implemented and exercised; live behavior remains Unknown.
 Native interpretation requires its public native documentation first. Preserve
 native evidence references and redaction/access markers without dereferencing
 private evidence. In particular, `eebus-inbound` remains unknown pending STD-01;
-retain `unknown_pending_std_01`, candidate/unknown, unpromoted and non-actionable
+retain `unknown_pending_normative_source`, candidate/unknown, unpromoted and non-actionable
 state. No readable snapshot, profile match or transport establishes native
 qualification or write permission.
 
