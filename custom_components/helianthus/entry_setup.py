@@ -20,15 +20,8 @@ from . import (
     PLATFORMS,
     _INVOKE_SET_EXT_REGISTER,
     _LOGGER,
-    _canonical_bus_display_name,
-    _canonical_bus_model_name,
-    _clean_label,
-    _format_hex4_version,
-    _is_stale_bus_identifier,
     _parse_identifier_index,
     _parse_zone_schedule_helper_bindings,
-    _select_bus_migration_target,
-    _stale_bus_address_unique_id,
     _zone_instance_from_id,
     async_setup_eebus_admin_boundary,
     async_unload_eebus_admin_boundary,
@@ -37,6 +30,16 @@ from . import (
 )
 from .admission import REPAIR_EMPTY_INVENTORY_UNTRUSTED
 from .entry_connection import ConnectionSkipped, async_connect_gateway
+from .entry_coordinators import async_create_domain_coordinators
+from .entry_devices import (
+    is_stale_bus_identifier,
+    parse_circuit_index,
+    parse_optional_int,
+    register_gateway_devices,
+    register_inventory_devices,
+    resolved_bus_device_key,
+    stale_bus_address_unique_id,
+)
 from .entry_ownership import (
     DuplicateOwnerRefusal,
     async_prepare_entry,
@@ -429,43 +432,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.event import async_track_state_change_event
     from homeassistant.const import CONF_SCAN_INTERVAL
-    from .coordinator import (
-        HelianthusAdapterInfoCoordinator,
-        HelianthusBoilerCoordinator,
-        HelianthusCircuitCoordinator,
-        HelianthusCoordinator,
-        HelianthusEnergyCoordinator,
-        HelianthusFM5Coordinator,
-        HelianthusRadioDeviceCoordinator,
-        HelianthusScheduleCoordinator,
-        HelianthusSemanticCoordinator,
-        HelianthusSystemCoordinator,
-        HelianthusStatusCoordinator,
-    )
     from .device_ids import (
-        adapter_identifier,
         boiler_burner_identifier,
         boiler_hydraulics_identifier,
         build_radio_bus_key,
-        build_bus_device_key,
-        bus_identifier,
-        circuit_display_name,
-        circuit_identifier,
-        circuit_type_display_name,
-        daemon_identifier,
         exportable_radio_bus_keys,
-        has_bus_identity_evidence,
-        is_b524_inventory_radio_bus_key,
-        managing_device_identifier,
         nonexportable_radio_bus_keys,
-        radio_device_identifier,
-        radio_bus_key_from_device,
-        resolve_bus_address,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
-        should_export_radio_device,
         should_remove_missing_radio_bus_key,
-        stable_bus_identity_model,
     )
     from .subscriptions import start_subscriptions
     from .pv_m2m import (
@@ -504,52 +479,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = connection.client
     entry_instance_guid = connection.instance_guid
 
-    daemon_device_id = daemon_identifier(entry.entry_id)
-    adapter_device_id = adapter_identifier(entry.entry_id)
     existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
-
-    daemon_device_entry = device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={daemon_device_id},
-        manufacturer="Helianthus",
-        model="Helianthus Daemon",
-        name="Helianthus Daemon",
-    )
-
-    adapter_device_entry = device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={adapter_device_id},
-        manufacturer="Helianthus",
-        model="eBUS Adapter",
-        name="eBUS Adapter",
-        via_device=daemon_device_id,
-    )
-    adapter_registry_device_id = adapter_device_entry.id
-    del daemon_device_entry
+    gateway_devices = register_gateway_devices(device_registry, entry.entry_id, existing_entry_devices)
+    daemon_device_id = gateway_devices.daemon_device_id
+    adapter_device_id = gateway_devices.adapter_device_id
 
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    device_coordinator = HelianthusCoordinator(hass, client, scan_interval)
-    status_coordinator = HelianthusStatusCoordinator(hass, client, scan_interval)
-    semantic_coordinator = HelianthusSemanticCoordinator(hass, client, scan_interval)
-    energy_coordinator = HelianthusEnergyCoordinator(hass, client, scan_interval)
-    circuit_coordinator = HelianthusCircuitCoordinator(hass, client, scan_interval)
-    radio_coordinator = HelianthusRadioDeviceCoordinator(hass, client, scan_interval)
-    fm5_coordinator = HelianthusFM5Coordinator(hass, client, scan_interval)
-    system_coordinator = HelianthusSystemCoordinator(hass, client, scan_interval)
-    boiler_coordinator = HelianthusBoilerCoordinator(hass, client, scan_interval)
-    schedule_coordinator = HelianthusScheduleCoordinator(hass, client, scan_interval)
-    adapter_info_coordinator = HelianthusAdapterInfoCoordinator(hass, client, scan_interval)
-    await device_coordinator.async_config_entry_first_refresh()
-    await status_coordinator.async_config_entry_first_refresh()
-    await semantic_coordinator.async_config_entry_first_refresh()
-    await energy_coordinator.async_config_entry_first_refresh()
-    await circuit_coordinator.async_config_entry_first_refresh()
-    await radio_coordinator.async_config_entry_first_refresh()
-    await fm5_coordinator.async_config_entry_first_refresh()
-    await system_coordinator.async_config_entry_first_refresh()
-    await boiler_coordinator.async_config_entry_first_refresh()
-    await schedule_coordinator.async_config_entry_first_refresh()
-    await adapter_info_coordinator.async_config_entry_first_refresh()
+    coordinators = await async_create_domain_coordinators(hass, client, scan_interval)
+    device_coordinator = coordinators.device_coordinator
+    status_coordinator = coordinators.status_coordinator
+    semantic_coordinator = coordinators.semantic_coordinator
+    energy_coordinator = coordinators.energy_coordinator
+    circuit_coordinator = coordinators.circuit_coordinator
+    radio_coordinator = coordinators.radio_coordinator
+    fm5_coordinator = coordinators.fm5_coordinator
+    system_coordinator = coordinators.system_coordinator
+    boiler_coordinator = coordinators.boiler_coordinator
+    schedule_coordinator = coordinators.schedule_coordinator
+    adapter_info_coordinator = coordinators.adapter_info_coordinator
 
     # AdminV1 is optional and isolated from the GraphQL session. Its failure
     # must leave the primary integration available with diagnostics only.
@@ -565,15 +512,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    adapter_hw = adapter_info_coordinator.data
-    if isinstance(adapter_hw, dict) and adapter_hw.get("firmware_version"):
-        hw_id = adapter_hw.get("hardware_id") or None
-        device_registry.async_update_device(
-            adapter_device_entry.id,
-            sw_version=adapter_hw["firmware_version"],
-            hw_version=hw_id,
-            serial_number=hw_id,
-        )
+    identities = register_inventory_devices(
+        device_registry, entry.entry_id, gateway_devices, coordinators
+    )
+    known_bus_devices = identities.known_bus_devices
+    regulator_device = identities.regulator_device_id
+    regulator_bus_address = identities.regulator_bus_address
+    boiler_device = identities.boiler_device_id
+    vr71_device = identities.vr71_device_id
+    regulator_manufacturer = identities.regulator_manufacturer
+    nonexportable_radio_keys = identities.nonexportable_radio_keys
+    b524_merge_targets = identities.b524_merge_targets
+    known_radio_bus_keys = identities.known_radio_bus_keys
+    known_circuit_indexes = identities.known_circuit_indexes
+    known_fm5_mode = identities.known_fm5_mode
+    known_cylinder_indexes = identities.known_cylinder_indexes
 
     devices = device_coordinator.data or []
     reload_scheduled = False
@@ -585,294 +538,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         reload_scheduled = True
         _LOGGER.info("Reloading Helianthus entry %s: %s", entry.entry_id, reason)
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
-
-    def resolved_bus_device_key(device: dict) -> str | None:
-        if not has_bus_identity_evidence(device):
-            return None
-        address = resolve_bus_address(device.get("address"), device.get("addresses"))
-        if address is None:
-            return None
-        model = stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
-        return build_bus_device_key(
-            model=model,
-            address=address,
-            serial_number=_clean_label(device.get("serial_number")),
-            mac_address=_clean_label(device.get("mac_address")),
-            hardware_version=_clean_label(device.get("hardware_version")),
-            software_version=_clean_label(device.get("software_version")),
-        )
-
-    def is_regulator_device(device: dict) -> bool:
-        device_id = str(device.get("device_id") or "").upper()
-        display_name = str(device.get("display_name") or "").upper()
-        product_family = str(device.get("product_family") or "").upper()
-        return bool(
-            device_id.startswith("BASV")
-            or device_id.startswith("VRC")
-            or "SENSOCOMFORT" in display_name
-            or "SENSOCOMFORT" in product_family
-        )
-
-    def parse_circuit_index(circuit: dict) -> int | None:
-        index = circuit.get("index")
-        if isinstance(index, bool):
-            return None
-        try:
-            parsed = int(index)
-        except (TypeError, ValueError):
-            return None
-        if parsed < 0:
-            return None
-        return parsed
-
-    def parse_optional_int(value: object | None) -> int | None:
-        if isinstance(value, bool):
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    def radio_model_name(device: dict) -> str:
-        model = _clean_label(device.get("device_model"))
-        if model:
-            return model
-        class_address = parse_optional_int(device.get("device_class_address"))
-        if class_address == 0x15:
-            return "VRC720f/2"
-        if class_address == 0x35:
-            return "VR92f"
-        if class_address == 0x26:
-            return "VR71/FM5"
-        if class_address is not None and class_address >= 0:
-            return f"Unknown Radio (0x{class_address:02X})"
-        return "Unknown Radio"
-
-    def radio_firmware_display(value: object | None) -> str | None:
-        token = _clean_label(value)
-        if not token:
-            return None
-        compact = token.replace(".", "")
-        if len(compact) == 6 and compact.isdigit():
-            major = compact[0:2]
-            minor = compact[2:4]
-            patch = compact[4:6]
-            if patch == "00":
-                return f"{major}.{minor}"
-            return f"{major}.{minor}.{patch}"
-        if len(compact) == 4 and compact.isdigit():
-            return f"{compact[0:2]}.{compact[2:4]}"
-        if "." in token:
-            parts = [part.strip() for part in token.split(".") if part.strip()]
-            if len(parts) >= 2:
-                major = parts[0]
-                minor = parts[1]
-                patch = parts[2] if len(parts) >= 3 else ""
-                if patch in {"", "0", "00"}:
-                    return f"{major}.{minor}"
-                return f"{major}.{minor}.{patch}"
-        return token
-
-    known_bus_devices: set[str] = set()
-    bus_address_device_ids: dict[int, tuple[str, str]] = {}
-    regulator_device: tuple[str, str] | None = None
-    regulator_bus_address: int | None = None
-    boiler_device: tuple[str, str] | None = None
-    vr71_device: tuple[str, str] | None = None
-    for device in devices:
-        address = resolve_bus_address(device.get("address"), device.get("addresses"))
-        device_id = device.get("device_id", "unknown")
-        serial_number = device.get("serial_number")
-        manufacturer = _clean_label(device.get("manufacturer")) or "Unknown"
-        sw_version = device.get("software_version")
-        hw_version = device.get("hardware_version")
-        display_name = _canonical_bus_display_name(device)
-
-        if address is None:
-            continue
-
-        bus_device_key = resolved_bus_device_key(device)
-        if not bus_device_key:
-            continue
-        known_bus_devices.add(bus_device_key)
-
-        device_name = display_name or f"{manufacturer} {device_id}"
-        model_name = _canonical_bus_model_name(device)
-
-        bus_device_id = bus_identifier(entry.entry_id, bus_device_key)
-        migration_target = _select_bus_migration_target(
-            existing_entry_devices,
-            entry_id=entry.entry_id,
-            stable_identifier=bus_device_id,
-            address=address,
-            manufacturer=manufacturer,
-            model_name=model_name,
-            serial_number=_clean_label(serial_number),
-        )
-        if migration_target is not None:
-            update_kwargs: dict[str, object] = {
-                "merge_identifiers": {bus_device_id},
-                "manufacturer": manufacturer,
-                "model": model_name,
-                "name": device_name,
-                "via_device_id": adapter_registry_device_id,
-            }
-            if serial_number:
-                update_kwargs["serial_number"] = str(serial_number)
-            if sw_version:
-                update_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
-            if hw_version:
-                update_kwargs["hw_version"] = hw_version
-            device_registry.async_update_device(migration_target.id, **update_kwargs)
-        else:
-            device_kwargs = {
-                "config_entry_id": entry.entry_id,
-                "identifiers": {bus_device_id},
-                "manufacturer": manufacturer,
-                "model": model_name,
-                "name": device_name,
-                "via_device": adapter_device_id,
-            }
-            if serial_number:
-                device_kwargs["serial_number"] = str(serial_number)
-            if sw_version:
-                device_kwargs["sw_version"] = _format_hex4_version(str(sw_version))
-            if hw_version:
-                device_kwargs["hw_version"] = hw_version
-            device_registry.async_get_or_create(**device_kwargs)
-        bus_address_device_ids[address] = bus_device_id
-
-        device_id_upper = str(device_id).upper()
-        if boiler_device is None and device_id_upper.startswith("BAI"):
-            boiler_device = bus_device_id
-        if vr71_device is None and (
-            device_id_upper.startswith("VR_71") or device_id_upper.startswith("VR71")
-        ):
-            vr71_device = bus_device_id
-        if device_id_upper.startswith("BASV"):
-            regulator_device = bus_device_id
-            regulator_bus_address = address
-        elif regulator_device is None and is_regulator_device(device):
-            regulator_device = bus_device_id
-            regulator_bus_address = address
-
-    # Extract regulator manufacturer for virtual device entities.
-    regulator_manufacturer = "Helianthus"
-    for device in devices:
-        if is_regulator_device(device):
-            mfr = _clean_label(device.get("manufacturer"))
-            if mfr:
-                regulator_manufacturer = mfr
-                break
-
-    radio_payload = radio_coordinator.data or {}
-    raw_radio_devices_payload = radio_payload.get("radio_devices")
-    if not isinstance(raw_radio_devices_payload, list):
-        raw_radio_devices_payload = []
-    nonexportable_radio_keys = nonexportable_radio_bus_keys(raw_radio_devices_payload)
-    radio_devices_payload = [
-        device
-        for device in raw_radio_devices_payload
-        if isinstance(device, dict) and should_export_radio_device(device)
-    ]
-
-    # ADR-027: Merge B524 function-module enrichment into physical bus devices.
-    # Group 0x0C entries whose device_class_address matches a known bus address
-    # are enrichment metadata for that bus device, not standalone devices.
-    _B524_FUNCTION_MODULE_GROUP = 0x0C
-    b524_merge_targets: dict[str, tuple[str, str]] = {}
-    for device in radio_devices_payload:
-        group = parse_optional_int(device.get("group"))
-        if group != _B524_FUNCTION_MODULE_GROUP:
-            continue
-        class_addr = parse_optional_int(device.get("device_class_address"))
-        if class_addr is None:
-            continue
-        bus_device_id = bus_address_device_ids.get(class_addr)
-        if bus_device_id is None:
-            continue
-        bus_key = radio_bus_key_from_device(device)
-        if bus_key is None:
-            continue
-        b524_merge_targets[bus_key] = bus_device_id
-        _LOGGER.debug(
-            "B524 merge: radio slot %s (group=0x%02X, class_addr=%d) -> bus device %s",
-            bus_key, group, class_addr, bus_device_id,
-        )
-
-    known_radio_bus_keys: set[str] = set()
-    radio_parent = regulator_device or adapter_device_id
-    for device in radio_devices_payload:
-        group = parse_optional_int(device.get("group"))
-        instance = parse_optional_int(device.get("instance"))
-        if group is None or instance is None:
-            continue
-        bus_key = radio_bus_key_from_device(device)
-        if bus_key is None:
-            continue
-        known_radio_bus_keys.add(bus_key)
-        # ADR-027: skip HA device creation for merged B524 function module slots.
-        if bus_key in b524_merge_targets:
-            continue
-        radio_device_id = radio_device_identifier(entry.entry_id, bus_key)
-        model_name = radio_model_name(device)
-        device_kwargs: dict[str, object] = {
-            "config_entry_id": entry.entry_id,
-            "identifiers": {radio_device_id},
-            "manufacturer": "Vaillant",
-            "model": model_name,
-            "name": model_name,
-        }
-        if radio_parent is not None:
-            device_kwargs["via_device"] = radio_parent
-        sw_version = radio_firmware_display(device.get("firmware_version"))
-        if sw_version:
-            device_kwargs["sw_version"] = sw_version
-        hardware_identifier = parse_optional_int(device.get("hardware_identifier"))
-        if hardware_identifier is not None and hardware_identifier >= 0:
-            device_kwargs["hw_version"] = f"0x{hardware_identifier:04X}"
-        device_registry.async_get_or_create(**device_kwargs)
-
-    circuits_payload = circuit_coordinator.data or {}
-    circuits = circuits_payload.get("circuits", []) or []
-    known_circuit_indexes: set[int] = set()
-    for circuit in circuits:
-        if not isinstance(circuit, dict):
-            continue
-        index = parse_circuit_index(circuit)
-        if index is None:
-            continue
-        known_circuit_indexes.add(index)
-        circuit_type_name = circuit_type_display_name(circuit.get("circuit_type"))
-        managing_device = managing_device_identifier(
-            group=0x02,
-            instance=index,
-            regulator_device_id=regulator_device,
-            vr71_device_id=vr71_device,
-            adapter_device_id=adapter_device_id,
-            managing_device=circuit.get("managing_device"),
-        )
-        circuit_device_id = circuit_identifier(entry.entry_id, index)
-        device_kwargs: dict[str, object] = {
-            "config_entry_id": entry.entry_id,
-            "identifiers": {circuit_device_id},
-            "manufacturer": regulator_manufacturer,
-            "model": circuit_type_name,
-            "name": circuit_display_name(circuit, index),
-        }
-        if managing_device is not None:
-            device_kwargs["via_device"] = managing_device
-        device_registry.async_get_or_create(**device_kwargs)
-
-    fm5_payload = fm5_coordinator.data or {}
-    known_fm5_mode = str(fm5_payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
-    known_cylinder_indexes: set[int] = set()
-    for cylinder in fm5_payload.get("cylinders", []) or []:
-        if not isinstance(cylinder, dict):
-            continue
-        index = parse_optional_int(cylinder.get("index"))
-        if index is not None and index >= 0:
-            known_cylinder_indexes.add(index)
 
     admission = update_effective_admission(status_coordinator, devices)
 
@@ -1201,7 +866,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 and not _is_sparse_entity_live(unique_id)
             ):
                 remove_entry = True
-            elif _stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
+            elif stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
                 remove_entry = True
             elif entity_entry.domain == "number" and re.match(
                 rf"^{re.escape(entry.entry_id)}-cylinder-\d+-number-",
@@ -1328,7 +993,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 }:
                     remove_device = True
                     break
-                if _is_stale_bus_identifier(token, entry.entry_id, known_bus_devices):
+                if is_stale_bus_identifier(token, entry.entry_id, known_bus_devices):
                     remove_device = True
                     break
                 if token.startswith(f"{entry.entry_id}-zone-"):

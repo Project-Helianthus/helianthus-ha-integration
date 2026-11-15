@@ -8,12 +8,6 @@
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/__init__.py",
-      "symbol": "_select_bus_migration_target",
-      "rule": "C901",
-      "count": 12
-    },
-    {
       "path": "custom_components/helianthus/binary_sensor.py",
       "symbol": "HelianthusBoilerStateBinarySensor.__init__",
       "rule": "N806",
@@ -164,6 +158,12 @@
       "count": 14
     },
     {
+      "path": "custom_components/helianthus/entry_devices.py",
+      "symbol": "select_bus_migration_target",
+      "rule": "C901",
+      "count": 12
+    },
+    {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "<module>",
       "rule": "F401",
@@ -173,25 +173,13 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "C901",
-      "count": 262
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "F401",
-      "count": 1
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "N806",
-      "count": 1
+      "count": 199
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "PLR0915",
-      "count": 758
+      "count": 579
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",

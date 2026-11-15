@@ -8,17 +8,19 @@ import pytest
 
 from custom_components.helianthus import (
     DOMAIN,
-    _bus_identifier_tokens_for_entry,
-    _canonical_bus_display_name,
-    _canonical_bus_model_name,
-    _clean_label,
-    _is_stale_bus_identifier,
-    _legacy_bus_identifier_address,
     _parse_zone_schedule_helper_bindings,
-    _select_bus_migration_target,
-    _stable_bus_identity_model,
-    _stale_bus_address_unique_id,
     _zone_instance_from_id,
+)
+from custom_components.helianthus.device_ids import stable_bus_identity_model
+from custom_components.helianthus.entry_devices import (
+    bus_identifier_address,
+    bus_identifier_tokens_for_entry,
+    canonical_bus_display_name,
+    canonical_bus_model_name,
+    clean_label,
+    is_stale_bus_identifier,
+    select_bus_migration_target,
+    stale_bus_address_unique_id,
 )
 from custom_components.helianthus.entry_ownership import (
     identifier_belongs_to_entry,
@@ -29,30 +31,30 @@ from types import SimpleNamespace
 
 
 def test_clean_label_trims_whitespace() -> None:
-    assert _clean_label("  sensoCOMFORT  ") == "sensoCOMFORT"
+    assert clean_label("  sensoCOMFORT  ") == "sensoCOMFORT"
 
 
 def test_clean_label_returns_none_for_empty_text() -> None:
-    assert _clean_label("   ") is None
-    assert _clean_label(None) is None
+    assert clean_label("   ") is None
+    assert clean_label(None) is None
 
 
 def test_canonical_bus_display_name_maps_basv_and_vr71() -> None:
-    assert _canonical_bus_display_name({"device_id": "BASV2"}) == "sensoCOMFORT RF"
-    assert _canonical_bus_display_name({"device_id": "VR_71"}) == "FM5 Control Centre"
-    assert _canonical_bus_display_name({"device_id": "BAI00"}) == "ecoTEC plus"
-    assert _canonical_bus_display_name({"device_id": "NETX3"}) == "myVaillant Connect"
+    assert canonical_bus_display_name({"device_id": "BASV2"}) == "sensoCOMFORT RF"
+    assert canonical_bus_display_name({"device_id": "VR_71"}) == "FM5 Control Centre"
+    assert canonical_bus_display_name({"device_id": "BAI00"}) == "ecoTEC plus"
+    assert canonical_bus_display_name({"device_id": "NETX3"}) == "myVaillant Connect"
 
 
 def test_canonical_bus_model_name_includes_ebus_code() -> None:
-    basv = _canonical_bus_model_name(
+    basv = canonical_bus_model_name(
         {"device_id": "BASV2", "product_model": "VRC 720f/2", "part_number": "0020260914"}
     )
-    vr71 = _canonical_bus_model_name(
+    vr71 = canonical_bus_model_name(
         {"device_id": "VR_71", "product_model": "VR 71", "part_number": "0020184844"}
     )
-    bai = _canonical_bus_model_name({"device_id": "BAI00", "part_number": "0012345678"})
-    netx3 = _canonical_bus_model_name(
+    bai = canonical_bus_model_name({"device_id": "BAI00", "part_number": "0012345678"})
+    netx3 = canonical_bus_model_name(
         {"device_id": "NETX3", "part_number": "0020260962"}
     )
     assert basv == "VRC 720f/2 (part: 0020260914; eBUS: BASV)"
@@ -62,12 +64,12 @@ def test_canonical_bus_model_name_includes_ebus_code() -> None:
 
 
 def test_canonical_bus_model_name_omits_missing_or_blank_part_number() -> None:
-    basv = _canonical_bus_model_name({"device_id": "BASV2", "product_model": "VRC 720f/2"})
-    vr71 = _canonical_bus_model_name(
+    basv = canonical_bus_model_name({"device_id": "BASV2", "product_model": "VRC 720f/2"})
+    vr71 = canonical_bus_model_name(
         {"device_id": "VR_71", "product_model": "VR 71", "part_number": "  "}
     )
-    bai = _canonical_bus_model_name({"device_id": "BAI00", "part_number": None})
-    netx3 = _canonical_bus_model_name({"device_id": "NETX3"})
+    bai = canonical_bus_model_name({"device_id": "BAI00", "part_number": None})
+    netx3 = canonical_bus_model_name({"device_id": "NETX3"})
     assert bai == "VUW (eBUS: BAI00)"
     assert netx3 == "VR940f (eBUS: NETX3)"
     assert basv == "VRC 720f/2 (eBUS: BASV)"
@@ -88,17 +90,17 @@ def test_canonical_bus_model_name_adds_part_number_to_preformatted_models() -> N
             "product_model": product_model,
             "part_number": part_number,
         }
-        assert _canonical_bus_model_name(device) == expected
-        assert _canonical_bus_model_name({**device, "product_model": expected}) == expected
+        assert canonical_bus_model_name(device) == expected
+        assert canonical_bus_model_name({**device, "product_model": expected}) == expected
 
 
 def test_canonical_bus_model_name_preserves_or_replaces_preformatted_part_number_once() -> None:
     preformatted = "VRC 720f/2 (part: 0020260914; eBUS: BASV)"
     base = {"device_id": "BASV2", "product_model": preformatted}
 
-    assert _canonical_bus_model_name(base) == preformatted
-    assert _canonical_bus_model_name({**base, "part_number": "  "}) == preformatted
-    assert _canonical_bus_model_name({**base, "part_number": "0099999999"}) == (
+    assert canonical_bus_model_name(base) == preformatted
+    assert canonical_bus_model_name({**base, "part_number": "  "}) == preformatted
+    assert canonical_bus_model_name({**base, "part_number": "0099999999"}) == (
         "VRC 720f/2 (part: 0099999999; eBUS: BASV)"
     )
 
@@ -110,9 +112,9 @@ def test_canonical_bus_model_name_uses_annotated_code_for_sparse_device() -> Non
     }
     expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
 
-    assert _canonical_bus_model_name(sparse) == expected
-    assert _canonical_bus_model_name({**sparse, "device_id": None}) == expected
-    assert _canonical_bus_model_name({**sparse, "device_id": "  "}) == expected
+    assert canonical_bus_model_name(sparse) == expected
+    assert canonical_bus_model_name({**sparse, "device_id": None}) == expected
+    assert canonical_bus_model_name({**sparse, "device_id": "  "}) == expected
 
 
 def test_canonical_bus_model_name_treats_public_missing_identity_sentinels_as_sparse() -> None:
@@ -123,8 +125,8 @@ def test_canonical_bus_model_name_treats_public_missing_identity_sentinels_as_sp
     expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
 
     for device_id in ("unknown", " NONE ", "NuLl", " unknown device "):
-        assert _canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
-        assert _canonical_bus_model_name(
+        assert canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
+        assert canonical_bus_model_name(
             {**sparse, "device_id": device_id, "product_model": expected}
         ) == expected
 
@@ -137,14 +139,14 @@ def test_canonical_bus_model_name_treats_unicode_unknown_prefixes_as_sparse() ->
     expected = "VR 71 (part: 0020184844; eBUS: VR_71)"
 
     for device_id in ("unknown\tdevice", "unknown\ndevice", "unknown\u2003device"):
-        assert _canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
-    assert _canonical_bus_model_name({**sparse, "device_id": "unknown-model"}) == (
+        assert canonical_bus_model_name({**sparse, "device_id": device_id}) == expected
+    assert canonical_bus_model_name({**sparse, "device_id": "unknown-model"}) == (
         "VR 71 (part: 0020184844; eBUS: UNKNOWN-MODEL)"
     )
 
 
 def test_canonical_bus_model_name_keeps_present_device_id_authoritative() -> None:
-    assert _canonical_bus_model_name(
+    assert canonical_bus_model_name(
         {
             "device_id": "BAI00",
             "product_model": "VR 71 (part: 0020184844; eBUS: VR_71)",
@@ -153,8 +155,8 @@ def test_canonical_bus_model_name_keeps_present_device_id_authoritative() -> Non
 
 
 def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_payloads() -> None:
-    enriched = _stable_bus_identity_model({"device_id": "BAI00", "product_model": "VUW 32CS/1-5 (N-INT2)"})
-    sparse = _stable_bus_identity_model({"device_id": "BAI00"})
+    enriched = stable_bus_identity_model("BAI00", "VUW 32CS/1-5 (N-INT2)")
+    sparse = stable_bus_identity_model("BAI00")
     assert enriched == "VUW"
     assert sparse == "VUW"
 
@@ -177,32 +179,32 @@ def testidentifier_matches_any_entry() -> None:
 
 def test_is_stale_bus_identifier_flags_legacy_bus_device_for_cleanup() -> None:
     known_bus_devices = {"VUW-08", "VRC-720f/2-15"}
-    assert _is_stale_bus_identifier(
+    assert is_stale_bus_identifier(
         "entry-1-bus-VUW-32CS/1-5-(N-INT2)-sn-21-22-01-0010024604-0001-005034-N9",
         "entry-1",
         known_bus_devices,
     )
-    assert not _is_stale_bus_identifier("entry-1-bus-VUW-08", "entry-1", known_bus_devices)
+    assert not is_stale_bus_identifier("entry-1-bus-VUW-08", "entry-1", known_bus_devices)
 
 
 def test_stale_bus_address_unique_id_flags_legacy_sensor_for_cleanup() -> None:
     known_bus_devices = {"VUW-08", "VRC-720f/2-15"}
-    assert _stale_bus_address_unique_id(
+    assert stale_bus_address_unique_id(
         "entry-1-bus-VUW-32CS/1-5-(N-INT2)-sn-21-22-01-0010024604-0001-005034-N9-ebus-address",
         "entry-1",
         known_bus_devices,
     )
-    assert _stale_bus_address_unique_id(
+    assert stale_bus_address_unique_id(
         "entry-1-bus-BAI00-08-7603-1201-ebus-address",
         "entry-1",
         known_bus_devices,
     )
-    assert not _stale_bus_address_unique_id(
+    assert not stale_bus_address_unique_id(
         "entry-1-bus-VUW-08-ebus-address",
         "entry-1",
         known_bus_devices,
     )
-    assert not _stale_bus_address_unique_id(
+    assert not stale_bus_address_unique_id(
         "entry-1-zone-zone-1-schedule-away",
         "entry-1",
         known_bus_devices,
@@ -215,14 +217,14 @@ def test_bus_identifier_tokens_for_entry_filters_bus_tokens_only() -> None:
         (DOMAIN, "entry-1-zone-1"),
         (DOMAIN, "entry-2-bus-VUW-08"),
     }
-    assert _bus_identifier_tokens_for_entry(identifiers, "entry-1") == ("entry-1-bus-VUW-08",)
+    assert bus_identifier_tokens_for_entry(identifiers, "entry-1") == ("entry-1-bus-VUW-08",)
 
 
-def test_legacy_bus_identifier_address_parses_sparse_keys_only() -> None:
-    assert _legacy_bus_identifier_address("entry-1-bus-VUW-08", "entry-1") == 0x08
-    assert _legacy_bus_identifier_address("entry-1-bus-BAI00-08-7603-1201", "entry-1") == 0x08
-    assert _legacy_bus_identifier_address("entry-1-bus-VUW-32CS/1-5-(N-INT2)-08", "entry-1") == 0x08
-    assert _legacy_bus_identifier_address("entry-1-bus-VUW-sn-ABC123", "entry-1") is None
+def test_bus_identifier_address_parses_address_keyed_tokens_only() -> None:
+    assert bus_identifier_address("entry-1-bus-VUW-08", "entry-1") == 0x08
+    assert bus_identifier_address("entry-1-bus-BAI00-08-7603-1201", "entry-1") == 0x08
+    assert bus_identifier_address("entry-1-bus-VUW-32CS/1-5-(N-INT2)-08", "entry-1") == 0x08
+    assert bus_identifier_address("entry-1-bus-VUW-sn-ABC123", "entry-1") is None
 
 
 def test_select_bus_migration_target_prefers_existing_enriched_device() -> None:
@@ -243,7 +245,7 @@ def test_select_bus_migration_target_prefers_existing_enriched_device() -> None:
         serial_number=None,
         area_id=None,
     )
-    selected = _select_bus_migration_target(
+    selected = select_bus_migration_target(
         (sparse_duplicate, old_good),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
@@ -273,7 +275,7 @@ def test_select_bus_migration_target_prefers_serialized_area_device_for_sparse_p
         serial_number=None,
         area_id=None,
     )
-    selected = _select_bus_migration_target(
+    selected = select_bus_migration_target(
         (sparse_duplicate, old_good),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
@@ -303,7 +305,7 @@ def test_select_bus_migration_target_prefers_stable_owner_before_serial_match() 
         serial_number=None,
         area_id=None,
     )
-    selected = _select_bus_migration_target(
+    selected = select_bus_migration_target(
         (serial_duplicate, stable_owner),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
@@ -333,7 +335,7 @@ def test_select_bus_migration_target_matches_sparse_duplicate_by_address() -> No
         serial_number=None,
         area_id=None,
     )
-    selected = _select_bus_migration_target(
+    selected = select_bus_migration_target(
         (wrong_address, correct_address),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
@@ -363,7 +365,7 @@ def test_select_bus_migration_target_tie_does_not_compare_objects() -> None:
         serial_number=None,
         area_id=None,
     )
-    selected = _select_bus_migration_target(
+    selected = select_bus_migration_target(
         (first, second),
         entry_id="entry-1",
         stable_identifier=stable_identifier,
@@ -422,11 +424,11 @@ def test_canonical_bus_model_name_preserves_unrecognized_annotation_text() -> No
             "product_model": source,
             "part_number": "0012345678",
         }
-        assert _canonical_bus_model_name(device) == (
+        assert canonical_bus_model_name(device) == (
             f"{source} (part: 0012345678; eBUS: BAI00)"
         )
-        assert _canonical_bus_display_name(device) == "ecoTEC plus"
-        assert _stable_bus_identity_model(device) == "VUW"
+        assert canonical_bus_display_name(device) == "ecoTEC plus"
+        assert stable_bus_identity_model(device.get("device_id"), device.get("product_model")) == "VUW"
 
 
 _UNAVAILABLE_PRESENTATION = (None, "", "  ", " unknown ", " NONE ", "NuLl",
@@ -453,9 +455,9 @@ def test_presentation_fields_independently_preserve_family_identity(device_id, i
     expected_part = selected if field == "part_number" else "PART-A"
     clause = f"part: {expected_part}; " if expected_part else ""
     code = "BASV" if device_id == "BASV0" else device_id
-    assert _canonical_bus_display_name(device) == expected_name
-    assert _canonical_bus_model_name(device) == f"{expected_base} ({clause}eBUS: {code})"
-    assert _stable_bus_identity_model(device) == identity
+    assert canonical_bus_display_name(device) == expected_name
+    assert canonical_bus_model_name(device) == f"{expected_base} ({clause}eBUS: {code})"
+    assert stable_bus_identity_model(device.get("device_id"), device.get("product_model")) == identity
     assert device == before
 
 
@@ -466,12 +468,12 @@ def test_missing_and_independent_fallback_fields(field, value) -> None:
     before = deepcopy(device)
     usable = isinstance(value, str) and value.strip() in {"LABEL-B", "unknown-model"}
     selected = value.strip() if usable else None
-    assert _canonical_bus_display_name({}) is None
-    assert _canonical_bus_model_name({}) == "unknown (eBUS: UNKNOWN)"
-    assert _canonical_bus_display_name(device) == (selected if field in {"display_name", "product_family"} else None)
+    assert canonical_bus_display_name({}) is None
+    assert canonical_bus_model_name({}) == "unknown (eBUS: UNKNOWN)"
+    assert canonical_bus_display_name(device) == (selected if field in {"display_name", "product_family"} else None)
     base = selected if field == "product_model" and selected else "unknown"
     clause = f"part: {selected}; " if field == "part_number" and selected else ""
-    assert _canonical_bus_model_name(device) == f"{base} ({clause}eBUS: UNKNOWN)"
+    assert canonical_bus_model_name(device) == f"{base} ({clause}eBUS: UNKNOWN)"
     assert device == before
 
 
@@ -505,7 +507,7 @@ def test_recognized_annotation_fields_are_independently_usable(field, value) -> 
         part = None
         code = "UNKNOWN"
         clause = ""
-    assert _canonical_bus_model_name(device) == f"{base} ({clause}eBUS: {code})"
+    assert canonical_bus_model_name(device) == f"{base} ({clause}eBUS: {code})"
     assert device == before
 
 
@@ -513,13 +515,13 @@ def test_recognized_annotation_fields_are_independently_usable(field, value) -> 
 def test_authoritative_device_code_fallback_without_model(value) -> None:
     device = {"device_id": value}
     expected = "CODE-B (eBUS: CODE-B)" if value == " CODE-B " else "unknown (eBUS: UNKNOWN)"
-    assert _canonical_bus_model_name(device) == expected
+    assert canonical_bus_model_name(device) == expected
 
 
 def test_known_family_fallbacks_filter_annotation_components_separately() -> None:
-    assert _canonical_bus_display_name({"device_id": "BAI00", "display_name": "Unknown", "product_family": 42}) == "ecoTEC plus"
-    assert _canonical_bus_model_name({"device_id": "BAI00", "product_model": "Unknown (part: PART-A; eBUS: CODE-A)"}) == "VUW (part: PART-A; eBUS: BAI00)"
-    assert _canonical_bus_model_name({"product_model": "Unknown (part: null; eBUS: VR_71)"}) == "VR 71 (eBUS: VR_71)"
+    assert canonical_bus_display_name({"device_id": "BAI00", "display_name": "Unknown", "product_family": 42}) == "ecoTEC plus"
+    assert canonical_bus_model_name({"device_id": "BAI00", "product_model": "Unknown (part: PART-A; eBUS: CODE-A)"}) == "VUW (part: PART-A; eBUS: BAI00)"
+    assert canonical_bus_model_name({"product_model": "Unknown (part: null; eBUS: VR_71)"}) == "VR 71 (eBUS: VR_71)"
 
 
 @pytest.mark.parametrize("field", ["display_name", "product_family", "product_model", "part_number"])
@@ -529,15 +531,15 @@ def test_unmapped_identity_keeps_preexisting_model_enrichment_behavior(field, va
     device[field] = value
     before = deepcopy(device)
     expected = (str(value).strip() if value is not None else "CODE-A") if field == "product_model" else "MODEL-A"
-    _canonical_bus_display_name(device)
-    _canonical_bus_model_name(device)
-    assert _stable_bus_identity_model(device) == expected
+    canonical_bus_display_name(device)
+    canonical_bus_model_name(device)
+    assert stable_bus_identity_model(device.get("device_id"), device.get("product_model")) == expected
     assert device == before
 
 
 def test_generic_cleaner_still_stringifies_and_preserves_placeholders() -> None:
-    assert _clean_label(42) == "42"
-    assert _clean_label(" Unknown ") == "Unknown"
+    assert clean_label(42) == "42"
+    assert clean_label(" Unknown ") == "Unknown"
 
 
 @pytest.mark.parametrize("device_id,fallback", [
@@ -550,5 +552,5 @@ def test_gateway_family_precedes_known_name_with_unavailable_display(device_id, 
     device = {"device_id": device_id, "display_name": " Unknown ", "product_family": value}
     before = deepcopy(device)
     usable = isinstance(value, str) and value.strip() in {"FAMILY-B", "unknown-model"}
-    assert _canonical_bus_display_name(device) == (value.strip() if usable else fallback)
+    assert canonical_bus_display_name(device) == (value.strip() if usable else fallback)
     assert device == before
