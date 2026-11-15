@@ -55,17 +55,33 @@ references. The domain-level `_admission_cleanup_counts` map is separate from
 
 The existing order is:
 
-1. Discover and refresh domain state, establish optional isolated admin state,
+1. Prepare ([entry ownership](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_ownership.py)):
+   remove the retired eeBUS field from the entry, then remove the entity rows of
+   entries that are no longer configured and the device rows that no live entry
+   owns. The phase returns the device and entity registries and the configured
+   entry ids.
+2. Connect ([entry connection](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_connection.py)):
+   check the host and port, verify the gateway identity, bind the entry to the
+   verified endpoint and live instance GUID, store that GUID, and build the
+   GraphQL client. The phase returns one of three results. A
+   `GatewayConnection` carries the session, the GraphQL URL, the client and the
+   instance GUID. A `ConnectionSkipped` (no host or port) ends setup with `True`
+   before any device is created. A `DuplicateOwnerRefusal` (another entry owns
+   the live GUID) ends setup with `False` after the prepare phase's refusal: the
+   alias-only options are merged into the owner, the entry's own registry rows
+   are removed and the entry's removal is scheduled. A failed identity probe is
+   not a refusal; setup continues on the configured endpoint.
+3. Discover and refresh domain state, establish optional isolated admin state,
    create registry identities, register listeners and optionally start GraphQL
    subscriptions. This work precedes entry-mapping publication.
-2. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
+4. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
    boundary and coordinator as `None`. Other errors and cancellation propagate.
-3. Publish the complete required mapping, then register the option-update
+5. Publish the complete required mapping, then register the option-update
    listener through the entry's unload hook when those entry methods exist.
-4. Await platform forwarding, then run radio-registry and trusted-admission
+6. Await platform forwarding, then run radio-registry and trusted-admission
    cleanup in that order.
-5. Await semantic snapshot setup and assign its result, including `None`. Pop
+7. Await semantic snapshot setup and assign its result, including `None`. Pop
    the deferred sensor callback and call it if present. Return `True` only after
    these steps complete.
 
@@ -122,7 +138,9 @@ check exact publication values, ordering, optional resources, partial failures,
 cancellation, listener cleanup and exception propagation. They do not exercise
 the earlier discovery/registry prefix or assert that published state is accepted
 setup. Mutation controls reject forwarding before publication and a renamed key
-for every published field.
+for every published field. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
+cover the skip, both refusal branches and each success path, and assert every
+`GatewayConnection` field.
 
 This is an artifact-affecting structural change: shipped Python inputs change.
 Behavioral characterization does not establish Python AST identity, binary

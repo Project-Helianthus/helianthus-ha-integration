@@ -338,9 +338,9 @@ def test_existing_entry_update_preserves_string_host_alias_without_character_spl
 
 
 def test_setup_identity_probe_addresses_adds_stored_and_hassio_fallbacks() -> None:
-    from custom_components.helianthus import _entry_identity_probe_addresses
+    from custom_components.helianthus.entry_connection import entry_identity_probe_addresses
 
-    assert _entry_identity_probe_addresses(
+    assert entry_identity_probe_addresses(
         {CONF_HOST_ALIASES: ["172.30.232.1", "local-helianthus.local.hass.io"]},
         "172.30.232.1",
     ) == ("local-helianthus.local.hass.io", "172.30.32.1")
@@ -348,7 +348,7 @@ def test_setup_identity_probe_addresses_adds_stored_and_hassio_fallbacks() -> No
 
 def test_setup_identity_refresh_rebinds_same_guid_to_reachable_alias() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _update_entry_endpoint_if_changed
+    from custom_components.helianthus.entry_connection import update_entry_endpoint_if_changed
 
     entry = SimpleNamespace(
         entry_id="01KSC4TH4K09D1VXX0MHFT6BBF",
@@ -364,7 +364,7 @@ def test_setup_identity_refresh_rebinds_same_guid_to_reachable_alias() -> None:
     config_entries = _FakeConfigEntries([entry])
     hass = SimpleNamespace(config_entries=config_entries)
 
-    assert _update_entry_endpoint_if_changed(
+    assert update_entry_endpoint_if_changed(
         hass,
         entry,
         VerifiedHelianthusEndpoint(
@@ -382,7 +382,9 @@ def test_setup_identity_refresh_rebinds_same_guid_to_reachable_alias() -> None:
 
 def test_setup_duplicate_owner_requires_live_identity_proof() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+    from custom_components.helianthus.entry_ownership import (
+        find_verified_entry_by_configured_instance_guid,
+    )
 
     stale_claimant = SimpleNamespace(
         entry_id="stale-entry",
@@ -399,7 +401,7 @@ def test_setup_duplicate_owner_requires_live_identity_proof() -> None:
     session = _FakeSession([OLD_GUID])
 
     result = asyncio.run(
-        _find_verified_entry_by_configured_instance_guid(
+        find_verified_entry_by_configured_instance_guid(
             hass,
             session,
             LIVE_GUID,
@@ -413,7 +415,9 @@ def test_setup_duplicate_owner_requires_live_identity_proof() -> None:
 
 def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+    from custom_components.helianthus.entry_ownership import (
+        find_verified_entry_by_configured_instance_guid,
+    )
 
     live_claimant = SimpleNamespace(
         entry_id="live-entry",
@@ -430,7 +434,7 @@ def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
     session = _FakeSession([LIVE_GUID])
 
     result = asyncio.run(
-        _find_verified_entry_by_configured_instance_guid(
+        find_verified_entry_by_configured_instance_guid(
             hass,
             session,
             LIVE_GUID,
@@ -444,7 +448,9 @@ def test_setup_duplicate_owner_accepts_verified_live_claimant() -> None:
 
 def test_setup_duplicate_owner_prefers_earliest_entry_id_among_verified_claimants() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+    from custom_components.helianthus.entry_ownership import (
+        find_verified_entry_by_configured_instance_guid,
+    )
 
     later_claimant = SimpleNamespace(
         entry_id="z-entry",
@@ -472,7 +478,7 @@ def test_setup_duplicate_owner_prefers_earliest_entry_id_among_verified_claimant
     session = _FakeSession([LIVE_GUID, LIVE_GUID])
 
     result = asyncio.run(
-        _find_verified_entry_by_configured_instance_guid(
+        find_verified_entry_by_configured_instance_guid(
             hass,
             session,
             LIVE_GUID,
@@ -488,7 +494,9 @@ def test_setup_duplicate_owner_prefers_earliest_entry_id_among_verified_claimant
 
 def test_setup_duplicate_owner_ignores_disabled_entries() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _find_verified_entry_by_configured_instance_guid
+    from custom_components.helianthus.entry_ownership import (
+        find_verified_entry_by_configured_instance_guid,
+    )
 
     disabled_claimant = SimpleNamespace(
         entry_id="a-disabled-entry",
@@ -519,7 +527,7 @@ def test_setup_duplicate_owner_ignores_disabled_entries() -> None:
     session = _FakeSession([LIVE_GUID])
 
     result = asyncio.run(
-        _find_verified_entry_by_configured_instance_guid(
+        find_verified_entry_by_configured_instance_guid(
             hass,
             session,
             LIVE_GUID,
@@ -532,7 +540,7 @@ def test_setup_duplicate_owner_ignores_disabled_entries() -> None:
 
 def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _merge_duplicate_config_entry_options
+    from custom_components.helianthus.entry_ownership import merge_duplicate_config_entry_options
 
     alias_entry = SimpleNamespace(
         entry_id="alias-entry",
@@ -553,7 +561,7 @@ def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None
     )
     hass = SimpleNamespace(config_entries=_FakeConfigEntries([alias_entry, owner_entry]))
 
-    assert _merge_duplicate_config_entry_options(
+    assert merge_duplicate_config_entry_options(
         hass,
         alias_entry=alias_entry,
         owner_entry=owner_entry,
@@ -569,7 +577,7 @@ def test_duplicate_alias_options_are_preserved_on_owner_before_removal() -> None
 
 def test_duplicate_alias_registry_cleanup_removes_alias_tree_only() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _remove_config_entry_registry_state
+    from custom_components.helianthus.entry_ownership import remove_config_entry_registry_state
 
     class _FakeEntityRegistry:
         def __init__(self) -> None:
@@ -596,7 +604,7 @@ def test_duplicate_alias_registry_cleanup_removes_alias_tree_only() -> None:
         "owner-entry": [SimpleNamespace(id="owner-device")],
     }
 
-    removed_entities, removed_devices = _remove_config_entry_registry_state(
+    removed_entities, removed_devices = remove_config_entry_registry_state(
         device_registry=device_registry,
         entity_registry=entity_registry,
         entry_id="alias-entry",
@@ -617,7 +625,9 @@ def test_duplicate_alias_registry_cleanup_removes_alias_tree_only() -> None:
 
 def test_duplicate_alias_removal_is_scheduled_after_refusal() -> None:
     _ensure_config_flow_stubs()
-    from custom_components.helianthus import _schedule_duplicate_config_entry_removal
+    from custom_components.helianthus.entry_ownership import (
+        schedule_duplicate_config_entry_removal,
+    )
 
     config_entries = _FakeConfigEntries([])
     scheduled: list[str] = []
@@ -626,6 +636,6 @@ def test_duplicate_alias_removal_is_scheduled_after_refusal() -> None:
         async_create_task=scheduled.append,
     )
 
-    assert _schedule_duplicate_config_entry_removal(hass, "alias-entry")
+    assert schedule_duplicate_config_entry_removal(hass, "alias-entry")
     assert config_entries.removals == ["alias-entry"]
     assert scheduled == ["remove:alias-entry"]

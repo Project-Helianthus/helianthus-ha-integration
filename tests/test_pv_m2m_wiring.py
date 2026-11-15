@@ -228,12 +228,13 @@ def test_cancelled_first_refresh_closes_untransferred_https_client() -> None:
 
 def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it() -> None:
     setup_source = (COMPONENT / "entry_setup.py").read_text(encoding="utf-8")
+    connection_source = (COMPONENT / "entry_connection.py").read_text(encoding="utf-8")
     cleanup_source = (COMPONENT / "entry_cleanup.py").read_text(encoding="utf-8")
     assert "async_setup_pv_m2m_boundary" in setup_source
     assert '"pv_m2m_coordinator"' in setup_source
     assert '"pv_m2m_boundary"' in setup_source
     assert "await pv_m2m_boundary.async_close()" in cleanup_source
-    assert "GraphQLClient(session=session" in setup_source
+    assert "GraphQLClient(session=session" in connection_source
 
 
 def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer() -> None:

@@ -5,7 +5,7 @@
       "path": "custom_components/helianthus/__init__.py",
       "symbol": "<module>",
       "rule": "F401",
-      "count": 13
+      "count": 12
     },
     {
       "path": "custom_components/helianthus/__init__.py",
@@ -173,7 +173,7 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "C901",
-      "count": 285
+      "count": 262
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
@@ -191,7 +191,7 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "PLR0915",
-      "count": 845
+      "count": 758
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",

@@ -12,16 +12,18 @@ from custom_components.helianthus import (
     _canonical_bus_display_name,
     _canonical_bus_model_name,
     _clean_label,
-    _identifier_belongs_to_entry,
-    _identifier_matches_any_entry,
     _is_stale_bus_identifier,
     _legacy_bus_identifier_address,
-    _iter_identifier_pairs,
     _parse_zone_schedule_helper_bindings,
     _select_bus_migration_target,
     _stable_bus_identity_model,
     _stale_bus_address_unique_id,
     _zone_instance_from_id,
+)
+from custom_components.helianthus.entry_ownership import (
+    identifier_belongs_to_entry,
+    identifier_matches_any_entry,
+    iter_identifier_pairs,
 )
 from types import SimpleNamespace
 
@@ -157,20 +159,20 @@ def test_stable_bus_identity_model_uses_known_family_mapping_across_sparse_paylo
     assert sparse == "VUW"
 
 
-def test_identifier_belongs_to_entry() -> None:
-    assert _identifier_belongs_to_entry("daemon-entry-1", "entry-1")
-    assert _identifier_belongs_to_entry("adapter-entry-1", "entry-1")
-    assert _identifier_belongs_to_entry("entry-1-bus-BASV2-15", "entry-1")
-    assert _identifier_belongs_to_entry("entry-1-zone-2", "entry-1")
-    assert _identifier_belongs_to_entry("entry-1-circuit-0", "entry-1")
-    assert not _identifier_belongs_to_entry("legacy-device", "entry-1")
+def testidentifier_belongs_to_entry() -> None:
+    assert identifier_belongs_to_entry("daemon-entry-1", "entry-1")
+    assert identifier_belongs_to_entry("adapter-entry-1", "entry-1")
+    assert identifier_belongs_to_entry("entry-1-bus-BASV2-15", "entry-1")
+    assert identifier_belongs_to_entry("entry-1-zone-2", "entry-1")
+    assert identifier_belongs_to_entry("entry-1-circuit-0", "entry-1")
+    assert not identifier_belongs_to_entry("legacy-device", "entry-1")
 
 
-def test_identifier_matches_any_entry() -> None:
+def testidentifier_matches_any_entry() -> None:
     active = {"entry-1", "entry-2"}
-    assert _identifier_matches_any_entry("entry-2-energy", active)
-    assert _identifier_matches_any_entry("entry-1-bus-VR_71-26", active)
-    assert not _identifier_matches_any_entry("legacy-device", active)
+    assert identifier_matches_any_entry("entry-2-energy", active)
+    assert identifier_matches_any_entry("entry-1-bus-VR_71-26", active)
+    assert not identifier_matches_any_entry("legacy-device", active)
 
 
 def test_is_stale_bus_identifier_flags_legacy_bus_device_for_cleanup() -> None:
@@ -380,7 +382,7 @@ def test_iter_identifier_pairs_ignores_legacy_shapes() -> None:
         "legacy-string-id",
         ("malformed",),
     }
-    assert set(_iter_identifier_pairs(raw)) == {
+    assert set(iter_identifier_pairs(raw)) == {
         ("helianthus", "entry-1-bus-BASV2-15"),
         ("helianthus", "entry-1-zone-1"),
     }

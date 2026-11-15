@@ -67,35 +67,7 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "CONF_INSTANCE_GUID",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "CONF_PATH",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "CONF_TRANSPORT",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "CONF_USE_SUBSCRIPTIONS",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "CONF_VERSION",
       "kind": "package",
       "count": 1
     },
@@ -110,20 +82,6 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "DEFAULT_DHW_SCHEDULE_HELPER",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "DEFAULT_GRAPHQL_PATH",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "DEFAULT_GRAPHQL_TRANSPORT",
       "kind": "package",
       "count": 1
     },
@@ -235,48 +193,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_config_entry_sort_key",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_config_entry_sort_key",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_entry_identity_probe_addresses",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_entry_identity_probe_addresses",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_find_verified_entry_by_configured_instance_guid",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_find_verified_entry_by_configured_instance_guid",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_format_hex4_version",
       "kind": "package",
       "count": 1
@@ -291,20 +207,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_identifier_matches_any_entry",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_identifier_matches_any_entry",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_is_stale_bus_identifier",
       "kind": "package",
       "count": 1
@@ -313,34 +215,6 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "_is_stale_bus_identifier",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_iter_identifier_pairs",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_iter_identifier_pairs",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_merge_duplicate_config_entry_options",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_merge_duplicate_config_entry_options",
       "kind": "private",
       "count": 1
     },
@@ -389,34 +263,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_remove_config_entry_registry_state",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_remove_config_entry_registry_state",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_schedule_duplicate_config_entry_removal",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_schedule_duplicate_config_entry_removal",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_select_bus_migration_target",
       "kind": "package",
       "count": 1
@@ -445,20 +291,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_update_entry_endpoint_if_changed",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_update_entry_endpoint_if_changed",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_zone_instance_from_id",
       "kind": "package",
       "count": 1
@@ -468,13 +300,6 @@
       "module": "custom_components.helianthus",
       "symbol": "_zone_instance_from_id",
       "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "async_sanitize_legacy_eebus_admin_entry",
-      "kind": "package",
       "count": 1
     },
     {

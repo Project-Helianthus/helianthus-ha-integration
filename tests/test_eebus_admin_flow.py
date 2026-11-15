@@ -18,14 +18,16 @@ def test_generic_graphql_config_and_ha_auth_contract_remain_present() -> None:
     component = Path(__file__).parents[1] / "custom_components" / "helianthus"
     config = (component / "config_flow.py").read_text()
     entry_setup = (component / "entry_setup.py").read_text()
+    entry_connection = (component / "entry_connection.py").read_text()
     assert "_async_validate_connection" in config
     assert "verify_gateway_identity" in config
-    assert "GraphQLClient" in entry_setup
+    assert "GraphQLClient" in entry_connection
     assert "async_start_reauth" not in entry_setup
+    assert "async_start_reauth" not in entry_connection
 
 
 def test_legacy_eebus_secret_is_removed_idempotently_without_replacing_entry_state() -> None:
-    component = importlib.import_module("custom_components.helianthus")
+    component = importlib.import_module("custom_components.helianthus.entry_ownership")
     secret = "legacy-eeBUS-secret-must-not-render"
 
     class Entry:
