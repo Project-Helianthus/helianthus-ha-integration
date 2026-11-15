@@ -244,7 +244,7 @@ async def _gateway_read(runtime: dict[str, Any]) -> dict[str, Any]:
         data = await client.query(DIAGNOSTICS_QUERY)
     except Exception as exc:  # noqa: BLE001 - a download reports, never raises
         return {"error": type(exc).__name__}
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or not data:
         return {"error": "no data"}
     return data
 

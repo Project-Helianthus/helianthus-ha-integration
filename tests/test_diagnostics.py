@@ -336,8 +336,9 @@ def test_a_failing_read_yields_an_error_entry(error: Exception) -> None:
     assert SYNTHETIC_HOST not in json.dumps(result)
 
 
-def test_a_response_without_data_yields_an_error_entry() -> None:
-    result = _download(_FakeClient(response=None))
+@pytest.mark.parametrize("response", [None, {}, []])
+def test_a_response_without_data_yields_an_error_entry(response: Any) -> None:
+    result = _download(_FakeClient(response=response))
 
     assert result["gateway"] == {"error": "no data"}
 
