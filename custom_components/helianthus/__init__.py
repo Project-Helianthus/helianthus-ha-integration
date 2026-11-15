@@ -10,17 +10,12 @@ from typing import TYPE_CHECKING
 
 from .admission import (
     REPAIR_EMPTY_INVENTORY_UNTRUSTED,
-    status_admission_trusted,
     update_effective_admission,
 )
 from .const import (
-    CONF_DHW_SCHEDULE_HELPER,
     CONF_USE_SUBSCRIPTIONS,
-    CONF_ZONE_SCHEDULE_HELPERS,
-    DEFAULT_DHW_SCHEDULE_HELPER,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
-    DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN as DOMAIN,
 )
 
@@ -75,54 +70,6 @@ async def async_unload_eebus_admin_boundary(hass: object, *, entry_id: str, sess
 
     unregister_eebus_admin_services(hass, entry_id=entry_id)
     await close_admin_session(session)
-
-_INVOKE_SET_EXT_REGISTER = """
-mutation SetExtRegister($address:Int!, $params:json!){
-  invoke(address:$address, plane:"system", method:"set_ext_register", params:$params){
-    ok
-    error {
-      message
-      code
-      category
-    }
-  }
-}
-"""
-
-
-def _parse_zone_schedule_helper_bindings(raw: str) -> dict[str, str]:
-    bindings: dict[str, str] = {}
-    text = str(raw or "").strip()
-    if not text:
-        return bindings
-    for chunk in text.split(","):
-        item = chunk.strip()
-        if not item or "=" not in item:
-            continue
-        key, value = item.split("=", 1)
-        zone_key = key.strip().lower()
-        helper_entity = value.strip()
-        if not helper_entity.startswith("schedule."):
-            continue
-        if zone_key.isdigit():
-            zone_key = f"zone-{zone_key}"
-        if zone_key.startswith("zone-"):
-            suffix = zone_key[5:]
-            if suffix.isdigit() and int(suffix) > 0:
-                bindings[zone_key] = helper_entity
-    return bindings
-
-
-def _zone_instance_from_id(zone_id: str) -> int | None:
-    token = str(zone_id or "").strip().lower()
-    if token.startswith("zone-"):
-        token = token[5:]
-    if not token.isdigit():
-        return None
-    value = int(token)
-    if value <= 0:
-        return None
-    return value - 1
 
 
 def _parse_identifier_index(token: str, prefix: str) -> int | None:

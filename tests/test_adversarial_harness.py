@@ -197,13 +197,12 @@ def test_adv04_replay_reaches_semantic_inventory_transition(
 ) -> None:
     """ADV-04 must reload for delayed semantic inventory, never parent remapping."""
     harness._install_entity_stubs()
-    from custom_components.helianthus import entry_setup
-    from custom_components.helianthus import zone_parent
+    from custom_components.helianthus import entry_listeners
 
     inventory_calls: list[tuple[dict, set[str], bool]] = []
     parent_results: list[bool] = []
-    inventory_predicate = entry_setup._semantic_inventory_became_available
-    parent_predicate = zone_parent.should_reload_zone_parent_state
+    inventory_predicate = entry_listeners._semantic_inventory_became_available
+    parent_predicate = entry_listeners.should_reload_zone_parent_state
 
     def observe_inventory(payload: dict, known_zones: set[str], known_has_dhw: bool) -> bool:
         inventory_calls.append((payload, known_zones, known_has_dhw))
@@ -214,8 +213,8 @@ def test_adv04_replay_reaches_semantic_inventory_transition(
         parent_results.append(result)
         return result
 
-    monkeypatch.setattr(entry_setup, "_semantic_inventory_became_available", observe_inventory)
-    monkeypatch.setattr(zone_parent, "should_reload_zone_parent_state", observe_parent)
+    monkeypatch.setattr(entry_listeners, "_semantic_inventory_became_available", observe_inventory)
+    monkeypatch.setattr(entry_listeners, "should_reload_zone_parent_state", observe_parent)
     harness._replay_actual_delayed_inventory_listener()
 
     assert inventory_calls == [

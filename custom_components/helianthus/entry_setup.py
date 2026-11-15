@@ -2,49 +2,36 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from . import (
-    CONF_DHW_SCHEDULE_HELPER,
     CONF_USE_SUBSCRIPTIONS,
-    CONF_ZONE_SCHEDULE_HELPERS,
-    DEFAULT_DHW_SCHEDULE_HELPER,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
-    DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
     PLATFORMS,
-    _INVOKE_SET_EXT_REGISTER,
     _LOGGER,
     _parse_identifier_index,
-    _parse_zone_schedule_helper_bindings,
-    _zone_instance_from_id,
     async_setup_eebus_admin_boundary,
     async_unload_eebus_admin_boundary,
     update_effective_admission,
-    status_admission_trusted,
 )
 from .entry_connection import ConnectionSkipped, async_connect_gateway
 from .entry_coordinators import async_create_domain_coordinators
-from .entry_devices import (
-    parse_circuit_index,
-    parse_optional_int,
-    register_gateway_devices,
-    register_inventory_devices,
-    resolved_bus_device_key,
-)
+from .entry_devices import register_gateway_devices, register_inventory_devices
 from .entry_entity_cleanup import EntryEntityReconciler, claim_sparse_reloads
+from .entry_listeners import EntryCoordinatorListeners, entry_reload_scheduler
 from .entry_ownership import (
     DuplicateOwnerRefusal,
     async_prepare_entry,
     refuse_duplicate_setup,
 )
 from .entry_runtime import EntryRuntime
+from .entry_schedule_helpers import register_schedule_helper_listeners
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
-from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+from .zone_parent import ZoneParentBindings
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -57,128 +44,6 @@ def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None
         return semantic_asset_ids(entry)
     except ValueError:
         return None
-
-
-def _semantic_inventory_became_available(
-    payload: dict,
-    known_zones: set[str],
-    known_has_dhw: bool,
-) -> bool:
-    """Return whether delayed positive semantic inventory needs a platform reload."""
-    zones = payload.get("zones")
-    current_zone_ids = {
-        str(zone.get("id"))
-        for zone in (zones if isinstance(zones, list) else [])
-        if isinstance(zone, dict) and zone.get("id") is not None
-    }
-    has_new_zones = bool(current_zone_ids - known_zones)
-    has_new_dhw = isinstance(payload.get("dhw"), dict) and not known_has_dhw
-    return has_new_zones or has_new_dhw
-
-
-def _zone_schedule_semantic_write_ready(
-    semantic_coordinator: object,
-    zone_id: str,
-) -> bool:
-    return semantic_target_available(
-        semantic_coordinator, "zone", zone_id
-    ) and not semantic_target_is_stale(
-        semantic_coordinator, "zone", zone_id
-    )
-
-
-def _dhw_schedule_semantic_write_ready(semantic_coordinator: object) -> bool:
-    return semantic_target_available(
-        semantic_coordinator, "dhw"
-    ) and not semantic_target_is_stale(semantic_coordinator, "dhw")
-
-
-async def _async_apply_zone_schedule(
-    *,
-    client: object,
-    semantic_coordinator: object,
-    status_coordinator: object,
-    regulator_bus_address: int | None,
-    zone_id: str,
-) -> bool:
-    """Apply the configured schedule helper to one zone."""
-    if not status_admission_trusted(status_coordinator):
-        _LOGGER.warning("Zone schedule helper ignored: source admission is not trusted")
-        return False
-    if regulator_bus_address is None:
-        _LOGGER.warning("Zone schedule helper ignored: regulator address missing")
-        return False
-    if not _zone_schedule_semantic_write_ready(semantic_coordinator, zone_id):
-        _LOGGER.warning(
-            "Zone schedule helper ignored for %s: semantic data is stale or unavailable",
-            zone_id,
-        )
-        return False
-    instance = _zone_instance_from_id(zone_id)
-    if instance is None:
-        _LOGGER.warning("Zone schedule helper ignored: invalid zone id %s", zone_id)
-        return False
-    variables = {
-        "address": int(regulator_bus_address),
-        "params": {
-            "opcode": 0x02,
-            "group": 0x03,
-            "instance": int(instance),
-            "addr": 0x0006,
-            "data": [1, 0x00],
-        },
-    }
-    try:
-        payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
-        invoke = payload.get("invoke") if isinstance(payload, dict) else None
-        if not isinstance(invoke, dict) or not invoke.get("ok"):
-            _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, invoke)
-            return False
-        await semantic_coordinator.async_request_refresh()
-        return True
-    except Exception as exc:  # pragma: no cover - defensive runtime guard
-        _LOGGER.warning("Zone schedule helper write failed for %s: %s", zone_id, exc)
-        return False
-
-
-async def _async_apply_dhw_schedule(
-    *,
-    client: object,
-    semantic_coordinator: object,
-    status_coordinator: object,
-    regulator_bus_address: int | None,
-) -> bool:
-    """Apply the configured schedule helper to DHW."""
-    if not status_admission_trusted(status_coordinator):
-        _LOGGER.warning("DHW schedule helper ignored: source admission is not trusted")
-        return False
-    if regulator_bus_address is None:
-        _LOGGER.warning("DHW schedule helper ignored: regulator address missing")
-        return False
-    if not _dhw_schedule_semantic_write_ready(semantic_coordinator):
-        _LOGGER.warning("DHW schedule helper ignored: semantic data is stale or unavailable")
-        return False
-    variables = {
-        "address": int(regulator_bus_address),
-        "params": {
-            "opcode": 0x02,
-            "group": 0x01,
-            "instance": 0x00,
-            "addr": 0x0003,
-            "data": [1, 0x00],
-        },
-    }
-    try:
-        payload = await client.mutation(_INVOKE_SET_EXT_REGISTER, variables)
-        invoke = payload.get("invoke") if isinstance(payload, dict) else None
-        if not isinstance(invoke, dict) or not invoke.get("ok"):
-            _LOGGER.warning("DHW schedule helper write failed: %s", invoke)
-            return False
-        await semantic_coordinator.async_request_refresh()
-        return True
-    except Exception as exc:  # pragma: no cover - defensive runtime guard
-        _LOGGER.warning("DHW schedule helper write failed: %s", exc)
-        return False
 
 
 async def _async_forward_platforms_and_finalize(
@@ -201,21 +66,6 @@ async def _async_forward_platforms_and_finalize(
 _SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
 _SPARSE_SEEN_DISABLED_KEY = "_sparse_seen_disabled_unique_ids"
 _TRIGGER_RELOAD_KEY = "_trigger_reload_times"
-FM5_MODE_TRIGGER = "fm5_mode"
-ZONE_PARENT_TRIGGER = "zone_parent_mapping"
-# The FM5 mode trigger and the zone-parent mapping trigger each schedule at
-# most one reload per period. The sparse-entity rule bounds by the Home
-# Assistant run; that period cannot serve here, because a later lasting change
-# of the mode or the mapping must still reach the entities. Ten minutes is ten
-# polls at the default scan interval: an input that flips on every poll costs
-# at most six brief unavailabilities of the entry per hour instead of sixty,
-# and a lasting change is applied within ten minutes of the previous reload.
-TRIGGER_RELOAD_PERIOD_SECONDS = 600.0
-
-
-def _reload_clock() -> float:
-    """Return the monotonic seconds in which the trigger period is measured."""
-    return time.monotonic()
 
 
 def _entry_record(
@@ -285,31 +135,6 @@ def _entry_run_records(
     )
 
 
-def _schedule_bounded_trigger_reload(
-    reload_times: dict[str, float],
-    trigger: str,
-    schedule_reload: Callable[[str], None],
-    reason: str,
-) -> None:
-    """Schedule the reload of one trigger unless it had one within the period.
-
-    The caller asks on every poll at which the input differs from what the
-    running setup was built with. Inside ``TRIGGER_RELOAD_PERIOD_SECONDS``
-    after the trigger's last reload the request is dropped. At the first poll
-    after the period at which the input still differs, one further reload is
-    scheduled and a new period starts. The setup after that reload is built
-    from the value observed then, so a flapping input settles on its last
-    observed value at the time of that reload.
-    """
-    now = _reload_clock()
-    last = reload_times.get(trigger)
-    if last is not None and now - last < TRIGGER_RELOAD_PERIOD_SECONDS:
-        _LOGGER.debug("Helianthus reload for %s held until its period ends: %s", trigger, reason)
-        return
-    reload_times[trigger] = now
-    schedule_reload(reason)
-
-
 def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> bool:
     """Return whether a sparse entity of one entry has had its one reload in this run.
 
@@ -326,16 +151,12 @@ def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> b
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
-    from homeassistant.core import callback
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from homeassistant.helpers.event import async_track_state_change_event
     from homeassistant.const import CONF_SCAN_INTERVAL
     from .device_ids import (
         boiler_burner_identifier,
         boiler_hydraulics_identifier,
-        exportable_radio_bus_keys,
-        nonexportable_radio_bus_keys,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
     )
@@ -353,13 +174,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         evse_m2m_option_signature,
     )
     from .entry_services import async_setup_optional_eebus_admin_service
-    from .zone_parent import (
-        build_zone_parent_device_ids,
-        radio_mappings_by_zone_id,
-        resolve_retained_parent_bindings,
-        should_reload_zone_parent_state,
-        zone_ids_by_climate_unique_id,
-    )
 
     prepared = await async_prepare_entry(hass, entry)
     device_registry = prepared.device_registry
@@ -412,29 +226,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     identities = register_inventory_devices(
         device_registry, entry.entry_id, gateway_devices, coordinators
     )
-    known_bus_devices = identities.known_bus_devices
     regulator_device = identities.regulator_device_id
     regulator_bus_address = identities.regulator_bus_address
     boiler_device = identities.boiler_device_id
     vr71_device = identities.vr71_device_id
     regulator_manufacturer = identities.regulator_manufacturer
-    nonexportable_radio_keys = identities.nonexportable_radio_keys
     b524_merge_targets = identities.b524_merge_targets
-    known_radio_bus_keys = identities.known_radio_bus_keys
-    known_circuit_indexes = identities.known_circuit_indexes
-    known_fm5_mode = identities.known_fm5_mode
-    known_cylinder_indexes = identities.known_cylinder_indexes
 
     devices = device_coordinator.data or []
-    reload_scheduled = False
-
-    def schedule_reload(reason: str) -> None:
-        nonlocal reload_scheduled
-        if reload_scheduled:
-            return
-        reload_scheduled = True
-        _LOGGER.info("Reloading Helianthus entry %s: %s", entry.entry_id, reason)
-        hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+    schedule_reload = entry_reload_scheduler(hass, entry.entry_id)
 
     admission = update_effective_admission(status_coordinator, devices)
     sparse_reloaded_ids, sparse_seen_disabled_ids, trigger_reload_times = _entry_run_records(
@@ -458,124 +258,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     reconciler.record_cleanup_evidence(devices)
 
-    semantic = semantic_coordinator.data or {}
-    semantic_zones = [
-        zone for zone in (semantic.get("zones", []) or []) if isinstance(zone, dict)
-    ]
-    known_zones: set[str] = {
-        str(zone.get("id"))
-        for zone in semantic_zones
-        if zone.get("id") is not None
-    }
-    known_has_dhw = isinstance(semantic.get("dhw"), dict)
-
-    def existing_zone_parent_device_ids(zones: list[dict]) -> dict[str, tuple[str, str]]:
-        """Recover validated radio parents from existing climate registry entries."""
-        zone_ids_by_unique_id = zone_ids_by_climate_unique_id(entry.entry_id, zones)
-        radio_identifier_prefix = f"{entry.entry_id}-radio-"
-        existing: dict[str, tuple[str, str]] = {}
-        for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-            zone_id = zone_ids_by_unique_id.get(entity_entry.unique_id)
-            if zone_id is None or entity_entry.device_id is None:
-                continue
-            device_entry = device_registry.async_get(entity_entry.device_id)
-            if device_entry is None:
-                continue
-            for identifier in sorted(device_entry.identifiers):
-                if identifier[0] == DOMAIN and identifier[1].startswith(radio_identifier_prefix):
-                    existing[zone_id] = identifier
-                    break
-        return existing
-
-    initial_semantic_payload = (
-        semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
+    zone_parents = ZoneParentBindings(
+        hass,
+        entry,
+        semantic_coordinator=semantic_coordinator,
+        radio_coordinator=radio_coordinator,
+        regulator_device_id=regulator_device,
+        entity_entries=er.async_entries_for_config_entry(entity_registry, entry.entry_id),
+        device_registry=device_registry,
     )
-    initial_zones = [
-        zone
-        for zone in (initial_semantic_payload.get("zones", []) or [])
-        if isinstance(zone, dict)
-    ]
-    initial_radio_payload = (
-        radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
-    )
-    initial_live_parent_ids, _ = build_zone_parent_device_ids(
-        entry.entry_id,
-        initial_zones,
-        initial_radio_payload,
-        regulator_device,
-    )
-    initial_mappings = radio_mappings_by_zone_id(initial_zones)
-    binding_key = "zone_parent_bindings_v1"
-    retained_zone_parent_ids, retained_zone_parent_mappings, normalized_bindings = (
-        resolve_retained_parent_bindings(
-            existing_zone_parent_device_ids(initial_zones),
-            entry.data.get(binding_key),
-        )
-    )
-    for zone_id, parent_id in initial_live_parent_ids.items():
-        mapping = initial_mappings.get(zone_id)
-        if mapping is None:
-            continue
-        retained_zone_parent_ids[zone_id] = parent_id
-        retained_zone_parent_mappings[zone_id] = mapping
-        normalized_bindings[zone_id] = {
-            "identifier": parent_id[1],
-            "mapping": mapping,
-        }
+    zone_parents.persist()
 
-    def persist_retained_zone_parent_bindings() -> None:
-        if entry.data.get(binding_key) == normalized_bindings:
-            return
-        updated_data = dict(entry.data)
-        updated_data[binding_key] = dict(normalized_bindings)
-        hass.config_entries.async_update_entry(entry, data=updated_data)
-
-    persist_retained_zone_parent_bindings()
-
-    def adopt_current_live_parent_bindings() -> None:
-        payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
-        zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
-        radio_payload = radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
-        live_parent_ids, _ = build_zone_parent_device_ids(
-            entry.entry_id,
-            zones,
-            radio_payload,
-            regulator_device,
-        )
-        mappings = radio_mappings_by_zone_id(zones)
-        changed = False
-        for zone_id, parent_id in live_parent_ids.items():
-            mapping = mappings.get(zone_id)
-            if mapping is None:
-                continue
-            binding = {"identifier": parent_id[1], "mapping": mapping}
-            if normalized_bindings.get(zone_id) == binding:
-                continue
-            retained_zone_parent_ids[zone_id] = parent_id
-            retained_zone_parent_mappings[zone_id] = mapping
-            normalized_bindings[zone_id] = binding
-            changed = True
-        if changed:
-            persist_retained_zone_parent_bindings()
-
-    def current_zone_parent_device_ids() -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
-        payload = semantic_coordinator.data if isinstance(semantic_coordinator.data, dict) else {}
-        zones = [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
-        radio_payload = radio_coordinator.data if isinstance(radio_coordinator.data, dict) else None
-        return build_zone_parent_device_ids(
-            entry.entry_id,
-            zones,
-            radio_payload,
-            regulator_device,
-            existing_parent_device_ids=retained_zone_parent_ids,
-            existing_parent_mappings=retained_zone_parent_mappings,
-            allow_existing_parent_fallback=(
-                isinstance(radio_payload, dict)
-                and radio_payload.get("inventory_complete") is False
-            ),
-        )
-
-    zone_parent_device_ids, unresolved_zone_ids = current_zone_parent_device_ids()
+    zone_parent_device_ids, unresolved_zone_ids = zone_parents.current_parent_device_ids()
     if unresolved_zone_ids:
         _LOGGER.warning(
             "Helianthus zone parent resolution incomplete for entry %s; skipping unresolved zones until reload: %s",
@@ -601,192 +295,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if device_id is not None and device_id != regulator_device:
                 radio_device_zone_names[device_id] = str(zone_name).strip()
 
-    zone_schedule_helpers = _parse_zone_schedule_helper_bindings(
-        str(
-            entry.options.get(
-                CONF_ZONE_SCHEDULE_HELPERS,
-                DEFAULT_ZONE_SCHEDULE_HELPERS,
-            )
+    listeners = EntryCoordinatorListeners(
+        coordinators,
+        identities,
+        reconciler,
+        zone_parents,
+        zone_parent_device_ids=zone_parent_device_ids,
+        unresolved_zone_ids=unresolved_zone_ids,
+        trigger_reload_times=trigger_reload_times,
+        schedule_reload=schedule_reload,
+    )
+    unsub_listeners: list[Callable[[], None]] = listeners.register()
+    unsub_listeners.extend(
+        register_schedule_helper_listeners(
+            hass,
+            entry,
+            client=client,
+            semantic_coordinator=semantic_coordinator,
+            status_coordinator=status_coordinator,
+            regulator_bus_address=regulator_bus_address,
         )
     )
-    dhw_schedule_helper = str(
-        entry.options.get(CONF_DHW_SCHEDULE_HELPER, DEFAULT_DHW_SCHEDULE_HELPER) or ""
-    ).strip()
-
-    async def apply_zone_schedule(zone_id: str) -> None:
-        await _async_apply_zone_schedule(
-            client=client,
-            semantic_coordinator=semantic_coordinator,
-            status_coordinator=status_coordinator,
-            regulator_bus_address=regulator_bus_address,
-            zone_id=zone_id,
-        )
-
-    async def apply_dhw_schedule() -> None:
-        await _async_apply_dhw_schedule(
-            client=client,
-            semantic_coordinator=semantic_coordinator,
-            status_coordinator=status_coordinator,
-            regulator_bus_address=regulator_bus_address,
-        )
-
-    def current_bus_device_ids(current: list[dict]) -> set[str]:
-        current_ids: set[str] = set()
-        for dev in current:
-            bus_key = resolved_bus_device_key(dev)
-            if bus_key:
-                current_ids.add(bus_key)
-        return current_ids
-
-    def handle_device_update() -> None:
-        current = device_coordinator.data or []
-        reconciler.record_cleanup_evidence(current)
-        if not current:
-            return
-        current_ids = current_bus_device_ids(current)
-        if not current_ids:
-            return
-        if current_ids.issubset(known_bus_devices):
-            if reconciler.cleanup_allowed:
-                reconciler.run_trusted_cleanup("trusted non-empty inventory refresh")
-            return
-        schedule_reload("new bus devices discovered")
-
-    def handle_status_update() -> None:
-        current = device_coordinator.data or []
-        reconciler.record_cleanup_evidence(current)
-        current_ids = current_bus_device_ids(current)
-        if current_ids and not current_ids.issubset(known_bus_devices):
-            schedule_reload("new bus devices discovered")
-            return
-        reconciler.auto_enable_sparse_entities("status update")
-        if reconciler.cleanup_allowed and current_ids:
-            reconciler.run_trusted_cleanup("trusted admission status refresh")
-
-    def handle_semantic_update() -> None:
-        payload = semantic_coordinator.data or {}
-        adopt_current_live_parent_bindings()
-        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
-        if should_reload_zone_parent_state(
-            zone_parent_device_ids,
-            unresolved_zone_ids,
-            current_zone_parent_ids,
-            unresolved,
-        ):
-            _schedule_bounded_trigger_reload(
-                trigger_reload_times, ZONE_PARENT_TRIGGER, schedule_reload, "zone parent mapping changed"
-            )
-            return
-        if _semantic_inventory_became_available(payload, known_zones, known_has_dhw):
-            schedule_reload("semantic inventory became available")
-            return
-        reconciler.auto_enable_sparse_entities("semantic update")
-
-    def handle_circuit_update() -> None:
-        payload = circuit_coordinator.data or {}
-        current_indexes: set[int] = set()
-        for circuit in payload.get("circuits", []) or []:
-            if not isinstance(circuit, dict):
-                continue
-            index = parse_circuit_index(circuit)
-            if index is not None:
-                current_indexes.add(index)
-        if current_indexes - known_circuit_indexes:
-            schedule_reload("circuit inventory became available")
-            return
-        reconciler.auto_enable_sparse_entities("circuit update")
-
-    def handle_radio_update() -> None:
-        nonlocal nonexportable_radio_keys
-        payload = radio_coordinator.data or {}
-        radio_devices = payload.get("radio_devices", []) or []
-        current_nonexportable = nonexportable_radio_bus_keys(radio_devices)
-        nonexportable_radio_keys = current_nonexportable
-        if current_nonexportable:
-            reconciler.cleanup_nonexportable_radio_registry_entries(
-                current_nonexportable,
-                "radio update",
-            )
-        current_keys = exportable_radio_bus_keys(radio_devices)
-        adopt_current_live_parent_bindings()
-        current_zone_parent_ids, unresolved = current_zone_parent_device_ids()
-        if should_reload_zone_parent_state(
-            zone_parent_device_ids,
-            unresolved_zone_ids,
-            current_zone_parent_ids,
-            unresolved,
-        ):
-            _schedule_bounded_trigger_reload(
-                trigger_reload_times, ZONE_PARENT_TRIGGER, schedule_reload, "zone parent mapping changed"
-            )
-            return
-        reconciler.auto_enable_sparse_entities("radio update")
-        if current_keys - known_radio_bus_keys:
-            schedule_reload("radio inventory became available")
-
-    def handle_fm5_update() -> None:
-        payload = fm5_coordinator.data or {}
-        mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
-        current_indexes: set[int] = set()
-        for cylinder in payload.get("cylinders", []) or []:
-            if not isinstance(cylinder, dict):
-                continue
-            index = parse_optional_int(cylinder.get("index"))
-            if index is not None and index >= 0:
-                current_indexes.add(index)
-        if mode != known_fm5_mode and "INTERPRETED" in {mode, known_fm5_mode}:
-            _schedule_bounded_trigger_reload(
-                trigger_reload_times, FM5_MODE_TRIGGER, schedule_reload, "fm5 semantic mode changed"
-            )
-            return
-        if mode == "INTERPRETED" and (current_indexes - known_cylinder_indexes):
-            schedule_reload("cylinder inventory became available")
-            return
-        reconciler.auto_enable_sparse_entities("fm5 update")
-
-    def handle_boiler_update() -> None:
-        reconciler.auto_enable_sparse_entities("boiler update")
-
-    def handle_adapter_info_update() -> None:
-        reconciler.auto_enable_sparse_entities("adapter info update")
-
-    unsub_listeners: list[Callable[[], None]] = []
-    unsub_listeners.append(status_coordinator.async_add_listener(handle_status_update))
-    unsub_listeners.append(device_coordinator.async_add_listener(handle_device_update))
-    unsub_listeners.append(semantic_coordinator.async_add_listener(handle_semantic_update))
-    unsub_listeners.append(circuit_coordinator.async_add_listener(handle_circuit_update))
-    unsub_listeners.append(radio_coordinator.async_add_listener(handle_radio_update))
-    unsub_listeners.append(fm5_coordinator.async_add_listener(handle_fm5_update))
-    unsub_listeners.append(boiler_coordinator.async_add_listener(handle_boiler_update))
-    unsub_listeners.append(adapter_info_coordinator.async_add_listener(handle_adapter_info_update))
-
-    for zone_id, helper_entity in zone_schedule_helpers.items():
-        @callback
-        def _handle_zone_schedule_event(event, zone_id=zone_id, helper_entity=helper_entity):
-            if str(event.data.get("entity_id") or "") != helper_entity:
-                return
-            new_state = event.data.get("new_state")
-            if new_state is None:
-                return
-            if str(new_state.state).strip().lower() != "on":
-                return
-            hass.async_create_task(apply_zone_schedule(zone_id))
-
-        unsub_listeners.append(async_track_state_change_event(hass, [helper_entity], _handle_zone_schedule_event))
-
-    if dhw_schedule_helper.startswith("schedule."):
-        @callback
-        def _handle_dhw_schedule_event(event):
-            new_state = event.data.get("new_state")
-            if new_state is None:
-                return
-            if str(new_state.state).strip().lower() != "on":
-                return
-            hass.async_create_task(apply_dhw_schedule())
-
-        unsub_listeners.append(
-            async_track_state_change_event(hass, [dhw_schedule_helper], _handle_dhw_schedule_event)
-        )
 
     use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
     subscription_task = None
@@ -942,7 +471,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry,
         PLATFORMS,
         reconciler=reconciler,
-        nonexportable_radio_keys=nonexportable_radio_keys,
+        nonexportable_radio_keys=listeners.nonexportable_radio_keys,
     )
 
     hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (

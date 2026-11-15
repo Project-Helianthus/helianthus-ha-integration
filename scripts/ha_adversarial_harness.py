@@ -551,11 +551,12 @@ def _replay_adv03() -> None:
 
 
 def _replay_actual_delayed_inventory_listener() -> None:
-    """Drive entry_setup's real semantic listener and its one-shot scheduler.
+    """Drive the real semantic listener of entry setup and its one-shot scheduler.
 
     The temporary modules below only supply Home Assistant's import-time surface.
-    The listener, predicate, and ``schedule_reload`` closure are created by the
-    production ``async_setup_entry`` function itself.
+    The production ``async_setup_entry`` function itself creates the reload
+    request and registers the listeners of ``entry_listeners``, whose semantic
+    listener applies the production predicate.
     """
     _install_entity_stubs()
     import importlib

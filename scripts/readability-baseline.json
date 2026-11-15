@@ -5,7 +5,7 @@
       "path": "custom_components/helianthus/__init__.py",
       "symbol": "<module>",
       "rule": "F401",
-      "count": 12
+      "count": 7
     },
     {
       "path": "custom_components/helianthus/binary_sensor.py",
@@ -197,13 +197,13 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "C901",
-      "count": 82
+      "count": 22
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "PLR0915",
-      "count": 300
+      "count": 123
     },
     {
       "path": "custom_components/helianthus/evse_m2m.py",

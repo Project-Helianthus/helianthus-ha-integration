@@ -101,17 +101,31 @@ The existing order is:
    compute the effective admission, read the entry's sparse run record from
    the domain data, create one `EntryEntityReconciler` on the registries, the
    coordinators, the inventory identities and that record, then record the
-   first admission observation.
-8. Register listeners and optionally start GraphQL subscriptions. Steps 3 to 8
-   precede entry-mapping publication.
-9. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
-   `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
-   boundary and coordinator as `None`. Other errors and cancellation propagate.
-10. Publish the complete required mapping, then register the option-update
+   first admission observation. The reconciler and the listeners share one
+   reload request from [entry listeners](../custom_components/helianthus/entry_listeners.py):
+   the first request of the setup schedules the entry's reload and later
+   requests are ignored.
+8. Bind the zone parents ([zone parent](../custom_components/helianthus/zone_parent.py)):
+   create one `ZoneParentBindings` from the climate registry entries, the
+   stored binding record and the first semantic and radio data, write the
+   record when it differs, then resolve the zone parents and log the zones
+   left unresolved.
+9. Register listeners and optionally start GraphQL subscriptions. One
+   `EntryCoordinatorListeners` adds its coordinator listeners
+   ([entry listeners](../custom_components/helianthus/entry_listeners.py)),
+   then the configured schedule helpers add their state listeners
+   ([entry schedule helpers](../custom_components/helianthus/entry_schedule_helpers.py)).
+   All unsubscribe callbacks go into the one `unsub_listeners` list in that
+   order. Steps 3 to 9 precede entry-mapping publication.
+10. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
+    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
+    boundary and coordinator as `None`. Other errors and cancellation propagate.
+11. Publish the complete required mapping, then register the option-update
     listener through the entry's unload hook when those entry methods exist.
-11. Await platform forwarding, then run the reconciler's radio-registry and
-    trusted-admission cleanup in that order.
-12. Await semantic snapshot setup and assign its result, including `None`. Pop
+12. Await platform forwarding, then run the reconciler's radio-registry
+    cleanup for the non-exportable radio slots of the latest radio update,
+    then its trusted-admission cleanup.
+13. Await semantic snapshot setup and assign its result, including `None`. Pop
     the deferred sensor callback and call it if present. Return `True` only after
     these steps complete.
 
@@ -167,6 +181,52 @@ acts only on entities that the integration disabled, so a disable by anyone
 else is never undone. The reconciler is not an `EntryRuntime` field; only the
 listeners and the forwarding step reach it.
 
+## Coordinator listeners and bounded reloads
+
+[Entry listeners](../custom_components/helianthus/entry_listeners.py) holds the
+coordinator update listeners of one setup as one `EntryCoordinatorListeners`
+object. Each listener compares the coordinator's data with the inventory that
+the setup was built from:
+
+- device and status updates: a bus device outside the first-refresh
+  inventory requests a reload; otherwise they record the admission evidence
+  and run the trusted clean-up when it is admitted (the status update enables
+  sparse entities first);
+- semantic update: a changed zone-parent resolution requests the bounded
+  zone-parent reload; a new zone or a newly present hot-water payload requests
+  a reload; otherwise sparse entities are enabled;
+- circuit update: a new circuit index requests a reload;
+- radio update: the non-exportable slots are removed from the registry and
+  kept for the clean-up after platform forwarding; a changed zone-parent
+  resolution requests the bounded zone-parent reload; a new exportable slot
+  requests a reload after sparse entities are enabled;
+- function-module update: a mode change into or out of the interpreted mode
+  requests the bounded mode reload; a new cylinder in the interpreted mode
+  requests a reload;
+- boiler and adapter-info updates enable sparse entities.
+
+The two bounded triggers, the function-module mode and the zone-parent
+mapping, each schedule at most one reload per
+`TRIGGER_RELOAD_PERIOD_SECONDS` (ten minutes) and are held independently. A
+request inside the period is dropped without restarting it. The time of each
+trigger's last reload is the third run record of the entry; setup reads it
+from the domain data with the sparse run record, so it holds across reloads
+and ends with the Home Assistant run. Inventory growth is not bounded by the
+period; every reload request still passes through the one request per setup.
+
+`ZoneParentBindings` in [zone parent](../custom_components/helianthus/zone_parent.py)
+keeps the retained radio parent of each zone. A stored binding is kept only
+when the registry parent has the same identifier and a radio mapping; a live
+radio parent replaces it. The record is written to the entry data only when
+it differs. A retained parent stands in for a zone only while the radio
+inventory is reported incomplete and the zone keeps the same mapping.
+
+[Entry schedule helpers](../custom_components/helianthus/entry_schedule_helpers.py)
+parses the configured zone and hot-water schedule helpers and adds one state
+listener per helper. A helper that turns on starts its register write as a
+task. The write is refused unless the source admission is trusted, the
+regulator address is known and the semantic target is available and fresh.
+
 ## Unload and resource ownership
 
 [Teardown](../custom_components/helianthus/entry_cleanup.py) first awaits platform
@@ -220,7 +280,13 @@ pin every registry call of both device steps in order, with each device
 identifier, parent and optional field, every `DeviceIdentities` field and each
 migration-target branch. [Coordinator-phase tests](../tests/test_entry_coordinators.py)
 pin the creation arguments, the creation and refresh order and the stop at a
-failing refresh. [Reconciliation tests](../tests/test_entry_entity_reconciliation.py)
+failing refresh. [Listener tests](../tests/test_entry_listeners.py) pin both
+bounded triggers at the period boundary, their independence, the single
+reload request per setup and each listener's decision;
+[binding tests](../tests/test_zone_parent_bindings.py) pin the retained
+bindings and their record, and
+[schedule-helper tests](../tests/test_schedule_helper_freshness.py) pin the
+listener registration and the write fences. [Reconciliation tests](../tests/test_entry_entity_reconciliation.py)
 run every reconciliation decision through the real setup, and
 [phase tests](../tests/test_entrypoint_phases.py) pin the reconciler's
 admission counting, its single trusted clean-up and the run record it updates.

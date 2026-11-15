@@ -158,7 +158,8 @@ def setup_case(*, failure=None, optional=False, callback=True, source=None):
     values.update(snapshot=None if optional else object(), hass=hass, entry=entry, DOMAIN=DOMAIN,
                   PLATFORMS=["sensor", "climate"], cast=cast,
                   EntryRuntime=dict, _LOGGER=SimpleNamespace(warning=lambda *args: None),
-                  async_setup_semantic_snapshot=snapshot, nonexportable_radio_keys={"synthetic"},
+                  async_setup_semantic_snapshot=snapshot,
+                  listeners=SimpleNamespace(nonexportable_radio_keys={"synthetic"}),
                   reconciler=SimpleNamespace(
                       cleanup_nonexportable_radio_registry_entries=lambda *args: record("radio-cleanup"),
                       run_trusted_cleanup=lambda *args: record("trusted-cleanup")))

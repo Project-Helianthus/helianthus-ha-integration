@@ -60,28 +60,7 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "CONF_DHW_SCHEDULE_HELPER",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "CONF_USE_SUBSCRIPTIONS",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "CONF_ZONE_SCHEDULE_HELPERS",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "DEFAULT_DHW_SCHEDULE_HELPER",
       "kind": "package",
       "count": 1
     },
@@ -102,13 +81,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "DEFAULT_ZONE_SCHEDULE_HELPERS",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "DOMAIN",
       "kind": "package",
       "count": 1
@@ -123,20 +95,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_INVOKE_SET_EXT_REGISTER",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_INVOKE_SET_EXT_REGISTER",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_LOGGER",
       "kind": "package",
       "count": 1
@@ -173,34 +131,6 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "_parse_identifier_index",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_parse_zone_schedule_helper_bindings",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_parse_zone_schedule_helper_bindings",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_zone_instance_from_id",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_zone_instance_from_id",
       "kind": "private",
       "count": 1
     },
@@ -215,13 +145,6 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "async_unload_eebus_admin_boundary",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "status_admission_trusted",
       "kind": "package",
       "count": 1
     },

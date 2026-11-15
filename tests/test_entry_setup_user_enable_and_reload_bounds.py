@@ -32,7 +32,7 @@ import pytest
 import entry_setup_harness as paths
 import test_sparse_entity_reload_bound as sparse
 
-from custom_components.helianthus import DOMAIN, entry_cleanup, entry_setup
+from custom_components.helianthus import DOMAIN, entry_cleanup, entry_listeners, entry_setup
 
 ENTRY = "entry-a"
 OTHER = "entry-b"
@@ -185,7 +185,7 @@ def flapping(a, b, polls=FLAP_POLLS, hold=20):
 
 
 def test_the_stated_period_is_ten_minutes():
-    assert entry_setup.TRIGGER_RELOAD_PERIOD_SECONDS == PERIOD
+    assert entry_listeners.TRIGGER_RELOAD_PERIOD_SECONDS == PERIOD
 
 
 def test_fm5_mode_that_flips_every_poll_reloads_at_most_once_per_period(harness, logs):
@@ -453,7 +453,7 @@ def harness(monkeypatch):
             enabled_entries.append(entity.config_entry_id)
     entities.async_update_entity = update_entity
     clock = SimpleNamespace(now=0.0)
-    monkeypatch.setattr(entry_setup, "_reload_clock", lambda: clock.now, raising=False)
+    monkeypatch.setattr(entry_listeners, "_reload_clock", lambda: clock.now)
     return SimpleNamespace(devices=devices, entities=entities, data=coordinator_data,
                            enabled_entries=enabled_entries, clock=clock)
 
