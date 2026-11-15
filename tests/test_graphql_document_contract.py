@@ -124,6 +124,8 @@ class _Parser:
         variables: dict[str, str] = {}
         if self._peek() == ("punct", "("):
             self._take()
+            if self._peek() == ("punct", ")"):
+                raise DocumentError("empty variable definition list")
             while self._peek() != ("punct", ")"):
                 self._take("punct", "$")
                 variable = self._take("name")
@@ -163,14 +165,7 @@ class _Parser:
                 raise DocumentError(f"alias on {name} is outside the parsed subset")
             selection = Selection(name)
             if self._peek() == ("punct", "("):
-                self._take()
-                while self._peek() != ("punct", ")"):
-                    argument = self._take("name")
-                    self._take("punct", ":")
-                    if argument in selection.arguments:
-                        raise DocumentError(f"duplicate argument {argument} on {name}")
-                    selection.arguments[argument] = self._value()
-                self._take()
+                self._arguments(selection)
             if self._peek() == ("punct", "@"):
                 raise DocumentError("directives are outside the parsed subset")
             if self._peek() == ("punct", "{"):
@@ -180,6 +175,18 @@ class _Parser:
         if not selections:
             raise DocumentError("empty selection set")
         return selections
+
+    def _arguments(self, selection: Selection) -> None:
+        self._take("punct", "(")
+        if self._peek() == ("punct", ")"):
+            raise DocumentError(f"empty argument list on {selection.name}")
+        while self._peek() != ("punct", ")"):
+            argument = self._take("name")
+            self._take("punct", ":")
+            if argument in selection.arguments:
+                raise DocumentError(f"duplicate argument {argument} on {selection.name}")
+            selection.arguments[argument] = self._value()
+        self._take()
 
     def _value(self) -> tuple[str, str]:
         kind, value = self._peek()
@@ -584,6 +591,8 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ('mutation { invoke(address: 1, plane: "\\q", method: "m") { ok } }', "unparsed text"),
         ('mutation { invoke(address: 1, plane: "a\nb", method: "m") { ok } }', "unparsed text"),
         ('mutation { invoke(address: 1, plane: "\\u00g0", method: "m") { ok } }', "unparsed text"),
+        ("query { devices() { address } }", "empty argument list"),
+        ("query Q() { devices { address } }", "empty variable definition list"),
     ],
 )
 def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None:
