@@ -615,7 +615,6 @@ query Circuits {
       flow_temp_max_c
       flow_temp_min_c
       summer_limit_c
-      frost_prot_c
       room_temp_control
       cooling_enabled
     }
@@ -1095,7 +1094,6 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "flow_temp_max_c",
                     "flow_temp_min_c",
                     "summer_limit_c",
-                    "frost_prot_c",
                     "room_temp_control",
                     "cooling_enabled",
                 ],

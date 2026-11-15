@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Stop selecting `frost_prot_c` in the circuit configuration query. The
+  gateway no longer publishes that field, and a query that still selected it
+  was refused, so the circuit coordinator returned no circuits and every
+  circuit entity went unavailable. The writable frost-protection control was
+  already withdrawn; no entity or unique ID changes.
 - Withdraw the Boiler Installer Menu Code text control (B509 selector
   0x4904). The gateway names that register `central_heating_pump_mode` and
   marks the name provisional: its meaning is open (a pump mode or an

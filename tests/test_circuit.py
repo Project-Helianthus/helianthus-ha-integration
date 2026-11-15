@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import types
 from enum import IntFlag
@@ -269,7 +270,6 @@ def _circuits() -> list[dict]:
                 "flow_temp_max_c": 70.0,
                 "flow_temp_min_c": 20.0,
                 "summer_limit_c": 22.0,
-                "frost_prot_c": -5.0,
                 "room_temp_control": "modulating",
             },
         },
@@ -294,7 +294,6 @@ def _circuits() -> list[dict]:
                 "flow_temp_max_c": 55.0,
                 "flow_temp_min_c": 15.0,
                 "summer_limit_c": 24.0,
-                "frost_prot_c": -3.0,
                 "room_temp_control": "off",
             },
         },
@@ -393,27 +392,20 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     assert "connected_zone_names" not in attrs
 
 
-def test_circuit_sparse_sensors_and_numbers_are_disabled_by_default_when_value_null() -> None:
+def test_circuit_sparse_sensors_are_disabled_by_default_when_value_null() -> None:
     payload, _, _ = _build_payload()
     payload["circuit_coordinator"].data["circuits"][0]["state"]["calc_flow_temp_c"] = None
-    payload["circuit_coordinator"].data["circuits"][0]["config"]["frost_prot_c"] = None
     hass = _FakeHass(payload)
     entry = _FakeEntry("entry-1")
     sensor_entities: list = []
-    number_entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
-    asyncio.run(number_platform.async_setup_entry(hass, entry, number_entities.extend))
 
     calc_flow = next(
         entity
         for entity in sensor_entities
         if isinstance(entity, sensor_platform.HelianthusCircuitSensor)
         and entity._attr_unique_id == "entry-1-circuit-0-sensor-calc_flow_temp_c"
-    )
-    assert not any(
-        entity._attr_unique_id.endswith("-frost_prot_c")
-        for entity in number_entities
     )
     assert calc_flow._attr_entity_registry_enabled_default is False
 
@@ -535,3 +527,44 @@ def test_circuit_state_token_set_of_gateway_1004_is_exposed_raw_and_fail_safe() 
         if isinstance(entity, binary_sensor_platform.HelianthusCircuitPumpBinarySensor)
     }
     assert pump_by_index == {0: False, 1: True, 2: False, 3: True, 4: False}
+
+
+class _CircuitSchemaClient:
+    """Answers the circuit query like a gateway whose circuit configuration has no frost field."""
+
+    def __init__(self, circuits: list[dict]) -> None:
+        self._circuits = circuits
+        self.calls: list[str] = []
+
+    async def execute(self, query: str):  # noqa: ANN201
+        from custom_components.helianthus.graphql import GraphQLResponseError
+
+        self.calls.append(query)
+        if re.search(r"\bfrost_prot_c\b", query):
+            raise GraphQLResponseError(
+                [{"message": 'Cannot query field "frost_prot_c" on type "CircuitConfig".'}]
+            )
+        return {"circuits": self._circuits}
+
+
+def test_circuit_query_does_not_select_the_withdrawn_frost_field() -> None:
+    from custom_components.helianthus import coordinator as coordinator_module
+
+    assert re.search(r"\bfrost_prot_c\b", coordinator_module.QUERY_CIRCUITS) is None
+
+
+def test_circuit_coordinator_returns_circuits_when_config_has_no_frost_field() -> None:
+    from custom_components.helianthus import coordinator as coordinator_module
+
+    circuits = _circuits()
+    for circuit in circuits:
+        assert "frost_prot_c" not in circuit["config"]
+    client = _CircuitSchemaClient(circuits)
+    coordinator = object.__new__(coordinator_module.HelianthusCircuitCoordinator)
+    coordinator._client = client  # type: ignore[attr-defined]
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data == {"circuits": circuits}
+    assert [circuit["index"] for circuit in data["circuits"]] == [0, 1]
+    assert client.calls == [coordinator_module.QUERY_CIRCUITS]
