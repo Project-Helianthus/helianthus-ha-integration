@@ -204,7 +204,7 @@ def test_the_persisted_descriptor_store_does_not_leak_the_asset_reference() -> N
     result = _download(_FakeClient(response=_fixture_data()))
 
     store = result["entry"]["options"]["pv_m2m_descriptors"]
-    assert store["asset_ref"] == REDACTED
+    assert store == REDACTED
     assert SYNTHETIC_ASSET_REF not in json.dumps(result)
 
 
@@ -350,3 +350,22 @@ def test_an_entry_without_runtime_yields_an_error_entry() -> None:
     assert result["coordinators"] == {}
     assert result["gateway"] == {"error": "entry not loaded"}
     assert result["entry"]["data"]["host"] == REDACTED
+
+
+@pytest.mark.parametrize(
+    "option", ["pv_m2m_descriptors", "storage_m2m_descriptors", "evse_m2m_descriptors"]
+)
+def test_descriptor_stores_never_leak_the_asset_reference_at_any_depth(
+    option: str,
+) -> None:
+    hass, entry = _setup(_FakeClient(response=_fixture_data()))
+    entry.options[option] = {
+        "asset_ref": SYNTHETIC_ASSET_REF,
+        "descriptors": [
+            {"dimension": {"kind": "pack", "value": SYNTHETIC_ASSET_REF}}
+        ],
+    }
+
+    result = asyncio.run(diagnostics.async_get_config_entry_diagnostics(hass, entry))
+
+    assert SYNTHETIC_ASSET_REF not in json.dumps(result)
