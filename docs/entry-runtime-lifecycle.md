@@ -55,12 +55,12 @@ references. The domain-level `_admission_cleanup_counts` map is separate from
 
 The existing order is:
 
-1. Prepare ([entry ownership](../custom_components/helianthus/entry_ownership.py)):
+1. Prepare ([entry ownership](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_ownership.py)):
    remove the retired eeBUS field from the entry, then remove the entity rows of
    entries that are no longer configured and the device rows that no live entry
    owns. The phase returns the device and entity registries and the configured
    entry ids.
-2. Connect ([entry connection](../custom_components/helianthus/entry_connection.py)):
+2. Connect ([entry connection](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_connection.py)):
    check the host and port, verify the gateway identity, bind the entry to the
    verified endpoint and live instance GUID, store that GUID, and build the
    GraphQL client. The phase returns one of three results. A
@@ -138,7 +138,7 @@ check exact publication values, ordering, optional resources, partial failures,
 cancellation, listener cleanup and exception propagation. They do not exercise
 the earlier discovery/registry prefix or assert that published state is accepted
 setup. Mutation controls reject forwarding before publication and a renamed key
-for every published field. [Connect-phase tests](../tests/test_entry_connection.py)
+for every published field. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
 cover the skip, both refusal branches and each success path, and assert every
 `GatewayConnection` field.
 
