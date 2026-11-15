@@ -6,8 +6,8 @@ from custom_components.helianthus.address import parse_bus_address
 
 import pytest
 
-from custom_components.helianthus import (
-    DOMAIN,
+from custom_components.helianthus import DOMAIN
+from custom_components.helianthus.entry_schedule_helpers import (
     _parse_zone_schedule_helper_bindings,
     _zone_instance_from_id,
 )

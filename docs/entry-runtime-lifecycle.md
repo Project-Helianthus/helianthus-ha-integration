@@ -1,6 +1,6 @@
 # Entry runtime mapping and lifecycle
 
-[EntryRuntime](../custom_components/helianthus/entry_runtime.py) describes the
+[EntryRuntime](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_runtime.py) describes the
 existing dictionary stored at `hass.data[DOMAIN][entry.entry_id]`. A type cast at
 publication and an annotation at teardown describe that same object. They do
 not validate gateway data, accept setup, transfer ownership or change any key.
@@ -11,7 +11,7 @@ conversion in this change. Failure rollback remains part of the broader
 
 ## Key inventory
 
-[Setup](../custom_components/helianthus/entry_setup.py) publishes all 45 required
+[Setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_setup.py) publishes all 45 required
 keys in one assignment. The following groups list every required field. Concrete
 coordinator and boundary classes come from their owning modules through imports
 used only for type checking. API-owned source-selection data remains an opaque
@@ -39,10 +39,10 @@ Four fields are `NotRequired`:
 | `solar_device_id` | Fallback-only read by the binary sensor platform; no production writer currently publishes it. |
 
 The inventory includes all component reads, assignments, appends and removals.
-[Sensor setup](../custom_components/helianthus/sensor_setup.py), binary sensor,
+[Sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor_setup.py), binary sensor,
 climate, water heater, number, select, calendar, date and text platforms read the
 entry mapping. Fan, valve and switch setup currently publish no entities and do
-not read it. [Snapshot sensor setup](../custom_components/helianthus/semantic_snapshot_sensors.py)
+not read it. [Snapshot sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/semantic_snapshot_sensors.py)
 also selects legacy coordinators by a dynamic family-to-key map, writes the
 deferred callback and appends a discovery unsubscribe callback through
 `setdefault("unsub_listeners", [])`. The option-update listener reads the four
@@ -72,12 +72,12 @@ The existing order is:
    alias-only options are merged into the owner, the entry's own registry rows
    are removed and the entry's removal is scheduled. A failed identity probe is
    not a refusal; setup continues on the configured endpoint.
-3. Register the gateway devices ([entry devices](../custom_components/helianthus/entry_devices.py)):
+3. Register the gateway devices ([entry devices](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_devices.py)):
    take the entry's existing devices from the device registry, then create the
    daemon device and the adapter device below it. The step returns a
    `GatewayDevices` with both identifiers, the adapter's registry id and the
    existing devices.
-4. Create the coordinators ([entry coordinators](../custom_components/helianthus/entry_coordinators.py)):
+4. Create the coordinators ([entry coordinators](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_coordinators.py)):
    build the device, status, semantic, energy, circuit, radio, function-module,
    system, boiler, schedule and adapter-info coordinators on the client with
    the entry's scan interval, then run each first refresh in that order. A
@@ -85,7 +85,7 @@ The existing order is:
    the daemon and adapter devices stay registered. The phase returns a
    `DomainCoordinators`.
 5. Establish optional isolated admin state.
-6. Register the inventory devices ([entry devices](../custom_components/helianthus/entry_devices.py)):
+6. Register the inventory devices ([entry devices](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_devices.py)):
    record the adapter firmware, then register the bus devices, the radio
    devices and the circuit devices from the first refresh, in that order. A bus
    device is merged onto an existing device of the entry when one is the
@@ -97,21 +97,35 @@ The existing order is:
    `DeviceIdentities` with the boiler, regulator and function-module parents,
    the regulator's manufacturer and address, and the bus, radio, circuit and
    cylinder inventory the listeners compare against.
-7. Create the entity reconciler ([entry entity cleanup](../custom_components/helianthus/entry_entity_cleanup.py)):
+7. Create the entity reconciler ([entry entity cleanup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_entity_cleanup.py)):
    compute the effective admission, read the entry's sparse run record from
    the domain data, create one `EntryEntityReconciler` on the registries, the
    coordinators, the inventory identities and that record, then record the
-   first admission observation.
-8. Register listeners and optionally start GraphQL subscriptions. Steps 3 to 8
-   precede entry-mapping publication.
-9. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
-   `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
-   boundary and coordinator as `None`. Other errors and cancellation propagate.
-10. Publish the complete required mapping, then register the option-update
+   first admission observation. The reconciler and the listeners share one
+   reload request from [entry listeners](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_listeners.py):
+   the first request of the setup schedules the entry's reload and later
+   requests are ignored.
+8. Bind the zone parents ([zone parent](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/zone_parent.py)):
+   create one `ZoneParentBindings` from the climate registry entries, the
+   stored binding record and the first semantic and radio data, write the
+   record when it differs, then resolve the zone parents and log the zones
+   left unresolved.
+9. Register listeners and optionally start GraphQL subscriptions. One
+   `EntryCoordinatorListeners` adds its coordinator listeners
+   ([entry listeners](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_listeners.py)),
+   then the configured schedule helpers add their state listeners
+   ([entry schedule helpers](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_schedule_helpers.py)).
+   All unsubscribe callbacks go into the one `unsub_listeners` list in that
+   order. Steps 3 to 9 precede entry-mapping publication.
+10. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
+    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
+    boundary and coordinator as `None`. Other errors and cancellation propagate.
+11. Publish the complete required mapping, then register the option-update
     listener through the entry's unload hook when those entry methods exist.
-11. Await platform forwarding, then run the reconciler's radio-registry and
-    trusted-admission cleanup in that order.
-12. Await semantic snapshot setup and assign its result, including `None`. Pop
+12. Await platform forwarding, then run the reconciler's radio-registry
+    cleanup for the non-exportable radio slots of the latest radio update,
+    then its trusted-admission cleanup.
+13. Await semantic snapshot setup and assign its result, including `None`. Pop
     the deferred sensor callback and call it if present. Return `True` only after
     these steps complete.
 
@@ -124,7 +138,7 @@ before publication. No new rollback guarantee is implied by the type.
 
 ## Entity registry reconciliation
 
-[Entry entity cleanup](../custom_components/helianthus/entry_entity_cleanup.py)
+[Entry entity cleanup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_entity_cleanup.py)
 holds the registry reconciliation of one entry as one `EntryEntityReconciler`
 object, created once per setup. Its state is:
 
@@ -167,9 +181,55 @@ acts only on entities that the integration disabled, so a disable by anyone
 else is never undone. The reconciler is not an `EntryRuntime` field; only the
 listeners and the forwarding step reach it.
 
+## Coordinator listeners and bounded reloads
+
+[Entry listeners](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_listeners.py) holds the
+coordinator update listeners of one setup as one `EntryCoordinatorListeners`
+object. Each listener compares the coordinator's data with the inventory that
+the setup was built from:
+
+- device and status updates: a bus device outside the first-refresh
+  inventory requests a reload; otherwise they record the admission evidence
+  and run the trusted clean-up when it is admitted (the status update enables
+  sparse entities first);
+- semantic update: a changed zone-parent resolution requests the bounded
+  zone-parent reload; a new zone or a newly present hot-water payload requests
+  a reload; otherwise sparse entities are enabled;
+- circuit update: a new circuit index requests a reload;
+- radio update: the non-exportable slots are removed from the registry and
+  kept for the clean-up after platform forwarding; a changed zone-parent
+  resolution requests the bounded zone-parent reload; a new exportable slot
+  requests a reload after sparse entities are enabled;
+- function-module update: a mode change into or out of the interpreted mode
+  requests the bounded mode reload; a new cylinder in the interpreted mode
+  requests a reload;
+- boiler and adapter-info updates enable sparse entities.
+
+The two bounded triggers, the function-module mode and the zone-parent
+mapping, each schedule at most one reload per
+`TRIGGER_RELOAD_PERIOD_SECONDS` (ten minutes) and are held independently. A
+request inside the period is dropped without restarting it. The time of each
+trigger's last reload is the third run record of the entry; setup reads it
+from the domain data with the sparse run record, so it holds across reloads
+and ends with the Home Assistant run. Inventory growth is not bounded by the
+period; every reload request still passes through the one request per setup.
+
+`ZoneParentBindings` in [zone parent](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/zone_parent.py)
+keeps the retained radio parent of each zone. A stored binding is kept only
+when the registry parent has the same identifier and a radio mapping; a live
+radio parent replaces it. The record is written to the entry data only when
+it differs. A retained parent stands in for a zone only while the radio
+inventory is reported incomplete and the zone keeps the same mapping.
+
+[Entry schedule helpers](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_schedule_helpers.py)
+parses the configured zone and hot-water schedule helpers and adds one state
+listener per helper. A helper that turns on starts its register write as a
+task. The write is refused unless the source admission is trusted, the
+regulator address is known and the semantic target is available and fresh.
+
 ## Unload and resource ownership
 
-[Teardown](../custom_components/helianthus/entry_cleanup.py) first awaits platform
+[Teardown](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py) first awaits platform
 unload. `False` leaves the entry mapping, cleanup counters and all owned resources
 untouched. A platform-unload error or cancellation also propagates before any
 entry state is removed.
@@ -206,7 +266,7 @@ promises introduced by this type-only slice.
 
 ## Evidence and scope
 
-[Synthetic contract tests](../tests/test_entry_runtime_contract.py) execute the
+[Synthetic contract tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_runtime_contract.py) execute the
 setup statements from the first M2M boundary through return, plus the complete
 teardown function, with fake entries, Home Assistant objects and resources. They
 check exact publication values, ordering, optional resources, partial failures,
@@ -215,14 +275,20 @@ the earlier discovery/registry prefix or assert that published state is accepted
 setup. Mutation controls reject forwarding before publication and a renamed key
 for every published field. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
 cover the skip, both refusal branches and each success path, and assert every
-`GatewayConnection` field. [Device-phase tests](../tests/test_entry_devices.py)
+`GatewayConnection` field. [Device-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_devices.py)
 pin every registry call of both device steps in order, with each device
 identifier, parent and optional field, every `DeviceIdentities` field and each
-migration-target branch. [Coordinator-phase tests](../tests/test_entry_coordinators.py)
+migration-target branch. [Coordinator-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_coordinators.py)
 pin the creation arguments, the creation and refresh order and the stop at a
-failing refresh. [Reconciliation tests](../tests/test_entry_entity_reconciliation.py)
+failing refresh. [Listener tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_listeners.py) pin both
+bounded triggers at the period boundary, their independence, the single
+reload request per setup and each listener's decision;
+[binding tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_zone_parent_bindings.py) pin the retained
+bindings and their record, and
+[schedule-helper tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_schedule_helper_freshness.py) pin the
+listener registration and the write fences. [Reconciliation tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_entity_reconciliation.py)
 run every reconciliation decision through the real setup, and
-[phase tests](../tests/test_entrypoint_phases.py) pin the reconciler's
+[phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entrypoint_phases.py) pin the reconciler's
 admission counting, its single trusted clean-up and the run record it updates.
 
 This is an artifact-affecting structural change: shipped Python inputs change.

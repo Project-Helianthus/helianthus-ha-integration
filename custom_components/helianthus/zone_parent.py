@@ -1,10 +1,14 @@
-"""Pure helpers for resolving zone parent devices."""
+"""Helpers for resolving zone parent devices and keeping their bindings."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
+from .const import DOMAIN
 from .device_ids import build_radio_bus_key, radio_device_identifier, zone_identifier
+
+ZONE_PARENT_BINDINGS_KEY = "zone_parent_bindings_v1"
 
 
 def parse_optional_int(value: object | None) -> int | None:
@@ -356,3 +360,144 @@ def should_reload_zone_parent_state(
         # Baseline was already incomplete; wait for a complete mapping before reload.
         return False
     return current_parent_device_ids != baseline_parent_device_ids
+
+
+def registry_zone_parent_device_ids(
+    entry_id: str,
+    zones: list[dict[str, Any]],
+    entity_entries: Iterable[object],
+    device_registry: object,
+) -> dict[str, tuple[str, str]]:
+    """Recover validated radio parents from existing climate registry entries."""
+    zone_ids_by_unique_id = zone_ids_by_climate_unique_id(entry_id, zones)
+    radio_identifier_prefix = f"{entry_id}-radio-"
+    existing: dict[str, tuple[str, str]] = {}
+    for entity_entry in entity_entries:
+        zone_id = zone_ids_by_unique_id.get(entity_entry.unique_id)
+        if zone_id is None or entity_entry.device_id is None:
+            continue
+        device_entry = device_registry.async_get(entity_entry.device_id)
+        if device_entry is None:
+            continue
+        for identifier in sorted(device_entry.identifiers):
+            if identifier[0] == DOMAIN and identifier[1].startswith(radio_identifier_prefix):
+                existing[zone_id] = identifier
+                break
+    return existing
+
+
+def _payload_zones(semantic_coordinator: object) -> list[dict[str, Any]]:
+    data = semantic_coordinator.data
+    payload = data if isinstance(data, dict) else {}
+    return [zone for zone in (payload.get("zones", []) or []) if isinstance(zone, dict)]
+
+
+def _radio_payload(radio_coordinator: object) -> dict[str, Any] | None:
+    data = radio_coordinator.data
+    return data if isinstance(data, dict) else None
+
+
+class ZoneParentBindings:
+    """The retained radio parent of each zone of one entry and its stored record.
+
+    At setup the parents recovered from the climate registry entries are kept
+    where the stored record names the same identifier with a valid mapping;
+    each zone whose live radio parent resolves now replaces its binding. The
+    record lives in the entry data under ``ZONE_PARENT_BINDINGS_KEY`` and is
+    written only when it differs. A retained parent stands in for a zone only
+    while the radio inventory is reported incomplete and the zone keeps the
+    same mapping.
+    """
+
+    def __init__(
+        self,
+        hass: object,
+        entry: object,
+        *,
+        semantic_coordinator: object,
+        radio_coordinator: object,
+        regulator_device_id: tuple[str, str] | None,
+        entity_entries: Iterable[object],
+        device_registry: object,
+    ) -> None:
+        self._hass = hass
+        self._entry = entry
+        self._semantic_coordinator = semantic_coordinator
+        self._radio_coordinator = radio_coordinator
+        self._regulator_device_id = regulator_device_id
+        zones = _payload_zones(semantic_coordinator)
+        live_parent_ids, _ = build_zone_parent_device_ids(
+            entry.entry_id,
+            zones,
+            _radio_payload(radio_coordinator),
+            regulator_device_id,
+        )
+        mappings = radio_mappings_by_zone_id(zones)
+        self.parent_device_ids, self.parent_mappings, self.normalized_bindings = (
+            resolve_retained_parent_bindings(
+                registry_zone_parent_device_ids(
+                    entry.entry_id, zones, entity_entries, device_registry
+                ),
+                entry.data.get(ZONE_PARENT_BINDINGS_KEY),
+            )
+        )
+        for zone_id, parent_id in live_parent_ids.items():
+            mapping = mappings.get(zone_id)
+            if mapping is None:
+                continue
+            self.parent_device_ids[zone_id] = parent_id
+            self.parent_mappings[zone_id] = mapping
+            self.normalized_bindings[zone_id] = {
+                "identifier": parent_id[1],
+                "mapping": mapping,
+            }
+
+    def persist(self) -> None:
+        """Write the bindings to the entry data when they differ from the stored record."""
+        entry = self._entry
+        if entry.data.get(ZONE_PARENT_BINDINGS_KEY) == self.normalized_bindings:
+            return
+        updated_data = dict(entry.data)
+        updated_data[ZONE_PARENT_BINDINGS_KEY] = dict(self.normalized_bindings)
+        self._hass.config_entries.async_update_entry(entry, data=updated_data)
+
+    def adopt_current_live_parent_bindings(self) -> None:
+        """Bind each zone to its live radio parent; persist when a binding changed."""
+        zones = _payload_zones(self._semantic_coordinator)
+        live_parent_ids, _ = build_zone_parent_device_ids(
+            self._entry.entry_id,
+            zones,
+            _radio_payload(self._radio_coordinator),
+            self._regulator_device_id,
+        )
+        mappings = radio_mappings_by_zone_id(zones)
+        changed = False
+        for zone_id, parent_id in live_parent_ids.items():
+            mapping = mappings.get(zone_id)
+            if mapping is None:
+                continue
+            binding = {"identifier": parent_id[1], "mapping": mapping}
+            if self.normalized_bindings.get(zone_id) == binding:
+                continue
+            self.parent_device_ids[zone_id] = parent_id
+            self.parent_mappings[zone_id] = mapping
+            self.normalized_bindings[zone_id] = binding
+            changed = True
+        if changed:
+            self.persist()
+
+    def current_parent_device_ids(self) -> tuple[dict[str, tuple[str, str]], tuple[str, ...]]:
+        """Resolve the zone parents from current data, with the retained fallback."""
+        radio_payload = _radio_payload(self._radio_coordinator)
+        return build_zone_parent_device_ids(
+            self._entry.entry_id,
+            _payload_zones(self._semantic_coordinator),
+            radio_payload,
+            self._regulator_device_id,
+            existing_parent_device_ids=self.parent_device_ids,
+            existing_parent_mappings=self.parent_mappings,
+            allow_existing_parent_fallback=(
+                isinstance(radio_payload, dict)
+                and radio_payload.get("inventory_complete") is False
+            ),
+        )

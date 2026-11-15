@@ -13,10 +13,8 @@ import pytest
 from entry_setup_harness import INVENTORY_DEVICE, TRUSTED_STATUS, config_entry, install_harness
 
 from custom_components.helianthus import DOMAIN, PLATFORMS, async_unload_entry
-from custom_components.helianthus.entry_setup import (
-    _async_forward_platforms_and_finalize,
-    _semantic_inventory_became_available,
-)
+from custom_components.helianthus.entry_listeners import _semantic_inventory_became_available
+from custom_components.helianthus.entry_setup import _async_forward_platforms_and_finalize
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "helianthus"
 COUNTS_KEY = "_admission_cleanup_counts"
