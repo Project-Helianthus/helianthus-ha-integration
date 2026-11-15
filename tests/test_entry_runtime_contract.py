@@ -560,3 +560,27 @@ def test_setup_without_entry_update_listener_hooks(monkeypatch):
     assert bench.run() is True
     assert bench.events == [phase for phase in PHASES if phase not in (
         "add-update-listener", "own-update-listener")] + ["sensors"]
+
+
+def test_adoption_check_reads_the_requested_base(tmp_path, capsys):
+    """--check validates the tree named by --base, not the repository."""
+    table = runtime_table()
+    root = Path(__file__).resolve().parents[1]
+    for relative in table.READERS:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((root / relative).read_text(encoding="utf-8"), encoding="utf-8")
+    for module in {table.RUNTIME_CLASS[1], *(m for _, m in table.GROUP_CLASSES.values())}:
+        target = tmp_path / module
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((root / module).read_text(encoding="utf-8"), encoding="utf-8")
+    assert table.main(["--check", "--base", str(tmp_path)]) == 0
+    reader = tmp_path / table.READERS[0]
+    reader.write_text(
+        reader.read_text(encoding="utf-8")
+        + '\n\ndef _left(hass, entry):\n    data = hass.data[DOMAIN][entry.entry_id]\n'
+        '    return data["device_coordinator"]\n',
+        encoding="utf-8",
+    )
+    assert table.main(["--check", "--base", str(tmp_path)]) == 1
+    assert "runtime mapping access left" in capsys.readouterr().err

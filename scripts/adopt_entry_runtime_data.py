@@ -290,9 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     if args.check:
-        errors = table_errors(ROOT)
+        errors = table_errors(args.base)
         for path in READERS:
-            text = (ROOT / path).read_text(encoding="utf-8")
+            text = (args.base / path).read_text(encoding="utf-8")
             if rewrite(text, path) != text:
                 errors.append(f"{path}: runtime mapping access left")
         for error in errors:
