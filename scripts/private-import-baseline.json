@@ -151,76 +151,6 @@
     {
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
-      "symbol": "_canonical_bus_display_name",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_canonical_bus_display_name",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_canonical_bus_model_name",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_canonical_bus_model_name",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_clean_label",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_clean_label",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_format_hex4_version",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_format_hex4_version",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_is_stale_bus_identifier",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_is_stale_bus_identifier",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
       "symbol": "_migrate_unique_ids_to_snake_case",
       "kind": "package",
       "count": 1
@@ -257,34 +187,6 @@
       "importer": "custom_components.helianthus.entry_setup",
       "module": "custom_components.helianthus",
       "symbol": "_parse_zone_schedule_helper_bindings",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_select_bus_migration_target",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_select_bus_migration_target",
-      "kind": "private",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_stale_bus_address_unique_id",
-      "kind": "package",
-      "count": 1
-    },
-    {
-      "importer": "custom_components.helianthus.entry_setup",
-      "module": "custom_components.helianthus",
-      "symbol": "_stale_bus_address_unique_id",
       "kind": "private",
       "count": 1
     },

@@ -6,8 +6,8 @@ publication and an annotation at teardown describe that same object. They do
 not validate gateway data, accept setup, transfer ownership or change any key.
 Required means present when the mapping is published; it does not mean that a
 resource is enabled or that setup has succeeded. There is no `entry.runtime_data`
-conversion in this change. Coordinator extraction and failure rollback remain
-part of the broader [entry lifecycle work](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/415).
+conversion in this change. Failure rollback remains part of the broader
+[entry lifecycle work](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/415).
 
 ## Key inventory
 
@@ -71,19 +71,43 @@ The existing order is:
    alias-only options are merged into the owner, the entry's own registry rows
    are removed and the entry's removal is scheduled. A failed identity probe is
    not a refusal; setup continues on the configured endpoint.
-3. Discover and refresh domain state, establish optional isolated admin state,
-   create registry identities, register listeners and optionally start GraphQL
-   subscriptions. This work precedes entry-mapping publication.
-4. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
+3. Register the gateway devices ([entry devices](../custom_components/helianthus/entry_devices.py)):
+   take the entry's existing devices from the device registry, then create the
+   daemon device and the adapter device below it. The step returns a
+   `GatewayDevices` with both identifiers, the adapter's registry id and the
+   existing devices.
+4. Create the coordinators ([entry coordinators](../custom_components/helianthus/entry_coordinators.py)):
+   build the device, status, semantic, energy, circuit, radio, function-module,
+   system, boiler, schedule and adapter-info coordinators on the client with
+   the entry's scan interval, then run each first refresh in that order. A
+   refresh that raises propagates; later coordinators are not refreshed and
+   the daemon and adapter devices stay registered. The phase returns a
+   `DomainCoordinators`.
+5. Establish optional isolated admin state.
+6. Register the inventory devices ([entry devices](../custom_components/helianthus/entry_devices.py)):
+   record the adapter firmware, then register the bus devices, the radio
+   devices and the circuit devices from the first refresh, in that order. A bus
+   device is merged onto an existing device of the entry when one is the
+   migration target: the device already holding the bus identifier, otherwise a
+   serial match, otherwise the single serialized device with the same model,
+   otherwise the best address and model match; any other bus device is created
+   below the adapter. Function-module slots whose class address is a bus
+   address enrich that bus device and get no radio device. The step returns a
+   `DeviceIdentities` with the boiler, regulator and function-module parents,
+   the regulator's manufacturer and address, and the bus, radio, circuit and
+   cylinder inventory the listeners compare against.
+7. Register listeners and optionally start GraphQL subscriptions. Steps 3 to 7
+   precede entry-mapping publication.
+8. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
    boundary and coordinator as `None`. Other errors and cancellation propagate.
-5. Publish the complete required mapping, then register the option-update
+9. Publish the complete required mapping, then register the option-update
    listener through the entry's unload hook when those entry methods exist.
-6. Await platform forwarding, then run radio-registry and trusted-admission
-   cleanup in that order.
-7. Await semantic snapshot setup and assign its result, including `None`. Pop
-   the deferred sensor callback and call it if present. Return `True` only after
-   these steps complete.
+10. Await platform forwarding, then run radio-registry and trusted-admission
+    cleanup in that order.
+11. Await semantic snapshot setup and assign its result, including `None`. Pop
+    the deferred sensor callback and call it if present. Return `True` only after
+    these steps complete.
 
 Publication is earlier than setup acceptance. A forwarding or snapshot error or
 cancellation propagates and leaves the published mapping. A snapshot failure
@@ -140,7 +164,12 @@ the earlier discovery/registry prefix or assert that published state is accepted
 setup. Mutation controls reject forwarding before publication and a renamed key
 for every published field. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
 cover the skip, both refusal branches and each success path, and assert every
-`GatewayConnection` field.
+`GatewayConnection` field. [Device-phase tests](../tests/test_entry_devices.py)
+pin every registry call of both device steps in order, with each device
+identifier, parent and optional field, every `DeviceIdentities` field and each
+migration-target branch. [Coordinator-phase tests](../tests/test_entry_coordinators.py)
+pin the creation arguments, the creation and refresh order and the stop at a
+failing refresh.
 
 This is an artifact-affecting structural change: shipped Python inputs change.
 Behavioral characterization does not establish Python AST identity, binary
