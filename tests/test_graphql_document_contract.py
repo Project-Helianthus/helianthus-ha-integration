@@ -114,6 +114,8 @@ class _Parser:
                 self._take("punct", "$")
                 variable = self._take("name")
                 self._take("punct", ":")
+                if variable in variables:
+                    raise DocumentError(f"duplicate variable definition ${variable}")
                 variables[variable] = self._type()
                 if self._peek() == ("punct", "="):
                     raise DocumentError("variable default values are outside the parsed subset")
@@ -151,6 +153,8 @@ class _Parser:
                 while self._peek() != ("punct", ")"):
                     argument = self._take("name")
                     self._take("punct", ":")
+                    if argument in selection.arguments:
+                        raise DocumentError(f"duplicate argument {argument} on {name}")
                     selection.arguments[argument] = self._value()
                 self._take()
             if self._peek() == ("punct", "@"):
@@ -311,6 +315,15 @@ class Document:
     text: str
 
 
+def _structural_braces_balanced(text: str) -> bool:
+    """Count braces outside GraphQL string literals."""
+    try:
+        puncts = [value for kind, value in _tokens(text) if kind == "punct"]
+    except DocumentError:
+        return False
+    return puncts.count("{") == puncts.count("}")
+
+
 def _literal_documents() -> list[Document]:
     """Every string literal of the package that starts like an operation."""
     documents: list[Document] = []
@@ -324,7 +337,7 @@ def _literal_documents() -> list[Document]:
                 and "{" in node.value
                 # A literal with unbalanced braces is one piece of a document that an
                 # expression builds; the built document is in _computed_documents.
-                and node.value.count("{") == node.value.count("}")
+                and _structural_braces_balanced(node.value)
             ):
                 documents.append(
                     Document(f"{path.relative_to(REPO_ROOT).as_posix()}:{node.lineno}", node.value)
@@ -417,6 +430,8 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ("query { device(address: \"not-an-int\") { address } }", "does not match"),
         ("query { device(address: 1.5) { address } }", "does not match"),
         ("query { device(address: null) { address } }", "null for non-null"),
+        ("query Q($a: Int!, $a: String!) { device(address: $a) { address } }", "duplicate variable"),
+        ("query { device(address: \"bad\", address: 1) { address } }", "duplicate argument"),
         ("query Q($unused: Int!) { devices { address } }", "never used"),
     ],
 )
@@ -427,6 +442,11 @@ def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None
     except DocumentError as error:
         problems = [str(error)]
     assert any(expected in problem for problem in problems), problems
+
+
+def test_braces_inside_strings_do_not_hide_a_document() -> None:
+    assert _structural_braces_balanced('query { invoke(params: "{") { ok } }')
+    assert not _structural_braces_balanced("query { devices { address }")
 
 
 def test_computed_documents_are_listed() -> None:
