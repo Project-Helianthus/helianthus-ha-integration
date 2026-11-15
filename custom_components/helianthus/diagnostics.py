@@ -39,6 +39,7 @@ TO_REDACT = frozenset({
     CONF_INSTANCE_GUID,
     "serial_number",
     "mac_address",
+    "asset_ref",
     CONF_PV_M2M_ENDPOINT,
     CONF_PV_M2M_ASSET_REF,
     CONF_PV_M2M_CA_CERT_FILE,

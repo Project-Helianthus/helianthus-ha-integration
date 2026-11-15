@@ -39,6 +39,7 @@ REDACTED = "**REDACTED**"
 SYNTHETIC_HOST = "gateway.example.invalid"
 SYNTHETIC_GUID = "00000000-0000-4000-8000-000000000001"
 SYNTHETIC_SERIAL = "SYNTHETIC-SERIAL-0001"
+SYNTHETIC_ASSET_REF = "SYNTH-ASSET-REF"
 SYNTHETIC_MAC = "02:00:00:00:00:01"
 
 
@@ -127,6 +128,11 @@ def _setup(client: _FakeClient) -> tuple[SimpleNamespace, SimpleNamespace]:
             "scan_interval": 30,
             "pv_m2m_endpoint": f"https://{SYNTHETIC_HOST}:8443",
             "pv_m2m_client_key_file": "/config/synthetic/client.key",
+            "pv_m2m_descriptors": {
+                "schema_version": 1,
+                "asset_ref": SYNTHETIC_ASSET_REF,
+                "descriptors": [],
+            },
         },
     )
     runtime = {
@@ -192,6 +198,14 @@ def test_identifying_entry_values_are_redacted(section: str, key: str) -> None:
     result = _download(_FakeClient(response=_fixture_data()))
 
     assert result["entry"][section][key] == REDACTED
+
+
+def test_the_persisted_descriptor_store_does_not_leak_the_asset_reference() -> None:
+    result = _download(_FakeClient(response=_fixture_data()))
+
+    store = result["entry"]["options"]["pv_m2m_descriptors"]
+    assert store["asset_ref"] == REDACTED
+    assert SYNTHETIC_ASSET_REF not in json.dumps(result)
 
 
 def test_non_identifying_entry_values_are_kept() -> None:
