@@ -6,6 +6,8 @@ import asyncio
 from types import ModuleType, SimpleNamespace
 import sys
 
+import pytest
+
 from custom_components.helianthus.const import DOMAIN
 
 
@@ -153,3 +155,49 @@ def test_text_listener_skips_entities_until_home_assistant_attaches_them() -> No
         _set_entity_hass(entity, hass)
     status_coordinator.listener()
     assert [getattr(entity, "write_count", 0) for entity in entities] == [1, 1, 1]
+
+
+@pytest.mark.parametrize("entry_id", ["entry-1", "entry-synthetic"])
+def test_no_boiler_installer_menu_code_text_entity_is_created(entry_id: str) -> None:
+    _ensure_text_stubs()
+    from custom_components.helianthus import text as text_platform
+
+    status_coordinator = _FakeStatusCoordinator()
+    boiler_config = {"phone_number": "401234", "installer_menu_code": 12}
+    data = {
+        "system_coordinator": SimpleNamespace(data={"config": {"installer_access_code": 7}}),
+        "boiler_coordinator": SimpleNamespace(data={"boiler_status": {"config": boiler_config}}),
+        "manufacturer": "Vaillant",
+        "graphql_client": object(),
+        "status_coordinator": status_coordinator,
+        "regulator_device_id": (DOMAIN, "regulator"),
+        "boiler_device_id": (DOMAIN, f"{entry_id}-bus-BAI00-08"),
+    }
+    hass = SimpleNamespace(data={DOMAIN: {entry_id: data}})
+    entry = SimpleNamespace(entry_id=entry_id)
+    entities = []
+
+    asyncio.run(text_platform.async_setup_entry(hass, entry, entities.extend))
+
+    assert {entity._attr_unique_id for entity in entities} == {
+        f"{entry_id}-system-text-installer_name",
+        f"{entry_id}-system-text-installer_phone_number",
+        f"{entry_id}-system-text-installer_access_code",
+        f"{entry_id}-boiler-text-installer_phone_number",
+    }
+    assert "Boiler Installer Menu Code" not in {entity._attr_name for entity in entities}
+    boiler_entities = [
+        entity for entity in entities if entity._device_id == data["boiler_device_id"]
+    ]
+    assert [type(entity) for entity in boiler_entities] == [text_platform.HelianthusBoilerText]
+    menu_codes = [
+        entity
+        for entity in entities
+        if isinstance(entity, text_platform.HelianthusInstallerMenuCodeText)
+    ]
+    assert [(entity._field.source, entity._field.key) for entity in menu_codes] == [
+        ("system", "installer_access_code")
+    ]
+    assert menu_codes[0].native_value == "007"
+    # The boiler configuration value stays readable on the coordinator.
+    assert data["boiler_coordinator"].data["boiler_status"]["config"]["installer_menu_code"] == 12
