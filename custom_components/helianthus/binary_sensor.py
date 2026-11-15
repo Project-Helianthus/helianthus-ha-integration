@@ -103,213 +103,271 @@ def _zone_instance(zone_id: object | None) -> int | None:
     return value - 1
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["semantic_coordinator"]
-    radio_coordinator = data.get("radio_coordinator")
-    system_coordinator = data.get("system_coordinator")
-    boiler_coordinator = data.get("boiler_coordinator")
-    boiler_device_id = data.get("boiler_device_id")
-    circuit_coordinator = data.get("circuit_coordinator")
-    fm5_coordinator = data.get("fm5_coordinator")
-    regulator_device_id = data.get("regulator_device_id")
-    vr71_device_id = data.get("vr71_device_id") or regulator_device_id
-    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
-    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
+_SCHEDULE_ROWS = (
+    ("schedule", "Daily Schedule Active"),
+    ("quickveto", "Quick Veto Active"),
+    ("away", "Away Schedule Active"),
+)
+_BOILER_STATE_ROWS = (
+    ("flame_active", "Burner Flame Active"),
+    ("gas_valve_active", "Burner Gas Valve Active"),
+    ("central_heating_pump_active", "Hydraulics CH Pump"),
+    ("external_pump_active", "Hydraulics External Pump"),
+    ("circulation_pump_active", "Hydraulics Circulation Pump"),
+)
+_SOLAR_ROWS = (
+    ("pump_active", "Solar Pump Active"),
+    ("solar_enabled", "Solar Enabled"),
+    ("function_mode", "Solar Function Mode"),
+)
 
+
+def _zone_parent_device_id(
+    zone: dict[str, Any],
+    normalized_zone_id: str,
+    zone_parent_device_ids: dict[str, tuple[str, str]],
+    regulator_device_id: tuple[str, str] | None,
+) -> tuple[str, str] | None:
+    """Return the physical parent of a zone, or None when it must stay hidden."""
+    parent_device_id = zone_parent_device_ids.get(normalized_zone_id)
+    if parent_device_id is not None:
+        return parent_device_id
+    config = zone.get("config")
+    mapping = _parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
+    if mapping in (1, 2, 3, 4):
+        return None
+    return regulator_device_id
+
+
+def _zone_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build the schedule mirrors and the valve sensor of every parented zone."""
+    coordinator = data["semantic_coordinator"]
+    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
+    regulator_device_id = data.get("regulator_device_id")
     zones = coordinator.data.get("zones", []) if coordinator.data else []
-    entities: list[HelianthusScheduleBinarySensor] = []
+    entities: list[BinarySensorEntity] = []
     for zone in zones:
         zone_id = zone.get("id")
-        if zone_id is None:
-            continue
         normalized_zone_id = _normalize_zone_id(zone_id)
         if normalized_zone_id is None:
             continue
-        config = zone.get("config")
-        mapping = _parse_optional_int(config.get("room_temperature_zone_mapping")) if isinstance(config, dict) else None
-        zone_name = str(zone.get("name") or f"Zone {zone_id}")
-        parent_device_id = zone_parent_device_ids.get(normalized_zone_id)
-        if parent_device_id is None:
-            if mapping in (1, 2, 3, 4):
-                continue
-            parent_device_id = regulator_device_id
+        parent_device_id = _zone_parent_device_id(
+            zone, normalized_zone_id, zone_parent_device_ids, regulator_device_id
+        )
         if parent_device_id is None:
             continue
-        for schedule_key, schedule_label in [
-            ("schedule", "Daily Schedule Active"),
-            ("quickveto", "Quick Veto Active"),
-            ("away", "Away Schedule Active"),
-        ]:
-            entities.append(
-                HelianthusScheduleBinarySensor(
-                    coordinator=coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    target_kind="zone",
-                    target_id=str(zone_id),
-                    target_name=zone_name,
-                    target_device_id=parent_device_id,
-                    schedule_key=schedule_key,
-                    schedule_label=schedule_label,
-                )
+        zone_name = str(zone.get("name") or f"Zone {zone_id}")
+        entities.extend(
+            HelianthusScheduleBinarySensor(
+                coordinator=coordinator,
+                entry_id=entry_id,
+                manufacturer=manufacturer,
+                target_kind="zone",
+                target_id=str(zone_id),
+                target_name=zone_name,
+                target_device_id=parent_device_id,
+                schedule_key=schedule_key,
+                schedule_label=schedule_label,
             )
+            for schedule_key, schedule_label in _SCHEDULE_ROWS
+        )
         entities.append(
             HelianthusZoneValveBinarySensor(
                 coordinator=coordinator,
-                entry_id=entry.entry_id,
+                entry_id=entry_id,
                 manufacturer=manufacturer,
                 zone_id=str(zone_id),
                 zone_name=zone_name,
                 target_device_id=parent_device_id,
             )
         )
+    return entities
 
+
+def _dhw_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build the DHW schedule mirrors and, when promoted, the overrun sensor."""
+    coordinator = data["semantic_coordinator"]
     dhw = coordinator.data.get("dhw") if coordinator.data else None
-    if dhw is not None:
-        for schedule_key, schedule_label in [
-            ("schedule", "Daily Schedule Active"),
-            ("quickveto", "Quick Veto Active"),
-            ("away", "Away Schedule Active"),
-        ]:
-            entities.append(
-                HelianthusScheduleBinarySensor(
-                    coordinator=coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    target_kind="dhw",
-                    target_id=None,
-                    target_name="Domestic Hot Water",
-                    target_device_id=None,
-                    schedule_key=schedule_key,
-                    schedule_label=schedule_label,
-                )
-            )
-        dhw_state = dhw.get("state") if isinstance(dhw, dict) else None
-        if isinstance(dhw_state, dict) and "overrun_active" in dhw_state:
-            entities.append(
-                HelianthusDhwOverrunBinarySensor(
-                    coordinator=coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                )
-            )
-
-    if boiler_coordinator and boiler_device_id:
-        for key, label in [
-            ("flame_active", "Burner Flame Active"),
-            ("gas_valve_active", "Burner Gas Valve Active"),
-            ("central_heating_pump_active", "Hydraulics CH Pump"),
-            ("external_pump_active", "Hydraulics External Pump"),
-            ("circulation_pump_active", "Hydraulics Circulation Pump"),
-        ]:
-            entities.append(
-                HelianthusBoilerStateBinarySensor(
-                    coordinator=boiler_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    boiler_device_id=boiler_device_id,
-                    key=key,
-                    label=label,
-                )
-            )
-
-    if circuit_coordinator and circuit_coordinator.data:
-        for circuit in circuit_coordinator.data.get("circuits", []) or []:
-            if not isinstance(circuit, dict):
-                continue
-            circuit_index = _parse_optional_int(circuit.get("index"))
-            if circuit_index is None or circuit_index < 0:
-                continue
-            entities.append(
-                HelianthusCircuitPumpBinarySensor(
-                    coordinator=circuit_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    circuit_index=circuit_index,
-                    initial_name=_circuit_name(circuit, circuit_index),
-                )
-            )
-
-    if fm5_coordinator and isinstance(fm5_coordinator.data, dict):
-        payload = fm5_coordinator.data
-        mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
-        solar = payload.get("solar") if isinstance(payload.get("solar"), dict) else None
-        if mode == "INTERPRETED":
-            solar_device_id = data.get("solar_device_id") or solar_identifier(entry.entry_id)
-            for key, label in [
-                ("pump_active", "Solar Pump Active"),
-                ("solar_enabled", "Solar Enabled"),
-                ("function_mode", "Solar Function Mode"),
-            ]:
-                entities.append(
-                    HelianthusSolarBinarySensor(
-                        coordinator=fm5_coordinator,
-                        entry_id=entry.entry_id,
-                        manufacturer=manufacturer,
-                        solar_device_id=solar_device_id,
-                        parent_device_id=vr71_device_id,
-                        key=key,
-                        label=label,
-                        enabled_by_default=bool(isinstance(solar, dict) and solar.get(key) is not None),
-                    )
-                )
-
-    if system_coordinator and system_coordinator.data and regulator_device_id:
-        entities.extend(
-            [
-                HelianthusSystemBinarySensor(
-                    coordinator=system_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    regulator_device_id=regulator_device_id,
-                    source="state",
-                    key="maintenance_due",
-                    label="Maintenance Due",
-                    device_class=_BINARY_SENSOR_DEVICE_CLASS_PROBLEM,
-                    entity_category=EntityCategory.DIAGNOSTIC,
-                ),
-                HelianthusSystemBinarySensor(
-                    coordinator=system_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    regulator_device_id=regulator_device_id,
-                    source="config",
-                    key="adaptive_heating_curve_enabled",
-                    label="Adaptive Heating Curve",
-                    device_class=None,
-                    entity_category=EntityCategory.DIAGNOSTIC,
-                ),
-            ]
+    if dhw is None:
+        return []
+    entities: list[BinarySensorEntity] = [
+        HelianthusScheduleBinarySensor(
+            coordinator=coordinator,
+            entry_id=entry_id,
+            manufacturer=manufacturer,
+            target_kind="dhw",
+            target_id=None,
+            target_name="Domestic Hot Water",
+            target_device_id=None,
+            schedule_key=schedule_key,
+            schedule_label=schedule_label,
         )
-
-    if radio_coordinator and radio_coordinator.data:
-        for radio in radio_coordinator.data.get("radio_devices", []) or []:
-            if not isinstance(radio, dict):
-                continue
-            if not should_export_radio_device(radio):
-                continue
-            slot = _radio_slot(radio)
-            bus_key = _radio_bus_key(radio)
-            if slot is None or bus_key is None:
-                continue
-            group, instance = slot
-            # ADR-027: re-parent to physical bus device for merged B524 slots.
-            merge_target = b524_merge_targets.get(bus_key)
-            target_device_id = merge_target if merge_target is not None else radio_device_identifier(entry.entry_id, bus_key)
-            entities.append(
-                HelianthusRadioConnectedBinarySensor(
-                    coordinator=radio_coordinator,
-                    entry_id=entry.entry_id,
-                    manufacturer=manufacturer,
-                    radio_device_id=target_device_id,
-                    group=group,
-                    instance=instance,
-                    label="B524 Connected" if merge_target is not None else "Device Connected",
-                )
+        for schedule_key, schedule_label in _SCHEDULE_ROWS
+    ]
+    dhw_state = dhw.get("state") if isinstance(dhw, dict) else None
+    if isinstance(dhw_state, dict) and "overrun_active" in dhw_state:
+        entities.append(
+            HelianthusDhwOverrunBinarySensor(
+                coordinator=coordinator,
+                entry_id=entry_id,
+                manufacturer=manufacturer,
             )
+        )
+    return entities
 
+
+def _boiler_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build the boiler state sensors on the physical boiler device."""
+    boiler_coordinator = data.get("boiler_coordinator")
+    boiler_device_id = data.get("boiler_device_id")
+    if not (boiler_coordinator and boiler_device_id):
+        return []
+    return [
+        HelianthusBoilerStateBinarySensor(
+            coordinator=boiler_coordinator,
+            entry_id=entry_id,
+            manufacturer=manufacturer,
+            boiler_device_id=boiler_device_id,
+            key=key,
+            label=label,
+        )
+        for key, label in _BOILER_STATE_ROWS
+    ]
+
+
+def _circuit_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build one pump sensor per circuit with a valid index."""
+    circuit_coordinator = data.get("circuit_coordinator")
+    if not (circuit_coordinator and circuit_coordinator.data):
+        return []
+    entities: list[BinarySensorEntity] = []
+    for circuit in circuit_coordinator.data.get("circuits", []) or []:
+        if not isinstance(circuit, dict):
+            continue
+        circuit_index = _parse_optional_int(circuit.get("index"))
+        if circuit_index is None or circuit_index < 0:
+            continue
+        entities.append(
+            HelianthusCircuitPumpBinarySensor(
+                coordinator=circuit_coordinator,
+                entry_id=entry_id,
+                manufacturer=manufacturer,
+                circuit_index=circuit_index,
+                initial_name=_circuit_name(circuit, circuit_index),
+            )
+        )
+    return entities
+
+
+def _solar_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build the solar sensors while the FM5 interpretation is active."""
+    fm5_coordinator = data.get("fm5_coordinator")
+    if not (fm5_coordinator and isinstance(fm5_coordinator.data, dict)):
+        return []
+    payload = fm5_coordinator.data
+    mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
+    if mode != "INTERPRETED":
+        return []
+    solar = payload.get("solar") if isinstance(payload.get("solar"), dict) else None
+    solar_device_id = data.get("solar_device_id") or solar_identifier(entry_id)
+    parent_device_id = data.get("vr71_device_id") or data.get("regulator_device_id")
+    return [
+        HelianthusSolarBinarySensor(
+            coordinator=fm5_coordinator,
+            entry_id=entry_id,
+            manufacturer=manufacturer,
+            solar_device_id=solar_device_id,
+            parent_device_id=parent_device_id,
+            key=key,
+            label=label,
+            enabled_by_default=bool(isinstance(solar, dict) and solar.get(key) is not None),
+        )
+        for key, label in _SOLAR_ROWS
+    ]
+
+
+def _system_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build the regulator-level system sensors."""
+    system_coordinator = data.get("system_coordinator")
+    regulator_device_id = data.get("regulator_device_id")
+    if not (system_coordinator and system_coordinator.data and regulator_device_id):
+        return []
+    return [
+        HelianthusSystemBinarySensor(
+            coordinator=system_coordinator,
+            entry_id=entry_id,
+            manufacturer=manufacturer,
+            regulator_device_id=regulator_device_id,
+            source="state",
+            key="maintenance_due",
+            label="Maintenance Due",
+            device_class=_BINARY_SENSOR_DEVICE_CLASS_PROBLEM,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        HelianthusSystemBinarySensor(
+            coordinator=system_coordinator,
+            entry_id=entry_id,
+            manufacturer=manufacturer,
+            regulator_device_id=regulator_device_id,
+            source="config",
+            key="adaptive_heating_curve_enabled",
+            label="Adaptive Heating Curve",
+            device_class=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+    ]
+
+
+def _radio_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+    """Build one connected-state sensor per exported remote slot."""
+    radio_coordinator = data.get("radio_coordinator")
+    if not (radio_coordinator and radio_coordinator.data):
+        return []
+    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
+    entities: list[BinarySensorEntity] = []
+    for radio in radio_coordinator.data.get("radio_devices", []) or []:
+        if not isinstance(radio, dict) or not should_export_radio_device(radio):
+            continue
+        slot = _radio_slot(radio)
+        bus_key = _radio_bus_key(radio)
+        if slot is None or bus_key is None:
+            continue
+        group, instance = slot
+        # ADR-027: re-parent to physical bus device for merged B524 slots.
+        merge_target = b524_merge_targets.get(bus_key)
+        target_device_id = merge_target if merge_target is not None else radio_device_identifier(entry_id, bus_key)
+        entities.append(
+            HelianthusRadioConnectedBinarySensor(
+                coordinator=radio_coordinator,
+                entry_id=entry_id,
+                manufacturer=manufacturer,
+                radio_device_id=target_device_id,
+                group=group,
+                instance=instance,
+                label="B524 Connected" if merge_target is not None else "Device Connected",
+            )
+        )
+    return entities
+
+
+_DOMAIN_BUILDERS = (
+    _zone_entities,
+    _dhw_entities,
+    _boiler_entities,
+    _circuit_entities,
+    _solar_entities,
+    _system_entities,
+    _radio_entities,
+)
+
+
+async def async_setup_entry(hass, entry, async_add_entities) -> None:
+    """Add every domain's binary sensors in one call, in builder order."""
+    data = hass.data[DOMAIN][entry.entry_id]
+    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
+    entities: list[BinarySensorEntity] = []
+    for build in _DOMAIN_BUILDERS:
+        entities.extend(build(data, entry.entry_id, manufacturer))
     async_add_entities(entities)
 
 
