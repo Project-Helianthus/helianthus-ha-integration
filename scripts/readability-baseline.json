@@ -845,7 +845,7 @@
       "path": "custom_components/helianthus/sensor.py",
       "symbol": "<module>",
       "rule": "F401",
-      "count": 12
+      "count": 9
     },
     {
       "path": "custom_components/helianthus/sensor_descriptors.py",

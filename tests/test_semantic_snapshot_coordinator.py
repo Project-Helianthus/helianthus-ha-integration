@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -354,7 +355,15 @@ def _install_coordinator_doubles(install, coordinator_class):
         install(f"custom_components.helianthus.{module_name}", **{class_name: coordinator_class})
 
 
+@pytest.fixture
+def sensor_setup_loaded():
+    """Load the on-demand sensor setup module while the full Home Assistant doubles are in place."""
+    importlib.import_module("test_semantic_snapshot_sensors")
+    return importlib.import_module("custom_components.helianthus.sensor_setup")
+
+
 @pytest.mark.parametrize("readable_snapshot", [False, True])
+@pytest.mark.usefixtures("sensor_setup_loaded")
 def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_snapshot):
     """Execute the real setup function with fake HA registries and legacy owners."""
     import sys

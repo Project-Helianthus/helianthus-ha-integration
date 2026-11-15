@@ -12,10 +12,8 @@ from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfTemperature
 from .asset_device import AssetDevice, bound_asset_device
 from .const import DOMAIN
 from .device_ids import (
-    build_radio_bus_key,
     build_bus_device_key,
     bus_identifier,
-    circuit_display_name,
     has_bus_identity_evidence,
     radio_device_identifier,
     resolve_bus_address,
@@ -31,122 +29,23 @@ from .sensor_descriptors import (
     CYLINDER_CONFIG_SENSOR_FIELDS,
     DAEMON_STATUS_FIELDS,
     REDUCED_BOILER_TEMPERATURE_FIELDS,
+    FM5_MODE_INTERPRETED,
+    RADIO_ROOM_CLASSES,
     SYSTEM_SENSOR_FIELDS,
-    _FM5_MODE_INTERPRETED,
-    _RADIO_ROOM_CLASSES,
-    _SENSOR_DEVICE_CLASS_DURATION,
-    _SENSOR_DEVICE_CLASS_HUMIDITY,
-    _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+)
+from .sensor_values import (
+    circuit_name,
+    clean_text,
+    fm5_mode,
+    normalize_zone_id,
+    parse_circuit_index,
+    parse_optional_int,
+    radio_bus_key,
+    radio_model_name,
+    radio_slot,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _clean_text(value: object | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = str(value).strip()
-    return cleaned or None
-
-
-def _parse_circuit_index(value: object | None) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed < 0:
-        return None
-    return parsed
-
-
-def _parse_optional_int(value: object | None) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _radio_slot(device: dict[str, Any]) -> tuple[int, int] | None:
-    group = _parse_optional_int(device.get("group"))
-    instance = _parse_optional_int(device.get("instance"))
-    if group is None or instance is None:
-        return None
-    if group < 0 or group > 0xFF or instance < 0 or instance > 0xFF:
-        return None
-    return (group, instance)
-
-
-def _radio_bus_key(device: dict[str, Any]) -> str | None:
-    slot = _radio_slot(device)
-    if slot is None:
-        return None
-    explicit = _clean_text(device.get("radio_bus_key"))
-    if explicit:
-        return explicit
-    return build_radio_bus_key(slot[0], slot[1])
-
-
-def _radio_model_name(device: dict[str, Any]) -> str:
-    model = _clean_text(device.get("device_model"))
-    if model:
-        return model
-    class_address = _parse_optional_int(device.get("device_class_address"))
-    if class_address == 0x15:
-        return "VRC720f/2"
-    if class_address == 0x35:
-        return "VR92f"
-    if class_address == 0x26:
-        return "VR71/FM5"
-    if class_address is not None and class_address >= 0:
-        return f"Unknown Radio (0x{class_address:02X})"
-    return "Unknown Radio"
-
-
-def _fm5_mode(payload: dict[str, Any] | None) -> str:
-    if not isinstance(payload, dict):
-        return "ABSENT"
-    mode = str(payload.get("fm5_semantic_mode") or "ABSENT").strip().upper()
-    if mode not in {"INTERPRETED", "GPIO_ONLY", "ABSENT"}:
-        return "ABSENT"
-    return mode
-
-
-def _circuit_name(circuit: dict[str, Any], index: int) -> str:
-    return circuit_display_name(circuit, index)
-
-
-def _normalize_zone_id(zone_id: object | None) -> str | None:
-    if zone_id is None:
-        return None
-    token = str(zone_id).strip().lower()
-    if not token:
-        return None
-    if token.startswith("zone-"):
-        suffix = token[5:]
-    else:
-        suffix = token
-    if suffix.isdigit():
-        value = int(suffix, 10)
-        if value > 0:
-            return f"zone-{value}"
-    return token
-
-
-def _zone_instance(zone_id: object | None) -> int | None:
-    normalized = _normalize_zone_id(zone_id)
-    if normalized is None:
-        return None
-    token = normalized[5:] if normalized.startswith("zone-") else normalized
-    if not token.isdigit():
-        return None
-    value = int(token, 10)
-    if value <= 0:
-        return None
-    return value - 1
 
 
 def _daemon_field_wanted(has_reloaded, daemon_device_id, daemon_status, field) -> bool:
@@ -256,10 +155,10 @@ def _build_bus_address_sensors(device_coordinator, entry_id: str) -> list[Sensor
         bus_key = build_bus_device_key(
             model=model,
             address=address,
-            serial_number=_clean_text(device.get("serial_number")),
-            mac_address=_clean_text(device.get("mac_address")),
-            hardware_version=_clean_text(device.get("hardware_version")),
-            software_version=_clean_text(device.get("software_version")),
+            serial_number=clean_text(device.get("serial_number")),
+            mac_address=clean_text(device.get("mac_address")),
+            hardware_version=clean_text(device.get("hardware_version")),
+            software_version=clean_text(device.get("software_version")),
         )
         if bus_key in seen_bus_keys:
             continue
@@ -350,10 +249,10 @@ def _build_circuit_sensors(
     for circuit in circuit_coordinator.data.get("circuits", []) or []:
         if not isinstance(circuit, dict):
             continue
-        circuit_index = _parse_circuit_index(circuit.get("index"))
+        circuit_index = parse_circuit_index(circuit.get("index"))
         if circuit_index is None:
             continue
-        initial_name = _circuit_name(circuit, circuit_index)
+        initial_name = circuit_name(circuit, circuit_index)
         sensors.extend(
             HelianthusCircuitSensor(
                 coordinator=circuit_coordinator,
@@ -427,8 +326,8 @@ def _exported_radio_slot(
     """Return group, instance and bus key of a radio device that gets sensors."""
     if not isinstance(radio, dict) or not should_export_radio_device(radio):
         return None
-    slot = _radio_slot(radio)
-    bus_key = _radio_bus_key(radio)
+    slot = radio_slot(radio)
+    bus_key = radio_bus_key(radio)
     if slot is None or bus_key is None:
         return None
     # ADR-027: skip all sensors for merged B524 function-module slots.
@@ -453,10 +352,10 @@ def _build_radio_device_sensors(
     if exported is None:
         return []
     group, instance, bus_key = exported
-    class_address = _parse_optional_int(radio.get("device_class_address"))
-    is_room = class_address in _RADIO_ROOM_CLASSES
+    class_address = parse_optional_int(radio.get("device_class_address"))
+    is_room = class_address in RADIO_ROOM_CLASSES
     radio_device_id = radio_device_identifier(entry_id, bus_key)
-    radio_name = _radio_model_name(radio)
+    radio_name = radio_model_name(radio)
     radio_zone_name = radio_device_zone_names.get(radio_device_id)
     return [
         HelianthusRadioSensor(
@@ -513,7 +412,7 @@ def _radio_sensor_specs(
             {
                 "key": "room_humidity_pct",
                 "label": "Room Humidity",
-                "device_class": _SENSOR_DEVICE_CLASS_HUMIDITY,
+                "device_class": SensorDeviceClass.HUMIDITY,
                 "native_unit": PERCENTAGE,
                 "state_class": SensorStateClass.MEASUREMENT,
             }
@@ -556,7 +455,7 @@ def _build_fm5_sensors(
     if not (fm5_coordinator and fm5_coordinator.data):
         return []
     fm5_payload = fm5_coordinator.data
-    mode = _fm5_mode(fm5_payload)
+    mode = fm5_mode(fm5_payload)
     sensors: list[SensorEntity] = []
     if parent_device_id:
         sensors.append(
@@ -567,7 +466,7 @@ def _build_fm5_sensors(
                 parent_device_id=parent_device_id,
             )
         )
-    if mode == _FM5_MODE_INTERPRETED:
+    if mode == FM5_MODE_INTERPRETED:
         if isinstance(fm5_payload.get("solar"), dict):
             sensors.extend(
                 _build_solar_sensors(fm5_coordinator, entry_id, manufacturer, parent_device_id)
@@ -626,9 +525,9 @@ def _build_solar_sensors(
             (
                 "pump_hours",
                 "Pump Hours",
-                _SENSOR_DEVICE_CLASS_DURATION,
+                SensorDeviceClass.DURATION,
                 "h",
-                _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+                SensorStateClass.TOTAL_INCREASING,
                 None,
             ),
         )
@@ -645,7 +544,7 @@ def _build_cylinder_sensors(
     for cylinder in cylinders:
         if not isinstance(cylinder, dict):
             continue
-        index = _parse_optional_int(cylinder.get("index"))
+        index = parse_optional_int(cylinder.get("index"))
         if index is None or index < 0:
             continue
         sensors.append(
@@ -721,12 +620,12 @@ def _zone_target_device_id(zone, zone_parent_device_ids, regulator_device_id):
     zone_id = zone.get("id")
     if not zone_id:
         return None
-    normalized_zone_id = _normalize_zone_id(zone_id)
+    normalized_zone_id = normalize_zone_id(zone_id)
     if normalized_zone_id is None:
         return None
     config = zone.get("config")
     mapping = (
-        _parse_optional_int(config.get("room_temperature_zone_mapping"))
+        parse_optional_int(config.get("room_temperature_zone_mapping"))
         if isinstance(config, dict)
         else None
     )
@@ -873,7 +772,7 @@ def _adapter_info_specs(adapter_hw: object) -> list[dict]:
         {
             "key": "restart_count",
             "label": "Adapter Restart Count",
-            "state_class": _SENSOR_STATE_CLASS_TOTAL_INCREASING,
+            "state_class": SensorStateClass.TOTAL_INCREASING,
             "icon": "mdi:counter",
         },
     ]

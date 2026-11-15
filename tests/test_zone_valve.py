@@ -64,6 +64,7 @@ def _ensure_homeassistant_stubs() -> None:
             TEMPERATURE = "temperature"
             HUMIDITY = "humidity"
             DURATION = "duration"
+            PRESSURE = "pressure"
 
         sensor_module.SensorDeviceClass = _SensorDeviceClass
     if not hasattr(sensor_module, "SensorStateClass"):

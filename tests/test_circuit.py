@@ -79,6 +79,7 @@ def _ensure_homeassistant_stubs() -> None:
             TEMPERATURE = "temperature"
             HUMIDITY = "humidity"
             DURATION = "duration"
+            PRESSURE = "pressure"
 
         sensor_module.SensorDeviceClass = _SensorDeviceClass
     if not hasattr(sensor_module, "SensorStateClass"):
@@ -200,21 +201,22 @@ from custom_components.helianthus import valve as valve_platform
 
 
 @pytest.mark.parametrize(
-    "platform",
+    "circuit_name",
     [
-        binary_sensor_platform,
-        fan_platform,
-        number_platform,
-        select_platform,
-        sensor_platform,
-        switch_platform,
-        valve_platform,
+        binary_sensor_platform._circuit_name,
+        fan_platform._circuit_name,
+        number_platform._circuit_name,
+        select_platform._circuit_name,
+        sensor_platform.circuit_name,
+        switch_platform._circuit_name,
+        valve_platform._circuit_name,
     ],
+    ids=["binary_sensor", "fan", "number", "select", "sensor", "switch", "valve"],
 )
-def test_circuit_name_labels_dhw_pseudo_circuit_by_role(platform) -> None:  # noqa: ANN001
-    assert platform._circuit_name({"circuit_type": "dhw"}, 9) == "DHW Circuit"
-    assert platform._circuit_name({"circuit_type": "dhw"}, 2) == "DHW Circuit 3"
-    assert platform._circuit_name({"circuit_type": "heating"}, 0) == "Circuit 1 (Heating)"
+def test_circuit_name_labels_dhw_pseudo_circuit_by_role(circuit_name) -> None:  # noqa: ANN001
+    assert circuit_name({"circuit_type": "dhw"}, 9) == "DHW Circuit"
+    assert circuit_name({"circuit_type": "dhw"}, 2) == "DHW Circuit 3"
+    assert circuit_name({"circuit_type": "heating"}, 0) == "Circuit 1 (Heating)"
 
 
 class _FakeCoordinator:
