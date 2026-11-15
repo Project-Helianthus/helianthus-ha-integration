@@ -47,6 +47,10 @@ _TOKEN = re.compile(
     r"|(?P<string>\"(?:[^\"\\]|\\.)*\")"
     r"|(?P<number>-?[0-9]+(?:\.[0-9]+)?))"
 )
+# GraphQL IntValue and the decimal FloatValue subset: no leading zero, and a
+# number is never directly followed by a name character or a dot.
+_NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?")
+_INT_RANGE = range(-(2**31), 2**31)
 
 
 class DocumentError(AssertionError):
@@ -81,6 +85,10 @@ def _tokens(text: str) -> list[tuple[str, str]]:
         value = match.group(kind)
         if kind == "punct" and value == ",":
             continue
+        if kind == "number" and (
+            _NUMBER.fullmatch(value) is None or re.match(r"[_A-Za-z.]", text[position:position + 1])
+        ):
+            raise DocumentError(f"invalid number token at offset {match.start(kind)}: {text[match.start(kind):position + 1]!r}")
         out.append((kind, value))
     return out
 
@@ -226,7 +234,27 @@ def _literal_problem(types: dict, kind: str, value: str, argument_type: str) -> 
         accepted = kind in _LITERAL_KINDS.get(nullable, _OPAQUE_KINDS) and not (
             nullable in {"Int", "ID"} and "." in value
         )
+    if accepted and kind == "number" and nullable == "Int" and int(value) not in _INT_RANGE:
+        return f"{value} is outside the signed 32-bit range of {argument_type}"
     return "" if accepted else f"{kind} literal does not match {argument_type}"
+
+
+def _merge_conflicts(selections: list[Selection], where: str) -> list[str]:
+    """Selections of one response name must merge: same arguments, merged sub-selections.
+
+    Without aliases and fragments the response name is the field name and both
+    selections sit on the same parent type, so the check is syntactic.
+    """
+    problems: list[str] = []
+    groups: dict[str, list[Selection]] = {}
+    for selection in selections:
+        groups.setdefault(selection.name, []).append(selection)
+    for name, group in groups.items():
+        if any(other.arguments != group[0].arguments for other in group[1:]):
+            problems.append(f"{where}.{name}: selections of {name} with different arguments cannot merge")
+        children = [child for member in group for child in (member.selections or [])]
+        problems.extend(_merge_conflicts(children, f"{where}.{name}"))
+    return problems
 
 
 class _Validator:
@@ -301,8 +329,11 @@ def validate(operation: Operation, schema: dict) -> list[str]:
     if not root or root not in schema["types"]:
         return [f"no {operation.kind} root in the recorded schema"]
     validator = _Validator(operation, schema)
+    if operation.kind == "subscription" and len(operation.selections) != 1:
+        validator.problems.append("a subscription selects exactly one root field")
     validator.variables()
     validator.selections(root, operation.selections, operation.kind)
+    validator.problems.extend(_merge_conflicts(operation.selections, operation.kind))
     for variable in operation.variables:
         if variable not in validator.used:
             validator.problems.append(f"${variable}: declared variable is never used")
@@ -433,6 +464,12 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ("query Q($a: Int!, $a: String!) { device(address: $a) { address } }", "duplicate variable"),
         ("query { device(address: \"bad\", address: 1) { address } }", "duplicate argument"),
         ("query Q($unused: Int!) { devices { address } }", "never used"),
+        ("query { device(address: 01) { address } }", "invalid number token"),
+        ("query { device(address: 1.) { address } }", "invalid number token"),
+        ("query { device(address: 2147483648) { address } }", "signed 32-bit range"),
+        ("query { device(address: -2147483649) { address } }", "signed 32-bit range"),
+        ("query { device(address: 1) { address } device(address: 2) { address } }", "cannot merge"),
+        ("subscription { zone_update { id } radio_devices_update { group } }", "exactly one root field"),
     ],
 )
 def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None:
@@ -444,9 +481,57 @@ def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None
     assert any(expected in problem for problem in problems), problems
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "query { device(address: 2147483647) { address } }",
+        "query { device(address: 0) { address } }",
+        "query { device(address: 1) { address } device(address: 1) { address } }",
+        "subscription { zone_update { id } }",
+    ],
+)
+def test_the_guard_accepts_valid_edge_documents(text: str) -> None:
+    assert validate(parse(text), _schema()) == []
+
+
 def test_braces_inside_strings_do_not_hide_a_document() -> None:
     assert _structural_braces_balanced('query { invoke(params: "{") { ok } }')
     assert not _structural_braces_balanced("query { devices { address }")
+
+
+_DOCUMENT_NAME = re.compile(r"(?:^|_)(?:QUERY|MUTATION|SUBSCRIPTION)(?:_|$)")
+
+
+def _computed_document_names(tree: ast.Module) -> set[str]:
+    """Module-level document names, plain or annotated, assigned from an expression."""
+    found: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if isinstance(value, ast.Constant):
+            continue
+        found.update(
+            target.id
+            for target in targets
+            if isinstance(target, ast.Name) and _DOCUMENT_NAME.search(target.id)
+        )
+    return found
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'QUERY_FOO = "query Foo {" + FIELDS + "}"',
+        'QUERY_FOO: Final[str] = "query Foo {" + FIELDS + "}"',
+        'OTHER = QUERY_FOO = "query Foo {" + FIELDS + "}"',
+    ],
+)
+def test_computed_document_names_finds_plain_and_annotated_assignments(source: str) -> None:
+    assert "QUERY_FOO" in _computed_document_names(ast.parse(source))
 
 
 def test_computed_documents_are_listed() -> None:
@@ -454,13 +539,5 @@ def test_computed_documents_are_listed() -> None:
     listed = {"SEMANTIC_SNAPSHOT_QUERY", "QUERY_SYSTEM_LEGACY"}
     found: set[str] = set()
     for path in sorted(PACKAGE_DIR.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in tree.body:
-            if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
-                continue
-            target = node.targets[0]
-            if not isinstance(target, ast.Name) or not re.search(r"(?:^|_)(?:QUERY|MUTATION|SUBSCRIPTION)(?:_|$)", target.id):
-                continue
-            if not isinstance(node.value, ast.Constant):
-                found.add(target.id)
+        found |= _computed_document_names(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
     assert found <= listed, f"computed documents not validated: {sorted(found - listed)}"
