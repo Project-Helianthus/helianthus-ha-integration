@@ -193,13 +193,15 @@ UNIQUE_ID_RENAMES = {
 UNCHANGED_UNIQUE_IDS = {
     "system-text-installer_name",
     "system-date-maintenance_date",
-    "boiler-text-installer_menu_code",
     "system-sensor-outdoor_temperature",
     "system-sensor-outdoor_temperature_avg24h",
     "system-sensor-hwc_cylinder_temperature_top",
     "system-sensor-hwc_cylinder_temperature_bottom",
     "system-binary-maintenance_due",
 }
+
+# The boiler control for B509 selector 0x4904 is withdrawn: its register meaning is open.
+WITHDRAWN_UNIQUE_IDS = {"boiler-text-installer_menu_code"}
 
 
 def _system_and_boiler_unique_ids(entry_id):
@@ -236,6 +238,7 @@ def test_renamed_system_and_boiler_unique_ids_follow_the_canonical_names(entry_i
     assert set(UNIQUE_ID_RENAMES.values()) <= unique_ids
     assert not set(UNIQUE_ID_RENAMES) & unique_ids
     assert UNCHANGED_UNIQUE_IDS <= unique_ids
+    assert WITHDRAWN_UNIQUE_IDS.isdisjoint(unique_ids)
 
 
 def test_sparse_reload_read_keys_match_the_platform_controls():

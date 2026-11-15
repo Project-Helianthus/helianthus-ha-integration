@@ -70,10 +70,6 @@ _SYSTEM_MENU_CODE_FIELD = InstallerMenuCodeField(
     key="installer_access_code", label="Installer Menu Code", max_value=999, digits=3, source="system",
 )
 
-_BOILER_MENU_CODE_FIELD = InstallerMenuCodeField(
-    key="installer_menu_code", label="Boiler Installer Menu Code", max_value=255, digits=3, source="boiler",
-)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -136,19 +132,6 @@ async def async_setup_entry(
                     field=field,
                 )
             )
-        entities.append(
-            HelianthusInstallerMenuCodeText(
-                coordinator=boiler_coordinator,
-                entry_id=entry_id,
-                manufacturer=manufacturer,
-                client=client,
-                status_coordinator=status_coordinator,
-                device_id=boiler_device_id,
-                field=_BOILER_MENU_CODE_FIELD,
-                mutation=_SET_BOILER_CONFIG_MUTATION,
-                mutation_key="set_boiler_config",
-            )
-        )
 
     async_add_entities(entities)
     if entities and hasattr(status_coordinator, "async_add_listener"):

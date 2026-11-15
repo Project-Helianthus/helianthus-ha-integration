@@ -429,11 +429,10 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
         for entity in text_entities
         if isinstance(entity, text_platform.HelianthusBoilerText)
     )
-    boiler_menu_code = next(
-        entity
-        for entity in text_entities
-        if isinstance(entity, text_platform.HelianthusInstallerMenuCodeText)
+    assert not any(
+        isinstance(entity, text_platform.HelianthusInstallerMenuCodeText)
         and entity._field.source == "boiler"
+        for entity in text_entities
     )
 
     with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):
@@ -446,7 +445,5 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
         asyncio.run(menu_code.async_set_value("123"))
     with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
         asyncio.run(boiler_phone.async_set_value("401234"))
-    with pytest.raises(text_platform.HomeAssistantError, match="source admission is not trusted"):
-        asyncio.run(boiler_menu_code.async_set_value("123"))
 
     assert client.calls == []

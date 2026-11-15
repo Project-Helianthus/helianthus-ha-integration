@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Withdraw the Boiler Installer Menu Code text control (B509 selector
+  0x4904). The gateway names that register `central_heating_pump_mode` and
+  marks the name provisional: its meaning is open (a pump mode or an
+  installer access code), so a consumer control no longer writes it. Its
+  writes already failed because the control sent a key the gateway does not
+  accept. The boiler configuration is still read as before, and the system
+  Installer Menu Code control is unchanged. On an existing installation the
+  registry entry `<entry_id>-boiler-text-installer_menu_code` is left behind;
+  the integration does not remove it.
 - Map the fifteen EVSE pack facts of the shared semantic snapshot to read-only
   sensors on an `EV charger` device, so EVSE readings reach Home Assistant
   through the ordinary GraphQL read. Energy counters use the `total` state
