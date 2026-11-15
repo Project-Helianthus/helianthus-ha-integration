@@ -33,5 +33,5 @@ qualification, acquisition coverage or admission trust. This consumer change
 makes no protocol claim or stability promise before Helianthus 1.0.
 
 Implementation and existing number validation are in
-[the system coordinator](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py)
+[the system coordinator](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_system.py)
 and [the number entities](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/number.py).

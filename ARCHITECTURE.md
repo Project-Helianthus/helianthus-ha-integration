@@ -47,6 +47,17 @@ Device IDs must be stable and deterministic.
 
 The integration consumes a semantic GraphQL layer (zones, dhw, energy, errors). If only raw device/plane/method is available, the integration uses a minimal fallback and exposes diagnostics only.
 
+Each domain coordinator lives in its own module under `custom_components/helianthus/`, together with the GraphQL
+documents and field lists it reads: `coordinator_devices.py` (device inventory), `coordinator_status.py` (service
+status and source admission), `coordinator_semantic.py` (zones and DHW), `coordinator_circuits.py` (heating
+circuits), `coordinator_radio.py` (remote-slot radio devices), `coordinator_fm5.py` (functional-module mode, solar
+and cylinders), `coordinator_system.py` (system state and configuration), `coordinator_energy.py` (energy totals),
+`coordinator_boiler.py` (boiler status), `coordinator_schedules.py` (weekly timer programs) and
+`coordinator_adapter_info.py` (adapter hardware information). `coordinator.py` keeps only what the domains share,
+and `entry_coordinators.py` creates the coordinators and runs their first refreshes in order.
+`scripts/split_coordinator_domains.py` is the offline script that produced this split from the single coordinator
+module.
+
 ### Offline adversarial evidence boundary
 
 `scripts/ha_adversarial_harness.py` is a replaceable southbound evidence adapter,

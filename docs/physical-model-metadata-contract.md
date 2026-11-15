@@ -180,6 +180,6 @@ live smoke or release success is established by a readable contract page.
 [sensor setup]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor_setup.py
 [bus-address sensor]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor.py
 [label tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_init_labels.py
-[inventory queries]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[inventory queries]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_devices.py
 [inventory fetch]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_fetch.py
 [fetch tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py

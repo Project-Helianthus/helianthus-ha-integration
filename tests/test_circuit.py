@@ -548,13 +548,13 @@ class _CircuitSchemaClient:
 
 
 def test_circuit_query_does_not_select_the_withdrawn_frost_field() -> None:
-    from custom_components.helianthus import coordinator as coordinator_module
+    from custom_components.helianthus import coordinator_circuits as coordinator_module
 
     assert re.search(r"\bfrost_prot_c\b", coordinator_module.QUERY_CIRCUITS) is None
 
 
 def test_circuit_coordinator_returns_circuits_when_config_has_no_frost_field() -> None:
-    from custom_components.helianthus import coordinator as coordinator_module
+    from custom_components.helianthus import coordinator_circuits as coordinator_module
 
     circuits = _circuits()
     for circuit in circuits:

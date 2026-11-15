@@ -67,7 +67,7 @@ def modules(monkeypatch):
         spec.loader.exec_module(module)
         return module
 
-    return types.SimpleNamespace(number=load("number"), coordinator=load("coordinator"))
+    return types.SimpleNamespace(number=load("number"), coordinator=load("coordinator_system"))
 
 
 class _Coordinator:

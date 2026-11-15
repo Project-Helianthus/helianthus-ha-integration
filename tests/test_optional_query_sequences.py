@@ -39,7 +39,7 @@ def coordinator_module(monkeypatch):
     # A private module name avoids replacing a coordinator imported by other tests.
     source = (
         Path(__file__).resolve().parents[1]
-        / "custom_components/helianthus/coordinator.py"
+        / "custom_components/helianthus/coordinator_system.py"
     )
     spec = importlib.util.spec_from_file_location(
         "custom_components.helianthus._q07_coordinator", source

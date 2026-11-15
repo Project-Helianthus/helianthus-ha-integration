@@ -44,7 +44,7 @@ def energy_module(monkeypatch: pytest.MonkeyPatch):
         for module in (homeassistant, helpers, updates, package):
             patches.setitem(sys.modules, module.__name__, module)
         try:
-            yield importlib.import_module(f"{package_name}.coordinator")
+            yield importlib.import_module(f"{package_name}.coordinator_energy")
         finally:
             for name in tuple(sys.modules):
                 if name.startswith(f"{package_name}."):

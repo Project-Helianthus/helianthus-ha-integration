@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_ROOT = REPO_ROOT / "custom_components" / "helianthus"
-COORDINATOR = INTEGRATION_ROOT / "coordinator.py"
+COORDINATOR = INTEGRATION_ROOT / "coordinator_status.py"
 
 LEGACY_ADMISSION_TOKENS = (
     "busAdmission",
