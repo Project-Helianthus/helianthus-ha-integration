@@ -94,7 +94,7 @@ The [Existing consumer description] and [Offline acceptance boundary] remain the
 Required future behavior must be evaluated against the published API; missing authoritative absence, identity or freshness semantics require an API decision rather than a private consumer workaround. No GraphQL fields, eBUS MCP envelopes, native evidence, acquisition, qualification or admission rules change. No new authorization gate is introduced before 0.9. G5 D1–D5/O8 and J01–J17 implementation ownership remain outside this contract, including receipts, idempotency, principal boundaries and recovery redesign.
 
 [Semantic helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/semantic_freshness.py
-[Coordinators]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[Coordinators]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_semantic.py
 [Optional helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
 [Climate entities]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/climate.py
 [Water heater entities]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/water_heater.py

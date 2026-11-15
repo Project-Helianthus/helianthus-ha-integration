@@ -20,11 +20,11 @@ This map does not replace K26 Ingress checks or M46 candidate indexing and does 
 No runtime, GraphQL or eBUS MCP behavior changes here; this supplies neither a gateway API stability promise nor a new snapshot contract. All MCP namespaces remain pre-stable; no stability is declared before Helianthus 1.0. Protocol facts and codec/profile qualification remain outside this consumer map.
 
 [Availability helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
-[system coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
-[Boiler coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[system coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_system.py
+[Boiler coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_boiler.py
 [optional schema test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
 [Metadata test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
-[Energy coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[Energy coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_energy.py
 [energy copy helper]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
 [energy retention test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py
 [initial energy test]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator.py

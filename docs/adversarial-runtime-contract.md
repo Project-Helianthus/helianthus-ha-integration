@@ -78,7 +78,7 @@ Parent #105 remains open: executed restart, temporary partition, reconnect sync 
 [identity helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/identity.py
 [Admin coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/eebus_admin_coordinator.py
 [Integration boundary]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/__init__.py
-[Coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator.py
+[Coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_semantic.py
 [Climate implementation]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/climate.py
 [README]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/README.md
 [entrypoint tests]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entrypoint_phases.py
