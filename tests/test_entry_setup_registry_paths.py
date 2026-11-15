@@ -3,7 +3,8 @@
 Only Home Assistant services and independent owners are replaced (the same
 boundary as the entry setup test in ``test_semantic_snapshot_coordinator``);
 every statement of ``entry_setup.async_setup_entry`` runs unchanged. The
-registries are small in-memory doubles that keep devices and entities by id.
+doubles live in ``entry_setup_harness``; the registries keep devices and
+entities by id.
 
 Paths covered:
 - the stale registry clean-up at the start of setup, when the registry already
@@ -16,22 +17,26 @@ Paths covered:
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import sys
-from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.helianthus import DOMAIN, entry_setup, graphql, identity
+from entry_setup_harness import (
+    CURRENT_BUS_KEY,
+    INVENTORY_DEVICE,
+    TRUSTED_STATUS,
+    config_entry,
+    install_harness,
+    run,
+)
+
+from custom_components.helianthus import DOMAIN, entry_setup, identity
 from custom_components.helianthus.device_ids import (
     adapter_identifier,
-    build_bus_device_key,
     bus_identifier,
     cylinder_identifier,
     daemon_identifier,
-    stable_bus_identity_model,
 )
 
 def _synthetic_guid(serial: int) -> str:
@@ -41,203 +46,12 @@ def _synthetic_guid(serial: int) -> str:
 
 GUID_OWNER = _synthetic_guid(1)
 GUID_ALIAS = _synthetic_guid(2)
-COORDINATORS = (
-    "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator",
-    "HelianthusCircuitCoordinator", "HelianthusCoordinator",
-    "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
-    "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator",
-    "HelianthusSemanticCoordinator", "HelianthusSystemCoordinator",
-    "HelianthusStatusCoordinator",
-)
-INVENTORY_DEVICE = {"address": 8, "device_id": "BAI00", "manufacturer": "Synthetic"}
-CURRENT_BUS_KEY = build_bus_device_key(stable_bus_identity_model("BAI00", None), 8)
-TRUSTED_STATUS = {"admission": {
-    "source_selection": {"state": "active"}, "trusted": True, "repair_code": None,
-    "selected_source": 0x31, "state": "active", "reason": None}}
-
-
-class DeviceRegistry:
-    def __init__(self) -> None:
-        self.devices: dict[str, SimpleNamespace] = {}
-
-    def add(self, entry_id: str, *identifiers: tuple[str, str], **attrs) -> SimpleNamespace:
-        device = SimpleNamespace(
-            id=f"device-{len(self.devices)}-{identifiers[0][1]}", identifiers=set(identifiers),
-            config_entries={entry_id}, manufacturer=None, model=None, serial_number=None,
-            area_id=None, **attrs)
-        self.devices[device.id] = device
-        return device
-
-    def async_get_or_create(self, *, config_entry_id, identifiers, **attrs):
-        for device in self.devices.values():
-            if device.identifiers & set(identifiers):
-                device.config_entries.add(config_entry_id)
-                return device
-        attrs.pop("via_device", None)
-        return self.add(config_entry_id, *identifiers, **{
-            k: v for k, v in attrs.items() if k not in {"manufacturer", "model", "serial_number"}})
-
-    def async_update_device(self, device_id, *, merge_identifiers=None, **attrs):
-        device = self.devices[device_id]
-        device.identifiers |= set(merge_identifiers or ())
-        device.__dict__.update(attrs)
-
-    def async_get(self, device_id):
-        return self.devices.get(device_id)
-
-    def async_remove_device(self, device_id):
-        del self.devices[device_id]
-
-    def tokens(self) -> set[str]:
-        return {token for device in self.devices.values() for _, token in device.identifiers}
-
-
-class EntityRegistry:
-    def __init__(self) -> None:
-        self.entities: dict[str, SimpleNamespace] = {}
-
-    def add(self, entry_id, unique_id, *, domain="sensor", device_id=None, platform=DOMAIN):
-        entity_id = f"{domain}.{unique_id.replace('-', '_')}"
-        self.entities[entity_id] = SimpleNamespace(
-            entity_id=entity_id, unique_id=unique_id, platform=platform, domain=domain,
-            config_entry_id=entry_id, device_id=device_id, disabled_by=None)
-
-    def async_remove(self, entity_id):
-        del self.entities[entity_id]
-
-    def async_update_entity(self, entity_id, **attrs):
-        self.entities[entity_id].__dict__.update(attrs)
-
-    def unique_ids(self) -> set[str]:
-        return {entity.unique_id for entity in self.entities.values()}
-
-
-class ConfigEntry(SimpleNamespace):
-    def add_update_listener(self, listener):
-        return lambda: None
-
-    def async_on_unload(self, unsub):
-        return None
-
-
-def config_entry(entry_id, *, host=True, unique_id=None, options=None):
-    data = {"host": "gateway.invalid", "port": 1} if host else {}
-    return ConfigEntry(entry_id=entry_id, data=data, options=options or {},
-                       unique_id=unique_id, disabled_by=None)
-
-
-def _install(monkeypatch, name, **attrs):
-    module = ModuleType(name)
-    module.__dict__.update(attrs)
-    monkeypatch.setitem(sys.modules, name, module)
-    parent, _, child = name.rpartition(".")
-    if parent in sys.modules:
-        monkeypatch.setattr(sys.modules[parent], child, module, raising=False)
-    return module
-
-
-def _devices_for_entry(registry, entry_id):
-    return [d for d in registry.devices.values() if entry_id in d.config_entries]
-
-
-def _entities_for_entry(registry, entry_id):
-    return [e for e in registry.entities.values() if e.config_entry_id == entry_id]
-
-
-def _coordinator_class(name, coordinator_data):
-    class Coordinator:
-        def __init__(self, *args) -> None:
-            value = coordinator_data.get(name)
-            self.data = dict(value) if isinstance(value, dict) else value
-            self.last_update_success = True
-            self.listeners = []
-
-        async def async_config_entry_first_refresh(self) -> None:
-            return None
-
-        def async_add_listener(self, listener, *args):
-            self.listeners.append(listener)
-            return lambda: None
-    return Coordinator
-
-
-def _install_home_assistant(monkeypatch, devices, entities):
-    _install(monkeypatch, "homeassistant.core", callback=lambda fn: fn)
-    dr = _install(monkeypatch, "homeassistant.helpers.device_registry",
-                  async_get=lambda hass: devices, async_entries_for_config_entry=_devices_for_entry)
-    er = _install(monkeypatch, "homeassistant.helpers.entity_registry",
-                  async_get=lambda hass: entities, async_entries_for_config_entry=_entities_for_entry)
-    _install(monkeypatch, "homeassistant.helpers", device_registry=dr, entity_registry=er)
-    _install(monkeypatch, "homeassistant.helpers.aiohttp_client",
-             async_get_clientsession=lambda hass: object())
-    _install(monkeypatch, "homeassistant.helpers.event",
-             async_track_state_change_event=lambda *a: lambda: None)
-    _install(monkeypatch, "homeassistant.const", CONF_HOST="host", CONF_PORT="port",
-             CONF_SCAN_INTERVAL="scan_interval")
-
-
-def _install_independent_owners(monkeypatch, coordinator_data):
-    _install(monkeypatch, "custom_components.helianthus.coordinator",
-             **{name: _coordinator_class(name, coordinator_data) for name in COORDINATORS})
-    _install(monkeypatch, "custom_components.helianthus.subscriptions",
-             start_subscriptions=AsyncMock())
-    for family in ("pv", "storage", "evse"):
-        _install(monkeypatch, f"custom_components.helianthus.{family}_m2m", **{
-            f"async_setup_{family}_m2m_boundary": AsyncMock(return_value=None),
-            f"{family}_m2m_option_signature": lambda options: (),
-        })
-    admin = SimpleNamespace(lifecycle=SimpleNamespace(clear=lambda: None, action_broker=object()))
-    _install(monkeypatch, "custom_components.helianthus.entry_services",
-             async_setup_optional_eebus_admin_service=AsyncMock(return_value=(admin, None, False)))
-    monkeypatch.setattr(entry_setup, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
-    monkeypatch.setattr(entry_setup, "async_setup_semantic_snapshot", AsyncMock(return_value=None))
-    monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: object())
-    monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
-
-
-def _build_hass(*entries):
-    removed, tasks, updates = [], [], []
-
-    async def async_remove(entry_id):
-        removed.append(entry_id)
-
-    def update(entry, **changes):
-        updates.append((entry.entry_id, changes))
-        entry.__dict__.update(changes)
-
-    def create_task(coro):
-        task = asyncio.ensure_future(coro)
-        tasks.append(task)
-        return task
-
-    hass = SimpleNamespace(
-        data={}, async_create_task=create_task,
-        config_entries=SimpleNamespace(
-            async_entries=lambda domain: list(entries), async_update_entry=update,
-            async_forward_entry_setups=AsyncMock(), async_remove=async_remove,
-            async_reload=AsyncMock(),
-            async_get_entry=lambda entry_id: (
-                SimpleNamespace(entry_id=entry_id) if entry_id == "foreign-live-entry" else None)))
-    return SimpleNamespace(hass=hass, removed=removed, tasks=tasks, updates=updates)
 
 
 @pytest.fixture
 def harness(monkeypatch):
     """Install HA service doubles; return a builder for one synthetic hass."""
-    devices, entities = DeviceRegistry(), EntityRegistry()
-    coordinator_data: dict[str, object] = {}
-    _install_home_assistant(monkeypatch, devices, entities)
-    _install_independent_owners(monkeypatch, coordinator_data)
-    return SimpleNamespace(devices=devices, entities=entities, data=coordinator_data,
-                           build=_build_hass, monkeypatch=monkeypatch)
-
-
-def run(harness_hass, entry):
-    async def exercise():
-        result = await entry_setup.async_setup_entry(harness_hass.hass, entry)
-        await asyncio.gather(*harness_hass.tasks)
-        return result
-    return asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+    return install_harness(monkeypatch)
 
 
 # Registry tokens that the start-of-setup clean-up attributes to one entry.

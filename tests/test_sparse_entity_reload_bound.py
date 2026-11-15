@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import test_entry_setup_registry_paths as paths
+import entry_setup_harness as paths
 from test_sensor import _ensure_homeassistant_stubs
 
 _ensure_homeassistant_stubs()
@@ -99,7 +99,7 @@ def alternating(index, value, *, value_first, phase=1):
 def shared_hass(*entry_ids):
     """One synthetic hass whose reload requests are recorded, not executed."""
     entries = [paths.config_entry(entry_id) for entry_id in entry_ids]
-    setup = paths._build_hass(*entries)
+    setup = paths.build_hass(*entries)
     setup.requests = []
 
     async def reload(entry_id):
@@ -490,10 +490,10 @@ def paths_harness(monkeypatch):
     """The registry-path harness: Home Assistant doubles and one synthetic registry."""
     devices, entities = paths.DeviceRegistry(), paths.EntityRegistry()
     coordinator_data: dict[str, object] = {}
-    paths._install_home_assistant(monkeypatch, devices, entities)
-    paths._install_independent_owners(monkeypatch, coordinator_data)
-    paths._install(monkeypatch, "custom_components.helianthus.subscriptions",
-                   start_subscriptions=AsyncMock(return_value=None))
+    paths.install_home_assistant(monkeypatch, devices, entities)
+    paths.install_independent_owners(monkeypatch, coordinator_data)
+    paths.install_module(monkeypatch, "custom_components.helianthus.subscriptions",
+                         start_subscriptions=AsyncMock(return_value=None))
     enabled_entries = []
     record_update = entities.async_update_entity
 
