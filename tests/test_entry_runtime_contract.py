@@ -584,3 +584,23 @@ def test_adoption_check_reads_the_requested_base(tmp_path, capsys):
     )
     assert table.main(["--check", "--base", str(tmp_path)]) == 1
     assert "runtime mapping access left" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        'runtime["unknown"]',
+        'runtime.get("unknown")',
+        'runtime.setdefault("unknown", 1)',
+        '"device_coordinator" in runtime',
+        '"unknown" not in runtime',
+    ],
+)
+def test_adoption_check_reports_unrewritable_runtime_access(expression):
+    """A runtime access the table cannot rewrite is reported, not left silently."""
+    table = runtime_table()
+    source = f"def _left(runtime):\n    return {expression}\n"
+    assert table.rewrite(source, "reader.py") == source
+    assert len(table.unrewritable(source, "reader.py")) == 1
+    clean = 'def _ok(runtime):\n    return "semantic_snapshot_coordinator" in runtime\n'
+    assert table.unrewritable(clean, "reader.py") == []

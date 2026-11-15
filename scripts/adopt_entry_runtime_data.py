@@ -250,6 +250,32 @@ def rewrite(text: str, path: str) -> str:
     return text
 
 
+def unrewritable(text: str, path: str) -> list[str]:
+    """Return the mapping accesses of a runtime receiver that ``rewrite`` leaves.
+
+    A key outside the table, or a presence test of a key other than the one in
+    ``PRESENCE_ATTRIBUTES``, cannot be rewritten and would fail at runtime on
+    the runtime object, which is not a mapping.
+    """
+    problems = []
+    for node in ast.walk(ast.parse(text, filename=path)):
+        key = None
+        if isinstance(node, ast.Subscript) and _receiver(node.value):
+            key = _key(node.slice)
+        elif (found := _method_key(node, frozenset({"get", "setdefault"}))) is not None:
+            key = found[1]
+        elif (isinstance(node, ast.Compare) and len(node.ops) == 1
+              and isinstance(node.ops[0], (ast.In, ast.NotIn))
+              and _receiver(node.comparators[0])):
+            key = _key(node.left)
+            if key is not None and key not in PRESENCE_ATTRIBUTES:
+                problems.append(f"{path}:{node.lineno}: presence test of {key!r} cannot be rewritten")
+            continue
+        if key is not None and key not in RUNTIME_ATTRIBUTES and key not in UNPUBLISHED_KEYS:
+            problems.append(f"{path}:{node.lineno}: key {key!r} is not in the attribute table")
+    return problems
+
+
 def _class_fields(module: Path, name: str) -> list[tuple[str, str]]:
     tree = ast.parse(module.read_text(encoding="utf-8"))
     for node in tree.body:
@@ -295,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
             text = (args.base / path).read_text(encoding="utf-8")
             if rewrite(text, path) != text:
                 errors.append(f"{path}: runtime mapping access left")
+            errors.extend(unrewritable(text, path))
         for error in errors:
             print(error, file=sys.stderr)
         print(f"Checked {len(READERS)} reader modules; {len(errors)} problem(s)")
