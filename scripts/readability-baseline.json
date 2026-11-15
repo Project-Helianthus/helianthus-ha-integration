@@ -26,18 +26,6 @@
       "count": 1
     },
     {
-      "path": "custom_components/helianthus/binary_sensor.py",
-      "symbol": "async_setup_entry",
-      "rule": "C901",
-      "count": 26
-    },
-    {
-      "path": "custom_components/helianthus/binary_sensor.py",
-      "symbol": "async_setup_entry",
-      "rule": "PLR0915",
-      "count": 71
-    },
-    {
       "path": "custom_components/helianthus/climate.py",
       "symbol": "<module>",
       "rule": "F401",
