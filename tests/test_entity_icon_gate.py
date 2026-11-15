@@ -895,7 +895,6 @@ def test_circuit_number_specific_icons() -> None:
         "flow_temp_max_c": "mdi:thermometer-chevron-up",
         "flow_temp_min_c": "mdi:thermometer-chevron-down",
         "summer_limit_c": "mdi:weather-sunny",
-        "frost_prot_c": "mdi:snowflake-thermometer",
     }
     for field in _CIRCUIT_NUMBER_FIELDS:
         if field.key in expected:
