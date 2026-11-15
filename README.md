@@ -14,9 +14,9 @@ read keys remain distinct from the setter keys. Renamed writable entities use
 new canonical unique-ID components and are recreated; there is no unique-ID or
 entity-registry migration, alias or old/new entity pair. Unrelated IDs remain.
 
-The writable Frost Protection number is withdrawn. Its raw provisional read
-representation remains available to the consumer; no replacement special-function
-control is published pending the public value table. This change performs no
+The writable Frost Protection number is withdrawn, and the circuit query no
+longer reads the field; no replacement special-function entity is published
+pending the public value table. This change performs no
 installed-state deletion or live registry operation.
 
 This changes shipped artifacts (evidence class S). Affected security, hardware
