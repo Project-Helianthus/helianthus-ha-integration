@@ -226,23 +226,43 @@ def test_cancelled_first_refresh_closes_untransferred_https_client() -> None:
     assert calls == ["refresh", "close"]
 
 
-def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it() -> None:
-    setup_source = (COMPONENT / "entry_setup.py").read_text(encoding="utf-8")
+def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it(monkeypatch) -> None:
+    from custom_components.helianthus import entry_services, evse_m2m, storage_m2m
+
+    calls = []
+    boundary = SimpleNamespace(coordinator=object())
+
+    async def create_pv(hass, entry, *, scan_interval):
+        calls.append(("pv", hass, entry, scan_interval))
+        return boundary
+
+    async def disabled(hass, entry, *, scan_interval):
+        return None
+
+    monkeypatch.setattr(pv_m2m, "async_setup_pv_m2m_boundary", create_pv)
+    monkeypatch.setattr(storage_m2m, "async_setup_storage_m2m_boundary", disabled)
+    monkeypatch.setattr(evse_m2m, "async_setup_evse_m2m_boundary", disabled)
+    hass, entry = object(), SimpleNamespace(entry_id="synthetic-entry", options={}, data={})
+    boundaries = asyncio.run(entry_services.async_setup_m2m_boundaries(hass, entry, 31))
+    admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
+    fields = entry_services.service_runtime_fields(entry, admin, boundaries)
+    assert calls == [("pv", hass, entry, 31)]
+    assert fields["pv_m2m_boundary"] is boundary
+    assert fields["pv_m2m_coordinator"] is boundary.coordinator
     connection_source = (COMPONENT / "entry_connection.py").read_text(encoding="utf-8")
     cleanup_source = (COMPONENT / "entry_cleanup.py").read_text(encoding="utf-8")
-    assert "async_setup_pv_m2m_boundary" in setup_source
-    assert '"pv_m2m_coordinator"' in setup_source
-    assert '"pv_m2m_boundary"' in setup_source
     assert "await pv_m2m_boundary.async_close()" in cleanup_source
     assert "GraphQLClient(session=session" in connection_source
 
 
-def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer() -> None:
-    source = (COMPONENT / "entry_setup.py").read_text(encoding="utf-8")
-    boundary = source.index("pv_m2m_boundary = await async_setup_pv_m2m_boundary")
-    subscriptions = source.index("subscription_task = await start_subscriptions")
-    runtime_owner = source.index("hass.data.setdefault(DOMAIN, {})[entry.entry_id]")
-    assert subscriptions < boundary < runtime_owner
+def test_primary_setup_creates_pv_boundary_only_at_runtime_ownership_transfer(monkeypatch) -> None:
+    """The consumer boundaries follow the subscriptions and precede publication."""
+    from test_entrypoint_phases import SETUP_PHASES, _connection, _PhaseSequence
+
+    bench = _PhaseSequence(monkeypatch, options={}, connection=_connection())
+    assert bench.run() is True
+    order = [bench.events.index(phase) for phase in ("listeners", "m2m-boundaries", "publish")]
+    assert order == sorted(order) and bench.events == list(SETUP_PHASES)
 
 
 def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discovery() -> None:

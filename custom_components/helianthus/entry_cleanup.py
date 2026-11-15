@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import DOMAIN, PLATFORMS, async_unload_eebus_admin_boundary
+from .const import DOMAIN, PLATFORMS
+from .entry_services import async_unload_eebus_admin_boundary
 from .entry_runtime import EntryRuntime
 
 if TYPE_CHECKING:

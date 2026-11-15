@@ -1,6 +1,20 @@
 """Constants for the Helianthus integration."""
 
 DOMAIN = "helianthus"
+PLATFORMS: list[str] = [
+    "sensor",
+    "binary_sensor",
+    "climate",
+    "water_heater",
+    "fan",
+    "valve",
+    "number",
+    "select",
+    "switch",
+    "calendar",
+    "text",
+    "date",
+]
 MDNS_SERVICE_TYPE = "_helianthus-graphql._tcp.local."
 
 CONF_PATH = "path"
