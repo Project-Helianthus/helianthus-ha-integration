@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime, date, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .device_ids import zone_identifier, dhw_identifier
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 _WEEKDAY_INDEX = {
     "monday": 0,
@@ -36,17 +37,17 @@ _HC_LABELS = {
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: HelianthusConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Helianthus schedule calendar entities."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    schedule_coordinator = data.get("schedule_coordinator")
+    data = entry.runtime_data
+    schedule_coordinator = data.coordinators.schedule_coordinator
     if schedule_coordinator is None:
         return
 
-    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
-    regulator_device_id = data.get("regulator_device_id")
+    zone_parent_device_ids = data.listeners.zone_parent_device_ids or {}
+    regulator_device_id = data.identities.regulator_device_id
 
     programs = (schedule_coordinator.data or {}).get("programs") or []
     entities: list[CalendarEntity] = []

@@ -13,6 +13,7 @@ from test_sensor import sensor_platform
 from test_pv_m2m import _key, _payload
 from custom_components.helianthus import pv_m2m
 from custom_components.helianthus.asset_device import bound_asset_device
+from runtime_fixtures import build_runtime
 
 
 POWER = "pv.ac.power.active"
@@ -91,7 +92,7 @@ class _PVConsumer:
                     coordinator=self.coordinator, entry_id="entry-1",
                     asset_ref=ASSET, descriptor=descriptor,
                     device=bound_asset_device(
-                        {"pv_m2m_coordinator": self.coordinator}, "entry-1", ASSET),
+                        build_runtime({"pv_m2m_coordinator": self.coordinator}).services, "entry-1", ASSET),
                 )
 
     def identities(self):

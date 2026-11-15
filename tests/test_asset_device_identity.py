@@ -20,7 +20,6 @@ import pytest
 from test_sensor import _FakeCoordinator, _FakeEntry, _FakeHass, sensor_platform
 from test_semantic_snapshot_sensors import _as_asset, readable, refresh, setup, shared
 from custom_components.helianthus import evse_m2m, pv_m2m, storage_m2m
-from custom_components.helianthus.const import DOMAIN
 from custom_components.helianthus.semantic_snapshot_sensors import (
     semantic_device_identifier,
     semantic_device_model,
@@ -94,12 +93,11 @@ def _run(runtime: dict, records=()):
     """Run the real platform setup; the shared path only when records are given."""
     if records:
         return setup(list(records), runtime)[3]
-    ha = _FakeHass({"device_coordinator": _FakeCoordinator([]),
-                    "status_coordinator": _FakeCoordinator({}),
-                    "semantic_snapshot_coordinator": None})
-    ha.data[DOMAIN][ENTRY_ID].update(runtime)
+    entry = _FakeEntry(ENTRY_ID, {"device_coordinator": _FakeCoordinator([]),
+                                  "status_coordinator": _FakeCoordinator({}),
+                                  "semantic_snapshot_coordinator": None, **runtime})
     entities: list = []
-    asyncio.run(sensor_platform.async_setup_entry(ha, _FakeEntry(ENTRY_ID), entities.extend))
+    asyncio.run(sensor_platform.async_setup_entry(_FakeHass(), entry, entities.extend))
     return entities
 
 

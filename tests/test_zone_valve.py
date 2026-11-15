@@ -168,14 +168,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def test_zone_via_device_prefers_expected_radio_candidates() -> None:
@@ -267,10 +267,9 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "admission_trusted": True,
     }
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))
@@ -336,10 +335,9 @@ def test_climate_attributes_use_global_regulator_fallback_for_parter_like_runtim
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "admission_trusted": True,
     }
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))
@@ -378,8 +376,8 @@ def test_zone_valve_position_sensors_are_created_per_zone() -> None:
         "adapter_device_id": ("helianthus", "adapter-entry-1"),
         "regulator_manufacturer": "Vaillant",
     }
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -922,10 +920,9 @@ def test_climate_setup_skips_mapped_zone_without_precomputed_parent() -> None:
         "regulator_manufacturer": "Vaillant",
         "graphql_client": None,
         "regulator_bus_address": 0x15,
-        "admission_trusted": True,
     }
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(climate_platform.async_setup_entry(hass, entry, entities.extend))

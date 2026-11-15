@@ -6,6 +6,8 @@ import asyncio
 import sys
 import types
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -86,7 +88,6 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import binary_sensor as binary_sensor_platform
-from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
@@ -101,13 +102,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+    def __init__(self) -> None:
+        self.data = {}
 
 
 def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
@@ -137,8 +139,8 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
 def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -175,8 +177,8 @@ def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> N
 
 def test_async_setup_entry_skips_boiler_state_binary_sensors_without_physical_bai00() -> None:
     payload = _build_payload(boiler_device_id=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -211,8 +213,8 @@ def _build_zone_payload(valve_position_pct):
 
 def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
     payload = _build_zone_payload(valve_position_pct=50.0)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -231,8 +233,8 @@ def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
 
 def test_zone_valve_binary_sensor_closed_when_position_zero() -> None:
     payload = _build_zone_payload(valve_position_pct=0)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -248,8 +250,8 @@ def test_zone_valve_binary_sensor_closed_when_position_zero() -> None:
 
 def test_zone_valve_binary_sensor_none_when_position_absent() -> None:
     payload = _build_zone_payload(valve_position_pct=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -268,10 +270,10 @@ def test_dhw_overrun_sensor_is_read_only_and_uses_existing_dhw_parent() -> None:
     payload["semantic_coordinator"] = _FakeCoordinator(
         {"zones": [], "dhw": {"state": {"overrun_active": False}, "config": {}}}
     )
-    hass = _FakeHass(payload)
+    hass = _FakeHass()
     entities: list = []
 
-    asyncio.run(binary_sensor_platform.async_setup_entry(hass, _FakeEntry("entry-1"), entities.extend))
+    asyncio.run(binary_sensor_platform.async_setup_entry(hass, _FakeEntry("entry-1", payload), entities.extend))
 
     overrun = next(entity for entity in entities if isinstance(entity, binary_sensor_platform.HelianthusDhwOverrunBinarySensor))
     assert overrun._attr_unique_id == "entry-1-dhw-binary-overrun_active"
@@ -293,7 +295,7 @@ def test_dhw_overrun_sensor_is_absent_when_gateway_lacks_promoted_field() -> Non
 
     asyncio.run(
         binary_sensor_platform.async_setup_entry(
-            _FakeHass(payload), _FakeEntry("entry-1"), entities.extend
+            _FakeHass(), _FakeEntry("entry-1", payload), entities.extend
         )
     )
 

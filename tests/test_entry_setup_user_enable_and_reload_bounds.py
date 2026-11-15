@@ -31,6 +31,7 @@ import pytest
 
 import entry_setup_harness as paths
 import test_sparse_entity_reload_bound as sparse
+from runtime_fixtures import runtime_value
 
 from custom_components.helianthus import DOMAIN, entry_cleanup, entry_listeners, entry_setup
 
@@ -99,7 +100,7 @@ class Bench:
 
     @property
     def runtime(self):
-        return self.setup.hass.data[DOMAIN][self.entry.entry_id]
+        return self.entry.runtime_data
 
     async def _drain(self):
         while self.setup.tasks:
@@ -119,9 +120,9 @@ class Bench:
         self.harness.data.update(fresh)
         for name, key in RUNTIME_KEYS.items():
             if name in fresh:
-                self.runtime[key].data = fresh[name]
+                runtime_value(self.runtime, key).data = fresh[name]
         for key in self.listened:
-            for listener in list(self.runtime[key].listeners):
+            for listener in list(runtime_value(self.runtime, key).listeners):
                 listener()
         await self._drain()
         integration = sparse.take(self.setup.requests, self.entry.entry_id)
@@ -471,7 +472,7 @@ def test_user_enabled_null_optional_sensor_materializes_before_forwarding(harnes
 
     async def forward(entry, platforms):
         sensors = sparse.sensor_setup._build_status_sensors(
-            bench.runtime["status_coordinator"], (DOMAIN, f"daemon-{ENTRY}"), None,
+            bench.runtime.coordinators.status_coordinator, (DOMAIN, f"daemon-{ENTRY}"), None,
             lambda unique_id: entry_setup.sparse_entity_has_reloaded(
                 bench.setup.hass, ENTRY, unique_id))
         created.append({sensor._attr_unique_id: sensor for sensor in sensors})

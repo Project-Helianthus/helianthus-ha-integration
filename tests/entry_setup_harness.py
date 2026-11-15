@@ -8,7 +8,9 @@ by the coordinator class name.
 
 Use ``install_harness(monkeypatch)`` from a fixture, ``harness.build(...)`` to
 get one synthetic ``hass`` that knows the given config entries, and
-``run(setup, entry)`` to run one entry setup to completion.
+``run(setup, entry)`` to run one entry setup to completion. Setup publishes the
+runtime to the config entry; ``published_runtime(setup, entry_id)`` returns the
+runtime of the entry that ``run`` last set up under that id.
 """
 
 from __future__ import annotations
@@ -210,7 +212,7 @@ def build_hass(*entries):
             async_reload=AsyncMock(),
             async_get_entry=lambda entry_id: (
                 SimpleNamespace(entry_id=entry_id) if entry_id == "foreign-live-entry" else None)))
-    return SimpleNamespace(hass=hass, removed=removed, tasks=tasks, updates=updates)
+    return SimpleNamespace(hass=hass, removed=removed, tasks=tasks, updates=updates, set_up={})
 
 
 def install_harness(monkeypatch):
@@ -223,7 +225,14 @@ def install_harness(monkeypatch):
                            build=build_hass, monkeypatch=monkeypatch)
 
 
+def published_runtime(harness_hass, entry_id):
+    """Return the runtime the last ``run`` of ``entry_id`` published to its config entry."""
+    return harness_hass.set_up[entry_id].runtime_data
+
+
 def run(harness_hass, entry):
+    harness_hass.set_up[entry.entry_id] = entry
+
     async def exercise():
         result = await entry_setup.async_setup_entry(harness_hass.hass, entry)
         await asyncio.gather(*harness_hass.tasks)

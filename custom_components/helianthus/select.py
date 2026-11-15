@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
@@ -11,10 +11,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
-from .const import DOMAIN
 from .device_ids import circuit_display_name, circuit_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 _SET_CIRCUIT_CONFIG_MUTATION = """
 mutation SetCircuitConfig($index: Int!, $field: String!, $value: String!) {
@@ -44,12 +46,14 @@ def _circuit_name(circuit: dict[str, Any], index: int) -> str:
     return circuit_display_name(circuit, index)
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data.get("circuit_coordinator")
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    client = data.get("graphql_client")
-    status_coordinator = data.get("status_coordinator")
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
+    data = entry.runtime_data
+    coordinator = data.coordinators.circuit_coordinator
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
+    client = data.connection.client
+    status_coordinator = data.coordinators.status_coordinator
     if coordinator is None or not coordinator.data:
         async_add_entities([])
         return
@@ -79,7 +83,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
-        data.setdefault("unsub_listeners", []).append(unsub)
+        data.listeners.unsub_listeners.append(unsub)
 
 
 def _assert_admission_trusted(status_coordinator: object | None) -> None:

@@ -1,11 +1,11 @@
 """Characterization of the sensor platform setup across every entity domain.
 
-One synthetic runtime mapping carries a fake coordinator for every domain that
+One synthetic runtime carries a fake coordinator for every domain that
 ``sensor_setup.async_setup_entry`` reads. The cases pin:
 
 - the ordered ``(entity class, unique_id)`` list of the single initial
   ``async_add_entities`` call;
-- the number and order of the listeners appended to ``unsub_listeners``;
+- the number and order of the listeners appended to the runtime's listener list;
 - that a later M2M descriptor adds exactly one entity in one call, per family;
 - that a raising B503 wiring is logged and setup still completes.
 
@@ -321,10 +321,13 @@ def _expected_initial_entities() -> list[tuple[str, str]]:
 
 
 def _run_setup(payload: dict) -> list[list]:
+    return _run_entry_setup(_FakeEntry(ENTRY_ID, payload))
+
+
+def _run_entry_setup(entry: _FakeEntry) -> list[list]:
     calls: list[list] = []
-    hass = _FakeHass(payload)
     asyncio.run(
-        sensor_platform.async_setup_entry(hass, _FakeEntry(ENTRY_ID), lambda entities: calls.append(list(entities)))
+        sensor_platform.async_setup_entry(_FakeHass(), entry, lambda entities: calls.append(list(entities)))
     )
     return calls
 
@@ -348,12 +351,13 @@ def test_descriptor_listeners_are_appended_in_family_order() -> None:
     assert listeners == ["existing-listener", "unsub-pv", "unsub-storage", "unsub-evse"]
 
 
-def test_listeners_list_is_created_when_absent() -> None:
+def test_descriptor_listeners_go_to_the_runtime_listener_list() -> None:
     payload = _runtime_payload([])
     del payload["unsub_listeners"]
-    _run_setup(payload)
+    entry = _FakeEntry(ENTRY_ID, payload)
+    _run_entry_setup(entry)
 
-    assert payload["unsub_listeners"] == ["unsub-pv", "unsub-storage", "unsub-evse"]
+    assert entry.runtime_data.listeners.unsub_listeners == ["unsub-pv", "unsub-storage", "unsub-evse"]
 
 
 @pytest.mark.parametrize("family", sorted(M2M_FAMILIES))
@@ -497,9 +501,10 @@ def test_semantic_snapshot_entities_come_first_with_unchanged_arguments(monkeypa
     def _add(entities):  # noqa: ANN001, ANN202
         calls.append(list(entities))
 
-    asyncio.run(sensor_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(ENTRY_ID), _add))
+    entry = _FakeEntry(ENTRY_ID, payload)
+    asyncio.run(sensor_platform.async_setup_entry(_FakeHass(), entry, _add))
 
-    assert received == [(payload, ENTRY_ID, _add)]
+    assert received == [(entry.runtime_data, ENTRY_ID, _add)]
     assert len(calls) == 1
     assert _identities(calls[0]) == [
         ("_SnapshotEntity", "entry-1-semantic-sentinel"),
@@ -507,14 +512,15 @@ def test_semantic_snapshot_entities_come_first_with_unchanged_arguments(monkeypa
     ]
 
 
-def test_absent_descriptor_coordinators_add_no_listener_list() -> None:
+def test_absent_descriptor_coordinators_add_no_listener() -> None:
     payload = _runtime_payload([])
     del payload["unsub_listeners"]
     for family in M2M_FAMILIES:
         payload[f"{family}_m2m_coordinator"] = None
-    calls = _run_setup(payload)
+    entry = _FakeEntry(ENTRY_ID, payload)
+    calls = _run_entry_setup(entry)
 
-    assert "unsub_listeners" not in payload
+    assert entry.runtime_data.listeners.unsub_listeners == []
     assert _identities(calls[0]) == [
         identity
         for identity in _expected_initial_entities()

@@ -6,16 +6,20 @@ import asyncio
 import copy
 import importlib
 import logging
+import sys
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
+from runtime_fixtures import attach_runtime
 from entry_setup_harness import (
     INVENTORY_DEVICE,
     TRUSTED_STATUS,
     config_entry,
     install_harness,
     install_module,
+    run,
 )
 
 from custom_components.helianthus import DOMAIN, async_unload_entry
@@ -86,14 +90,17 @@ def test_platform_forwarding_precedes_existing_post_setup_cleanup() -> None:
 def test_unload_failure_preserves_runtime_for_home_assistant_retry() -> None:
     events: list[object] = []
     entry = SimpleNamespace(entry_id="entry-1")
-    runtime = {"subscription_task": SimpleNamespace(cancel=lambda: events.append("cancel"))}
+    runtime = attach_runtime(
+        entry, {"subscription_task": SimpleNamespace(cancel=lambda: events.append("cancel"))})
+    counts = {entry.entry_id: 1}
     hass = SimpleNamespace(
         config_entries=_ConfigEntries(events, unload_result=False),
-        data={DOMAIN: {entry.entry_id: runtime}},
+        data={DOMAIN: {COUNTS_KEY: counts}},
     )
 
     assert asyncio.run(async_unload_entry(hass, entry)) is False
-    assert hass.data[DOMAIN][entry.entry_id] is runtime
+    assert entry.runtime_data is runtime
+    assert counts == {entry.entry_id: 1}
     assert events == [("unload-platforms", "entry-1", tuple(PLATFORMS))]
 
 
@@ -298,13 +305,52 @@ def test_reconciler_spends_the_sparse_reload_in_the_run_record_it_holds(monkeypa
     assert bench.seen_disabled == set()
 
 
+@pytest.mark.parametrize("failing", ("consumer boundaries", "platform forwarding"))
+@pytest.mark.parametrize("entry_id", ("entry-1", "entry-2"))
+def test_admission_count_survives_a_failed_setup_and_admits_the_retried_one(
+    monkeypatch, failing, entry_id
+):
+    """The count lives in the domain data, not in the runtime, so a retried setup continues it.
+
+    Fields varied: the entry id and the failing phase, before publication of the
+    runtime (consumer boundaries) and after it (platform forwarding). A count
+    held by the runtime, or one dropped when setup fails, restarts at zero on
+    the retry: the count stays at one and the retired row is kept. A count keyed
+    on anything but the entry changes the other entry's count.
+    """
+    other = "entry-2" if entry_id == "entry-1" else "entry-1"
+    harness = install_harness(monkeypatch)
+    harness.data.update({"HelianthusCoordinator": [INVENTORY_DEVICE],
+                         "HelianthusStatusCoordinator": copy.deepcopy(TRUSTED_STATUS)})
+    setup = harness.build(config_entry(entry_id), config_entry(other))
+    setup.hass.data[DOMAIN] = {COUNTS_KEY: {other: 5}}
+    retired = f"{entry_id}-retired-fan"
+    harness.entities.add(entry_id, retired, domain="fan")
+    error = RuntimeError("synthetic setup failure")
+    if failing == "consumer boundaries":
+        monkeypatch.setattr(sys.modules["custom_components.helianthus.pv_m2m"],
+                            "async_setup_pv_m2m_boundary", AsyncMock(side_effect=[error, None]))
+    else:
+        setup.hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=[error, None])
+
+    with pytest.raises(RuntimeError) as caught:
+        run(setup, config_entry(entry_id))
+    assert caught.value is error
+    assert setup.hass.data[DOMAIN][COUNTS_KEY] == {entry_id: 1, other: 5}
+    assert retired in harness.entities.unique_ids()
+
+    assert run(setup, config_entry(entry_id)) is True
+    assert setup.hass.data[DOMAIN][COUNTS_KEY] == {entry_id: 2, other: 5}
+    assert retired not in harness.entities.unique_ids()
+
+
 # ---------------------------------------------------------------------------
 # Setup phase sequence
 # ---------------------------------------------------------------------------
 
 SETUP_PHASES = (
     "prepare", "connect", "gateway-devices", "coordinators", "admin", "inventory-devices",
-    "reload-request", "reconcile", "listeners", "m2m-boundaries", "service-fields",
+    "reload-request", "reconcile", "listeners", "m2m-boundaries", "service-boundaries",
     "publish", "option-listener", "forward", "snapshot",
 )
 PHASE_FUNCTIONS = {
@@ -317,7 +363,7 @@ PHASE_FUNCTIONS = {
     "reconcile_entities": "reconcile",
     "async_start_listeners": "listeners",
     "async_setup_m2m_boundaries": "m2m-boundaries",
-    "service_runtime_fields": "service-fields",
+    "service_boundaries": "service-boundaries",
     "publish_entry_runtime": "publish",
     "register_option_reload_listener": "option-listener",
     "_async_forward_platforms_and_finalize": "forward",
@@ -431,12 +477,12 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
             "coordinators": result["coordinators"], "identities": result["inventory-devices"],
             "reconciliation": result["reconcile"], "schedule_reload": result["reload-request"]}),
         "m2m-boundaries": ((hass, entry, interval), {}),
-        "service-fields": ((entry, result["admin"], result["m2m-boundaries"]), {}),
-        "publish": ((hass, entry), {
+        "service-boundaries": ((entry, result["admin"], result["m2m-boundaries"]), {}),
+        "publish": ((entry,), {
             "connection": connection, "coordinators": result["coordinators"],
             "gateway_devices": result["gateway-devices"],
             "identities": result["inventory-devices"], "reconciliation": result["reconcile"],
-            "listeners": result["listeners"], "services": result["service-fields"]}),
+            "listeners": result["listeners"], "services": result["service-boundaries"]}),
         "option-listener": ((entry,), {}),
         "forward": ((hass, entry, PLATFORMS), {
             "reconciler": result["reconcile"].reconciler,

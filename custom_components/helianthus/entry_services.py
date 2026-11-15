@@ -1,9 +1,9 @@
 """The register-services phase of config-entry setup.
 
 This module owns the optional isolated eeBUS admin boundary, the PV, storage
-and EVSE consumer boundaries, the runtime fields that describe them and the
-option-change listener that reloads the entry when one of their options or
-the semantic asset selection changes.
+and EVSE consumer boundaries, the ``ServiceBoundaries`` of the runtime that
+describe them and the option-change listener that reloads the entry when one
+of their options or the semantic asset selection changes.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 
-from .const import DOMAIN
+from .entry_runtime import HelianthusRuntime, ServiceBoundaries
 from .semantic_snapshot_coordinator import semantic_asset_ids
 
 _LOGGER = logging.getLogger(__package__)
@@ -167,7 +167,7 @@ def semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
 
 
 def _option_reload_signatures(entry: object) -> Iterator[tuple[str, object]]:
-    """Yield each reload-signature key with the signature of the entry's current options.
+    """Yield each reload-signature field with the signature of the entry's current options.
 
     The signatures are computed one at a time, so a comparison that stops at
     the first difference computes no later signature.
@@ -186,38 +186,38 @@ def _boundary_coordinator(boundary: object | None) -> object | None:
     return None if boundary is None else boundary.coordinator
 
 
-def service_runtime_fields(
+def service_boundaries(
     entry: object,
     admin: tuple[object, object | None, bool],
     boundaries: M2MBoundaries,
-) -> dict[str, object]:
-    """Return the admin, consumer-boundary and reload-signature runtime fields."""
+) -> ServiceBoundaries:
+    """Return the admin and consumer boundaries with the entry's reload signatures."""
     admin_coordinator, admin_session, admin_services_registered = admin
     signatures = dict(_option_reload_signatures(entry))
-    return {
-        "eebus_admin_coordinator": admin_coordinator,
-        "eebus_admin_action_broker": admin_coordinator.lifecycle.action_broker,
-        "eebus_admin_session": admin_session,
-        "eebus_admin_services_registered": admin_services_registered,
-        "pv_m2m_coordinator": _boundary_coordinator(boundaries.pv),
-        "pv_m2m_boundary": boundaries.pv,
-        "pv_m2m_option_signature": signatures["pv_m2m_option_signature"],
-        "storage_m2m_coordinator": _boundary_coordinator(boundaries.storage),
-        "storage_m2m_boundary": boundaries.storage,
-        "storage_m2m_option_signature": signatures["storage_m2m_option_signature"],
-        "evse_m2m_coordinator": _boundary_coordinator(boundaries.evse),
-        "evse_m2m_boundary": boundaries.evse,
-        "evse_m2m_option_signature": signatures["evse_m2m_option_signature"],
-        "semantic_asset_selection_signature": signatures["semantic_asset_selection_signature"],
-    }
+    return ServiceBoundaries(
+        eebus_admin_coordinator=admin_coordinator,
+        eebus_admin_action_broker=admin_coordinator.lifecycle.action_broker,
+        eebus_admin_session=admin_session,
+        eebus_admin_services_registered=admin_services_registered,
+        pv_m2m_coordinator=_boundary_coordinator(boundaries.pv),
+        pv_m2m_boundary=boundaries.pv,
+        storage_m2m_coordinator=_boundary_coordinator(boundaries.storage),
+        storage_m2m_boundary=boundaries.storage,
+        evse_m2m_coordinator=_boundary_coordinator(boundaries.evse),
+        evse_m2m_boundary=boundaries.evse,
+        **signatures,
+    )
 
 
 async def _async_reload_on_option_change(hass: object, entry: object) -> None:
     """Reload a published entry when one of its reload signatures has changed."""
-    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if not isinstance(runtime, dict):
+    runtime = getattr(entry, "runtime_data", None)
+    if not isinstance(runtime, HelianthusRuntime):
         return
-    if all(runtime.get(key) == signature for key, signature in _option_reload_signatures(entry)):
+    if all(
+        getattr(runtime.services, name) == signature
+        for name, signature in _option_reload_signatures(entry)
+    ):
         return
     await hass.config_entries.async_reload(entry.entry_id)
 

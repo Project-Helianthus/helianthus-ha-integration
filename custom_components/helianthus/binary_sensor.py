@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, RADIO_STALE_GRACE_CYCLES
+from .const import RADIO_STALE_GRACE_CYCLES
 from .device_ids import (
     build_radio_bus_key,
     circuit_display_name,
@@ -23,6 +23,9 @@ from .semantic_freshness import (
     semantic_freshness_attributes,
     semantic_target_available,
 )
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry, HelianthusRuntime
 
 _BINARY_SENSOR_DEVICE_CLASS_PROBLEM = getattr(BinarySensorDeviceClass, "PROBLEM", None)
 
@@ -139,11 +142,11 @@ def _zone_parent_device_id(
     return regulator_device_id
 
 
-def _zone_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _zone_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build the schedule mirrors and the valve sensor of every parented zone."""
-    coordinator = data["semantic_coordinator"]
-    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
-    regulator_device_id = data.get("regulator_device_id")
+    coordinator = data.coordinators.semantic_coordinator
+    zone_parent_device_ids = data.listeners.zone_parent_device_ids or {}
+    regulator_device_id = data.identities.regulator_device_id
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities: list[BinarySensorEntity] = []
     for zone in zones:
@@ -184,9 +187,9 @@ def _zone_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> li
     return entities
 
 
-def _dhw_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _dhw_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build the DHW schedule mirrors and, when promoted, the overrun sensor."""
-    coordinator = data["semantic_coordinator"]
+    coordinator = data.coordinators.semantic_coordinator
     dhw = coordinator.data.get("dhw") if coordinator.data else None
     if dhw is None:
         return []
@@ -216,10 +219,10 @@ def _dhw_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> lis
     return entities
 
 
-def _boiler_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _boiler_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build the boiler state sensors on the physical boiler device."""
-    boiler_coordinator = data.get("boiler_coordinator")
-    boiler_device_id = data.get("boiler_device_id")
+    boiler_coordinator = data.coordinators.boiler_coordinator
+    boiler_device_id = data.identities.boiler_device_id
     if not (boiler_coordinator and boiler_device_id):
         return []
     return [
@@ -235,9 +238,9 @@ def _boiler_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> 
     ]
 
 
-def _circuit_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _circuit_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build one pump sensor per circuit with a valid index."""
-    circuit_coordinator = data.get("circuit_coordinator")
+    circuit_coordinator = data.coordinators.circuit_coordinator
     if not (circuit_coordinator and circuit_coordinator.data):
         return []
     entities: list[BinarySensorEntity] = []
@@ -259,9 +262,9 @@ def _circuit_entities(data: dict[str, Any], entry_id: str, manufacturer: str) ->
     return entities
 
 
-def _solar_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _solar_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build the solar sensors while the FM5 interpretation is active."""
-    fm5_coordinator = data.get("fm5_coordinator")
+    fm5_coordinator = data.coordinators.fm5_coordinator
     if not (fm5_coordinator and isinstance(fm5_coordinator.data, dict)):
         return []
     payload = fm5_coordinator.data
@@ -269,8 +272,8 @@ def _solar_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> l
     if mode != "INTERPRETED":
         return []
     solar = payload.get("solar") if isinstance(payload.get("solar"), dict) else None
-    solar_device_id = data.get("solar_device_id") or solar_identifier(entry_id)
-    parent_device_id = data.get("vr71_device_id") or data.get("regulator_device_id")
+    solar_device_id = solar_identifier(entry_id)
+    parent_device_id = data.identities.vr71_device_id or data.identities.regulator_device_id
     return [
         HelianthusSolarBinarySensor(
             coordinator=fm5_coordinator,
@@ -286,10 +289,10 @@ def _solar_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> l
     ]
 
 
-def _system_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _system_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build the regulator-level system sensors."""
-    system_coordinator = data.get("system_coordinator")
-    regulator_device_id = data.get("regulator_device_id")
+    system_coordinator = data.coordinators.system_coordinator
+    regulator_device_id = data.identities.regulator_device_id
     if not (system_coordinator and system_coordinator.data and regulator_device_id):
         return []
     return [
@@ -318,12 +321,12 @@ def _system_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> 
     ]
 
 
-def _radio_entities(data: dict[str, Any], entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
+def _radio_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -> list[BinarySensorEntity]:
     """Build one connected-state sensor per exported remote slot."""
-    radio_coordinator = data.get("radio_coordinator")
+    radio_coordinator = data.coordinators.radio_coordinator
     if not (radio_coordinator and radio_coordinator.data):
         return []
-    b524_merge_targets: dict[str, tuple[str, str]] = data.get("b524_merge_targets") or {}
+    b524_merge_targets: dict[str, tuple[str, str]] = data.identities.b524_merge_targets or {}
     entities: list[BinarySensorEntity] = []
     for radio in radio_coordinator.data.get("radio_devices", []) or []:
         if not isinstance(radio, dict) or not should_export_radio_device(radio):
@@ -361,10 +364,12 @@ _DOMAIN_BUILDERS = (
 )
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
     """Add every domain's binary sensors in one call, in builder order."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
+    data = entry.runtime_data
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
     entities: list[BinarySensorEntity] = []
     for build in _DOMAIN_BUILDERS:
         entities.extend(build(data, entry.entry_id, manufacturer))

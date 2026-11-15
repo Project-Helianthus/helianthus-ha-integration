@@ -118,10 +118,10 @@ def _entities(config_overrides=None, state_overrides=None, properties=None):  # 
     system.data["state"] = state_overrides if state_overrides is not None else system.data["state"]
     system.data["config"] = config_overrides if config_overrides is not None else system.data["config"]
     system.data["properties"] = properties if properties is not None else system.data["properties"]
-    hass = _FakeHass(payload)
+    hass, entry = _FakeHass(), _FakeEntry("entry-1", payload)
     entities: list = []
     for platform in (sensor_platform, binary_sensor_platform, number_platform, text_platform):
-        asyncio.run(platform.async_setup_entry(hass, _FakeEntry("entry-1"), entities.extend))
+        asyncio.run(platform.async_setup_entry(hass, entry, entities.extend))
     return entities
 
 

@@ -8,7 +8,9 @@ periodicity items and identification evidence are never requested.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterator
+from dataclasses import fields
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
 
@@ -33,8 +35,10 @@ from .const import (
     CONF_STORAGE_M2M_CLIENT_CERT_FILE,
     CONF_STORAGE_M2M_CLIENT_KEY_FILE,
     CONF_STORAGE_M2M_ENDPOINT,
-    DOMAIN,
 )
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry, HelianthusRuntime
 
 TO_REDACT = frozenset({
     "host",
@@ -219,25 +223,39 @@ query Diagnostics {
 }
 """
 
-_COORDINATOR_SUFFIX = "_coordinator"
+_SERVICE_COORDINATORS = (
+    "eebus_admin_coordinator",
+    "pv_m2m_coordinator",
+    "storage_m2m_coordinator",
+    "evse_m2m_coordinator",
+)
 
 
-def _coordinator_states(runtime: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Last update state per published coordinator; an error is named by its type only."""
+def _named_coordinators(runtime: HelianthusRuntime) -> Iterator[tuple[str, Any]]:
+    """Yield every coordinator of the runtime with its field name, domain coordinators first."""
+    for field in fields(runtime.coordinators):
+        yield field.name, getattr(runtime.coordinators, field.name)
+    for name in _SERVICE_COORDINATORS:
+        yield name, getattr(runtime.services, name)
+    yield "semantic_snapshot_coordinator", runtime.semantic_snapshot_coordinator
+
+
+def _coordinator_states(runtime: HelianthusRuntime) -> dict[str, dict[str, Any]]:
+    """Last update state per present coordinator; an error is named by its type only."""
     states: dict[str, dict[str, Any]] = {}
-    for key, coordinator in runtime.items():
-        if not key.endswith(_COORDINATOR_SUFFIX) or coordinator is None:
+    for name, coordinator in _named_coordinators(runtime):
+        if coordinator is None:
             continue
         exception = getattr(coordinator, "last_exception", None)
-        states[key] = {
+        states[name] = {
             "last_update_success": bool(getattr(coordinator, "last_update_success", False)),
             "last_exception": type(exception).__name__ if exception is not None else None,
         }
     return states
 
 
-async def _gateway_read(runtime: dict[str, Any]) -> dict[str, Any]:
-    client = runtime.get("graphql_client")
+async def _gateway_read(runtime: HelianthusRuntime) -> dict[str, Any]:
+    client = runtime.connection.client
     if client is None:
         return {"error": "no client"}
     try:
@@ -249,9 +267,11 @@ async def _gateway_read(runtime: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-async def async_get_config_entry_diagnostics(hass: Any, entry: Any) -> dict[str, Any]:
+async def async_get_config_entry_diagnostics(
+    hass: Any, entry: HelianthusConfigEntry
+) -> dict[str, Any]:
     """Return the redacted diagnostics download of one config entry."""
-    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    runtime = getattr(entry, "runtime_data", None)
     if runtime is None:
         coordinators: dict[str, dict[str, Any]] = {}
         gateway: dict[str, Any] = {"error": "entry not loaded"}

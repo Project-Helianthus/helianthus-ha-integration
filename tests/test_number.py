@@ -8,6 +8,8 @@ import types
 
 import pytest
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -82,7 +84,6 @@ def _ensure_homeassistant_stubs() -> None:
 _ensure_homeassistant_stubs()
 
 from custom_components.helianthus import number as number_platform
-from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
@@ -105,13 +106,14 @@ class _FakeClient:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+    def __init__(self) -> None:
+        self.data = {}
 
 
 def _payload(*, boiler_device_id: tuple[str, str] | None):
@@ -145,8 +147,8 @@ def _payload(*, boiler_device_id: tuple[str, str] | None):
 
 def test_async_setup_entry_adds_boiler_config_numbers_on_bai00() -> None:
     payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
@@ -168,8 +170,8 @@ def test_async_setup_entry_adds_boiler_config_numbers_on_bai00() -> None:
 
 def test_async_setup_entry_skips_boiler_config_numbers_without_physical_bai00() -> None:
     payload, _coordinator, _client = _payload(boiler_device_id=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
@@ -180,8 +182,8 @@ def test_async_setup_entry_skips_boiler_config_numbers_without_physical_bai00() 
 def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None:
     payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
     payload["boiler_coordinator"].data["boiler_status"]["config"]["partload_hwc_kw"] = None
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
@@ -198,8 +200,8 @@ def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None
 
 def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     payload, boiler_coordinator, client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
@@ -226,8 +228,8 @@ def test_boiler_number_write_fails_closed_when_admission_untrusted() -> None:
         boiler_device_id=("helianthus", "entry-1-bus-BAI00-08")
     )
     payload["status_coordinator"].data["admission"]["trusted"] = False
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))

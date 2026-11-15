@@ -57,7 +57,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
     DEFAULT_ZONE_SCHEDULE_HELPERS,
-    DOMAIN,
 )
 from .semantic_snapshot_coordinator import CONF_SEMANTIC_ASSET_IDS, semantic_asset_ids
 
@@ -271,6 +270,7 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
             EEBusActionTerminalBroker,
             EEBusPairingController,
         )
+        from .entry_runtime import HelianthusRuntime
 
         hass = getattr(self, "hass", None)
         entry_id = getattr(self._config_entry, "entry_id", None)
@@ -279,11 +279,10 @@ class HelianthusOptionsFlow(config_entries.OptionsFlow):
         services = services_for_entry(hass, entry_id)
         if services is None:
             return None
-        domain_data = getattr(hass, "data", {}).get(DOMAIN, {})
-        entry_data = domain_data.get(entry_id) if isinstance(domain_data, dict) else None
+        runtime = getattr(self._config_entry, "runtime_data", None)
         broker = (
-            entry_data.get("eebus_admin_action_broker")
-            if isinstance(entry_data, dict)
+            runtime.services.eebus_admin_action_broker
+            if isinstance(runtime, HelianthusRuntime)
             else None
         )
         if not isinstance(broker, EEBusActionTerminalBroker):

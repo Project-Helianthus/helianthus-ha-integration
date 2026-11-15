@@ -110,13 +110,15 @@ class _FakeStatusCoordinator:
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 class _FakeEntry:
     entry_id = "entry-1"
+
+    def __init__(self, runtime_fields: dict) -> None:
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeClient:
@@ -225,7 +227,7 @@ def test_water_heater_setup_waits_for_first_dhw_payload() -> None:
     entities = []
 
     asyncio.run(
-        water_heater_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend)
+        water_heater_platform.async_setup_entry(_FakeHass(), _FakeEntry(payload), entities.extend)
     )
 
     assert entities == []
@@ -254,7 +256,7 @@ def test_water_heater_setup_refreshes_state_on_admission_updates(monkeypatch: py
     entities = []
 
     asyncio.run(
-        water_heater_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend)
+        water_heater_platform.async_setup_entry(_FakeHass(), _FakeEntry(payload), entities.extend)
     )
     for entity in entities:
         entity.hass = object()

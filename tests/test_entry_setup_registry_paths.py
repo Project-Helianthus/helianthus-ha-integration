@@ -127,7 +127,8 @@ def test_duplicate_entry_is_refused_and_its_registry_rows_removed(
         expected_devices.add("entry-b-dhw")
     assert harness.devices.tokens() == expected_devices
     assert setup.removed == ["entry-b"]
-    assert DOMAIN not in setup.hass.data or "entry-b" not in setup.hass.data[DOMAIN]
+    assert not hasattr(alias, "runtime_data")
+    assert "entry-b" not in setup.hass.data.get(DOMAIN, {})
 
 
 def _trusted_registry(harness):
@@ -249,8 +250,8 @@ def test_trusted_cleanup_keeps_cylinder_rows_when_fm5_leaves_interpreted_before_
     setup = _trusted_setup(harness)
 
     async def forward(entry, platforms):
-        runtime = setup.hass.data[DOMAIN][entry.entry_id]
-        runtime["fm5_coordinator"].data = {"fm5_semantic_mode": "ABSENT", "cylinders": []}
+        entry.runtime_data.coordinators.fm5_coordinator.data = {
+            "fm5_semantic_mode": "ABSENT", "cylinders": []}
     setup.hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=forward)
 
     assert run(setup, config_entry("entry-a")) is True

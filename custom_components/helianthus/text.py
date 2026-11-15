@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from homeassistant.components.text import TextEntity, TextMode
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -13,9 +13,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
-from .const import DOMAIN
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 _SET_SYSTEM_CONFIG_MUTATION = """
 mutation SetSystemConfig($field: String!, $value: String!) {
@@ -73,22 +75,22 @@ _SYSTEM_MENU_CODE_FIELD = InstallerMenuCodeField(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: HelianthusConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Helianthus text entities."""
-    data = hass.data[DOMAIN].get(entry.entry_id)
+    data = getattr(entry, "runtime_data", None)
     if data is None:
         return
 
-    system_coordinator = data.get("system_coordinator")
-    boiler_coordinator = data.get("boiler_coordinator")
-    manufacturer = data.get("manufacturer", "Vaillant")
+    system_coordinator = data.coordinators.system_coordinator
+    boiler_coordinator = data.coordinators.boiler_coordinator
+    manufacturer = "Vaillant"
     entry_id = entry.entry_id
-    client = data.get("graphql_client")
-    status_coordinator = data.get("status_coordinator")
-    regulator_device_id = data.get("regulator_device_id")
-    boiler_device_id = data.get("boiler_device_id")
+    client = data.connection.client
+    status_coordinator = data.coordinators.status_coordinator
+    regulator_device_id = data.identities.regulator_device_id
+    boiler_device_id = data.identities.boiler_device_id
 
     entities: list[TextEntity] = []
 
@@ -140,7 +142,7 @@ async def async_setup_entry(
                 async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
-        data.setdefault("unsub_listeners", []).append(unsub)
+        data.listeners.unsub_listeners.append(unsub)
 
 
 def _assert_admission_trusted(status_coordinator: object | None) -> None:

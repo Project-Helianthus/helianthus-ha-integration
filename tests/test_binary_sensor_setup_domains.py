@@ -1,6 +1,6 @@
 """Characterization of the binary sensor platform setup across every entity domain.
 
-One synthetic runtime mapping carries a fake coordinator for every domain that
+One synthetic runtime carries a fake coordinator for every domain that
 ``binary_sensor.async_setup_entry`` reads. The cases pin:
 
 - the ordered ``(entity class, unique_id)`` list of the single initial
@@ -33,7 +33,6 @@ ENTRY_ID = "entry-1"
 BOILER_ID = ("helianthus", "entry-1-bus-boiler-08")
 REGULATOR_ID = ("helianthus", "entry-1-bus-regulator-15")
 VR71_ID = ("helianthus", "entry-1-bus-mixer-26")
-SOLAR_ID = ("helianthus", "entry-1-solar-explicit")
 ZONE_PARENT_ID = ("helianthus", "entry-1-radio-thermostat")
 MERGE_TARGET_ID = ("helianthus", "entry-1-bus-room-unit-35")
 MERGED_RADIO_KEY = "g0c-i02"
@@ -133,7 +132,6 @@ def _full_runtime(listener_log: list[str]) -> dict:
         ),
         "regulator_device_id": REGULATOR_ID,
         "vr71_device_id": VR71_ID,
-        "solar_device_id": SOLAR_ID,
         "zone_parent_device_ids": {"zone-1": ZONE_PARENT_ID},
         "b524_merge_targets": {MERGED_RADIO_KEY: MERGE_TARGET_ID},
         "regulator_manufacturer": "Vaillant",
@@ -147,7 +145,7 @@ def _run_setup(runtime: dict) -> list[list]:
     def add_entities(entities) -> None:  # noqa: ANN001
         calls.append(list(entities))
 
-    asyncio.run(binary_sensor_platform.async_setup_entry(_FakeHass(runtime), _FakeEntry(ENTRY_ID), add_entities))
+    asyncio.run(binary_sensor_platform.async_setup_entry(_FakeHass(), _FakeEntry(ENTRY_ID, runtime), add_entities))
     return calls
 
 
@@ -307,7 +305,7 @@ def test_full_runtime_adds_every_domain_in_one_ordered_call() -> None:
         *_dhw_rows(overrun=True),
         *_boiler_rows(),
         *_circuit_rows(),
-        *_solar_rows(SOLAR_ID),
+        *_solar_rows(solar_identifier(ENTRY_ID)),
         *_system_rows(REGULATOR_ID),
         *_radio_rows(),
     ]
@@ -325,7 +323,7 @@ def test_full_runtime_pins_entity_class_and_unique_id_order() -> None:
             *_dhw_rows(overrun=True),
             *_boiler_rows(),
             *_circuit_rows(),
-            *_solar_rows(SOLAR_ID),
+            *_solar_rows(solar_identifier(ENTRY_ID)),
             *_system_rows(REGULATOR_ID),
             *_radio_rows(),
         ]
@@ -377,7 +375,6 @@ def test_solar_parent_and_enabled_default_follow_payload() -> None:
 def test_solar_falls_back_to_regulator_parent_and_derived_device() -> None:
     runtime = _full_runtime([])
     runtime.pop("vr71_device_id")
-    runtime.pop("solar_device_id")
 
     calls = _run_setup(runtime)
     solar = [

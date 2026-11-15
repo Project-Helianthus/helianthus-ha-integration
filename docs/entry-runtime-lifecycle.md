@@ -1,62 +1,88 @@
-# Entry runtime mapping and lifecycle
+# Entry runtime and lifecycle
 
-[EntryRuntime](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_runtime.py) describes the
-existing dictionary stored at `hass.data[DOMAIN][entry.entry_id]`. A type cast at
-publication and an annotation at teardown describe that same object. They do
-not validate gateway data, accept setup, transfer ownership or change any key.
-Required means present when the mapping is published; it does not mean that a
-resource is enabled or that setup has succeeded. There is no `entry.runtime_data`
-conversion in this change. Failure rollback remains part of the broader
-[entry lifecycle work](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/415).
+Each loaded config entry has one typed runtime object,
+[`HelianthusRuntime`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_runtime.py),
+in `entry.runtime_data`. It is a slotted dataclass composed of the outputs of
+the setup phases. Entry setup publishes it in one assignment after every phase
+before platform registration has succeeded; Home Assistant discards it when
+the entry unloads. The platforms, diagnostics, the options flow and teardown
+read it through the typed config entry `HelianthusConfigEntry`
+(`ConfigEntry[HelianthusRuntime]`). Publication does not validate gateway data
+or accept setup: a field can hold `None`, and a present runtime does not mean
+that a resource is enabled or that setup has succeeded.
 
-## Key inventory
+## Runtime fields
 
-[Setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_setup.py) publishes all 45 required
-keys in one assignment. Its publish phase writes the coordinator, client,
-listener, device and zone fields itself and takes the admin, consumer-boundary
-and reload-signature fields from the service fields of
-[entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py);
-each key has exactly one writer. The following groups list every required field. Concrete
-coordinator and boundary classes come from their owning modules through imports
-used only for type checking. API-owned source-selection data remains an opaque
-existing payload; the type adds no protocol semantics.
-
-| Required fields | Value and ownership |
+| Field | Value and writer |
 | --- | --- |
-| `device_coordinator`, `status_coordinator`, `semantic_coordinator`, `energy_coordinator`, `circuit_coordinator`, `radio_coordinator`, `fm5_coordinator`, `system_coordinator`, `boiler_coordinator`, `schedule_coordinator`, `adapter_info_coordinator` | Existing concrete domain coordinators. |
-| `eebus_admin_coordinator`, `eebus_admin_action_broker` | Admin coordinator and its lifecycle's existing action broker. Optional admin setup still returns an unavailable diagnostic coordinator on handled failure. |
-| `eebus_admin_session`, `eebus_admin_services_registered` | Isolated admin session or `None`, and the service-registration ownership flag. |
-| `pv_m2m_coordinator`, `pv_m2m_boundary`, `storage_m2m_coordinator`, `storage_m2m_boundary`, `evse_m2m_coordinator`, `evse_m2m_boundary` | Each concrete consumer coordinator/boundary or `None`. |
-| `pv_m2m_option_signature`, `storage_m2m_option_signature`, `evse_m2m_option_signature`, `semantic_asset_selection_signature` | Existing option tuples and exact semantic asset-selection tuple; invalid semantic selection yields `None`. |
-| `graphql_client`, `subscription_task`, `unsub_listeners` | Existing GraphQL client, optional subscription task and mutable list of unsubscribe callbacks. The GraphQL session comes from Home Assistant and is not closed by entry teardown. |
-| `daemon_device_id`, `adapter_device_id`, `boiler_device_id`, `regulator_device_id`, `vr71_device_id`, `boiler_physical_device_id`, `boiler_via_device_id`, `boiler_burner_device_id`, `boiler_hydraulics_device_id` | Existing two-string device identifiers. Boiler, regulator, radio centre and resolved physical/via parents may be `None`; other identifiers are always constructed. |
-| `regulator_manufacturer`, `regulator_bus_address`, `admission_repair_code`, `source_selection` | Manufacturer text, optional parsed address, optional repair code and optional API-owned source-selection dictionary. |
-| `zone_parent_device_ids`, `radio_device_zone_names`, `unresolved_zone_ids`, `b524_merge_targets` | Zone-to-device map, device-to-zone-name map, unresolved-zone tuple and existing merge-target map. |
+| `connection` | The `GatewayConnection` of the connect phase: session, GraphQL URL, the GraphQL client (`connection.client`) and the instance GUID. The GraphQL session comes from Home Assistant and is not closed by entry teardown. |
+| `coordinators` | The `DomainCoordinators` of the coordinator phase: device, status, semantic, energy, circuit, radio, function-module, system, boiler, schedule and adapter-info coordinators. |
+| `identities` | The `DeviceIdentities` of the inventory step: daemon and adapter identifiers, the boiler, regulator and function-module parents (each may be `None`), the regulator's manufacturer and parsed address, the merge targets and the inventory the listeners compare against. |
+| `services` | The `ServiceBoundaries` of the register-services phase, built by `service_boundaries` in [entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py): the admin coordinator and its lifecycle's action broker (optional admin setup still returns an unavailable diagnostic coordinator on handled failure), the isolated admin session or `None`, the service-registration ownership flag, each PV, storage and EVSE consumer coordinator and boundary or `None`, and the four reload signatures (the three option tuples and the exact semantic asset-selection tuple; an invalid selection yields `None`). |
+| `listeners` | The `StartedListeners` of the listener phase: the coordinator listeners, the mutable list of unsubscribe callbacks, the optional subscription task, the zone-to-device map, the unresolved-zone tuple and the device-to-zone-name map. |
+| `admission_repair_code`, `source_selection` | The optional repair code and the optional API-owned source-selection dictionary of the first admission. The type adds no protocol semantics to that payload. |
+| `boiler_physical_device_id`, `boiler_via_device_id`, `boiler_burner_device_id`, `boiler_hydraulics_device_id` | Derived boiler identifiers. The resolved physical and via parents may be `None`; the burner and hydraulics identifiers are always constructed. |
+| `semantic_snapshot_attached`, `semantic_snapshot_coordinator`, `semantic_snapshot_sensors_setup` | The only fields that change after publication. `semantic_snapshot_attached` starts `False` and becomes `True` when the snapshot is attached after platform forwarding; the coordinator is `None` when no asset selection is configured or it is invalid. Snapshot sensor setup stores a deferred callback in `semantic_snapshot_sensors_setup` while the snapshot is not attached; entry setup clears the field and calls the callback after attaching. |
 
-Four fields are `NotRequired`:
+`publish_entry_runtime` in
+[entry setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_setup.py)
+writes every field except the service boundaries, which `service_boundaries`
+writes; each field has exactly one writer. Concrete coordinator, boundary and
+Home Assistant classes are imported only for type checking. Mutable maps and
+lists keep their references: the platforms append their unsubscribe callbacks
+to `listeners.unsub_listeners`.
 
-| Field | Assignment, removal and reads |
-| --- | --- |
-| `semantic_snapshot_coordinator` | Added after platform forwarding and post-platform cleanup; the value can be `None` when selection is absent or invalid. Read by snapshot sensor setup and teardown. |
-| `semantic_snapshot_sensors_setup` | Snapshot sensor setup stores a deferred callback when the coordinator key is absent. Entry setup pops it after assigning that key, then calls it if present. |
-| `manufacturer` | Fallback-only read by date and text platforms. No production writer currently publishes it. It differs from `regulator_manufacturer`. |
-| `solar_device_id` | Fallback-only read by the binary sensor platform; no production writer currently publishes it. |
+Two keys that no setup ever published are gone with their fallback reads: the
+date and text platforms use the manufacturer `Vaillant` they always fell back
+to, and the binary sensor platform always derives the solar device identifier
+from the entry.
 
-The inventory includes all component reads, assignments, appends and removals.
-[Sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor_setup.py), binary sensor,
-climate, water heater, number, select, calendar, date and text platforms read the
-entry mapping. Fan, valve and switch setup currently publish no entities and do
-not read it. [Snapshot sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/semantic_snapshot_sensors.py)
-also selects legacy coordinators by a dynamic family-to-key map, writes the
-deferred callback and appends a discovery unsubscribe callback through
-`setdefault("unsub_listeners", [])`. The option-update listener of entry
-services computes the four selection signatures from the same list that the
-service fields publish, stops at the first one that differs, and then requests
-a reload. No production code
-updates the mapping with `dict.update`. Mutable maps/lists retain their existing
-references. The domain-level `_admission_cleanup_counts` map is separate from
-`EntryRuntime` and is not a runtime field; the entity reconciler described
-below holds it.
+[Sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor_setup.py),
+binary sensor, climate, water heater, number, select, calendar, date and text
+platforms read the runtime. Fan, valve and switch setup publish no entities and
+do not read it.
+[Snapshot sensor setup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/semantic_snapshot_sensors.py)
+and the [asset device](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/asset_device.py)
+lookup select a consumer coordinator of `services` by its field name. The
+[diagnostics download](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/diagnostics.py)
+reports each present coordinator under its field name: the domain coordinators
+in their order, then the admin, PV, storage and EVSE coordinators, then the
+snapshot coordinator. The eeBUS pairing step of the
+[options flow](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/options_flow.py)
+takes the action broker from `services`. The option-update listener of entry
+services computes the four selection signatures one at a time, stops at the
+first one that differs from `services`, and then requests a reload.
+
+## Records that outlive the runtime
+
+Four records stay in the domain data (`hass.data[DOMAIN]`), keyed by entry id,
+because they must outlive the runtime, which is discarded on every unload:
+
+- `_sparse_reload_unique_ids` and `_sparse_seen_disabled_unique_ids`: the
+  sparse run record. Each sparse entity gets one reload per Home Assistant run,
+  so the record must hold across the reloads it causes.
+- `_trigger_reload_times`: the time of the last reload of each bounded
+  trigger, which must hold across reloads for the ten-minute bound to apply.
+- `_admission_cleanup_counts`: the admission clean-up count. It must survive a
+  setup that fails and is retried, so that the retry continues the count
+  instead of restarting it; teardown removes the entry's count after a
+  successful platform unload.
+
+The first three end with the Home Assistant run and are dropped for an entry
+that is no longer configured. No other per-entry state is kept in the domain
+data.
+
+## Reader rewrite
+
+[`scripts/adopt_entry_runtime_data.py`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/scripts/adopt_entry_runtime_data.py)
+is the committed, offline rewrite of the runtime readers from mapping access to
+attributes. Its table maps each runtime key to the attribute that holds it.
+`--write` rewrites the reader modules of a tree (`--base`, `--out`); run on a
+tree whose readers still use mapping access, it reproduces their binding and
+key-access edits. Type annotations and imports of the readers are edited by
+hand. `--check` fails when a mapping access of the runtime is left in a
+reader or when the table names an attribute that the runtime classes do not
+declare.
 
 ## Setup and partial failure
 
@@ -137,33 +163,35 @@ delegate to setup and teardown, and the platform list lives in
    (the boiler coordinator takes part only when it reports boiler support).
    All unsubscribe callbacks go into the one `unsub_listeners` list in that
    order. The phase returns a `StartedListeners`. Steps 3 to 8 precede
-   entry-mapping publication.
+   runtime publication.
 9. Register services ([entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py)):
    attempt PV, storage and EVSE boundary creation, in that order. Each catches
    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that
    family's boundary and coordinator as `None`. Other errors and cancellation
-   propagate. The service fields then describe the admin state, the three
+   propagate. `service_boundaries` then describes the admin state, the three
    boundaries and the four reload signatures.
-10. Publish the complete required mapping (`publish_entry_runtime`), then
-    register the option-update listener of entry services through the entry's
-    unload hook when those entry methods exist.
+10. Publish the complete runtime to `entry.runtime_data`
+    (`publish_entry_runtime`), then register the option-update listener of
+    entry services through the entry's unload hook when those entry methods
+    exist.
 11. Register the platforms: await platform forwarding, then run the
     reconciler's radio-registry cleanup for the non-exportable radio slots of
     the latest radio update, then its trusted-admission cleanup.
 12. Attach the semantic snapshot (`async_attach_semantic_snapshot`): await
-    semantic snapshot setup and assign its result, including `None`. Pop the
-    deferred sensor callback and call it if present. Return `True` only after
-    these steps complete.
+    semantic snapshot setup, store its result (including `None`) and mark the
+    snapshot attached. Take the deferred sensor callback, clear its field and
+    call it if present. Return `True` only after these steps complete.
 
 A phase that raises ends setup there: no later phase runs and the exception
 propagates.
 
 Publication is earlier than setup acceptance. A forwarding or snapshot error or
-cancellation propagates and leaves the published mapping. A snapshot failure
-leaves its key absent and may leave the deferred callback present. A callback
-error occurs after its removal and after snapshot assignment. There is no
-entry-wide rollback in this setup function, including for resources created
-before publication. No new rollback guarantee is implied by the type.
+cancellation propagates and leaves the published runtime. A snapshot failure
+leaves the snapshot not attached and may leave the deferred callback present. A
+callback error occurs after the callback's field is cleared and after the
+snapshot is attached. There is no entry-wide rollback in this setup function,
+including for resources created before publication. The admission clean-up
+count recorded by the failed setup stays in the domain data for the retry.
 
 ## Entity registry reconciliation
 
@@ -207,7 +235,7 @@ The sparse disable acts only on an enabled sparse entity whose value is null,
 that has not been seen disabled in this run and has not had its reload. An
 entity that was disabled and is enabled again stays enabled, and the enable
 acts only on entities that the integration disabled, so a disable by anyone
-else is never undone. The reconciler is not an `EntryRuntime` field; only the
+else is never undone. The reconciler is not a runtime field; only the
 listeners and the platform-registration phase reach it.
 
 ## Coordinator listeners and bounded reloads
@@ -259,13 +287,14 @@ regulator address is known and the semantic target is available and fresh.
 ## Unload and resource ownership
 
 [Teardown](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py) first awaits platform
-unload. `False` leaves the entry mapping, cleanup counters and all owned resources
-untouched. A platform-unload error or cancellation also propagates before any
-entry state is removed.
+unload. `False` leaves the runtime, the admission clean-up count and all owned
+resources untouched. A platform-unload error or cancellation also propagates
+before any entry state is removed.
 
-On success, when domain data exists, teardown pops only the target entry. It
-removes that entry's admission cleanup counter, requests subscription cancellation
-without awaiting the task, and invokes unsubscribe callbacks in list order.
+On success, teardown removes that entry's admission clean-up count from the
+domain data and reads `entry.runtime_data`; an entry without a runtime has
+nothing else to release. It requests subscription cancellation without
+awaiting the task, and invokes unsubscribe callbacks in list order.
 Ordinary listener exceptions are suppressed so later listeners still run.
 Cancellation derives from `BaseException` and is not suppressed by that handler.
 The entry-managed update-listener hook remains Home Assistant's responsibility;
@@ -282,28 +311,32 @@ The semantic snapshot coordinator is closed in `finally`, including when task
 cancellation requests, listener cancellation or admin cleanup raise. Its absence
 or a `None` value is allowed. After that protected block completes normally,
 teardown closes PV, storage and EVSE boundaries sequentially. Missing boundaries
-are allowed. A repeated successful unload finds no target mapping and does not
-close its resources twice. Other entries and their counters remain untouched.
+are allowed. Teardown does not remove the runtime itself: Home Assistant
+discards `entry.runtime_data` after a successful unload, so a later unload finds
+no runtime and closes nothing twice. Other entries and their counts remain
+untouched.
 
 Current limitations are preserved: an error or cancellation escaping the
 protected block still runs semantic close but prevents all three later M2M
 closes. A semantic-close error can replace the earlier exception. A PV close
 error prevents storage and EVSE closes; a storage close error prevents EVSE
-close. The mapping has already been removed, so retrying unload does not recover
-those resources. These are observations for later lifecycle work, not fixes or
-promises introduced by this type-only slice.
+close. An error that escapes teardown leaves the runtime on the entry and Home
+Assistant records the failed unload. These are observations for later
+lifecycle work, not fixes or promises introduced by the typed runtime.
 
 ## Evidence and scope
 
 [Synthetic contract tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_runtime_contract.py) run the
 shipped setup from the consumer boundaries through return, with sentinel results
 for the earlier phases, plus the complete teardown function, with fake entries,
-Home Assistant objects and resources. They check exact publication values for
-every key, the boiler parent chain, ordering, optional resources, partial
-failures, cancellation, listener cleanup and exception propagation. They do not
-assert that published state is accepted setup. Mutation controls reject
-forwarding without publication and a renamed key for every published field, in
-setup or in the service fields. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
+Home Assistant objects and resources. They check that one `HelianthusRuntime`
+is published and the exact value it holds for every runtime key (read through
+the rewrite table), the boiler parent chain, ordering, optional resources,
+partial failures, cancellation, listener cleanup and exception propagation.
+They do not assert that published state is accepted setup. Mutation controls
+reject forwarding without publication and a `None` written for any one field, in
+`publish_entry_runtime` or in the service boundaries, and check that every
+field has exactly one writer and that the table matches the runtime classes. [Connect-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_connection.py)
 cover the skip, both refusal branches and each success path, and assert every
 `GatewayConnection` field. [Device-phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_devices.py)
 pin every registry call of both device steps in order, with each device
@@ -321,9 +354,16 @@ run every reconciliation decision through the real setup, and
 [phase tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entrypoint_phases.py) pin the order of the setup
 phases, the result each phase hands on, the stop at a failing phase, both early
 returns, the reconcile and listener phases, the reconciler's admission
-counting, its single trusted clean-up and the run record it updates.
+counting, its single trusted clean-up, the run record it updates and an
+admission clean-up count that survives a setup failing before or after
+publication and admits the clean-up of the retried setup.
 [Option-listener tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_semantic_selection_reload.py)
 publish through the shipped functions and pin each reload decision.
+[Diagnostics tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_diagnostics.py)
+publish the runtime through the shipped setup functions and download it from
+`entry.runtime_data`. Platform tests build the runtime with the
+[runtime fixtures](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/runtime_fixtures.py)
+from the same table.
 
 This is an artifact-affecting structural change: shipped Python inputs change.
 Behavioral characterization does not establish Python AST identity, binary

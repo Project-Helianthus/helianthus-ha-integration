@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import struct
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.water_heater import WaterHeaterEntity
 from homeassistant.components.water_heater import WaterHeaterEntityFeature
@@ -14,11 +14,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
-from .const import DOMAIN
 from .device_ids import dhw_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:json!){
@@ -44,14 +46,16 @@ _DHW_WRITABLE_REGISTERS: dict[int, str] = {
 }
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["semantic_coordinator"]
-    via_device = data.get("regulator_device_id") or data.get("adapter_device_id")
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    client = data.get("graphql_client")
-    regulator_bus_address = data.get("regulator_bus_address")
-    status_coordinator = data.get("status_coordinator")
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
+    data = entry.runtime_data
+    coordinator = data.coordinators.semantic_coordinator
+    via_device = data.identities.regulator_device_id or data.identities.adapter_device_id
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
+    client = data.connection.client
+    regulator_bus_address = data.identities.regulator_bus_address
+    status_coordinator = data.coordinators.status_coordinator
 
     current = coordinator.data if isinstance(coordinator.data, dict) else {}
     if not isinstance(current.get("dhw"), dict):
@@ -72,7 +76,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
-        data.setdefault("unsub_listeners", []).append(unsub)
+        data.listeners.unsub_listeners.append(unsub)
 
 
 class HelianthusDhwWaterHeater(CoordinatorEntity, WaterHeaterEntity):
