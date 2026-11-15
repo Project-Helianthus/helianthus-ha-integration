@@ -1,0 +1,3187 @@
+{
+ "source": "Type map of the gateway /graphql schema, recorded from the gateway main branch after the canonical register names of the system and boiler types landed.",
+ "query": "query",
+ "mutation": "mutation",
+ "subscription": "subscription",
+ "types": {
+  "Boolean": {
+   "kind": "scalar"
+  },
+  "Float": {
+   "kind": "scalar"
+  },
+  "ID": {
+   "kind": "scalar"
+  },
+  "Int": {
+   "kind": "scalar"
+  },
+  "String": {
+   "kind": "scalar"
+  },
+  "adapter_hardware_info": {
+   "kind": "object",
+   "fields": {
+    "bootloader_checksum": {
+     "type": "String!"
+    },
+    "bootloader_version": {
+     "type": "String!"
+    },
+    "bus_voltage_max_dv": {
+     "type": "Int"
+    },
+    "bus_voltage_min_dv": {
+     "type": "Int"
+    },
+    "features": {
+     "type": "Int!"
+    },
+    "firmware_checksum": {
+     "type": "String!"
+    },
+    "firmware_version": {
+     "type": "String!"
+    },
+    "hardware_config": {
+     "type": "String!"
+    },
+    "hardware_id": {
+     "type": "String!"
+    },
+    "info_supported": {
+     "type": "Boolean!"
+    },
+    "is_ethernet": {
+     "type": "Boolean!"
+    },
+    "is_wifi": {
+     "type": "Boolean!"
+    },
+    "jumper_flags": {
+     "type": "[String!]!"
+    },
+    "jumpers": {
+     "type": "Int!"
+    },
+    "last_identity_query": {
+     "type": "String"
+    },
+    "last_telemetry_query": {
+     "type": "String"
+    },
+    "reset_cause": {
+     "type": "String"
+    },
+    "reset_cause_code": {
+     "type": "Int"
+    },
+    "restart_count": {
+     "type": "Int"
+    },
+    "supply_voltage_mv": {
+     "type": "Int"
+    },
+    "temperature_c": {
+     "type": "Float"
+    },
+    "version_response_len": {
+     "type": "Int!"
+    },
+    "wifi_rssi_dbm": {
+     "type": "Int"
+    }
+   }
+  },
+  "asset_snapshot_read": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "evaluation": {
+     "type": "semantic_evaluation_view"
+    },
+    "projection": {
+     "type": "semantic_projection_report"
+    },
+    "selections": {
+     "type": "[semantic_selection!]!"
+    },
+    "snapshot": {
+     "type": "semantic_snapshot"
+    },
+    "unavailable_reason": {
+     "type": "String"
+    }
+   }
+  },
+  "b503_availability": {
+   "kind": "enum",
+   "enum_values": [
+    "AVAILABLE",
+    "NOT_SUPPORTED",
+    "SESSION_BUSY",
+    "TRANSPORT_DOWN",
+    "UNKNOWN"
+   ]
+  },
+  "b503_session_state": {
+   "kind": "enum",
+   "enum_values": [
+    "Active",
+    "Disabled",
+    "Enabling",
+    "Idle",
+    "Refreshing"
+   ]
+  },
+  "boiler_config": {
+   "kind": "object",
+   "fields": {
+    "dhw_operating_mode": {
+     "type": "String"
+    },
+    "flowset_hc_max_c": {
+     "type": "Float"
+    },
+    "flowset_hwc_max_c": {
+     "type": "Float"
+    },
+    "hours_till_service": {
+     "type": "Int"
+    },
+    "installer_menu_code": {
+     "type": "Int"
+    },
+    "partload_hc_kw": {
+     "type": "Float"
+    },
+    "partload_hwc_kw": {
+     "type": "Float"
+    },
+    "phone_number": {
+     "type": "String"
+    }
+   }
+  },
+  "boiler_config_mutation_result": {
+   "kind": "object",
+   "fields": {
+    "error": {
+     "type": "String"
+    },
+    "success": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "boiler_diagnostics": {
+   "kind": "object",
+   "fields": {
+    "central_heating_hours": {
+     "type": "Float"
+    },
+    "central_heating_starts": {
+     "type": "Int"
+    },
+    "deactivations_ifc": {
+     "type": "Int"
+    },
+    "deactivations_templimiter": {
+     "type": "Int"
+    },
+    "dhw_hours": {
+     "type": "Float"
+    },
+    "dhw_starts": {
+     "type": "Int"
+    },
+    "dhw_status_raw": {
+     "type": "Int"
+    },
+    "fan_hours": {
+     "type": "Float"
+    },
+    "heating_status_raw": {
+     "type": "Int"
+    },
+    "pump_hours": {
+     "type": "Float"
+    }
+   }
+  },
+  "boiler_state": {
+   "kind": "object",
+   "fields": {
+    "central_heating_pump_active": {
+     "type": "Boolean"
+    },
+    "circulation_pump_active": {
+     "type": "Boolean"
+    },
+    "dhw_demand_active": {
+     "type": "Boolean"
+    },
+    "dhw_target_temperature_c": {
+     "type": "Float"
+    },
+    "dhw_temp_desired_c": {
+     "type": "Float"
+    },
+    "dhw_temperature_c": {
+     "type": "Float"
+    },
+    "dhw_water_flow_lpm": {
+     "type": "Float"
+    },
+    "diverter_valve_position_pct": {
+     "type": "Float"
+    },
+    "external_pump_active": {
+     "type": "Boolean"
+    },
+    "fan_speed_rpm": {
+     "type": "Int"
+    },
+    "flame_active": {
+     "type": "Boolean"
+    },
+    "flow_temp_desired_c": {
+     "type": "Float"
+    },
+    "flow_temperature_c": {
+     "type": "Float"
+    },
+    "gas_valve_active": {
+     "type": "Boolean"
+    },
+    "heating_switch_active": {
+     "type": "Boolean"
+    },
+    "ionisation_voltage_ua": {
+     "type": "Float"
+    },
+    "modulation_pct": {
+     "type": "Float"
+    },
+    "primary_circuit_flow_lpm": {
+     "type": "Float"
+    },
+    "return_temperature_c": {
+     "type": "Float"
+    },
+    "state_number": {
+     "type": "Int"
+    },
+    "storage_load_pump_pct": {
+     "type": "Float"
+    },
+    "target_fan_speed_rpm": {
+     "type": "Int"
+    },
+    "water_pressure_bar": {
+     "type": "Float"
+    }
+   }
+  },
+  "boiler_status": {
+   "kind": "object",
+   "fields": {
+    "config": {
+     "type": "boiler_config!"
+    },
+    "diagnostics": {
+     "type": "boiler_diagnostics!"
+    },
+    "state": {
+     "type": "boiler_state!"
+    }
+   }
+  },
+  "broadcast_event": {
+   "kind": "object",
+   "fields": {
+    "data": {
+     "type": "[Int!]!"
+    },
+    "primary": {
+     "type": "Int!"
+    },
+    "secondary": {
+     "type": "Int!"
+    },
+    "source": {
+     "type": "Int!"
+    },
+    "target": {
+     "type": "Int!"
+    }
+   }
+  },
+  "bus_admission": {
+   "kind": "object",
+   "fields": {
+    "source_selection": {
+     "type": "bus_admission_source_selection"
+    }
+   }
+  },
+  "bus_admission_active_probe": {
+   "kind": "object",
+   "fields": {
+    "opcode": {
+     "type": "String"
+    },
+    "status": {
+     "type": "String"
+    },
+    "target": {
+     "type": "Int"
+    }
+   }
+  },
+  "bus_admission_rejected_candidate": {
+   "kind": "object",
+   "fields": {
+    "evidence_provenance": {
+     "type": "String"
+    },
+    "occupancy_state": {
+     "type": "String"
+    },
+    "reason": {
+     "type": "String"
+    },
+    "source": {
+     "type": "Int!"
+    }
+   }
+  },
+  "bus_admission_source_selection": {
+   "kind": "object",
+   "fields": {
+    "active_probe": {
+     "type": "bus_admission_active_probe"
+    },
+    "automatic_retry_scheduled": {
+     "type": "Boolean!"
+    },
+    "companion_target": {
+     "type": "Int"
+    },
+    "failed_source": {
+     "type": "Int"
+    },
+    "last_successful_source": {
+     "type": "Int"
+    },
+    "mode": {
+     "type": "String"
+    },
+    "next_action": {
+     "type": "String"
+    },
+    "outcome": {
+     "type": "String"
+    },
+    "reason": {
+     "type": "String"
+    },
+    "rejected_candidates": {
+     "type": "[bus_admission_rejected_candidate!]"
+    },
+    "retryable": {
+     "type": "Boolean!"
+    },
+    "selected_source": {
+     "type": "Int"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_bounded_list_summary": {
+   "kind": "object",
+   "fields": {
+    "capacity": {
+     "type": "Int!"
+    },
+    "count": {
+     "type": "Int!"
+    }
+   }
+  },
+  "bus_identification_evidence": {
+   "kind": "object",
+   "fields": {
+    "count": {
+     "type": "Int!"
+    },
+    "decoded": {
+     "type": "Boolean!"
+    },
+    "evidence_class": {
+     "type": "String!"
+    },
+    "items": {
+     "type": "[bus_identification_evidence_item!]!"
+    },
+    "notice": {
+     "type": "String!"
+    },
+    "qualification": {
+     "type": "String!"
+    },
+    "session_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_identification_evidence_item": {
+   "kind": "object",
+   "fields": {
+    "address": {
+     "type": "Int!"
+    },
+    "captured_at": {
+     "type": "String!"
+    },
+    "request_hex": {
+     "type": "String!"
+    },
+    "response_hex": {
+     "type": "String!"
+    },
+    "sequence": {
+     "type": "Int!"
+    },
+    "session_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_message": {
+   "kind": "object",
+   "fields": {
+    "family": {
+     "type": "String!"
+    },
+    "frame_type": {
+     "type": "String!"
+    },
+    "observed_at": {
+     "type": "String"
+    },
+    "outcome": {
+     "type": "String!"
+    },
+    "request_len": {
+     "type": "Int!"
+    },
+    "response_len": {
+     "type": "Int!"
+    },
+    "scope": {
+     "type": "String!"
+    },
+    "source_address": {
+     "type": "Int!"
+    },
+    "target_address": {
+     "type": "Int!"
+    }
+   }
+  },
+  "bus_messages_list": {
+   "kind": "object",
+   "fields": {
+    "capacity": {
+     "type": "Int!"
+    },
+    "count": {
+     "type": "Int!"
+    },
+    "items": {
+     "type": "[bus_message!]!"
+    },
+    "status": {
+     "type": "bus_observability_status"
+    }
+   }
+  },
+  "bus_observability_capability": {
+   "kind": "object",
+   "fields": {
+    "active_supported": {
+     "type": "Boolean!"
+    },
+    "broadcast_supported": {
+     "type": "Boolean!"
+    },
+    "endpoint_state": {
+     "type": "String!"
+    },
+    "passive_available": {
+     "type": "Boolean!"
+    },
+    "passive_reason": {
+     "type": "String"
+    },
+    "passive_state": {
+     "type": "String!"
+    },
+    "passive_supported": {
+     "type": "Boolean!"
+    },
+    "tap_connected": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "bus_observability_counters": {
+   "kind": "object",
+   "fields": {
+    "periodicity_budget_overflow_total": {
+     "type": "String!"
+    },
+    "series_budget_overflow_total": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_observability_degraded": {
+   "kind": "object",
+   "fields": {
+    "active": {
+     "type": "Boolean!"
+    },
+    "reasons": {
+     "type": "[String!]!"
+    }
+   }
+  },
+  "bus_observability_startup": {
+   "kind": "object",
+   "fields": {
+    "cache_epoch": {
+     "type": "String!"
+    },
+    "last_updated_at": {
+     "type": "String"
+    },
+    "live_epoch": {
+     "type": "String!"
+    },
+    "phase": {
+     "type": "String!"
+    },
+    "reason": {
+     "type": "String"
+    }
+   }
+  },
+  "bus_observability_status": {
+   "kind": "object",
+   "fields": {
+    "bus_admission": {
+     "type": "bus_admission"
+    },
+    "capability": {
+     "type": "bus_observability_capability!"
+    },
+    "degraded": {
+     "type": "bus_observability_degraded!"
+    },
+    "feature_flags": {
+     "type": "observe_first_feature_flag_state!"
+    },
+    "last_updated_at": {
+     "type": "String"
+    },
+    "publisher_cadence_sec": {
+     "type": "Float!"
+    },
+    "publisher_cadence_source": {
+     "type": "String!"
+    },
+    "startup": {
+     "type": "bus_observability_startup"
+    },
+    "timing_quality": {
+     "type": "bus_observability_timing_quality!"
+    },
+    "transport_class": {
+     "type": "String!"
+    },
+    "warmup": {
+     "type": "bus_observability_warmup!"
+    }
+   }
+  },
+  "bus_observability_timing_quality": {
+   "kind": "object",
+   "fields": {
+    "active": {
+     "type": "String!"
+    },
+    "busy": {
+     "type": "String!"
+    },
+    "passive": {
+     "type": "String!"
+    },
+    "periodicity": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_observability_warmup": {
+   "kind": "object",
+   "fields": {
+    "blocker": {
+     "type": "String"
+    },
+    "completed_transactions": {
+     "type": "Int!"
+    },
+    "completion_mode": {
+     "type": "String"
+    },
+    "elapsed_seconds": {
+     "type": "Float"
+    },
+    "required_transactions": {
+     "type": "Int!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_periodicity_entry": {
+   "kind": "object",
+   "fields": {
+    "family": {
+     "type": "String!"
+    },
+    "last_interval": {
+     "type": "String"
+    },
+    "last_seen": {
+     "type": "String"
+    },
+    "max_interval": {
+     "type": "String"
+    },
+    "mean_interval": {
+     "type": "String"
+    },
+    "min_interval": {
+     "type": "String"
+    },
+    "primary": {
+     "type": "Int!"
+    },
+    "sample_count": {
+     "type": "Int!"
+    },
+    "secondary": {
+     "type": "Int!"
+    },
+    "source_bucket": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    },
+    "target_bucket": {
+     "type": "String!"
+    }
+   }
+  },
+  "bus_periodicity_list": {
+   "kind": "object",
+   "fields": {
+    "capacity": {
+     "type": "Int!"
+    },
+    "count": {
+     "type": "Int!"
+    },
+    "items": {
+     "type": "[bus_periodicity_entry!]!"
+    },
+    "status": {
+     "type": "bus_observability_status"
+    }
+   }
+  },
+  "bus_summary": {
+   "kind": "object",
+   "fields": {
+    "counters": {
+     "type": "bus_observability_counters!"
+    },
+    "last_updated_at": {
+     "type": "String"
+    },
+    "messages": {
+     "type": "bus_bounded_list_summary!"
+    },
+    "periodicity": {
+     "type": "bus_bounded_list_summary!"
+    },
+    "reconstructor_invalid_src_class_skipped_total": {
+     "type": "String!"
+    },
+    "reconstructor_prefix_resync_skipped_total": {
+     "type": "String!"
+    },
+    "status": {
+     "type": "bus_observability_status"
+    }
+   }
+  },
+  "circuit_config": {
+   "kind": "object",
+   "fields": {
+    "cooling_enabled": {
+     "type": "Boolean"
+    },
+    "flow_temp_max_c": {
+     "type": "Float"
+    },
+    "flow_temp_min_c": {
+     "type": "Float"
+    },
+    "frost_prot_c": {
+     "type": "Float"
+    },
+    "heating_curve": {
+     "type": "Float"
+    },
+    "room_temp_control": {
+     "type": "String"
+    },
+    "summer_limit_c": {
+     "type": "Float"
+    }
+   }
+  },
+  "circuit_managing_device": {
+   "kind": "object",
+   "fields": {
+    "address": {
+     "type": "Int"
+    },
+    "device_id": {
+     "type": "String"
+    },
+    "role": {
+     "type": "managing_device_role!"
+    }
+   }
+  },
+  "circuit_state": {
+   "kind": "object",
+   "fields": {
+    "calc_flow_temp_c": {
+     "type": "Float"
+    },
+    "circuit_state": {
+     "type": "String"
+    },
+    "dew_point": {
+     "type": "Float"
+    },
+    "flow_setpoint_c": {
+     "type": "Float"
+    },
+    "flow_temperature_c": {
+     "type": "Float"
+    },
+    "humidity": {
+     "type": "Float"
+    },
+    "mixer_position_pct": {
+     "type": "Float"
+    },
+    "pump_active": {
+     "type": "Boolean"
+    },
+    "pump_hours": {
+     "type": "Float"
+    },
+    "pump_starts": {
+     "type": "Int"
+    }
+   }
+  },
+  "circuit_status": {
+   "kind": "object",
+   "fields": {
+    "circuit_type": {
+     "type": "String!"
+    },
+    "config": {
+     "type": "circuit_config!"
+    },
+    "has_mixer": {
+     "type": "Boolean!"
+    },
+    "index": {
+     "type": "Int!"
+    },
+    "managing_device": {
+     "type": "circuit_managing_device!"
+    },
+    "state": {
+     "type": "circuit_state!"
+    }
+   }
+  },
+  "config_mutation_result": {
+   "kind": "object",
+   "fields": {
+    "error": {
+     "type": "String"
+    },
+    "success": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "cylinder_status": {
+   "kind": "object",
+   "fields": {
+    "charge_hysteresis_c": {
+     "type": "Float"
+    },
+    "charge_offset_c": {
+     "type": "Float"
+    },
+    "index": {
+     "type": "Int!"
+    },
+    "max_setpoint_c": {
+     "type": "Float"
+    },
+    "temperature_c": {
+     "type": "Float"
+    }
+   }
+  },
+  "device": {
+   "kind": "object",
+   "fields": {
+    "address": {
+     "type": "Int!"
+    },
+    "addresses": {
+     "type": "[Int!]!"
+    },
+    "device_id": {
+     "type": "String!"
+    },
+    "discovery_source": {
+     "type": "String"
+    },
+    "display_name": {
+     "type": "String"
+    },
+    "energy_totals": {
+     "type": "energy_totals"
+    },
+    "hardware_version": {
+     "type": "String!"
+    },
+    "mac_address": {
+     "type": "String"
+    },
+    "manufacturer": {
+     "type": "String!"
+    },
+    "part_number": {
+     "type": "String"
+    },
+    "planes": {
+     "type": "[plane!]!"
+    },
+    "product_family": {
+     "type": "String"
+    },
+    "product_model": {
+     "type": "String"
+    },
+    "projections": {
+     "type": "[projection!]!"
+    },
+    "role": {
+     "type": "String"
+    },
+    "serial_number": {
+     "type": "String"
+    },
+    "software_version": {
+     "type": "String!"
+    },
+    "verification_state": {
+     "type": "String"
+    }
+   }
+  },
+  "dhw_config": {
+   "kind": "object",
+   "fields": {
+    "holiday_end_date": {
+     "type": "String"
+    },
+    "holiday_start_date": {
+     "type": "String"
+    },
+    "operating_mode": {
+     "type": "String"
+    },
+    "operation_mode_changeable": {
+     "type": "Boolean"
+    },
+    "preset": {
+     "type": "String"
+    },
+    "target_temp_c": {
+     "type": "Float"
+    }
+   }
+  },
+  "dhw_state": {
+   "kind": "object",
+   "fields": {
+    "current_temp_c": {
+     "type": "Float"
+    },
+    "heating_demand_pct": {
+     "type": "Float"
+    },
+    "overrun_active": {
+     "type": "Boolean"
+    },
+    "special_function": {
+     "type": "String"
+    }
+   }
+  },
+  "dhw_status": {
+   "kind": "object",
+   "fields": {
+    "config": {
+     "type": "dhw_config!"
+    },
+    "state": {
+     "type": "dhw_state!"
+    }
+   }
+  },
+  "energy_channel": {
+   "kind": "object",
+   "fields": {
+    "climate": {
+     "type": "energy_series!"
+    },
+    "dhw": {
+     "type": "energy_series!"
+    }
+   }
+  },
+  "energy_point_meta": {
+   "kind": "object",
+   "fields": {
+    "age_seconds": {
+     "type": "Float"
+    },
+    "freshness_state": {
+     "type": "String!"
+    },
+    "last_observed_utc": {
+     "type": "String"
+    },
+    "provenance": {
+     "type": "String!"
+    },
+    "stale": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "energy_series": {
+   "kind": "object",
+   "fields": {
+    "monthly": {
+     "type": "[Float!]"
+    },
+    "monthly_meta": {
+     "type": "[energy_point_meta!]"
+    },
+    "today": {
+     "type": "Float!"
+    },
+    "today_meta": {
+     "type": "energy_point_meta!"
+    },
+    "yearly": {
+     "type": "[Float!]!"
+    },
+    "yearly_meta": {
+     "type": "[energy_point_meta!]!"
+    }
+   }
+  },
+  "energy_totals": {
+   "kind": "object",
+   "fields": {
+    "electric": {
+     "type": "energy_channel!"
+    },
+    "gas": {
+     "type": "energy_channel!"
+    },
+    "solar": {
+     "type": "energy_channel!"
+    }
+   }
+  },
+  "field": {
+   "kind": "object",
+   "fields": {
+    "name": {
+     "type": "String!"
+    },
+    "size": {
+     "type": "Int!"
+    },
+    "type": {
+     "type": "String!"
+    }
+   }
+  },
+  "fm5_interpretation": {
+   "kind": "object",
+   "fields": {
+    "degraded_reason": {
+     "type": "fm5_semantic_degraded_reason"
+    },
+    "evidence_revision": {
+     "type": "String!"
+    },
+    "mode": {
+     "type": "fm5_semantic_mode!"
+    }
+   }
+  },
+  "fm5_semantic_degraded_reason": {
+   "kind": "enum",
+   "enum_values": [
+    "CONFIGURATION_NOT_INTERPRETABLE",
+    "CONFIGURATION_UNAVAILABLE",
+    "CONTROLLER_UNREACHABLE",
+    "CYLINDER_ACQUISITION_FAILED",
+    "EVIDENCE_STALE",
+    "INCOHERENT_ACQUISITION",
+    "SOLAR_ACQUISITION_FAILED"
+   ]
+  },
+  "fm5_semantic_mode": {
+   "kind": "enum",
+   "enum_values": [
+    "ABSENT",
+    "GPIO_ONLY",
+    "INTERPRETED"
+   ]
+  },
+  "gateway_identity": {
+   "kind": "object",
+   "fields": {
+    "instance_guid": {
+     "type": "String"
+    }
+   }
+  },
+  "invoke_error": {
+   "kind": "object",
+   "fields": {
+    "category": {
+     "type": "String!"
+    },
+    "code": {
+     "type": "String!"
+    },
+    "message": {
+     "type": "String!"
+    }
+   }
+  },
+  "invoke_result": {
+   "kind": "object",
+   "fields": {
+    "error": {
+     "type": "invoke_error"
+    },
+    "ok": {
+     "type": "Boolean!"
+    },
+    "result": {
+     "type": "json"
+    }
+   }
+  },
+  "json": {
+   "kind": "scalar"
+  },
+  "managing_device_role": {
+   "kind": "enum",
+   "enum_values": [
+    "FUNCTION_MODULE",
+    "REGULATOR",
+    "UNKNOWN"
+   ]
+  },
+  "method": {
+   "kind": "object",
+   "fields": {
+    "name": {
+     "type": "String!"
+    },
+    "primary": {
+     "type": "Int!"
+    },
+    "read_only": {
+     "type": "Boolean!"
+    },
+    "response": {
+     "type": "response_schema!"
+    },
+    "secondary": {
+     "type": "Int!"
+    }
+   }
+  },
+  "mutation": {
+   "kind": "object",
+   "fields": {
+    "invoke": {
+     "type": "invoke_result",
+     "args": {
+      "address": "Int!",
+      "method": "String!",
+      "params": "json",
+      "plane": "String!"
+     }
+    },
+    "semantic_operation": {
+     "type": "semantic_operation_result",
+     "args": {
+      "input": "semantic_operation_input!"
+     }
+    },
+    "set_boiler_config": {
+     "type": "boiler_config_mutation_result",
+     "args": {
+      "field": "String!",
+      "value": "String!"
+     }
+    },
+    "set_circuit_config": {
+     "type": "config_mutation_result",
+     "args": {
+      "field": "String!",
+      "index": "Int!",
+      "value": "String!"
+     }
+    },
+    "set_dhw_time_program": {
+     "type": "schedule_write_result",
+     "args": {
+      "slots": "String!",
+      "weekday": "Int!"
+     }
+    },
+    "set_system_config": {
+     "type": "config_mutation_result",
+     "args": {
+      "field": "String!",
+      "value": "String!"
+     }
+    },
+    "set_zone_config": {
+     "type": "config_mutation_result",
+     "args": {
+      "field": "String!",
+      "index": "Int!",
+      "value": "String!"
+     }
+    },
+    "set_zone_time_program": {
+     "type": "schedule_write_result",
+     "args": {
+      "slots": "String!",
+      "weekday": "Int!",
+      "zone": "Int!"
+     }
+    }
+   }
+  },
+  "observe_first_feature_flag_state": {
+   "kind": "object",
+   "fields": {
+    "external_write_policy": {
+     "type": "String!"
+    },
+    "last_updated_at": {
+     "type": "String"
+    },
+    "normalizations": {
+     "type": "[String!]!"
+    },
+    "observe_first_enabled": {
+     "type": "Boolean!"
+    },
+    "passive_config_direct_apply": {
+     "type": "Boolean!"
+    },
+    "passive_state_direct_apply": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "plane": {
+   "kind": "object",
+   "fields": {
+    "methods": {
+     "type": "[method!]!"
+    },
+    "name": {
+     "type": "String!"
+    }
+   }
+  },
+  "projection": {
+   "kind": "object",
+   "fields": {
+    "edges": {
+     "type": "[projection_edge!]!"
+    },
+    "nodes": {
+     "type": "[projection_node!]!"
+    },
+    "plane": {
+     "type": "String!"
+    }
+   }
+  },
+  "projection_edge": {
+   "kind": "object",
+   "fields": {
+    "from": {
+     "type": "String!"
+    },
+    "id": {
+     "type": "String!"
+    },
+    "to": {
+     "type": "String!"
+    }
+   }
+  },
+  "projection_node": {
+   "kind": "object",
+   "fields": {
+    "canonical_path": {
+     "type": "String!"
+    },
+    "id": {
+     "type": "String!"
+    },
+    "path": {
+     "type": "String!"
+    }
+   }
+  },
+  "query": {
+   "kind": "object",
+   "fields": {
+    "adapter_hardware_info": {
+     "type": "adapter_hardware_info"
+    },
+    "adapter_status": {
+     "type": "service_status!"
+    },
+    "boiler_status": {
+     "type": "boiler_status"
+    },
+    "bus_identification_evidence": {
+     "type": "bus_identification_evidence!",
+     "args": {
+      "limit": "Int"
+     }
+    },
+    "bus_messages": {
+     "type": "bus_messages_list",
+     "args": {
+      "limit": "Int"
+     }
+    },
+    "bus_periodicity": {
+     "type": "bus_periodicity_list",
+     "args": {
+      "limit": "Int"
+     }
+    },
+    "bus_summary": {
+     "type": "bus_summary"
+    },
+    "circuits": {
+     "type": "[circuit_status!]!"
+    },
+    "cylinders": {
+     "type": "[cylinder_status!]!"
+    },
+    "daemon_status": {
+     "type": "service_status!"
+    },
+    "device": {
+     "type": "device",
+     "args": {
+      "address": "Int!"
+     }
+    },
+    "devices": {
+     "type": "[device!]!"
+    },
+    "dhw": {
+     "type": "dhw_status"
+    },
+    "energy_totals": {
+     "type": "energy_totals"
+    },
+    "fm5_interpretation": {
+     "type": "fm5_interpretation"
+    },
+    "fm5_semantic_mode": {
+     "type": "fm5_semantic_mode!"
+    },
+    "gateway_identity": {
+     "type": "gateway_identity!"
+    },
+    "methods": {
+     "type": "[method!]!",
+     "args": {
+      "address": "Int!",
+      "plane": "String!"
+     }
+    },
+    "planes": {
+     "type": "[plane!]!",
+     "args": {
+      "address": "Int!"
+     }
+    },
+    "radio_devices": {
+     "type": "[radio_device!]!"
+    },
+    "schedules": {
+     "type": "schedule_status"
+    },
+    "semantic_snapshot": {
+     "type": "semantic_snapshot_read",
+     "args": {
+      "asset_ids": "[ID!]!"
+     }
+    },
+    "solar": {
+     "type": "solar_status"
+    },
+    "system": {
+     "type": "system_status"
+    },
+    "vaillant_capabilities": {
+     "type": "vaillant_capabilities",
+     "args": {
+      "target_address": "Int"
+     }
+    },
+    "vaillant_error_history": {
+     "type": "vaillant_b503_history_record",
+     "args": {
+      "index": "Int",
+      "target_address": "Int"
+     }
+    },
+    "vaillant_errors": {
+     "type": "vaillant_b503_errors",
+     "args": {
+      "target_address": "Int"
+     }
+    },
+    "vaillant_errors_history": {
+     "type": "vaillant_b503_history_list",
+     "args": {
+      "limit": "Int",
+      "target_address": "Int"
+     }
+    },
+    "vaillant_live_monitor": {
+     "type": "vaillant_b503_live_monitor",
+     "args": {
+      "action": "String!",
+      "issuer_token": "String",
+      "target_address": "Int"
+     }
+    },
+    "vaillant_live_monitor_session": {
+     "type": "vaillant_b503_session",
+     "args": {
+      "target_address": "Int"
+     }
+    },
+    "vaillant_regulator_capability": {
+     "type": "vaillant_regulator_capability!"
+    },
+    "vaillant_service_current": {
+     "type": "vaillant_b503_errors",
+     "args": {
+      "target_address": "Int"
+     }
+    },
+    "vaillant_service_history": {
+     "type": "vaillant_b503_history_record",
+     "args": {
+      "index": "Int",
+      "target_address": "Int"
+     }
+    },
+    "watch_summary": {
+     "type": "watch_summary!"
+    },
+    "zones": {
+     "type": "[zone!]!"
+    }
+   }
+  },
+  "radio_device": {
+   "kind": "object",
+   "fields": {
+    "device_class_address": {
+     "type": "Int"
+    },
+    "device_connected": {
+     "type": "Boolean"
+    },
+    "device_model": {
+     "type": "String"
+    },
+    "device_paired": {
+     "type": "Boolean"
+    },
+    "firmware_version": {
+     "type": "String"
+    },
+    "group": {
+     "type": "Int!"
+    },
+    "hardware_identifier": {
+     "type": "Int"
+    },
+    "instance": {
+     "type": "Int!"
+    },
+    "reception_strength": {
+     "type": "Int"
+    },
+    "remote_control_address": {
+     "type": "Int"
+    },
+    "room_humidity_pct": {
+     "type": "Float"
+    },
+    "room_temperature_c": {
+     "type": "Float"
+    },
+    "slot_mode": {
+     "type": "String!"
+    },
+    "zone_assignment": {
+     "type": "Int"
+    }
+   }
+  },
+  "response_schema": {
+   "kind": "object",
+   "fields": {
+    "fields": {
+     "type": "[field!]!"
+    }
+   }
+  },
+  "schedule_config": {
+   "kind": "object",
+   "fields": {
+    "has_temperature": {
+     "type": "Boolean!"
+    },
+    "max_slots": {
+     "type": "Int!"
+    },
+    "max_temp_c": {
+     "type": "Float"
+    },
+    "min_duration": {
+     "type": "Int!"
+    },
+    "min_temp_c": {
+     "type": "Float"
+    },
+    "temp_slots": {
+     "type": "Int!"
+    },
+    "time_resolution": {
+     "type": "Int!"
+    }
+   }
+  },
+  "schedule_day_program": {
+   "kind": "object",
+   "fields": {
+    "slots": {
+     "type": "[schedule_timer_slot!]"
+    },
+    "weekday": {
+     "type": "String!"
+    }
+   }
+  },
+  "schedule_program": {
+   "kind": "object",
+   "fields": {
+    "config": {
+     "type": "schedule_config"
+    },
+    "days": {
+     "type": "[schedule_day_program!]!"
+    },
+    "hc": {
+     "type": "String!"
+    },
+    "slots_used": {
+     "type": "[Int!]"
+    },
+    "zone": {
+     "type": "Int!"
+    }
+   }
+  },
+  "schedule_slot_result": {
+   "kind": "object",
+   "fields": {
+    "accepted": {
+     "type": "Boolean!"
+    },
+    "error_code": {
+     "type": "Int!"
+    },
+    "error_description": {
+     "type": "String"
+    },
+    "slot_index": {
+     "type": "Int!"
+    }
+   }
+  },
+  "schedule_status": {
+   "kind": "object",
+   "fields": {
+    "programs": {
+     "type": "[schedule_program!]!"
+    }
+   }
+  },
+  "schedule_timer_slot": {
+   "kind": "object",
+   "fields": {
+    "end_hour": {
+     "type": "Int!"
+    },
+    "end_minute": {
+     "type": "Int!"
+    },
+    "start_hour": {
+     "type": "Int!"
+    },
+    "start_minute": {
+     "type": "Int!"
+    },
+    "temperature_c": {
+     "type": "Float"
+    },
+    "temperature_raw": {
+     "type": "Int"
+    }
+   }
+  },
+  "schedule_write_result": {
+   "kind": "object",
+   "fields": {
+    "error": {
+     "type": "String"
+    },
+    "slot_results": {
+     "type": "[schedule_slot_result!]"
+    },
+    "success": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "semantic_capability_instance": {
+   "kind": "object",
+   "fields": {
+    "activation_evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "asset_id": {
+     "type": "String!"
+    },
+    "availability": {
+     "type": "String!"
+    },
+    "binding_id": {
+     "type": "String!"
+    },
+    "constraints": {
+     "type": "[semantic_typed_field!]!"
+    },
+    "definition": {
+     "type": "semantic_definition_ref!"
+    },
+    "driver_generation": {
+     "type": "String!"
+    },
+    "instance_id": {
+     "type": "String!"
+    },
+    "qualification": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "service_instance": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_causal_context": {
+   "kind": "object",
+   "fields": {
+    "correlation_id": {
+     "type": "String!"
+    },
+    "expires_at": {
+     "type": "semantic_time_point!"
+    },
+    "first_seen_at": {
+     "type": "semantic_time_point!"
+    },
+    "hop_count": {
+     "type": "Int!"
+    },
+    "max_hops": {
+     "type": "Int!"
+    },
+    "origin": {
+     "type": "semantic_origin_ref!"
+    },
+    "parent_correlation_id": {
+     "type": "String"
+    },
+    "path": {
+     "type": "[String!]!"
+    }
+   }
+  },
+  "semantic_conflict": {
+   "kind": "object",
+   "fields": {
+    "candidates": {
+     "type": "[String!]!"
+    },
+    "conflict_id": {
+     "type": "String!"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_decimal": {
+   "kind": "object",
+   "fields": {
+    "coefficient": {
+     "type": "String!"
+    },
+    "exponent10": {
+     "type": "Int!"
+    }
+   }
+  },
+  "semantic_decimal_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "coefficient": "String!",
+    "exponent10": "Int!"
+   }
+  },
+  "semantic_definition_ref": {
+   "kind": "object",
+   "fields": {
+    "id": {
+     "type": "String!"
+    },
+    "pack": {
+     "type": "semantic_pack_ref!"
+    },
+    "version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_definition_ref_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "id": "String!",
+    "pack": "semantic_pack_ref_input!",
+    "version": "String!"
+   }
+  },
+  "semantic_derivation": {
+   "kind": "object",
+   "fields": {
+    "algorithm": {
+     "type": "String!"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "inputs": {
+     "type": "[semantic_derivation_input!]!"
+    },
+    "version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_derivation_input": {
+   "kind": "object",
+   "fields": {
+    "candidate_id": {
+     "type": "String!"
+    },
+    "candidate_revision": {
+     "type": "String!"
+    },
+    "source_paths": {
+     "type": "[semantic_source_path_ref!]!"
+    }
+   }
+  },
+  "semantic_dimension": {
+   "kind": "object",
+   "fields": {
+    "id": {
+     "type": "String!"
+    },
+    "value": {
+     "type": "semantic_value!"
+    }
+   }
+  },
+  "semantic_dimension_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "id": "String!",
+    "value": "semantic_value_input!"
+   }
+  },
+  "semantic_evaluated_fact": {
+   "kind": "object",
+   "fields": {
+    "candidate_id": {
+     "type": "String!"
+    },
+    "candidate_revision": {
+     "type": "String!"
+    },
+    "effective_availability": {
+     "type": "String!"
+    },
+    "freshness": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_evaluated_retained_observation": {
+   "kind": "object",
+   "fields": {
+    "freshness": {
+     "type": "String!"
+    },
+    "observation": {
+     "type": "semantic_retained_observation_record!"
+    }
+   }
+  },
+  "semantic_evaluation_context": {
+   "kind": "object",
+   "fields": {
+    "evaluate_monotonic": {
+     "type": "semantic_monotonic_point!"
+    },
+    "evaluated_at": {
+     "type": "semantic_time_point!"
+    }
+   }
+  },
+  "semantic_evaluation_view": {
+   "kind": "object",
+   "fields": {
+    "context": {
+     "type": "semantic_evaluation_context!"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "evaluation_digest": {
+     "type": "String!"
+    },
+    "facts": {
+     "type": "[semantic_evaluated_fact!]!"
+    },
+    "retained_observations": {
+     "type": "[semantic_evaluated_retained_observation!]"
+    },
+    "revisions": {
+     "type": "semantic_revision_vector!"
+    },
+    "snapshot_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_evidence_ref": {
+   "kind": "object",
+   "fields": {
+    "access": {
+     "type": "String!"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "digest": {
+     "type": "String!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "owner": {
+     "type": "String!"
+    },
+    "redaction": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_fact_candidate": {
+   "kind": "object",
+   "fields": {
+    "binding_id": {
+     "type": "String"
+    },
+    "candidate_id": {
+     "type": "String!"
+    },
+    "causal": {
+     "type": "semantic_causal_context"
+    },
+    "derivation": {
+     "type": "semantic_derivation"
+    },
+    "driver_generation": {
+     "type": "String"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "freshness_policy": {
+     "type": "semantic_freshness_policy!"
+    },
+    "key": {
+     "type": "semantic_fact_key!"
+    },
+    "origin": {
+     "type": "semantic_origin_ref!"
+    },
+    "quality": {
+     "type": "semantic_quality!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String"
+    },
+    "times": {
+     "type": "semantic_times!"
+    },
+    "value": {
+     "type": "semantic_value"
+    }
+   }
+  },
+  "semantic_fact_envelope": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "candidates": {
+     "type": "[semantic_fact_candidate!]!"
+    },
+    "conflicts": {
+     "type": "[semantic_conflict!]!"
+    },
+    "key": {
+     "type": "semantic_fact_key!"
+    },
+    "revision": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_fact_key": {
+   "kind": "object",
+   "fields": {
+    "dimensions": {
+     "type": "[semantic_dimension!]!"
+    },
+    "fact_id": {
+     "type": "String!"
+    },
+    "pack_id": {
+     "type": "String!"
+    },
+    "pack_version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_fact_key_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "dimensions": "[semantic_dimension_input!]!",
+    "fact_id": "String!",
+    "pack_id": "String!",
+    "pack_version": "String!"
+   }
+  },
+  "semantic_freshness_policy": {
+   "kind": "object",
+   "fields": {
+    "fresh_for_ns": {
+     "type": "String!"
+    },
+    "max_wall_uncertainty_ns": {
+     "type": "String!"
+    },
+    "policy_id": {
+     "type": "String!"
+    },
+    "retain_for_ns": {
+     "type": "String!"
+    },
+    "version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_generation_fence": {
+   "kind": "object",
+   "fields": {
+    "driver_generation": {
+     "type": "String!"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "reason": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    },
+    "source_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_identity_link": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "basis": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "binding_id": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_loss_detail": {
+   "kind": "object",
+   "fields": {
+    "description": {
+     "type": "String!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "reversible": {
+     "type": "Boolean!"
+    },
+    "source_items": {
+     "type": "[String!]!"
+    }
+   }
+  },
+  "semantic_monotonic_point": {
+   "kind": "object",
+   "fields": {
+    "clock_epoch_id": {
+     "type": "String!"
+    },
+    "nanoseconds": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_native_binding": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "binding_id": {
+     "type": "String!"
+    },
+    "driver_generation": {
+     "type": "String!"
+    },
+    "native_resource": {
+     "type": "semantic_evidence_ref!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    },
+    "source_id": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_operation_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "arguments": "[semantic_typed_field_input!]!",
+    "asset_id": "String!",
+    "binding_id": "String!",
+    "capability_instance_id": "String!",
+    "expected_capability_instance_revision": "String!",
+    "expected_capability_revision": "String!",
+    "expected_driver_generation": "String!",
+    "expected_semantic_revision": "String!",
+    "expected_source_epoch_id": "String!",
+    "operation": "semantic_definition_ref_input!",
+    "preconditions": "[semantic_precondition_input!]!",
+    "timeout_ms": "Int!"
+   }
+  },
+  "semantic_operation_result": {
+   "kind": "object",
+   "fields": {
+    "acknowledgement": {
+     "type": "String"
+    },
+    "delivery": {
+     "type": "String"
+    },
+    "kernel_outcome": {
+     "type": "String"
+    },
+    "readback_relation": {
+     "type": "String"
+    },
+    "reason": {
+     "type": "String"
+    },
+    "status": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_origin_ref": {
+   "kind": "object",
+   "fields": {
+    "binding_id": {
+     "type": "String"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "origin_id": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String"
+    },
+    "source_id": {
+     "type": "String"
+    }
+   }
+  },
+  "semantic_pack_ref": {
+   "kind": "object",
+   "fields": {
+    "id": {
+     "type": "String!"
+    },
+    "version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_pack_ref_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "id": "String!",
+    "version": "String!"
+   }
+  },
+  "semantic_precondition_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "candidate_id": "String!",
+    "candidate_revision": "String!",
+    "expected": "semantic_value_input!",
+    "fact": "semantic_fact_key_input!",
+    "operator": "String!"
+   }
+  },
+  "semantic_projection_disposition": {
+   "kind": "object",
+   "fields": {
+    "item_id": {
+     "type": "String!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "loss": {
+     "type": "[semantic_loss_detail!]!"
+    },
+    "outcome": {
+     "type": "String!"
+    },
+    "reason": {
+     "type": "String"
+    },
+    "source_keys": {
+     "type": "[semantic_fact_key!]!"
+    }
+   }
+  },
+  "semantic_projection_manifest": {
+   "kind": "object",
+   "fields": {
+    "kernel_version": {
+     "type": "String!"
+    },
+    "mapping_revision": {
+     "type": "String!"
+    },
+    "pack_versions": {
+     "type": "[semantic_pack_ref!]!"
+    },
+    "target_id": {
+     "type": "String!"
+    },
+    "target_version": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_projection_report": {
+   "kind": "object",
+   "fields": {
+    "causal": {
+     "type": "semantic_causal_context"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "dispositions": {
+     "type": "[semantic_projection_disposition!]!"
+    },
+    "manifest": {
+     "type": "semantic_projection_manifest!"
+    },
+    "requested": {
+     "type": "[semantic_requested_item!]!"
+    },
+    "revisions": {
+     "type": "semantic_revision_vector!"
+    },
+    "snapshot_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_publication_cursor": {
+   "kind": "object",
+   "fields": {
+    "driver_generation": {
+     "type": "String!"
+    },
+    "fenced": {
+     "type": "Boolean!"
+    },
+    "last_batch_digest": {
+     "type": "String!"
+    },
+    "last_sequence": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    },
+    "source_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_quality": {
+   "kind": "object",
+   "fields": {
+    "assertion": {
+     "type": "String!"
+    },
+    "availability": {
+     "type": "String!"
+    },
+    "freshness": {
+     "type": "String!"
+    },
+    "promotion": {
+     "type": "String!"
+    },
+    "qualification": {
+     "type": "String!"
+    },
+    "reasons": {
+     "type": "[String!]!"
+    },
+    "validity": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_quantity": {
+   "kind": "object",
+   "fields": {
+    "number": {
+     "type": "semantic_decimal!"
+    },
+    "unit": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_quantity_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "number": "semantic_decimal_input!",
+    "unit": "String!"
+   }
+  },
+  "semantic_requested_item": {
+   "kind": "object",
+   "fields": {
+    "item_id": {
+     "type": "String!"
+    },
+    "kind": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_retained_observation_record": {
+   "kind": "object",
+   "fields": {
+    "candidate": {
+     "type": "semantic_fact_candidate!"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "removal": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_revision_vector": {
+   "kind": "object",
+   "fields": {
+    "capabilities": {
+     "type": "String!"
+    },
+    "facts": {
+     "type": "String!"
+    },
+    "identity": {
+     "type": "String!"
+    },
+    "semantic": {
+     "type": "String!"
+    },
+    "services": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_selection": {
+   "kind": "object",
+   "fields": {
+    "candidate_revision": {
+     "type": "String!"
+    },
+    "context": {
+     "type": "semantic_evaluation_context!"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "evaluation_digest": {
+     "type": "String!"
+    },
+    "key": {
+     "type": "semantic_fact_key!"
+    },
+    "policy_id": {
+     "type": "String!"
+    },
+    "policy_version": {
+     "type": "String!"
+    },
+    "presentation_only": {
+     "type": "Boolean!"
+    },
+    "revisions": {
+     "type": "semantic_revision_vector!"
+    },
+    "selected_candidate": {
+     "type": "String!"
+    },
+    "snapshot_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_service_instance": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "availability": {
+     "type": "String!"
+    },
+    "binding_id": {
+     "type": "String!"
+    },
+    "definition": {
+     "type": "semantic_definition_ref!"
+    },
+    "driver_generation": {
+     "type": "String!"
+    },
+    "instance_id": {
+     "type": "String!"
+    },
+    "qualification": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_snapshot": {
+   "kind": "object",
+   "fields": {
+    "asset_id": {
+     "type": "String!"
+    },
+    "bindings": {
+     "type": "[semantic_native_binding!]!"
+    },
+    "capabilities": {
+     "type": "[semantic_capability_instance!]!"
+    },
+    "contract": {
+     "type": "String!"
+    },
+    "cursors": {
+     "type": "[semantic_publication_cursor!]!"
+    },
+    "evaluate_monotonic": {
+     "type": "semantic_monotonic_point!"
+    },
+    "evaluated_at": {
+     "type": "semantic_time_point!"
+    },
+    "facts": {
+     "type": "[semantic_fact_envelope!]!"
+    },
+    "fences": {
+     "type": "[semantic_generation_fence!]!"
+    },
+    "identity_links": {
+     "type": "[semantic_identity_link!]!"
+    },
+    "retained_observations": {
+     "type": "[semantic_retained_observation_record!]"
+    },
+    "revisions": {
+     "type": "semantic_revision_vector!"
+    },
+    "services": {
+     "type": "[semantic_service_instance!]!"
+    },
+    "snapshot_id": {
+     "type": "String!"
+    },
+    "sources": {
+     "type": "[semantic_source_descriptor!]!"
+    }
+   }
+  },
+  "semantic_snapshot_read": {
+   "kind": "object",
+   "fields": {
+    "assets": {
+     "type": "[asset_snapshot_read!]!"
+    }
+   }
+  },
+  "semantic_source_descriptor": {
+   "kind": "object",
+   "fields": {
+    "profile_id": {
+     "type": "String!"
+    },
+    "profile_version": {
+     "type": "String!"
+    },
+    "protocol_id": {
+     "type": "String!"
+    },
+    "registry_evidence": {
+     "type": "semantic_evidence_ref!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    },
+    "source_id": {
+     "type": "String!"
+    },
+    "started_at": {
+     "type": "semantic_time_point!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_source_path_ref": {
+   "kind": "object",
+   "fields": {
+    "binding_id": {
+     "type": "String!"
+    },
+    "driver_generation": {
+     "type": "String!"
+    },
+    "source_epoch_id": {
+     "type": "String!"
+    },
+    "source_id": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_symbol": {
+   "kind": "object",
+   "fields": {
+    "known": {
+     "type": "Boolean!"
+    },
+    "namespace": {
+     "type": "String!"
+    },
+    "token": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_symbol_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "known": "Boolean!",
+    "namespace": "String!",
+    "token": "String!"
+   }
+  },
+  "semantic_time_point": {
+   "kind": "object",
+   "fields": {
+    "clock_id": {
+     "type": "String!"
+    },
+    "uncertainty_ns": {
+     "type": "String!"
+    },
+    "unix_nanoseconds": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_time_point_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "clock_id": "String!",
+    "uncertainty_ns": "String!",
+    "unix_nanoseconds": "String!"
+   }
+  },
+  "semantic_times": {
+   "kind": "object",
+   "fields": {
+    "evaluate_monotonic": {
+     "type": "semantic_monotonic_point!"
+    },
+    "evaluated_at": {
+     "type": "semantic_time_point!"
+    },
+    "phenomenon_at": {
+     "type": "semantic_time_point"
+    },
+    "receipt_monotonic": {
+     "type": "semantic_monotonic_point!"
+    },
+    "received_at": {
+     "type": "semantic_time_point!"
+    },
+    "source_at": {
+     "type": "semantic_time_point"
+    }
+   }
+  },
+  "semantic_typed_field": {
+   "kind": "object",
+   "fields": {
+    "id": {
+     "type": "String!"
+    },
+    "value": {
+     "type": "semantic_value!"
+    }
+   }
+  },
+  "semantic_typed_field_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "id": "String!",
+    "value": "semantic_value_input!"
+   }
+  },
+  "semantic_value": {
+   "kind": "object",
+   "fields": {
+    "boolean": {
+     "type": "Boolean"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "quantity": {
+     "type": "semantic_quantity"
+    },
+    "symbol": {
+     "type": "semantic_symbol"
+    },
+    "symbols": {
+     "type": "[semantic_symbol!]"
+    },
+    "text": {
+     "type": "String"
+    },
+    "time": {
+     "type": "semantic_time_point"
+    }
+   }
+  },
+  "semantic_value_input": {
+   "kind": "input_object",
+   "input_fields": {
+    "boolean": "Boolean",
+    "kind": "String!",
+    "quantity": "semantic_quantity_input",
+    "symbol": "semantic_symbol_input",
+    "symbols": "[semantic_symbol_input!]",
+    "text": "String",
+    "time": "semantic_time_point_input"
+   }
+  },
+  "service_status": {
+   "kind": "object",
+   "fields": {
+    "firmware_version": {
+     "type": "String"
+    },
+    "initiator_address": {
+     "type": "String"
+    },
+    "status": {
+     "type": "String!"
+    },
+    "updates_available": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "solar_status": {
+   "kind": "object",
+   "fields": {
+    "collector_temperature_c": {
+     "type": "Float"
+    },
+    "current_yield": {
+     "type": "Float"
+    },
+    "function_mode": {
+     "type": "Boolean"
+    },
+    "pump_active": {
+     "type": "Boolean"
+    },
+    "pump_hours": {
+     "type": "Float"
+    },
+    "return_temperature_c": {
+     "type": "Float"
+    },
+    "solar_enabled": {
+     "type": "Boolean"
+    }
+   }
+  },
+  "subscription": {
+   "kind": "object",
+   "fields": {
+    "boiler_status_update": {
+     "type": "boiler_status"
+    },
+    "broadcast": {
+     "type": "broadcast_event!",
+     "args": {
+      "primary": "Int!",
+      "secondary": "Int!"
+     }
+    },
+    "dhw_update": {
+     "type": "dhw_status"
+    },
+    "energy_update": {
+     "type": "energy_totals"
+    },
+    "radio_devices_update": {
+     "type": "[radio_device!]!"
+    },
+    "zone_update": {
+     "type": "zone!"
+    }
+   }
+  },
+  "system_config": {
+   "kind": "object",
+   "fields": {
+    "adaptive_heating_curve_enabled": {
+     "type": "Boolean"
+    },
+    "alternative_point": {
+     "type": "Float"
+    },
+    "dhw_bivalence_point": {
+     "type": "Float"
+    },
+    "dhw_bivalence_point_bound": {
+     "type": "system_config_bound"
+    },
+    "hc_emergency_temperature": {
+     "type": "Float"
+    },
+    "heating_outdoor_bivalence_temperature_limit": {
+     "type": "Float"
+    },
+    "hwc_max_flow_temp_desired": {
+     "type": "Float"
+    },
+    "installer_access_code": {
+     "type": "Int"
+    },
+    "installer_name": {
+     "type": "String"
+    },
+    "installer_phone": {
+     "type": "String"
+    },
+    "maintenance_date": {
+     "type": "String"
+    },
+    "room_humidity_limit_maximum": {
+     "type": "Int"
+    }
+   }
+  },
+  "system_config_bound": {
+   "kind": "object",
+   "fields": {
+    "max_c": {
+     "type": "Float!"
+    },
+    "min_c": {
+     "type": "Float!"
+    },
+    "narrowed_only": {
+     "type": "Boolean!"
+    },
+    "profile": {
+     "type": "String"
+    },
+    "reason": {
+     "type": "String"
+    },
+    "source": {
+     "type": "String!"
+    }
+   }
+  },
+  "system_properties": {
+   "kind": "object",
+   "fields": {
+    "functional_module_configuration_code": {
+     "type": "Int"
+    },
+    "hydraulic_scheme_code": {
+     "type": "Int"
+    }
+   }
+  },
+  "system_state": {
+   "kind": "object",
+   "fields": {
+    "flow_temperature": {
+     "type": "Float"
+    },
+    "hwc_cylinder_temperature_bottom": {
+     "type": "Float"
+    },
+    "hwc_cylinder_temperature_top": {
+     "type": "Float"
+    },
+    "maintenance_due": {
+     "type": "Boolean"
+    },
+    "outdoor_temperature": {
+     "type": "Float"
+    },
+    "outdoor_temperature_avg24h": {
+     "type": "Float"
+    },
+    "system_off": {
+     "type": "Boolean"
+    },
+    "water_pressure": {
+     "type": "Float"
+    }
+   }
+  },
+  "system_status": {
+   "kind": "object",
+   "fields": {
+    "config": {
+     "type": "system_config!"
+    },
+    "gateway_brand": {
+     "type": "String"
+    },
+    "gateway_vendor": {
+     "type": "String"
+    },
+    "properties": {
+     "type": "system_properties!"
+    },
+    "state": {
+     "type": "system_state!"
+    }
+   }
+  },
+  "vaillant_b503_capability": {
+   "kind": "object",
+   "fields": {
+    "available": {
+     "type": "Boolean!"
+    },
+    "reason": {
+     "type": "b503_availability!"
+    }
+   }
+  },
+  "vaillant_b503_errors": {
+   "kind": "object",
+   "fields": {
+    "first_active_error": {
+     "type": "Int"
+    },
+    "slots": {
+     "type": "[Int]!"
+    }
+   }
+  },
+  "vaillant_b503_history_failure": {
+   "kind": "object",
+   "fields": {
+    "code": {
+     "type": "String!"
+    },
+    "index": {
+     "type": "Int!"
+    },
+    "message": {
+     "type": "String!"
+    }
+   }
+  },
+  "vaillant_b503_history_list": {
+   "kind": "object",
+   "fields": {
+    "failure": {
+     "type": "vaillant_b503_history_failure"
+    },
+    "records": {
+     "type": "[vaillant_b503_history_record!]!"
+    }
+   }
+  },
+  "vaillant_b503_history_record": {
+   "kind": "object",
+   "fields": {
+    "first_active_error": {
+     "type": "Int"
+    },
+    "index": {
+     "type": "Int!"
+    },
+    "slots": {
+     "type": "[Int]!"
+    }
+   }
+  },
+  "vaillant_b503_live_monitor": {
+   "kind": "object",
+   "fields": {
+    "disabled": {
+     "type": "Boolean!"
+    },
+    "issuer_token": {
+     "type": "String"
+    },
+    "raw_hex": {
+     "type": "String"
+    }
+   }
+  },
+  "vaillant_b503_session": {
+   "kind": "object",
+   "fields": {
+    "owned": {
+     "type": "Boolean!"
+    },
+    "state": {
+     "type": "b503_session_state!"
+    }
+   }
+  },
+  "vaillant_capabilities": {
+   "kind": "object",
+   "fields": {
+    "vaillant_b503": {
+     "type": "vaillant_b503_capability!"
+    }
+   }
+  },
+  "vaillant_regulator_capability": {
+   "kind": "enum",
+   "enum_values": [
+    "NONE",
+    "PRESENT",
+    "UNKNOWN"
+   ]
+  },
+  "watch_summary": {
+   "kind": "object",
+   "fields": {
+    "activation_counts": {
+     "type": "watch_summary_activation_counts!"
+    },
+    "degraded": {
+     "type": "watch_summary_degraded!"
+    },
+    "direct_apply_eligibility_classes": {
+     "type": "[watch_summary_class_count!]!"
+    },
+    "freshness_classes": {
+     "type": "[watch_summary_class_count!]!"
+    },
+    "inventory": {
+     "type": "watch_summary_inventory!"
+    },
+    "last_updated_at": {
+     "type": "String"
+    }
+   }
+  },
+  "watch_summary_activation_counts": {
+   "kind": "object",
+   "fields": {
+    "active_keys": {
+     "type": "Int!"
+    },
+    "catalog_descriptors": {
+     "type": "Int!"
+    },
+    "source_classes": {
+     "type": "[watch_summary_class_count!]!"
+    }
+   }
+  },
+  "watch_summary_class_count": {
+   "kind": "object",
+   "fields": {
+    "class": {
+     "type": "String!"
+    },
+    "count": {
+     "type": "Int!"
+    }
+   }
+  },
+  "watch_summary_degraded": {
+   "kind": "object",
+   "fields": {
+    "active": {
+     "type": "Boolean!"
+    },
+    "compactor_degraded": {
+     "type": "Boolean!"
+    },
+    "pinned_budget_degraded": {
+     "type": "Boolean!"
+    },
+    "reasons": {
+     "type": "[String!]!"
+    },
+    "shadowing_enabled": {
+     "type": "Boolean!"
+    }
+   }
+  },
+  "watch_summary_inventory": {
+   "kind": "object",
+   "fields": {
+    "evictable_entries": {
+     "type": "Int!"
+    },
+    "pin_classes": {
+     "type": "[watch_summary_class_count!]!"
+    },
+    "pinned_entries": {
+     "type": "Int!"
+    },
+    "state_classes": {
+     "type": "[watch_summary_class_count!]!"
+    },
+    "static_pinned_footprint": {
+     "type": "Int!"
+    },
+    "total_entries": {
+     "type": "Int!"
+    },
+    "write_confirm_pinned_active": {
+     "type": "Int!"
+    }
+   }
+  },
+  "zone": {
+   "kind": "object",
+   "fields": {
+    "config": {
+     "type": "zone_config!"
+    },
+    "id": {
+     "type": "String!"
+    },
+    "name": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "zone_state!"
+    }
+   }
+  },
+  "zone_config": {
+   "kind": "object",
+   "fields": {
+    "allowed_modes": {
+     "type": "[String!]!"
+    },
+    "associated_circuit": {
+     "type": "Int"
+    },
+    "circuit_type": {
+     "type": "String"
+    },
+    "holiday_end_date": {
+     "type": "String"
+    },
+    "holiday_end_time": {
+     "type": "String"
+    },
+    "holiday_setpoint": {
+     "type": "Float"
+    },
+    "holiday_start_date": {
+     "type": "String"
+    },
+    "holiday_start_time": {
+     "type": "String"
+    },
+    "operating_mode": {
+     "type": "String"
+    },
+    "operation_mode_changeable": {
+     "type": "Boolean"
+    },
+    "preset": {
+     "type": "String"
+    },
+    "quick_veto": {
+     "type": "Boolean!"
+    },
+    "quick_veto_duration": {
+     "type": "Float"
+    },
+    "quick_veto_expiry": {
+     "type": "String"
+    },
+    "quick_veto_setpoint": {
+     "type": "Float"
+    },
+    "room_temperature_zone_mapping": {
+     "type": "Int"
+    },
+    "source_label": {
+     "type": "String"
+    },
+    "target_temp_c": {
+     "type": "Float"
+    }
+   }
+  },
+  "zone_state": {
+   "kind": "object",
+   "fields": {
+    "heating_demand_pct": {
+     "type": "Float"
+    },
+    "hvac_action": {
+     "type": "String"
+    },
+    "special_function": {
+     "type": "String"
+    },
+    "valve_position_pct": {
+     "type": "Float"
+    },
+    "zone_room_humidity": {
+     "type": "Float"
+    },
+    "zone_room_temperature": {
+     "type": "Float"
+    }
+   }
+  }
+ }
+}

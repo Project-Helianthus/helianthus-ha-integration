@@ -1,0 +1,8 @@
+{
+ "documents": {
+  "semantic_evse_current": "query SemanticEVSECurrent($request: m2m_current_snapshot_request!) {\n  semantic_evse_current(request: $request) { snapshot evaluation selections projection }\n}",
+  "semantic_pv_current": "query SemanticPVCurrent($request: m2m_current_snapshot_request!) {\n  semantic_pv_current(request: $request) { snapshot evaluation selections projection }\n}",
+  "semantic_storage_current": "query SemanticStorageCurrent($request: m2m_current_snapshot_request!) {\n  semantic_storage_current(request: $request) { snapshot evaluation selections projection }\n}"
+ },
+ "source": "The three fixed documents accepted by the gateway M2M GraphQL listener, recorded byte for byte from the gateway main branch."
+}
