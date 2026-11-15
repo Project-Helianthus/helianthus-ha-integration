@@ -182,6 +182,15 @@ def _named(type_text: str) -> str:
     return re.sub(r"[\[\]!]", "", type_text)
 
 
+_OPAQUE_KINDS = {"string", "number"}
+_LITERAL_KINDS = {
+    "Int": {"number"},
+    "Float": {"number"},
+    "String": {"string"},
+    "ID": {"string", "number"},
+}
+
+
 def _variable_feeds_argument(variable_type: str, argument_type: str) -> bool:
     """A variable may feed an argument of the same shape; non-null may feed nullable."""
     if argument_type.endswith("!"):
@@ -197,6 +206,25 @@ def _variable_feeds_argument(variable_type: str, argument_type: str) -> bool:
     return variable_type == argument_type
 
 
+def _literal_problem(types: dict, kind: str, value: str, argument_type: str) -> str:
+    """Return why a scalar or enum literal cannot feed the argument type, or an empty string."""
+    nullable = argument_type.rstrip("!")
+    if (kind, value) == ("name", "null"):
+        return f"null for non-null {argument_type}" if argument_type.endswith("!") else ""
+    if nullable.startswith("["):
+        return f"literal for list type {argument_type}"
+    target = types.get(nullable, {})
+    if nullable == "Boolean":
+        accepted = kind == "name" and value in {"true", "false"}
+    elif target.get("kind") == "enum":
+        accepted = kind == "name" and value in target.get("enum_values", [])
+    else:
+        accepted = kind in _LITERAL_KINDS.get(nullable, _OPAQUE_KINDS) and not (
+            nullable in {"Int", "ID"} and "." in value
+        )
+    return "" if accepted else f"{kind} literal does not match {argument_type}"
+
+
 class _Validator:
     """Walks one operation against the recorded type map and collects problems."""
 
@@ -204,6 +232,7 @@ class _Validator:
         self._operation = operation
         self._types = schema["types"]
         self.problems: list[str] = []
+        self.used: set[str] = set()
 
     def variables(self) -> None:
         for variable, declared in self._operation.variables.items():
@@ -228,10 +257,18 @@ class _Validator:
             if argument_type is None:
                 self.problems.append(f"{where}({argument}:): no such argument")
             elif kind == "variable":
+                self.used.add(value)
                 self._variable_use(value, argument, argument_type, where)
+            else:
+                self._literal_use(kind, value, argument, argument_type, where)
         for argument, argument_type in arguments.items():
             if argument_type.endswith("!") and argument not in selection.arguments:
                 self.problems.append(f"{where}: required argument {argument} is missing")
+
+    def _literal_use(self, kind: str, value: str, argument: str, argument_type: str, where: str) -> None:
+        problem = _literal_problem(self._types, kind, value, argument_type)
+        if problem:
+            self.problems.append(f"{where}({argument}: {value}): {problem}")
 
     def _variable_use(self, variable: str, argument: str, argument_type: str, where: str) -> None:
         declared = self._operation.variables.get(variable)
@@ -262,6 +299,9 @@ def validate(operation: Operation, schema: dict) -> list[str]:
     validator = _Validator(operation, schema)
     validator.variables()
     validator.selections(root, operation.selections, operation.kind)
+    for variable in operation.variables:
+        if variable not in validator.used:
+            validator.problems.append(f"${variable}: declared variable is never used")
     return validator.problems
 
 
@@ -374,6 +414,10 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ("mutation M($p: JSON!) { invoke(address: 1, plane: \"p\", method: \"m\", params: $p) { ok } }", "not an input type"),
         ("query { devices { address } unknown_arg: devices { address } }", "alias"),
         ("query { ...F }", "fragments"),
+        ("query { device(address: \"not-an-int\") { address } }", "does not match"),
+        ("query { device(address: 1.5) { address } }", "does not match"),
+        ("query { device(address: null) { address } }", "null for non-null"),
+        ("query Q($unused: Int!) { devices { address } }", "never used"),
     ],
 )
 def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None:
@@ -395,7 +439,7 @@ def test_computed_documents_are_listed() -> None:
             if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
                 continue
             target = node.targets[0]
-            if not isinstance(target, ast.Name) or not re.match(r"^(QUERY|MUTATION|SUBSCRIPTION|\w*_QUERY)\b", target.id):
+            if not isinstance(target, ast.Name) or not re.search(r"(?:^|_)(?:QUERY|MUTATION|SUBSCRIPTION)(?:_|$)", target.id):
                 continue
             if not isinstance(node.value, ast.Constant):
                 found.add(target.id)
