@@ -38,6 +38,7 @@ relaxed.
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import sys
@@ -116,7 +117,7 @@ def _walk_all(node: object) -> None:
     if isinstance(node, dict):
         for key, value in node.items():
             # .get() access for every key — the pattern used throughout
-            # custom_components/helianthus/coordinator.py.
+            # the domain coordinator modules.
             assert node.get(key) is value or node.get(key) == value
             _walk_all(value)
     elif isinstance(node, list):
@@ -210,7 +211,23 @@ def test_no_ebus_standard_symbols_in_integration() -> None:
     lockstep with an explicit consumer-path review.
     """
 
-    for mod in (helianthus_pkg, coordinator_mod):
+    domain_mods = [
+        importlib.import_module(f"{helianthus_pkg.__name__}.{name}")
+        for name in (
+            "coordinator_adapter_info",
+            "coordinator_boiler",
+            "coordinator_circuits",
+            "coordinator_devices",
+            "coordinator_energy",
+            "coordinator_fm5",
+            "coordinator_radio",
+            "coordinator_schedules",
+            "coordinator_semantic",
+            "coordinator_status",
+            "coordinator_system",
+        )
+    ]
+    for mod in (helianthus_pkg, coordinator_mod, *domain_mods):
         for attr in dir(mod):
             lower = attr.lower()
             assert "ebus_standard" not in lower, (

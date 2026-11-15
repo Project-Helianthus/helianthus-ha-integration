@@ -35,52 +35,62 @@ sys.modules.setdefault(
     "homeassistant.helpers.update_coordinator", update_coordinator_module
 )
 
-import custom_components.helianthus.coordinator as coordinator_module
-
-from custom_components.helianthus.coordinator import (
-    QUERY_ADAPTER_HARDWARE_INFO,
-    QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
-    QUERY_BOILER,
-    QUERY_CIRCUITS,
-    QUERY_ENERGY,
-    QUERY_ENERGY_LEGACY,
-    QUERY_EXTENDED_V2,
-    QUERY_EXTENDED_V2_NO_ADDRESSES,
-    QUERY_EXTENDED_V3,
-    QUERY_EXTENDED_V3_NO_ADDRESSES,
-    QUERY_EXTENDED_V3_NO_PART,
-    QUERY_FM5,
-    QUERY_RADIO_DEVICES,
-    QUERY_SEMANTIC,
-    QUERY_SEMANTIC_PROMOTED,
-    QUERY_SEMANTIC_NO_HOLIDAY,
-    QUERY_SEMANTIC_NO_QV,
-    QUERY_SEMANTIC_LEGACY,
-    QUERY_STATUS,
-    QUERY_STATUS_NO_INITIATOR,
-    QUERY_STATUS_MINIMAL,
-    QUERY_SYSTEM,
-    QUERY_SYSTEM_GATEWAY_METADATA,
-    QUERY_SYSTEM_INSTALLER,
-    QUERY_SYSTEM_SENSITIVE,
-    UpdateFailed,
-    HelianthusBoilerCoordinator,
-    HelianthusCircuitCoordinator,
-    HelianthusCoordinator,
-    HelianthusAdapterInfoCoordinator,
-    HelianthusEnergyCoordinator,
-    HelianthusFM5Coordinator,
-    HelianthusRadioDeviceCoordinator,
-    HelianthusScheduleCoordinator,
-    HelianthusSemanticCoordinator,
-    HelianthusSystemCoordinator,
-    HelianthusStatusCoordinator,
-    QUERY_SCHEDULES,
+from custom_components.helianthus import (
+    coordinator_adapter_info,
+    coordinator_boiler,
+    coordinator_circuits,
+    coordinator_devices,
+    coordinator_energy,
+    coordinator_fm5,
+    coordinator_radio,
+    coordinator_schedules,
+    coordinator_semantic,
+    coordinator_status,
+    coordinator_system,
 )
 from custom_components.helianthus.graphql import (
     GraphQLClientError,
     GraphQLResponseError,
 )
+
+QUERY_ADAPTER_HARDWARE_INFO = coordinator_adapter_info.QUERY_ADAPTER_HARDWARE_INFO
+QUERY_ADAPTER_HARDWARE_INFO_MINIMAL = coordinator_adapter_info.QUERY_ADAPTER_HARDWARE_INFO_MINIMAL
+QUERY_BOILER = coordinator_boiler.QUERY_BOILER
+QUERY_CIRCUITS = coordinator_circuits.QUERY_CIRCUITS
+QUERY_ENERGY = coordinator_energy.QUERY_ENERGY
+QUERY_ENERGY_LEGACY = coordinator_energy.QUERY_ENERGY_LEGACY
+QUERY_EXTENDED_V2 = coordinator_devices.QUERY_EXTENDED_V2
+QUERY_EXTENDED_V2_NO_ADDRESSES = coordinator_devices.QUERY_EXTENDED_V2_NO_ADDRESSES
+QUERY_EXTENDED_V3 = coordinator_devices.QUERY_EXTENDED_V3
+QUERY_EXTENDED_V3_NO_ADDRESSES = coordinator_devices.QUERY_EXTENDED_V3_NO_ADDRESSES
+QUERY_EXTENDED_V3_NO_PART = coordinator_devices.QUERY_EXTENDED_V3_NO_PART
+QUERY_FM5 = coordinator_fm5.QUERY_FM5
+QUERY_RADIO_DEVICES = coordinator_radio.QUERY_RADIO_DEVICES
+QUERY_SEMANTIC = coordinator_semantic.QUERY_SEMANTIC
+QUERY_SEMANTIC_PROMOTED = coordinator_semantic.QUERY_SEMANTIC_PROMOTED
+QUERY_SEMANTIC_NO_HOLIDAY = coordinator_semantic.QUERY_SEMANTIC_NO_HOLIDAY
+QUERY_SEMANTIC_NO_QV = coordinator_semantic.QUERY_SEMANTIC_NO_QV
+QUERY_SEMANTIC_LEGACY = coordinator_semantic.QUERY_SEMANTIC_LEGACY
+QUERY_STATUS = coordinator_status.QUERY_STATUS
+QUERY_STATUS_NO_INITIATOR = coordinator_status.QUERY_STATUS_NO_INITIATOR
+QUERY_STATUS_MINIMAL = coordinator_status.QUERY_STATUS_MINIMAL
+QUERY_SYSTEM = coordinator_system.QUERY_SYSTEM
+QUERY_SYSTEM_GATEWAY_METADATA = coordinator_system.QUERY_SYSTEM_GATEWAY_METADATA
+QUERY_SYSTEM_INSTALLER = coordinator_system.QUERY_SYSTEM_INSTALLER
+QUERY_SYSTEM_SENSITIVE = coordinator_system.QUERY_SYSTEM_SENSITIVE
+UpdateFailed = coordinator_semantic.UpdateFailed
+HelianthusBoilerCoordinator = coordinator_boiler.HelianthusBoilerCoordinator
+HelianthusCircuitCoordinator = coordinator_circuits.HelianthusCircuitCoordinator
+HelianthusCoordinator = coordinator_devices.HelianthusCoordinator
+HelianthusAdapterInfoCoordinator = coordinator_adapter_info.HelianthusAdapterInfoCoordinator
+HelianthusEnergyCoordinator = coordinator_energy.HelianthusEnergyCoordinator
+HelianthusFM5Coordinator = coordinator_fm5.HelianthusFM5Coordinator
+HelianthusRadioDeviceCoordinator = coordinator_radio.HelianthusRadioDeviceCoordinator
+HelianthusScheduleCoordinator = coordinator_schedules.HelianthusScheduleCoordinator
+HelianthusSemanticCoordinator = coordinator_semantic.HelianthusSemanticCoordinator
+HelianthusSystemCoordinator = coordinator_system.HelianthusSystemCoordinator
+HelianthusStatusCoordinator = coordinator_status.HelianthusStatusCoordinator
+QUERY_SCHEDULES = coordinator_schedules.QUERY_SCHEDULES
 
 
 class _ScriptedClient:
@@ -534,7 +544,7 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
     )
     coordinator = _build_adapter_info_coordinator(client)
     current_time = 1_000.0
-    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: current_time)
+    monkeypatch.setattr(coordinator_adapter_info.time, "monotonic", lambda: current_time)
 
     first = asyncio.run(coordinator._async_update_data())
     current_time += 60.0

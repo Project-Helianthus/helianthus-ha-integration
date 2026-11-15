@@ -4,6 +4,8 @@ Fields varied, and the production mutation each one catches:
 
 - coordinator class (eleven distinct doubles): a field built from the wrong
   class or two fields sharing one instance.
+- domain module (each double only in its own module): a class imported from
+  another domain's module.
 - hass, client and scan interval (distinct sentinels): an argument dropped,
   swapped or replaced by a default.
 - failing coordinator (each position in turn): a refresh started after a
@@ -37,10 +39,22 @@ ORDER = (
     ("adapter_info_coordinator", "HelianthusAdapterInfoCoordinator"),
 )
 
+DOMAIN_MODULES = (
+    ("coordinator_adapter_info", "HelianthusAdapterInfoCoordinator"),
+    ("coordinator_boiler", "HelianthusBoilerCoordinator"),
+    ("coordinator_circuits", "HelianthusCircuitCoordinator"),
+    ("coordinator_devices", "HelianthusCoordinator"),
+    ("coordinator_energy", "HelianthusEnergyCoordinator"),
+    ("coordinator_fm5", "HelianthusFM5Coordinator"),
+    ("coordinator_radio", "HelianthusRadioDeviceCoordinator"),
+    ("coordinator_schedules", "HelianthusScheduleCoordinator"),
+    ("coordinator_semantic", "HelianthusSemanticCoordinator"),
+    ("coordinator_status", "HelianthusStatusCoordinator"),
+    ("coordinator_system", "HelianthusSystemCoordinator"),
+)
+
 
 def _install_coordinators(monkeypatch, events, failing=None):
-    module = ModuleType("custom_components.helianthus.coordinator")
-
     def double(class_name):
         class Coordinator:
             def __init__(self, *args) -> None:
@@ -55,11 +69,12 @@ def _install_coordinators(monkeypatch, events, failing=None):
         Coordinator.__name__ = class_name
         return Coordinator
 
-    for _, class_name in ORDER:
+    package = sys.modules["custom_components.helianthus"]
+    for module_name, class_name in DOMAIN_MODULES:
+        module = ModuleType(f"custom_components.helianthus.{module_name}")
         setattr(module, class_name, double(class_name))
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    monkeypatch.setattr(sys.modules["custom_components.helianthus"], "coordinator", module,
-                        raising=False)
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+        monkeypatch.setattr(package, module_name, module, raising=False)
 
 
 def test_every_coordinator_is_created_then_refreshed_in_order(monkeypatch):

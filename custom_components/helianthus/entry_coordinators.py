@@ -12,19 +12,17 @@ from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .coordinator import (
-        HelianthusAdapterInfoCoordinator,
-        HelianthusBoilerCoordinator,
-        HelianthusCircuitCoordinator,
-        HelianthusCoordinator,
-        HelianthusEnergyCoordinator,
-        HelianthusFM5Coordinator,
-        HelianthusRadioDeviceCoordinator,
-        HelianthusScheduleCoordinator,
-        HelianthusSemanticCoordinator,
-        HelianthusStatusCoordinator,
-        HelianthusSystemCoordinator,
-    )
+    from .coordinator_adapter_info import HelianthusAdapterInfoCoordinator
+    from .coordinator_boiler import HelianthusBoilerCoordinator
+    from .coordinator_circuits import HelianthusCircuitCoordinator
+    from .coordinator_devices import HelianthusCoordinator
+    from .coordinator_energy import HelianthusEnergyCoordinator
+    from .coordinator_fm5 import HelianthusFM5Coordinator
+    from .coordinator_radio import HelianthusRadioDeviceCoordinator
+    from .coordinator_schedules import HelianthusScheduleCoordinator
+    from .coordinator_semantic import HelianthusSemanticCoordinator
+    from .coordinator_status import HelianthusStatusCoordinator
+    from .coordinator_system import HelianthusSystemCoordinator
 
 
 @dataclass(frozen=True)
@@ -52,19 +50,17 @@ async def async_create_domain_coordinators(
     hass: object, client: object, scan_interval: object
 ) -> DomainCoordinators:
     """Create every domain coordinator, then run each first refresh in order."""
-    from .coordinator import (
-        HelianthusAdapterInfoCoordinator,
-        HelianthusBoilerCoordinator,
-        HelianthusCircuitCoordinator,
-        HelianthusCoordinator,
-        HelianthusEnergyCoordinator,
-        HelianthusFM5Coordinator,
-        HelianthusRadioDeviceCoordinator,
-        HelianthusScheduleCoordinator,
-        HelianthusSemanticCoordinator,
-        HelianthusStatusCoordinator,
-        HelianthusSystemCoordinator,
-    )
+    from .coordinator_adapter_info import HelianthusAdapterInfoCoordinator
+    from .coordinator_boiler import HelianthusBoilerCoordinator
+    from .coordinator_circuits import HelianthusCircuitCoordinator
+    from .coordinator_devices import HelianthusCoordinator
+    from .coordinator_energy import HelianthusEnergyCoordinator
+    from .coordinator_fm5 import HelianthusFM5Coordinator
+    from .coordinator_radio import HelianthusRadioDeviceCoordinator
+    from .coordinator_schedules import HelianthusScheduleCoordinator
+    from .coordinator_semantic import HelianthusSemanticCoordinator
+    from .coordinator_status import HelianthusStatusCoordinator
+    from .coordinator_system import HelianthusSystemCoordinator
 
     coordinators = DomainCoordinators(
         device_coordinator=HelianthusCoordinator(hass, client, scan_interval),

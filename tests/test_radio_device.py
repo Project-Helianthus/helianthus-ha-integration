@@ -145,7 +145,7 @@ _ensure_homeassistant_stubs()
 from custom_components.helianthus import binary_sensor as binary_sensor_platform
 from custom_components.helianthus import sensor as sensor_platform
 from custom_components.helianthus import subscriptions
-from custom_components.helianthus.coordinator import HelianthusRadioDeviceCoordinator
+from custom_components.helianthus.coordinator_radio import HelianthusRadioDeviceCoordinator
 
 
 class _FakeCoordinator:

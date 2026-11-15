@@ -30,7 +30,23 @@ def _constants(filename):
     return SimpleNamespace(**values)
 
 
-coordinator = _constants("coordinator.py")
+coordinator = SimpleNamespace(**{
+    name: value
+    for module in (
+        "coordinator_adapter_info",
+        "coordinator_boiler",
+        "coordinator_circuits",
+        "coordinator_devices",
+        "coordinator_energy",
+        "coordinator_fm5",
+        "coordinator_radio",
+        "coordinator_schedules",
+        "coordinator_semantic",
+        "coordinator_status",
+        "coordinator_system",
+    )
+    for name, value in vars(_constants(f"{module}.py")).items()
+})
 subscriptions = _constants("subscriptions.py")
 pv_m2m = _constants("pv_m2m.py")
 storage_m2m = _constants("storage_m2m.py")

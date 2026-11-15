@@ -333,6 +333,27 @@ def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))
 
 
+COORDINATOR_MODULES = (
+    ("coordinator_adapter_info", "HelianthusAdapterInfoCoordinator"),
+    ("coordinator_boiler", "HelianthusBoilerCoordinator"),
+    ("coordinator_circuits", "HelianthusCircuitCoordinator"),
+    ("coordinator_devices", "HelianthusCoordinator"),
+    ("coordinator_energy", "HelianthusEnergyCoordinator"),
+    ("coordinator_fm5", "HelianthusFM5Coordinator"),
+    ("coordinator_radio", "HelianthusRadioDeviceCoordinator"),
+    ("coordinator_schedules", "HelianthusScheduleCoordinator"),
+    ("coordinator_semantic", "HelianthusSemanticCoordinator"),
+    ("coordinator_status", "HelianthusStatusCoordinator"),
+    ("coordinator_system", "HelianthusSystemCoordinator"),
+)
+
+
+def _install_coordinator_doubles(install, coordinator_class):
+    """Replace every domain coordinator module by one serving ``coordinator_class``."""
+    for module_name, class_name in COORDINATOR_MODULES:
+        install(f"custom_components.helianthus.{module_name}", **{class_name: coordinator_class})
+
+
 @pytest.mark.parametrize("readable_snapshot", [False, True])
 def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_snapshot):
     """Execute the real setup function with fake HA registries and legacy owners."""
@@ -375,17 +396,8 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         def async_add_listener(self, *args):
             return lambda: None
 
-    # A module double keeps this test independent of HA's DataUpdateCoordinator.
-    install("custom_components.helianthus.coordinator", **{
-        name: LegacyCoordinator for name in (
-            "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator",
-            "HelianthusCircuitCoordinator", "HelianthusCoordinator",
-            "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
-            "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator",
-            "HelianthusSemanticCoordinator", "HelianthusSystemCoordinator",
-            "HelianthusStatusCoordinator",
-        )
-    })
+    # Module doubles keep this test independent of HA's DataUpdateCoordinator.
+    _install_coordinator_doubles(install, LegacyCoordinator)
     install("custom_components.helianthus.subscriptions", start_subscriptions=AsyncMock())
     for family in ("pv", "storage", "evse"):
         install(f"custom_components.helianthus.{family}_m2m", **{

@@ -8,19 +8,17 @@ if TYPE_CHECKING:
 
     from aiohttp import ClientSession
 
-    from .coordinator import (
-        HelianthusAdapterInfoCoordinator,
-        HelianthusBoilerCoordinator,
-        HelianthusCircuitCoordinator,
-        HelianthusCoordinator,
-        HelianthusEnergyCoordinator,
-        HelianthusFM5Coordinator,
-        HelianthusRadioDeviceCoordinator,
-        HelianthusScheduleCoordinator,
-        HelianthusSemanticCoordinator,
-        HelianthusStatusCoordinator,
-        HelianthusSystemCoordinator,
-    )
+    from .coordinator_adapter_info import HelianthusAdapterInfoCoordinator
+    from .coordinator_boiler import HelianthusBoilerCoordinator
+    from .coordinator_circuits import HelianthusCircuitCoordinator
+    from .coordinator_devices import HelianthusCoordinator
+    from .coordinator_energy import HelianthusEnergyCoordinator
+    from .coordinator_fm5 import HelianthusFM5Coordinator
+    from .coordinator_radio import HelianthusRadioDeviceCoordinator
+    from .coordinator_schedules import HelianthusScheduleCoordinator
+    from .coordinator_semantic import HelianthusSemanticCoordinator
+    from .coordinator_status import HelianthusStatusCoordinator
+    from .coordinator_system import HelianthusSystemCoordinator
     from .device_ids import DeviceIdentifier
     from .eebus_admin_coordinator import EEBusAdminV1Coordinator
     from .eebus_pairing import EEBusActionTerminalBroker

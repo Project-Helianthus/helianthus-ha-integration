@@ -22,7 +22,7 @@ from test_coordinator import (
     QUERY_SYSTEM_SENSITIVE,
     _build_system_coordinator,
     _ScriptedClient,
-    coordinator_module,
+    coordinator_system,
 )
 from test_system import (
     _build_payload,
@@ -109,7 +109,7 @@ def test_missing_new_field_is_handled_and_a_former_field_is_not(row) -> None:  #
     client = _ScriptedClient([_missing(name)])
     result = asyncio.run(_build_system_coordinator(client)._async_update_data())
     assert result == {"state": {}, "config": {}, "properties": {}, "metadata": {}}
-    with pytest.raises(coordinator_module.UpdateFailed):
+    with pytest.raises(coordinator_system.UpdateFailed):
         asyncio.run(_build_system_coordinator(_ScriptedClient([_missing(former)]))._async_update_data())
 
 

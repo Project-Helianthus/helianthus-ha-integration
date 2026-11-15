@@ -508,11 +508,11 @@ def _computed_documents() -> list[Document]:
     from test_sensor import _ensure_homeassistant_stubs
 
     _ensure_homeassistant_stubs()
-    from custom_components.helianthus import coordinator, semantic_snapshot
+    from custom_components.helianthus import coordinator_system, semantic_snapshot
 
     return [
         Document("semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY", semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY),
-        Document("coordinator.QUERY_SYSTEM_LEGACY", coordinator.QUERY_SYSTEM_LEGACY),
+        Document("coordinator_system.QUERY_SYSTEM_LEGACY", coordinator_system.QUERY_SYSTEM_LEGACY),
     ]
 
 

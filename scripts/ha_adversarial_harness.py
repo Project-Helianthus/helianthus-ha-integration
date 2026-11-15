@@ -272,7 +272,7 @@ def load_gateway_report(path: Path) -> tuple[dict[str, Any], str]:
 def _semantic_class():
     """Load the production retention implementation without requiring HA at CLI time."""
     try:
-        from custom_components.helianthus.coordinator import HelianthusSemanticCoordinator
+        from custom_components.helianthus.coordinator_semantic import HelianthusSemanticCoordinator
     except ModuleNotFoundError as exc:
         if exc.name != "homeassistant":
             raise
@@ -294,7 +294,7 @@ def _semantic_class():
         sys.modules.setdefault("homeassistant", homeassistant_module)
         sys.modules.setdefault("homeassistant.helpers", helpers_module)
         sys.modules.setdefault("homeassistant.helpers.update_coordinator", update_module)
-        from custom_components.helianthus.coordinator import HelianthusSemanticCoordinator
+        from custom_components.helianthus.coordinator_semantic import HelianthusSemanticCoordinator
     return HelianthusSemanticCoordinator
 
 
@@ -550,6 +550,21 @@ def _replay_adv03() -> None:
     _assert_write_ready(status, semantic)
 
 
+_COORDINATOR_DOMAIN_MODULES = (
+    ("coordinator_adapter_info", "HelianthusAdapterInfoCoordinator"),
+    ("coordinator_boiler", "HelianthusBoilerCoordinator"),
+    ("coordinator_circuits", "HelianthusCircuitCoordinator"),
+    ("coordinator_devices", "HelianthusCoordinator"),
+    ("coordinator_energy", "HelianthusEnergyCoordinator"),
+    ("coordinator_fm5", "HelianthusFM5Coordinator"),
+    ("coordinator_radio", "HelianthusRadioDeviceCoordinator"),
+    ("coordinator_schedules", "HelianthusScheduleCoordinator"),
+    ("coordinator_semantic", "HelianthusSemanticCoordinator"),
+    ("coordinator_status", "HelianthusStatusCoordinator"),
+    ("coordinator_system", "HelianthusSystemCoordinator"),
+)
+
+
 def _replay_actual_delayed_inventory_listener() -> None:
     """Drive the real semantic listener of entry setup and its one-shot scheduler.
 
@@ -642,17 +657,12 @@ def _replay_actual_delayed_inventory_listener() -> None:
         raise identity.GatewayIdentityVerificationError("offline")
     identity.verify_gateway_identity = unavailable_identity
     replace("custom_components.helianthus.identity", identity)
-    coordinator_module = types.ModuleType("custom_components.helianthus.coordinator")
-    for name in (
-        "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator", "HelianthusCircuitCoordinator",
-        "HelianthusCoordinator", "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
-        "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator", "HelianthusSystemCoordinator",
-        "HelianthusStatusCoordinator",
-    ):
-        setattr(coordinator_module, name, FakeCoordinator)
-    coordinator_module.HelianthusCoordinator = FakeDeviceCoordinator
-    coordinator_module.HelianthusSemanticCoordinator = FakeSemanticCoordinator
-    replace("custom_components.helianthus.coordinator", coordinator_module)
+    fakes = {"HelianthusCoordinator": FakeDeviceCoordinator,
+             "HelianthusSemanticCoordinator": FakeSemanticCoordinator}
+    for module_name, class_name in _COORDINATOR_DOMAIN_MODULES:
+        coordinator_module = types.ModuleType(f"custom_components.helianthus.{module_name}")
+        setattr(coordinator_module, class_name, fakes.get(class_name, FakeCoordinator))
+        replace(coordinator_module.__name__, coordinator_module)
     subscriptions = types.ModuleType("custom_components.helianthus.subscriptions")
     async def no_subscriptions(*_args: object, **_kwargs: object) -> None:
         return None

@@ -25,12 +25,17 @@ from custom_components.helianthus.device_ids import (
 )
 
 COORDINATORS = (
-    "HelianthusAdapterInfoCoordinator", "HelianthusBoilerCoordinator",
-    "HelianthusCircuitCoordinator", "HelianthusCoordinator",
-    "HelianthusEnergyCoordinator", "HelianthusFM5Coordinator",
-    "HelianthusRadioDeviceCoordinator", "HelianthusScheduleCoordinator",
-    "HelianthusSemanticCoordinator", "HelianthusSystemCoordinator",
-    "HelianthusStatusCoordinator",
+    ("coordinator_adapter_info", "HelianthusAdapterInfoCoordinator"),
+    ("coordinator_boiler", "HelianthusBoilerCoordinator"),
+    ("coordinator_circuits", "HelianthusCircuitCoordinator"),
+    ("coordinator_devices", "HelianthusCoordinator"),
+    ("coordinator_energy", "HelianthusEnergyCoordinator"),
+    ("coordinator_fm5", "HelianthusFM5Coordinator"),
+    ("coordinator_radio", "HelianthusRadioDeviceCoordinator"),
+    ("coordinator_schedules", "HelianthusScheduleCoordinator"),
+    ("coordinator_semantic", "HelianthusSemanticCoordinator"),
+    ("coordinator_status", "HelianthusStatusCoordinator"),
+    ("coordinator_system", "HelianthusSystemCoordinator"),
 )
 INVENTORY_DEVICE = {"address": 8, "device_id": "BAI00", "manufacturer": "Synthetic"}
 CURRENT_BUS_KEY = build_bus_device_key(stable_bus_identity_model("BAI00", None), 8)
@@ -162,8 +167,9 @@ def install_home_assistant(monkeypatch, devices, entities):
 
 
 def install_independent_owners(monkeypatch, coordinator_data):
-    install_module(monkeypatch, "custom_components.helianthus.coordinator",
-                   **{name: _coordinator_class(name, coordinator_data) for name in COORDINATORS})
+    for module_name, name in COORDINATORS:
+        install_module(monkeypatch, f"custom_components.helianthus.{module_name}",
+                       **{name: _coordinator_class(name, coordinator_data)})
     install_module(monkeypatch, "custom_components.helianthus.subscriptions",
                    start_subscriptions=AsyncMock())
     for family in ("pv", "storage", "evse"):

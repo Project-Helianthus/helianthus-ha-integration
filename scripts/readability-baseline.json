@@ -56,46 +56,16 @@
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/coordinator.py",
+      "path": "custom_components/helianthus/coordinator_adapter_info.py",
       "symbol": "HelianthusAdapterInfoCoordinator._async_update_data",
       "rule": "C901",
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/coordinator.py",
+      "path": "custom_components/helianthus/coordinator_boiler.py",
       "symbol": "HelianthusBoilerCoordinator._async_update_data",
       "rule": "C901",
       "count": 17
-    },
-    {
-      "path": "custom_components/helianthus/coordinator.py",
-      "symbol": "HelianthusFM5Coordinator._async_update_data",
-      "rule": "C901",
-      "count": 12
-    },
-    {
-      "path": "custom_components/helianthus/coordinator.py",
-      "symbol": "HelianthusRadioDeviceCoordinator._materialize_snapshot",
-      "rule": "C901",
-      "count": 11
-    },
-    {
-      "path": "custom_components/helianthus/coordinator.py",
-      "symbol": "HelianthusStatusCoordinator._async_update_data",
-      "rule": "C901",
-      "count": 13
-    },
-    {
-      "path": "custom_components/helianthus/coordinator.py",
-      "symbol": "HelianthusSystemCoordinator._async_update_data",
-      "rule": "C901",
-      "count": 24
-    },
-    {
-      "path": "custom_components/helianthus/coordinator.py",
-      "symbol": "HelianthusSystemCoordinator._async_update_data",
-      "rule": "PLR0915",
-      "count": 68
     },
     {
       "path": "custom_components/helianthus/coordinator_fetch.py",
@@ -104,10 +74,40 @@
       "count": 22
     },
     {
+      "path": "custom_components/helianthus/coordinator_fm5.py",
+      "symbol": "HelianthusFM5Coordinator._async_update_data",
+      "rule": "C901",
+      "count": 12
+    },
+    {
       "path": "custom_components/helianthus/coordinator_merge.py",
       "symbol": "normalize_radio_device",
       "rule": "C901",
       "count": 14
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_radio.py",
+      "symbol": "HelianthusRadioDeviceCoordinator._materialize_snapshot",
+      "rule": "C901",
+      "count": 11
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_status.py",
+      "symbol": "HelianthusStatusCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_system.py",
+      "symbol": "HelianthusSystemCoordinator._async_update_data",
+      "rule": "C901",
+      "count": 24
+    },
+    {
+      "path": "custom_components/helianthus/coordinator_system.py",
+      "symbol": "HelianthusSystemCoordinator._async_update_data",
+      "rule": "PLR0915",
+      "count": 68
     },
     {
       "path": "custom_components/helianthus/date.py",
@@ -1295,7 +1295,7 @@
       "path": "scripts/ha_adversarial_harness.py",
       "symbol": "_replay_actual_delayed_inventory_listener",
       "rule": "PLR0915",
-      "count": 97
+      "count": 96
     },
     {
       "path": "scripts/ha_adversarial_harness.py",
@@ -1481,7 +1481,7 @@
       "path": "tests/test_coordinator.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 3
+      "count": 2
     },
     {
       "path": "tests/test_coordinator.py",
