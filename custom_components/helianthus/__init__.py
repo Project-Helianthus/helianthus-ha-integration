@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from urllib.parse import urlsplit
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -16,22 +16,16 @@ from .admission import (
 )
 from .const import (
     CONF_DHW_SCHEDULE_HELPER,
-    CONF_HOST_ALIASES,
-    CONF_INSTANCE_GUID,
-    CONF_PATH,
-    CONF_TRANSPORT,
     CONF_USE_SUBSCRIPTIONS,
-    CONF_VERSION,
     CONF_ZONE_SCHEDULE_HELPERS,
     DEFAULT_DHW_SCHEDULE_HELPER,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_GRAPHQL_PATH,
-    DEFAULT_GRAPHQL_TRANSPORT,
     DEFAULT_USE_SUBSCRIPTIONS,
     DEFAULT_ZONE_SCHEDULE_HELPERS,
     DOMAIN,
 )
 from .device_ids import has_known_identity_text
+from .entry_ownership import iter_identifier_pairs
 
 PLATFORMS: list[str] = [
     "sensor",
@@ -192,26 +186,6 @@ def _stable_bus_identity_model(device: dict) -> str:
     return stable_bus_identity_model(device.get("device_id"), device.get("product_model"))
 
 
-def _identifier_belongs_to_entry(token: str, entry_id: str) -> bool:
-    """Return whether a device identifier token is of a family created for the entry.
-
-    Known families: daemon, adapter, bus, zone, circuit, radio, cylinder, solar,
-    DHW, energy, boiler, eeBUS administration, and the semantic-snapshot, PV,
-    storage and EVSE asset devices. Fail-safe: any other token that is scoped
-    to the entry id is kept as well.
-    """
-    if token in {f"daemon-{entry_id}", f"adapter-{entry_id}"}:
-        return True
-    return token.startswith(f"{entry_id}-")
-
-
-def _identifier_matches_any_entry(token: str, active_entry_ids: set[str]) -> bool:
-    for entry_id in active_entry_ids:
-        if _identifier_belongs_to_entry(token, entry_id):
-            return True
-    return False
-
-
 def _is_stale_bus_identifier(token: str, entry_id: str, known_bus_devices: set[str]) -> bool:
     prefix = f"{entry_id}-bus-"
     if not token.startswith(prefix):
@@ -238,7 +212,7 @@ def _bus_identifier_tokens_for_entry(identifiers: set[object], entry_id: str) ->
     prefix = f"{entry_id}-bus-"
     return tuple(
         token
-        for identifier_domain, token in _iter_identifier_pairs(identifiers)
+        for identifier_domain, token in iter_identifier_pairs(identifiers)
         if identifier_domain == DOMAIN and token.startswith(prefix)
     )
 
@@ -320,15 +294,6 @@ def _select_bus_migration_target(
     return best_entry
 
 
-def _iter_identifier_pairs(identifiers: set[object]) -> tuple[tuple[str, str], ...]:
-    pairs: list[tuple[str, str]] = []
-    for identifier in identifiers:
-        if not isinstance(identifier, (tuple, list)) or len(identifier) < 2:
-            continue
-        pairs.append((str(identifier[0]), str(identifier[1])))
-    return tuple(pairs)
-
-
 def _parse_zone_schedule_helper_bindings(raw: str) -> dict[str, str]:
     bindings: dict[str, str] = {}
     text = str(raw or "").strip()
@@ -374,221 +339,6 @@ def _parse_identifier_index(token: str, prefix: str) -> int | None:
     if value < 0:
         return None
     return value
-
-
-def _config_entry_sort_key(config_entry: object) -> str:
-    """Return a stable ordering key for duplicate config entry ownership."""
-
-    return str(getattr(config_entry, "entry_id", "") or "")
-
-
-def _config_entry_enabled(config_entry: object) -> bool:
-    """Return whether a config entry may own live gateway setup."""
-
-    return getattr(config_entry, "disabled_by", None) is None
-
-
-_HASSIO_HELIANTHUS_FALLBACK_HOSTS = (
-    "local-helianthus.local.hass.io",
-    "172.30.32.1",
-)
-
-
-def _entry_identity_probe_addresses(
-    data: Mapping[str, object],
-    primary_host: str,
-) -> tuple[str, ...]:
-    """Return secondary hosts to try when verifying a stored gateway endpoint."""
-
-    ordered: list[str] = []
-    seen = {primary_host}
-
-    def add(value: object) -> None:
-        host = str(value or "").strip()
-        if not host or host in seen:
-            return
-        seen.add(host)
-        ordered.append(host)
-
-    aliases = data.get(CONF_HOST_ALIASES)
-    if isinstance(aliases, str):
-        add(aliases)
-    elif isinstance(aliases, Iterable):
-        for alias in aliases:
-            add(alias)
-
-    if primary_host.startswith("172.30."):
-        for host in _HASSIO_HELIANTHUS_FALLBACK_HOSTS:
-            add(host)
-
-    return tuple(ordered)
-
-
-def _update_entry_endpoint_if_changed(
-    hass: object,
-    entry: object,
-    verified_endpoint: object,
-    *,
-    version: str | None,
-) -> bool:
-    """Persist a verified reachable endpoint when a config entry drifted."""
-
-    from .identity import same_endpoint, updated_entry_data
-
-    data = getattr(entry, "data", None) or {}
-    if same_endpoint(data, verified_endpoint):
-        return False
-    hass.config_entries.async_update_entry(
-        entry,
-        data=updated_entry_data(
-            data,
-            verified_endpoint,
-            version=version or getattr(verified_endpoint, "version", None),
-        ),
-        unique_id=verified_endpoint.instance_guid,
-    )
-    return True
-
-
-async def _find_verified_entry_by_configured_instance_guid(
-    hass: object,
-    session: object,
-    instance_guid: str,
-    *,
-    exclude_entry_id: str | None = None,
-) -> object | None:
-    from .identity import (
-        GatewayIdentityVerificationError,
-        configured_instance_guid,
-        verify_gateway_identity,
-    )
-
-    owner_entry: object | None = None
-
-    for config_entry in hass.config_entries.async_entries(DOMAIN):
-        if getattr(config_entry, "entry_id", None) == exclude_entry_id:
-            continue
-        if not _config_entry_enabled(config_entry):
-            continue
-        data = getattr(config_entry, "data", None) or {}
-        if (
-            configured_instance_guid(data, getattr(config_entry, "unique_id", None))
-            != instance_guid
-        ):
-            continue
-        try:
-            host = str(data["host"])
-            port = int(data["port"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        path = data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
-        transport = data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
-        version = (data.get(CONF_VERSION) or "").strip() or None
-        try:
-            await verify_gateway_identity(
-                session=session,
-                host=host,
-                port=port,
-                path=path,
-                transport=transport,
-                expected_instance_guid=instance_guid,
-                version=version,
-            )
-        except (GatewayIdentityVerificationError, TypeError, ValueError) as exc:
-            _LOGGER.debug(
-                "Configured Helianthus owner entry %s did not verify live "
-                "instance GUID %s: %s",
-                getattr(config_entry, "entry_id", "<unknown>"),
-                instance_guid,
-                getattr(exc, "reason", type(exc).__name__),
-            )
-            continue
-        if owner_entry is None or _config_entry_sort_key(config_entry) < _config_entry_sort_key(
-            owner_entry
-        ):
-            owner_entry = config_entry
-    return owner_entry
-
-
-def _merge_duplicate_config_entry_options(
-    hass: object,
-    *,
-    alias_entry: object,
-    owner_entry: object,
-) -> bool:
-    """Preserve alias-only options before removing a duplicate config entry."""
-
-    alias_options = dict(getattr(alias_entry, "options", None) or {})
-    if not alias_options:
-        return False
-    owner_options = dict(getattr(owner_entry, "options", None) or {})
-    merged_options = _deep_merge_options(alias_options, owner_options)
-    if merged_options == owner_options:
-        return False
-    hass.config_entries.async_update_entry(owner_entry, options=merged_options)
-    return True
-
-
-def _deep_merge_options(
-    alias_options: Mapping[str, object],
-    owner_options: Mapping[str, object],
-) -> dict[str, object]:
-    """Merge alias-only nested options while preserving owner conflicts."""
-
-    merged = dict(alias_options)
-    for key, owner_value in owner_options.items():
-        alias_value = merged.get(key)
-        if isinstance(alias_value, Mapping) and isinstance(owner_value, Mapping):
-            merged[key] = _deep_merge_options(alias_value, owner_value)
-        else:
-            merged[key] = owner_value
-    return merged
-
-
-def _schedule_duplicate_config_entry_removal(hass: object, entry_id: str) -> bool:
-    """Schedule removal of an alias entry after setup returns."""
-
-    async_remove = getattr(hass.config_entries, "async_remove", None)
-    async_create_task = getattr(hass, "async_create_task", None)
-    if not callable(async_remove) or not callable(async_create_task):
-        return False
-    async_create_task(async_remove(entry_id))
-    return True
-
-
-def _remove_config_entry_registry_state(
-    *,
-    device_registry: object,
-    entity_registry: object,
-    entry_id: str,
-    device_entries_for_config_entry: object,
-    entity_entries_for_config_entry: object,
-) -> tuple[int, int]:
-    """Remove device/entity registry rows that belong only to a duplicate entry."""
-
-    removed_entities = 0
-    for entity_entry in tuple(entity_entries_for_config_entry(entity_registry, entry_id)):
-        entity_registry.async_remove(entity_entry.entity_id)
-        removed_entities += 1
-
-    removed_devices = 0
-    for device_entry in tuple(device_entries_for_config_entry(device_registry, entry_id)):
-        if set(getattr(device_entry, "config_entries", ()) or ()) - {entry_id}:
-            continue
-        device_registry.async_remove_device(device_entry.id)
-        removed_devices += 1
-
-    return removed_entities, removed_devices
-
-
-async def async_sanitize_legacy_eebus_admin_entry(hass: object, entry: object) -> bool:
-    """Remove the retired eeBUS field without changing any other entry state."""
-    data = dict(getattr(entry, "data", {}) or {})
-    if "eebus_admin_credential" not in data:
-        return False
-    data.pop("eebus_admin_credential")
-    hass.config_entries.async_update_entry(entry, data=data)
-    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

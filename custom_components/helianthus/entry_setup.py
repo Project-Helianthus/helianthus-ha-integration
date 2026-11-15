@@ -10,15 +10,9 @@ from urllib.parse import urlsplit
 
 from . import (
     CONF_DHW_SCHEDULE_HELPER,
-    CONF_INSTANCE_GUID,
-    CONF_PATH,
-    CONF_TRANSPORT,
     CONF_USE_SUBSCRIPTIONS,
-    CONF_VERSION,
     CONF_ZONE_SCHEDULE_HELPERS,
     DEFAULT_DHW_SCHEDULE_HELPER,
-    DEFAULT_GRAPHQL_PATH,
-    DEFAULT_GRAPHQL_TRANSPORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
     DEFAULT_ZONE_SCHEDULE_HELPERS,
@@ -29,29 +23,26 @@ from . import (
     _canonical_bus_display_name,
     _canonical_bus_model_name,
     _clean_label,
-    _config_entry_sort_key,
-    _entry_identity_probe_addresses,
-    _find_verified_entry_by_configured_instance_guid,
     _format_hex4_version,
-    _identifier_matches_any_entry,
     _is_stale_bus_identifier,
-    _iter_identifier_pairs,
-    _merge_duplicate_config_entry_options,
     _parse_identifier_index,
     _parse_zone_schedule_helper_bindings,
-    _remove_config_entry_registry_state,
-    _schedule_duplicate_config_entry_removal,
     _select_bus_migration_target,
     _stale_bus_address_unique_id,
-    _update_entry_endpoint_if_changed,
     _zone_instance_from_id,
-    async_sanitize_legacy_eebus_admin_entry,
     async_setup_eebus_admin_boundary,
     async_unload_eebus_admin_boundary,
     update_effective_admission,
     status_admission_trusted,
 )
 from .admission import REPAIR_EMPTY_INVENTORY_UNTRUSTED
+from .entry_connection import ConnectionSkipped, async_connect_gateway
+from .entry_ownership import (
+    DuplicateOwnerRefusal,
+    async_prepare_entry,
+    iter_identifier_pairs,
+    refuse_duplicate_setup,
+)
 from .entry_runtime import EntryRuntime
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
 from .semantic_freshness import semantic_target_available, semantic_target_is_stale
@@ -431,33 +422,13 @@ def _schedule_unclaimed_sparse_reload(
         schedule_reload(reason)
 
 
-def _device_linked_to_live_entry(hass, device_entry, active_entry_ids) -> bool:
-    """Return True if the device is linked to an active entry or a live foreign entry."""
-    linked_entry_ids = set(getattr(device_entry, "config_entries", None) or ())
-    if active_entry_ids & linked_entry_ids:
-        return True
-    get_entry = getattr(hass.config_entries, "async_get_entry", None)
-    return get_entry is not None and any(
-        get_entry(linked_id) is not None for linked_id in linked_entry_ids
-    )
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from homeassistant.helpers.event import async_track_state_change_event
-    from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
-    from .graphql import GraphQLClient, build_graphql_url
-    from .identity import (
-        GatewayIdentityVerificationError,
-        configured_instance_guid,
-        normalize_instance_guid,
-        updated_entry_data,
-        verify_gateway_identity,
-    )
+    from homeassistant.const import CONF_SCAN_INTERVAL
     from .coordinator import (
         HelianthusAdapterInfoCoordinator,
         HelianthusBoilerCoordinator,
@@ -518,204 +489,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zone_ids_by_climate_unique_id,
     )
 
-    await async_sanitize_legacy_eebus_admin_entry(hass, entry)
+    prepared = await async_prepare_entry(hass, entry)
+    device_registry = prepared.device_registry
+    entity_registry = prepared.entity_registry
+    active_entry_ids = prepared.active_entry_ids
 
-    device_registry = dr.async_get(hass)
-    entity_registry = er.async_get(hass)
-
-    def refuse_duplicate_setup(owner_entry: object, instance_guid: str) -> bool:
-        options_merged = _merge_duplicate_config_entry_options(
-            hass,
-            alias_entry=entry,
-            owner_entry=owner_entry,
-        )
-        removed_entities, removed_devices = _remove_config_entry_registry_state(
-            device_registry=device_registry,
-            entity_registry=entity_registry,
-            entry_id=entry.entry_id,
-            device_entries_for_config_entry=dr.async_entries_for_config_entry,
-            entity_entries_for_config_entry=er.async_entries_for_config_entry,
-        )
-        _LOGGER.warning(
-            "Refusing to set up Helianthus entry %s because %s reports "
-            "instance GUID %s already owned by entry %s; removed %d stale "
-            "entities and %d stale devices; migrated_options=%s",
-            entry.entry_id,
-            host,
-            instance_guid,
-            owner_entry.entry_id,
-            removed_entities,
-            removed_devices,
-            options_merged,
-        )
-        if _schedule_duplicate_config_entry_removal(hass, entry.entry_id):
-            _LOGGER.warning(
-                "Scheduled duplicate Helianthus config entry %s for removal",
-                entry.entry_id,
-            )
-        return False
-
-    active_entry_ids = {
-        config_entry.entry_id for config_entry in hass.config_entries.async_entries(DOMAIN)
-    }
-
-    stale_entities_removed = 0
-    for entity_entry in tuple(entity_registry.entities.values()):
-        if entity_entry.platform != DOMAIN:
-            continue
-        if entity_entry.config_entry_id in active_entry_ids:
-            continue
-        entity_registry.async_remove(entity_entry.entity_id)
-        stale_entities_removed += 1
-
-    stale_devices_removed = 0
-    for device_entry in tuple(device_registry.devices.values()):
-        identifier_pairs = _iter_identifier_pairs(device_entry.identifiers)
-        domain_tokens = [
-            token
-            for identifier_domain, token in identifier_pairs
-            if identifier_domain == DOMAIN
-        ]
-        if not domain_tokens:
-            continue
-        if _device_linked_to_live_entry(hass, device_entry, active_entry_ids):
-            continue
-        if any(_identifier_matches_any_entry(token, active_entry_ids) for token in domain_tokens):
-            continue
-        device_registry.async_remove_device(device_entry.id)
-        stale_devices_removed += 1
-
-    if stale_entities_removed or stale_devices_removed:
-        _LOGGER.info(
-            "Helianthus stale cleanup removed %d entities and %d devices",
-            stale_entities_removed,
-            stale_devices_removed,
-        )
-
-    host = entry.data.get(CONF_HOST)
-    port = entry.data.get(CONF_PORT)
-    if not host or not port:
-        _LOGGER.warning("Config entry missing host/port; device discovery skipped")
+    connection = await async_connect_gateway(hass, entry)
+    if isinstance(connection, ConnectionSkipped):
         return True
-
-    session = async_get_clientsession(hass)
-    path = entry.data.get(CONF_PATH) or DEFAULT_GRAPHQL_PATH
-    transport = entry.data.get(CONF_TRANSPORT) or DEFAULT_GRAPHQL_TRANSPORT
-    version = (entry.data.get(CONF_VERSION) or "").strip() or None
-    entry_instance_guid = configured_instance_guid(entry.data, entry.unique_id)
-    try:
-        verified_endpoint = await verify_gateway_identity(
-            session=session,
-            host=str(host),
-            port=int(port),
-            path=path,
-            transport=transport,
-            addresses=_entry_identity_probe_addresses(entry.data, str(host)),
-            expected_instance_guid=None,
-            version=version,
-        )
-    except (GatewayIdentityVerificationError, TypeError, ValueError) as exc:
-        reason = getattr(exc, "reason", type(exc).__name__)
-        _LOGGER.debug(
-            "Stable identity refresh skipped for Helianthus entry %s: %s",
-            entry.entry_id,
-            reason,
-        )
-    else:
-        live_instance_guid = verified_endpoint.instance_guid
-        if entry_instance_guid is None:
-            entry_instance_guid = live_instance_guid
-            hass.config_entries.async_update_entry(
-                entry,
-                data=updated_entry_data(
-                    entry.data,
-                    verified_endpoint,
-                    version=version or verified_endpoint.version,
-                ),
-                unique_id=entry_instance_guid,
-            )
-            host = verified_endpoint.host
-            port = verified_endpoint.port
-            path = verified_endpoint.path
-            transport = verified_endpoint.transport
-            version = version or verified_endpoint.version
-            _LOGGER.info(
-                "Migrated Helianthus entry %s to stable instance GUID %s",
-                entry.entry_id,
-                entry_instance_guid,
-            )
-        elif live_instance_guid != entry_instance_guid:
-            duplicate_entry = await _find_verified_entry_by_configured_instance_guid(
-                hass,
-                session,
-                live_instance_guid,
-                exclude_entry_id=entry.entry_id,
-            )
-            if duplicate_entry is not None:
-                return refuse_duplicate_setup(duplicate_entry, live_instance_guid)
-
-            entry_instance_guid = live_instance_guid
-            hass.config_entries.async_update_entry(
-                entry,
-                data=updated_entry_data(
-                    entry.data,
-                    verified_endpoint,
-                    version=version or verified_endpoint.version,
-                ),
-                unique_id=entry_instance_guid,
-            )
-            host = verified_endpoint.host
-            port = verified_endpoint.port
-            path = verified_endpoint.path
-            transport = verified_endpoint.transport
-            version = version or verified_endpoint.version
-            _LOGGER.warning(
-                "Rebound Helianthus entry %s from stale instance GUID to live GUID %s",
-                entry.entry_id,
-                entry_instance_guid,
-            )
-        else:
-            duplicate_entry = await _find_verified_entry_by_configured_instance_guid(
-                hass,
-                session,
-                live_instance_guid,
-                exclude_entry_id=entry.entry_id,
-            )
-            if (
-                duplicate_entry is not None
-                and _config_entry_sort_key(duplicate_entry)
-                < _config_entry_sort_key(entry)
-            ):
-                return refuse_duplicate_setup(duplicate_entry, live_instance_guid)
-            if _update_entry_endpoint_if_changed(
-                hass,
-                entry,
-                verified_endpoint,
-                version=version or verified_endpoint.version,
-            ):
-                host = verified_endpoint.host
-                port = verified_endpoint.port
-                path = verified_endpoint.path
-                transport = verified_endpoint.transport
-                version = version or verified_endpoint.version
-                _LOGGER.info(
-                    "Rebound Helianthus entry %s to reachable endpoint %s:%s",
-                    entry.entry_id,
-                    host,
-                    port,
-                )
-
-    if entry_instance_guid is not None:
-        normalized_unique_id = normalize_instance_guid(entry.unique_id)
-        stored_data_guid = normalize_instance_guid(entry.data.get(CONF_INSTANCE_GUID))
-        if normalized_unique_id != entry_instance_guid or stored_data_guid != entry_instance_guid:
-            updated_data = dict(entry.data)
-            updated_data[CONF_INSTANCE_GUID] = entry_instance_guid
-            hass.config_entries.async_update_entry(
-                entry,
-                data=updated_data,
-                unique_id=entry_instance_guid,
-            )
+    if isinstance(connection, DuplicateOwnerRefusal):
+        return refuse_duplicate_setup(hass, entry, prepared, connection)
+    session = connection.session
+    graphql_url = connection.graphql_url
+    client = connection.client
+    entry_instance_guid = connection.instance_guid
 
     daemon_device_id = daemon_identifier(entry.entry_id)
     adapter_device_id = adapter_identifier(entry.entry_id)
@@ -740,8 +527,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     adapter_registry_device_id = adapter_device_entry.id
     del daemon_device_entry
 
-    graphql_url = build_graphql_url(host, port, path=path, transport=transport)
-    client = GraphQLClient(session=session, url=graphql_url)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     device_coordinator = HelianthusCoordinator(hass, client, scan_interval)
     status_coordinator = HelianthusStatusCoordinator(hass, client, scan_interval)
@@ -1480,7 +1265,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         radio_prefix = f"{entry.entry_id}-radio-"
         for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
             remove_device = False
-            for identifier_domain, token in _iter_identifier_pairs(device_entry.identifiers):
+            for identifier_domain, token in iter_identifier_pairs(device_entry.identifiers):
                 if identifier_domain != DOMAIN or not token.startswith(radio_prefix):
                     continue
                 radio_bus_key = token[len(radio_prefix):]
@@ -1529,7 +1314,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         removed = 0
         for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
-            identifier_pairs = _iter_identifier_pairs(device_entry.identifiers)
+            identifier_pairs = iter_identifier_pairs(device_entry.identifiers)
             domain_tokens = [
                 token for identifier_domain, token in identifier_pairs if identifier_domain == DOMAIN
             ]

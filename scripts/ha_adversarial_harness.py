@@ -560,7 +560,10 @@ def _replay_actual_delayed_inventory_listener() -> None:
     _install_entity_stubs()
     import importlib
 
-    entry_setup = importlib.import_module("custom_components.helianthus.entry_setup")
+    entry_setup, entry_ownership = (
+        importlib.import_module(f"custom_components.helianthus.{name}")
+        for name in ("entry_setup", "entry_ownership")
+    )
     saved_modules: dict[str, types.ModuleType | None] = {}
 
     def replace(name: str, module: types.ModuleType) -> None:
@@ -666,13 +669,13 @@ def _replay_actual_delayed_inventory_listener() -> None:
     services.async_setup_optional_eebus_admin_service = no_admin
     replace("custom_components.helianthus.entry_services", services)
 
-    original_sanitize = entry_setup.async_sanitize_legacy_eebus_admin_entry
+    original_sanitize = entry_ownership.async_sanitize_legacy_eebus_admin_entry
     original_forward = entry_setup._async_forward_platforms_and_finalize
     async def no_sanitize(*_args: object, **_kwargs: object) -> None:
         return None
     async def no_forward(*_args: object, **_kwargs: object) -> None:
         return None
-    entry_setup.async_sanitize_legacy_eebus_admin_entry = no_sanitize
+    entry_ownership.async_sanitize_legacy_eebus_admin_entry = no_sanitize
     entry_setup._async_forward_platforms_and_finalize = no_forward
 
     reloads: list[str] = []
@@ -709,7 +712,7 @@ def _replay_actual_delayed_inventory_listener() -> None:
         if reloads != ["offline"]:
             raise HarnessError("production delayed inventory scheduler reloaded unexpected entry")
     finally:
-        entry_setup.async_sanitize_legacy_eebus_admin_entry = original_sanitize
+        entry_ownership.async_sanitize_legacy_eebus_admin_entry = original_sanitize
         entry_setup._async_forward_platforms_and_finalize = original_forward
         for name, original in saved_modules.items():
             if original is None:

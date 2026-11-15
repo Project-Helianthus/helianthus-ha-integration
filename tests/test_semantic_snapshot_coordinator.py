@@ -339,7 +339,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
     import sys
     from types import ModuleType
     from unittest.mock import AsyncMock
-    from custom_components.helianthus import entry_setup
+    from custom_components.helianthus import entry_ownership, entry_setup
     from custom_components.helianthus.graphql import GraphQLResponseError
     from custom_components.helianthus import graphql, identity
     from test_semantic_snapshot_sensors import ROWS, readable, shared, sensor_platform
@@ -395,7 +395,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
     admin = SimpleNamespace(lifecycle=SimpleNamespace(clear=lambda: None, action_broker=object()))
     install("custom_components.helianthus.entry_services",
             async_setup_optional_eebus_admin_service=AsyncMock(return_value=(admin, None, False)))
-    monkeypatch.setattr(entry_setup, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
+    monkeypatch.setattr(entry_ownership, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
     monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
 
     async def exercise():

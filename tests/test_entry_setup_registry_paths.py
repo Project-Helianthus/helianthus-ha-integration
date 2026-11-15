@@ -31,7 +31,7 @@ from entry_setup_harness import (
     run,
 )
 
-from custom_components.helianthus import DOMAIN, entry_setup, identity
+from custom_components.helianthus import DOMAIN, entry_connection, entry_setup, identity
 from custom_components.helianthus.device_ids import (
     adapter_identifier,
     bus_identifier,
@@ -107,7 +107,8 @@ def test_duplicate_entry_is_refused_and_its_registry_rows_removed(
     async def find(hass, session, guid, *, exclude_entry_id):
         lookups.append((guid, exclude_entry_id))
         return owner
-    harness.monkeypatch.setattr(entry_setup, "_find_verified_entry_by_configured_instance_guid", find)
+    harness.monkeypatch.setattr(
+        entry_connection, "find_verified_entry_by_configured_instance_guid", find)
     setup = harness.build(owner, alias)
 
     assert run(setup, alias) is False

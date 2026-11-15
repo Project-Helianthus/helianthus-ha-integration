@@ -18,7 +18,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
-from custom_components.helianthus import DOMAIN, entry_setup, graphql, identity
+from custom_components.helianthus import DOMAIN, entry_ownership, entry_setup, graphql, identity
 from custom_components.helianthus.device_ids import (
     build_bus_device_key,
     stable_bus_identity_model,
@@ -175,7 +175,7 @@ def install_independent_owners(monkeypatch, coordinator_data):
     install_module(monkeypatch, "custom_components.helianthus.entry_services",
                    async_setup_optional_eebus_admin_service=AsyncMock(
                        return_value=(admin, None, False)))
-    monkeypatch.setattr(entry_setup, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
+    monkeypatch.setattr(entry_ownership, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
     monkeypatch.setattr(entry_setup, "async_setup_semantic_snapshot", AsyncMock(return_value=None))
     monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: object())
     monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
