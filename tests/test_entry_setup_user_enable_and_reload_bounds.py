@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import test_entry_setup_registry_paths as paths
+import entry_setup_harness as paths
 import test_sparse_entity_reload_bound as sparse
 
 from custom_components.helianthus import DOMAIN, entry_cleanup, entry_setup
@@ -437,10 +437,10 @@ def harness(monkeypatch):
     """Registry-path doubles, a recorded Home Assistant enable reload and a test clock."""
     devices, entities = paths.DeviceRegistry(), paths.EntityRegistry()
     coordinator_data: dict[str, object] = {}
-    paths._install_home_assistant(monkeypatch, devices, entities)
-    paths._install_independent_owners(monkeypatch, coordinator_data)
-    paths._install(monkeypatch, "custom_components.helianthus.subscriptions",
-                   start_subscriptions=AsyncMock(return_value=None))
+    paths.install_home_assistant(monkeypatch, devices, entities)
+    paths.install_independent_owners(monkeypatch, coordinator_data)
+    paths.install_module(monkeypatch, "custom_components.helianthus.subscriptions",
+                         start_subscriptions=AsyncMock(return_value=None))
     enabled_entries: list[str] = []
     record_update = entities.async_update_entity
 
