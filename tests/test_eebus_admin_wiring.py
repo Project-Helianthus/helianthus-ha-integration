@@ -35,6 +35,7 @@ def test_candidate_and_raw_data_never_reach_hass_data_entities_storage_or_logs()
     for path in (
         component / "__init__.py",
         component / "entry_setup.py",
+        component / "entry_entity_cleanup.py",
         component / "entry_services.py",
         component / "entry_cleanup.py",
         component / "sensor.py",

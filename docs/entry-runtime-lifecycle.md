@@ -49,7 +49,8 @@ deferred callback and appends a discovery unsubscribe callback through
 selection signatures and requests a reload if one changes. No production code
 updates the mapping with `dict.update`. Mutable maps/lists retain their existing
 references. The domain-level `_admission_cleanup_counts` map is separate from
-`EntryRuntime` and is not a runtime field.
+`EntryRuntime` and is not a runtime field; the entity reconciler described
+below holds it.
 
 ## Setup and partial failure
 
@@ -96,16 +97,21 @@ The existing order is:
    `DeviceIdentities` with the boiler, regulator and function-module parents,
    the regulator's manufacturer and address, and the bus, radio, circuit and
    cylinder inventory the listeners compare against.
-7. Register listeners and optionally start GraphQL subscriptions. Steps 3 to 7
+7. Create the entity reconciler ([entry entity cleanup](../custom_components/helianthus/entry_entity_cleanup.py)):
+   compute the effective admission, read the entry's sparse run record from
+   the domain data, create one `EntryEntityReconciler` on the registries, the
+   coordinators, the inventory identities and that record, then record the
+   first admission observation.
+8. Register listeners and optionally start GraphQL subscriptions. Steps 3 to 8
    precede entry-mapping publication.
-8. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
+9. Attempt PV, storage and EVSE boundary creation, in that order. Each catches
    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that family's
    boundary and coordinator as `None`. Other errors and cancellation propagate.
-9. Publish the complete required mapping, then register the option-update
-   listener through the entry's unload hook when those entry methods exist.
-10. Await platform forwarding, then run radio-registry and trusted-admission
-    cleanup in that order.
-11. Await semantic snapshot setup and assign its result, including `None`. Pop
+10. Publish the complete required mapping, then register the option-update
+    listener through the entry's unload hook when those entry methods exist.
+11. Await platform forwarding, then run the reconciler's radio-registry and
+    trusted-admission cleanup in that order.
+12. Await semantic snapshot setup and assign its result, including `None`. Pop
     the deferred sensor callback and call it if present. Return `True` only after
     these steps complete.
 
@@ -115,6 +121,51 @@ leaves its key absent and may leave the deferred callback present. A callback
 error occurs after its removal and after snapshot assignment. There is no
 entry-wide rollback in this setup function, including for resources created
 before publication. No new rollback guarantee is implied by the type.
+
+## Entity registry reconciliation
+
+[Entry entity cleanup](../custom_components/helianthus/entry_entity_cleanup.py)
+holds the registry reconciliation of one entry as one `EntryEntityReconciler`
+object, created once per setup. Its state is:
+
+- the admission clean-up state: the domain-level `_admission_cleanup_counts`
+  map, keyed by entry id and shared by all entries, whether the trusted
+  clean-up is admitted, and whether it has run during this setup;
+- the sparse run record: the sparse unique IDs that have had their one reload
+  in this Home Assistant run, and the unique IDs seen disabled in the registry
+  in this run. Setup reads both sets from the domain data, claims the reload of
+  an entity that the registry shows enabled again, and hands the same sets in;
+  the reconciler updates them in place, so they hold across reloads;
+- the sparse unique-ID patterns of the entry, and the coordinators and the
+  first-refresh inventory, which every check reads when it runs.
+
+Setup calls the reconciler from its listeners and after platform forwarding:
+
+- `record_cleanup_evidence` at setup and on each device and status update. A
+  trusted observation with a non-empty inventory raises the entry's count by
+  one; any other observation sets it to zero. The trusted clean-up is
+  admitted from a count of two.
+- `cleanup_nonexportable_radio_registry_entries` after platform forwarding,
+  whether or not the trusted clean-up is admitted, and on each radio update
+  that reports non-exportable slots. It removes the entity rows of those slots
+  and of missing radio slots, then their device rows that no entity uses.
+- `auto_enable_sparse_entities` on the status, semantic, circuit, radio,
+  function-module, boiler and adapter-info updates. A live sparse status
+  value without an entity schedules one reload; otherwise each entity that the
+  integration disabled and whose value is live is enabled, and a reload is
+  scheduled only for unique IDs that have not had one in this run.
+- `run_trusted_cleanup` after platform forwarding and on trusted device and
+  status refreshes. It runs at most once per setup and only when admitted:
+  obsolete entity removal, the sparse disable, the sparse enable and obsolete
+  device removal, in that order. Otherwise it logs that the clean-up waits for
+  trusted admission and inventory.
+
+The sparse disable acts only on an enabled sparse entity whose value is null,
+that has not been seen disabled in this run and has not had its reload. An
+entity that was disabled and is enabled again stays enabled, and the enable
+acts only on entities that the integration disabled, so a disable by anyone
+else is never undone. The reconciler is not an `EntryRuntime` field; only the
+listeners and the forwarding step reach it.
 
 ## Unload and resource ownership
 
@@ -169,7 +220,10 @@ pin every registry call of both device steps in order, with each device
 identifier, parent and optional field, every `DeviceIdentities` field and each
 migration-target branch. [Coordinator-phase tests](../tests/test_entry_coordinators.py)
 pin the creation arguments, the creation and refresh order and the stop at a
-failing refresh.
+failing refresh. [Reconciliation tests](../tests/test_entry_entity_reconciliation.py)
+run every reconciliation decision through the real setup, and
+[phase tests](../tests/test_entrypoint_phases.py) pin the reconciler's
+admission counting, its single trusted clean-up and the run record it updates.
 
 This is an artifact-affecting structural change: shipped Python inputs change.
 Behavioral characterization does not establish Python AST identity, binary

@@ -100,7 +100,7 @@ def _entity_keys(fields):
 
 def test_only_canonical_circuit_entities_and_no_migration():
     _entity_keys(number._CIRCUIT_NUMBER_FIELDS)
-    for filename in ("__init__.py", "entry_setup.py"):
+    for filename in ("__init__.py", "entry_setup.py", "entry_entity_cleanup.py"):
         source = (COMPONENT / filename).read_text()
         assert "_migrate_unique_ids_to_snake_case" not in source
         assert "new_unique_id=" not in source
@@ -243,13 +243,13 @@ def test_renamed_system_and_boiler_unique_ids_follow_the_canonical_names(entry_i
 
 def test_sparse_reload_read_keys_match_the_platform_controls():
     from test_system import number_platform, text_platform
-    from custom_components.helianthus import entry_setup
+    from custom_components.helianthus import entry_entity_cleanup
 
     boiler = {f.mutation_field: f.config_key for f in number_platform._BOILER_NUMBER_FIELDS}
     boiler.update({f.write_key: f.read_key for f in text_platform._BOILER_TEXT_FIELDS})
-    assert entry_setup.SPARSE_BOILER_CONFIG_READ_KEYS == boiler
+    assert entry_entity_cleanup.SPARSE_BOILER_CONFIG_READ_KEYS == boiler
     system = {f.write_key: f.read_key for f in text_platform._SYSTEM_TEXT_FIELDS}
-    assert entry_setup.SPARSE_SYSTEM_TEXT_READ_KEYS == system
+    assert entry_entity_cleanup.SPARSE_SYSTEM_TEXT_READ_KEYS == system
 
 
 def test_no_code_path_rewrites_registry_unique_ids():

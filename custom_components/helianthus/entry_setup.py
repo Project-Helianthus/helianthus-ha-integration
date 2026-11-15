@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -28,22 +27,19 @@ from . import (
     update_effective_admission,
     status_admission_trusted,
 )
-from .admission import REPAIR_EMPTY_INVENTORY_UNTRUSTED
 from .entry_connection import ConnectionSkipped, async_connect_gateway
 from .entry_coordinators import async_create_domain_coordinators
 from .entry_devices import (
-    is_stale_bus_identifier,
     parse_circuit_index,
     parse_optional_int,
     register_gateway_devices,
     register_inventory_devices,
     resolved_bus_device_key,
-    stale_bus_address_unique_id,
 )
+from .entry_entity_cleanup import EntryEntityReconciler, claim_sparse_reloads
 from .entry_ownership import (
     DuplicateOwnerRefusal,
     async_prepare_entry,
-    iter_identifier_pairs,
     refuse_duplicate_setup,
 )
 from .entry_runtime import EntryRuntime
@@ -53,21 +49,6 @@ from .semantic_freshness import semantic_target_available, semantic_target_is_st
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
-
-
-# The unique ID of a boiler number or text and of a system text carries the
-# key the control writes; its value is read from the field named here.
-SPARSE_BOILER_CONFIG_READ_KEYS: dict[str, str] = {
-    "maximum_heating_flow_temperature_setpoint": "flowset_hc_max_c",
-    "maximum_dhw_flow_temperature_setpoint": "flowset_hwc_max_c",
-    "heating_partial_load_power": "partload_hc_kw",
-    "dhw_partial_load_power": "partload_hwc_kw",
-    "installer_phone_number": "phone_number",
-}
-SPARSE_SYSTEM_TEXT_READ_KEYS: dict[str, str] = {
-    "installer_name": "installer_name",
-    "installer_phone_number": "installer_phone",
-}
 
 
 def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
@@ -200,32 +181,21 @@ async def _async_apply_dhw_schedule(
         return False
 
 
-def _cylinder_count_is_published(setup_fm5_mode: str, current_fm5_mode: str) -> bool:
-    """Return whether the FM5 cylinder count can prune cylinder registry rows.
-
-    Only an INTERPRETED mode publishes a cylinder count; any other mode carries
-    no cylinder evidence. The count read at setup is used only while the mode
-    was INTERPRETED then and still is.
-    """
-    return setup_fm5_mode == "INTERPRETED" and current_fm5_mode == "INTERPRETED"
-
-
 async def _async_forward_platforms_and_finalize(
     hass: object,
     entry: object,
     platforms: list[str],
     *,
-    cleanup_nonexportable_radio_registry_entries: object,
+    reconciler: EntryEntityReconciler,
     nonexportable_radio_keys: set[str],
-    run_trusted_cleanup: object,
 ) -> None:
     """Forward platforms before the two established post-setup cleanup passes."""
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
-    cleanup_nonexportable_radio_registry_entries(
+    reconciler.cleanup_nonexportable_radio_registry_entries(
         nonexportable_radio_keys,
         "post-platform setup",
     )
-    run_trusted_cleanup("post-platform setup")
+    reconciler.run_trusted_cleanup("post-platform setup")
 
 
 _SPARSE_RELOAD_KEY = "_sparse_reload_unique_ids"
@@ -296,7 +266,7 @@ def _entry_run_records(
     reloaded = _sparse_reload_unique_ids(hass, entry_id, active_entry_ids)
     # Home Assistant already reloads a registry enable. Claim it before the
     # platforms build optional null sensors, which consult this run record.
-    _claim_sparse_reloads(reloaded, [
+    claim_sparse_reloads(reloaded, [
         str(entity_entry.unique_id or "")
         for entity_entry in entity_entries
         if entity_entry.platform == DOMAIN
@@ -340,40 +310,6 @@ def _schedule_bounded_trigger_reload(
     schedule_reload(reason)
 
 
-def _sparse_entities_to_disable(
-    entity_entries: tuple,
-    seen_disabled: set[str],
-    reloaded: set[str],
-    is_candidate: Callable[[str], bool],
-    is_live: Callable[[str], bool],
-) -> list:
-    """Return the null sparse entities that the automatic disable may act on.
-
-    Rule: the automatic disable acts only on an enabled sparse entity that
-    has not been seen disabled during this Home Assistant run and has not had
-    its sparse reload. An entity that was disabled, by the integration, the
-    user or anything else, and is enabled again was enabled by an action (the
-    user's, or the integration's own enable, which also spends its reload), so
-    it stays enabled. Every disabled sparse entity, and every entity returned
-    here, is recorded in ``seen_disabled``. The automatic enable acts only on
-    entities that the integration disabled, so a user-disabled entity stays
-    disabled.
-    """
-    selected = []
-    for entity_entry in entity_entries:
-        unique_id = str(entity_entry.unique_id or "")
-        if entity_entry.platform != DOMAIN or not is_candidate(unique_id):
-            continue
-        if entity_entry.disabled_by is not None:
-            seen_disabled.add(unique_id)
-            continue
-        if unique_id in reloaded or unique_id in seen_disabled or is_live(unique_id):
-            continue
-        seen_disabled.add(unique_id)
-        selected.append(entity_entry)
-    return selected
-
-
 def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> bool:
     """Return whether a sparse entity of one entry has had its one reload in this run.
 
@@ -388,43 +324,6 @@ def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> b
     return unique_id in store.get(entry_id, ())
 
 
-def _claim_sparse_reloads(reloaded: set[str], unique_ids: list[str]) -> list[str]:
-    """Record and return the IDs that have not caused a reload in this run."""
-    claimed = sorted(set(unique_ids) - reloaded)
-    reloaded.update(claimed)
-    return claimed
-
-
-def _missing_live_sparse_ids(
-    candidates: set[str],
-    reloaded: set[str],
-    entity_entries: tuple,
-    is_live: Callable[[str], bool],
-) -> list[str]:
-    """Return live status IDs without an entity that have not had a reload."""
-    existing_unique_ids = {
-        str(entity_entry.unique_id or "")
-        for entity_entry in entity_entries
-        if entity_entry.platform == DOMAIN
-    }
-    return sorted(
-        unique_id
-        for unique_id in candidates - reloaded
-        if unique_id not in existing_unique_ids and is_live(unique_id)
-    )
-
-
-def _schedule_unclaimed_sparse_reload(
-    reloaded: set[str],
-    unique_ids: list[str],
-    schedule_reload: Callable[[str], None],
-    reason: str,
-) -> None:
-    """Schedule a reload only for IDs that have not caused one in this run."""
-    if _claim_sparse_reloads(reloaded, unique_ids):
-        schedule_reload(reason)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Helianthus from a config entry."""
     from homeassistant.core import callback
@@ -435,12 +334,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .device_ids import (
         boiler_burner_identifier,
         boiler_hydraulics_identifier,
-        build_radio_bus_key,
         exportable_radio_bus_keys,
         nonexportable_radio_bus_keys,
         resolve_boiler_physical_device_id,
         resolve_boiler_via_device_id,
-        should_remove_missing_radio_bus_key,
     )
     from .subscriptions import start_subscriptions
     from .pv_m2m import (
@@ -540,22 +437,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
 
     admission = update_effective_admission(status_coordinator, devices)
-
-    cleanup_counts = hass.data.setdefault(DOMAIN, {}).setdefault("_admission_cleanup_counts", {})
-    cleanup_allowed = False
-    cleanup_ran = False
-
-    def record_cleanup_evidence(current_devices: list[dict]) -> bool:
-        nonlocal cleanup_allowed
-        update_effective_admission(status_coordinator, current_devices)
-        if status_admission_trusted(status_coordinator) and current_devices:
-            cleanup_counts[entry.entry_id] = int(cleanup_counts.get(entry.entry_id) or 0) + 1
-        else:
-            cleanup_counts[entry.entry_id] = 0
-        cleanup_allowed = cleanup_counts.get(entry.entry_id, 0) >= 2
-        return cleanup_allowed
-
-    record_cleanup_evidence(devices)
+    sparse_reloaded_ids, sparse_seen_disabled_ids, trigger_reload_times = _entry_run_records(
+        hass,
+        entry.entry_id,
+        active_entry_ids,
+        er.async_entries_for_config_entry(entity_registry, entry.entry_id),
+    )
+    reconciler = EntryEntityReconciler(
+        hass,
+        entry,
+        device_registry=device_registry,
+        entity_registry=entity_registry,
+        coordinators=coordinators,
+        identities=identities,
+        admission=admission,
+        sparse_reloaded_ids=sparse_reloaded_ids,
+        sparse_seen_disabled_ids=sparse_seen_disabled_ids,
+        schedule_reload=schedule_reload,
+        parse_identifier_index=_parse_identifier_index,
+    )
+    reconciler.record_cleanup_evidence(devices)
 
     semantic = semantic_coordinator.data or {}
     semantic_zones = [
@@ -568,577 +469,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     known_has_dhw = isinstance(semantic.get("dhw"), dict)
 
-    radio_sensor_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-sensor-(?P<key>.+)$"
-    )
-    radio_connected_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-radio-(?P<group>[0-9a-f]{{2}})-(?P<instance>\d{{2}})-connected$"
-    )
-    solar_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-solar-(?P<kind>sensor|binary)-(?P<key>.+)$"
-    )
-    cylinder_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-cylinder-(?P<index>\d+)-(?:(?:config-(?P<config_key>.+))|(?P<kind>temperature))$"
-    )
-    status_sparse_unique_ids = frozenset(
-        {
-            f"daemon-{entry.entry_id}-admission_repair_code",
-        }
-    )
-    sparse_reloaded_ids, sparse_seen_disabled_ids, trigger_reload_times = _entry_run_records(
-        hass,
-        entry.entry_id,
-        active_entry_ids,
-        er.async_entries_for_config_entry(entity_registry, entry.entry_id),
-    )
-    boiler_temp_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
-    )
-    boiler_sensor_sparse_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-boiler-sensor-(?P<key>hours_till_service)$"
-    )
-    boiler_number_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-boiler-number-(?P<key>.+)$"
-    )
-    boiler_text_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-boiler-text-(?P<key>installer_phone_number)$"
-    )
-    circuit_sensor_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-circuit-(?P<index>\d+)-sensor-(?P<key>.+)$"
-    )
-    circuit_number_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-circuit-(?P<index>\d+)-number-(?P<key>.+)$"
-    )
-    adapter_hw_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-adapter-hw-(?P<key>.+)$"
-    )
-    zone_demand_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-zone-(?P<zone_id>.+)-heating-demand$"
-    )
-    zone_valve_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-zone-(?P<zone_id>.+)-sensor-valve_position_pct$"
-    )
-    dhw_demand_unique_id = f"{entry.entry_id}-dhw-dhw-heating-demand"
-    system_text_unique_id_re = re.compile(
-        rf"^{re.escape(entry.entry_id)}-system-text-(?P<key>installer_name|installer_phone_number)$"
-    )
-
-    def _entry_entities() -> tuple:
-        return tuple(er.async_entries_for_config_entry(entity_registry, entry.entry_id))
-
-    def _device_has_entities(device_id: str) -> bool:
-        return any(entity_entry.device_id == device_id for entity_entry in entity_registry.entities.values())
-
-    def _current_fm5_payload() -> dict:
-        payload = fm5_coordinator.data if fm5_coordinator else None
-        return payload if isinstance(payload, dict) else {}
-
-    def _current_fm5_mode() -> str:
-        return str(_current_fm5_payload().get("fm5_semantic_mode") or "ABSENT").strip().upper()
-
-    def _current_radio_slots_with_live_values() -> dict[tuple[int, int], set[str]]:
-        payload = radio_coordinator.data if radio_coordinator else None
-        if not isinstance(payload, dict):
-            return {}
-        out: dict[tuple[int, int], set[str]] = {}
-        for radio in payload.get("radio_devices", []) or []:
-            if not isinstance(radio, dict):
-                continue
-            group = parse_optional_int(radio.get("group"))
-            instance = parse_optional_int(radio.get("instance"))
-            if group is None or instance is None:
-                continue
-            out[(group, instance)] = {key for key, value in radio.items() if value is not None}
-        return out
-
-    def _current_solar_live_keys() -> set[str]:
-        solar_payload = _current_fm5_payload().get("solar")
-        if not isinstance(solar_payload, dict):
-            return set()
-        return {key for key, value in solar_payload.items() if value is not None}
-
-    def _current_cylinder_live_keys() -> dict[int, set[str]]:
-        out: dict[int, set[str]] = {}
-        for cylinder in _current_fm5_payload().get("cylinders", []) or []:
-            if not isinstance(cylinder, dict):
-                continue
-            index = parse_optional_int(cylinder.get("index"))
-            if index is None or index < 0:
-                continue
-            out[index] = {key for key, value in cylinder.items() if value is not None}
-        return out
-
-    def _live_keys(payload: object) -> set[str]:
-        if not isinstance(payload, dict):
-            return set()
-        return {key for key, value in payload.items() if value is not None}
-
-    def _current_status_live_keys(target: str) -> set[str]:
-        payload = status_coordinator.data if status_coordinator else None
-        bucket = payload.get(target) if isinstance(payload, dict) else None
-        return _live_keys(bucket)
-
-    def _current_boiler_bucket_live_keys(bucket_name: str) -> set[str]:
-        payload = boiler_coordinator.data if boiler_coordinator else None
-        boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
-        bucket = boiler_status.get(bucket_name) if isinstance(boiler_status, dict) else None
-        return _live_keys(bucket)
-
-    def _current_circuit_live_keys(bucket_name: str, index: int) -> set[str]:
-        payload = circuit_coordinator.data if circuit_coordinator else None
-        if not isinstance(payload, dict):
-            return set()
-        for circuit in payload.get("circuits", []) or []:
-            if not isinstance(circuit, dict):
-                continue
-            if parse_optional_int(circuit.get("index")) != index:
-                continue
-            return _live_keys(circuit.get(bucket_name))
-        return set()
-
-    def _current_adapter_hw_live_keys() -> set[str]:
-        payload = adapter_info_coordinator.data if adapter_info_coordinator else None
-        return _live_keys(payload)
-
-    def _current_zone_state_live_keys(zone_id: str) -> set[str]:
-        payload = semantic_coordinator.data if semantic_coordinator else None
-        if not isinstance(payload, dict):
-            return set()
-        for zone in payload.get("zones", []) or []:
-            if not isinstance(zone, dict):
-                continue
-            if str(zone.get("id")) != zone_id:
-                continue
-            return _live_keys(zone.get("state"))
-        return set()
-
-    def _current_dhw_state_live_keys() -> set[str]:
-        payload = semantic_coordinator.data if semantic_coordinator else None
-        dhw = payload.get("dhw") if isinstance(payload, dict) else None
-        state = dhw.get("state") if isinstance(dhw, dict) else None
-        return _live_keys(state)
-
-    def _current_system_config_live_keys() -> set[str]:
-        payload = system_coordinator.data if system_coordinator else None
-        config = payload.get("config") if isinstance(payload, dict) else None
-        return _live_keys(config)
-
-    def _is_sparse_entity_candidate(unique_id: str | None) -> bool:
-        if not unique_id:
-            return False
-        return (
-            unique_id in status_sparse_unique_ids
-            or unique_id == dhw_demand_unique_id
-            or radio_sensor_unique_id_re.match(unique_id) is not None
-            or solar_unique_id_re.match(unique_id) is not None
-            or cylinder_unique_id_re.match(unique_id) is not None
-            or boiler_temp_unique_id_re.match(unique_id) is not None
-            or boiler_sensor_sparse_unique_id_re.match(unique_id) is not None
-            or boiler_number_unique_id_re.match(unique_id) is not None
-            or boiler_text_unique_id_re.match(unique_id) is not None
-            or circuit_sensor_unique_id_re.match(unique_id) is not None
-            or circuit_number_unique_id_re.match(unique_id) is not None
-            or adapter_hw_unique_id_re.match(unique_id) is not None
-            or zone_demand_unique_id_re.match(unique_id) is not None
-            or zone_valve_unique_id_re.match(unique_id) is not None
-            or system_text_unique_id_re.match(unique_id) is not None
-        )
-
-    def _is_sparse_entity_live(unique_id: str | None) -> bool:
-        if not unique_id:
-            return False
-        if unique_id in status_sparse_unique_ids:
-            return "admission_repair_code" in _current_status_live_keys("daemon")
-        if unique_id == dhw_demand_unique_id:
-            return "heating_demand_pct" in _current_dhw_state_live_keys()
-
-        boiler_temp_match = boiler_temp_unique_id_re.match(unique_id)
-        if boiler_temp_match:
-            return boiler_temp_match.group("key") in _current_boiler_bucket_live_keys("state")
-
-        boiler_sensor_match = boiler_sensor_sparse_unique_id_re.match(unique_id)
-        if boiler_sensor_match:
-            return boiler_sensor_match.group("key") in _current_boiler_bucket_live_keys("config")
-
-        boiler_number_match = boiler_number_unique_id_re.match(unique_id)
-        if boiler_number_match:
-            return SPARSE_BOILER_CONFIG_READ_KEYS.get(
-                boiler_number_match.group("key"), boiler_number_match.group("key")
-            ) in _current_boiler_bucket_live_keys("config")
-
-        boiler_text_match = boiler_text_unique_id_re.match(unique_id)
-        if boiler_text_match:
-            return SPARSE_BOILER_CONFIG_READ_KEYS[
-                boiler_text_match.group("key")
-            ] in _current_boiler_bucket_live_keys("config")
-
-        circuit_sensor_match = circuit_sensor_unique_id_re.match(unique_id)
-        if circuit_sensor_match:
-            index = int(circuit_sensor_match.group("index"))
-            return circuit_sensor_match.group("key") in _current_circuit_live_keys("state", index)
-
-        circuit_number_match = circuit_number_unique_id_re.match(unique_id)
-        if circuit_number_match:
-            index = int(circuit_number_match.group("index"))
-            return circuit_number_match.group("key") in _current_circuit_live_keys("config", index)
-
-        adapter_hw_match = adapter_hw_unique_id_re.match(unique_id)
-        if adapter_hw_match:
-            return adapter_hw_match.group("key") in _current_adapter_hw_live_keys()
-
-        zone_demand_match = zone_demand_unique_id_re.match(unique_id)
-        if zone_demand_match:
-            return "heating_demand_pct" in _current_zone_state_live_keys(zone_demand_match.group("zone_id"))
-
-        zone_valve_match = zone_valve_unique_id_re.match(unique_id)
-        if zone_valve_match:
-            return "valve_position_pct" in _current_zone_state_live_keys(zone_valve_match.group("zone_id"))
-
-        system_text_match = system_text_unique_id_re.match(unique_id)
-        if system_text_match:
-            return SPARSE_SYSTEM_TEXT_READ_KEYS[
-                system_text_match.group("key")
-            ] in _current_system_config_live_keys()
-
-        radio_match = radio_sensor_unique_id_re.match(unique_id)
-        if radio_match:
-            radio_slots_with_live_values = _current_radio_slots_with_live_values()
-            slot = (
-                int(radio_match.group("group"), 16),
-                int(radio_match.group("instance")),
-            )
-            return radio_match.group("key") in radio_slots_with_live_values.get(slot, set())
-
-        solar_match = solar_unique_id_re.match(unique_id)
-        if solar_match:
-            if _current_fm5_mode() != "INTERPRETED":
-                return False
-            solar_live_keys = _current_solar_live_keys()
-            return solar_match.group("key") in solar_live_keys
-
-        cylinder_match = cylinder_unique_id_re.match(unique_id)
-        if cylinder_match:
-            if _current_fm5_mode() != "INTERPRETED":
-                return False
-            cylinder_live_keys = _current_cylinder_live_keys()
-            index = int(cylinder_match.group("index"))
-            live_keys = cylinder_live_keys.get(index, set())
-            config_key = cylinder_match.group("config_key")
-            if config_key:
-                return config_key in live_keys
-            return "temperature_c" in live_keys
-        return False
-
-    def _radio_bus_key_from_unique_id(unique_id: str | None) -> str | None:
-        if not unique_id:
-            return None
-        for pattern in (radio_sensor_unique_id_re, radio_connected_unique_id_re):
-            match = pattern.match(unique_id)
-            if match is None:
-                continue
-            return build_radio_bus_key(
-                int(match.group("group"), 16),
-                int(match.group("instance")),
-            )
-        return None
-
-    # ADR-027: build set of merged B524 slot prefixes for entity cleanup.
-    # bus_key format: "g0c-i01" -> unique_id slot format: "0c-01"
-    def _bus_key_to_uid_slot(bk: str) -> str:
-        return bk.replace("g", "").replace("-i", "-")
-
-    _b524_merged_uid_prefixes = frozenset(
-        f"{entry.entry_id}-radio-{_bus_key_to_uid_slot(bus_key)}-sensor-"
-        for bus_key in b524_merge_targets
-    )
-
-    def cleanup_obsolete_entity_registry_entries() -> None:
-        removed = 0
-        for entity_entry in _entry_entities():
-            if entity_entry.platform != DOMAIN:
-                continue
-            unique_id = str(entity_entry.unique_id or "")
-            remove_entry = False
-            if entity_entry.domain in {"fan", "valve", "switch"}:
-                remove_entry = True
-            elif (
-                unique_id in status_sparse_unique_ids - sparse_reloaded_ids
-                and not _is_sparse_entity_live(unique_id)
-            ):
-                remove_entry = True
-            elif stale_bus_address_unique_id(unique_id, entry.entry_id, known_bus_devices):
-                remove_entry = True
-            elif entity_entry.domain == "number" and re.match(
-                rf"^{re.escape(entry.entry_id)}-cylinder-\d+-number-",
-                unique_id,
-            ):
-                remove_entry = True
-            # ADR-027: remove redundant sensor entities from merged B524 slots.
-            elif entity_entry.domain == "sensor" and any(
-                unique_id.startswith(prefix) for prefix in _b524_merged_uid_prefixes
-            ):
-                remove_entry = True
-            elif (radio_bus_key := _radio_bus_key_from_unique_id(unique_id)) is not None:
-                remove_entry = should_remove_missing_radio_bus_key(
-                    radio_bus_key,
-                    known_radio_bus_keys,
-                    set(b524_merge_targets),
-                )
-            else:
-                cylinder_match = cylinder_unique_id_re.match(unique_id)
-                if (
-                    cylinder_match
-                    and int(cylinder_match.group("index")) not in known_cylinder_indexes
-                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
-                ):
-                    remove_entry = True
-            if remove_entry:
-                entity_registry.async_remove(entity_entry.entity_id)
-                removed += 1
-        if removed:
-            _LOGGER.info(
-                "Helianthus cleanup removed %d obsolete entities for entry %s",
-                removed,
-                entry.entry_id,
-            )
-
-    def cleanup_nonexportable_radio_registry_entries(
-        radio_keys: set[str],
-        reason: str,
-    ) -> None:
-        if not radio_keys:
-            radio_keys = set()
-        radio_keys_to_remove = set(radio_keys)
-        removed_entities = 0
-        for entity_entry in _entry_entities():
-            if entity_entry.platform != DOMAIN:
-                continue
-            unique_id = str(entity_entry.unique_id or "")
-            radio_bus_key = _radio_bus_key_from_unique_id(unique_id)
-            if radio_bus_key is None:
-                continue
-            if radio_bus_key not in radio_keys_to_remove and not should_remove_missing_radio_bus_key(
-                radio_bus_key,
-                known_radio_bus_keys,
-                set(b524_merge_targets),
-            ):
-                continue
-            entity_registry.async_remove(entity_entry.entity_id)
-            removed_entities += 1
-
-        removed_devices = 0
-        radio_prefix = f"{entry.entry_id}-radio-"
-        for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
-            remove_device = False
-            for identifier_domain, token in iter_identifier_pairs(device_entry.identifiers):
-                if identifier_domain != DOMAIN or not token.startswith(radio_prefix):
-                    continue
-                radio_bus_key = token[len(radio_prefix):]
-                if radio_bus_key in radio_keys_to_remove or should_remove_missing_radio_bus_key(
-                    radio_bus_key,
-                    known_radio_bus_keys,
-                    set(b524_merge_targets),
-                ):
-                    remove_device = True
-                    break
-            if not remove_device:
-                continue
-            if _device_has_entities(device_entry.id):
-                continue
-            device_registry.async_remove_device(device_entry.id)
-            removed_devices += 1
-
-        if removed_entities or removed_devices:
-            _LOGGER.info(
-                "Helianthus cleanup removed %d entities and %d devices for non-exportable radio slots %s (%s)",
-                removed_entities,
-                removed_devices,
-                sorted(radio_keys),
-                reason,
-            )
-
-    def cleanup_obsolete_devices(reason: str) -> None:
-        # Remove stale calendar entities with old zone_N unique_id format
-        # (pre-fix: B555 zone indices were used directly instead of semantic zone IDs).
-        _stale_schedule_re = re.compile(
-            rf"^{re.escape(entry.entry_id)}-schedule-zone_\d+-"
-        )
-        stale_removed = 0
-        for entity_entry in tuple(_entry_entities()):
-            uid = str(entity_entry.unique_id or "")
-            if _stale_schedule_re.match(uid):
-                entity_registry.async_remove(entity_entry.entity_id)
-                stale_removed += 1
-        if stale_removed:
-            _LOGGER.info(
-                "Helianthus cleanup removed %d stale schedule entities for entry %s (%s)",
-                stale_removed,
-                entry.entry_id,
-                reason,
-            )
-
-        removed = 0
-        for device_entry in tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id)):
-            identifier_pairs = iter_identifier_pairs(device_entry.identifiers)
-            domain_tokens = [
-                token for identifier_domain, token in identifier_pairs if identifier_domain == DOMAIN
-            ]
-            if not domain_tokens:
-                continue
-            remove_device = False
-            for token in domain_tokens:
-                if token in {
-                    f"{entry.entry_id}-boiler-burner",
-                    f"{entry.entry_id}-boiler-hydraulics",
-                }:
-                    remove_device = True
-                    break
-                if is_stale_bus_identifier(token, entry.entry_id, known_bus_devices):
-                    remove_device = True
-                    break
-                if token.startswith(f"{entry.entry_id}-zone-"):
-                    remove_device = True
-                    break
-                cylinder_index = _parse_identifier_index(token, f"{entry.entry_id}-cylinder-")
-                if (
-                    cylinder_index is not None
-                    and cylinder_index not in known_cylinder_indexes
-                    and _cylinder_count_is_published(known_fm5_mode, _current_fm5_mode())
-                ):
-                    remove_device = True
-                    break
-                # ADR-027: remove shadow radio device for merged B524 function modules.
-                radio_prefix = f"{entry.entry_id}-radio-"
-                if token.startswith(radio_prefix):
-                    radio_bus_key = token[len(radio_prefix):]
-                    if should_remove_missing_radio_bus_key(
-                        radio_bus_key,
-                        known_radio_bus_keys,
-                        set(b524_merge_targets),
-                    ):
-                        remove_device = True
-                        break
-            if not remove_device:
-                continue
-            if _device_has_entities(device_entry.id):
-                continue
-            device_registry.async_remove_device(device_entry.id)
-            removed += 1
-        if removed:
-            _LOGGER.info(
-                "Helianthus cleanup removed %d obsolete devices for entry %s (%s)",
-                removed,
-                entry.entry_id,
-                reason,
-            )
-
-    def auto_enable_sparse_entities(reason: str) -> None:
-        registry_disabler = getattr(er, "RegistryEntryDisabler", None)
-        integration_disabler = "integration"
-        if registry_disabler is not None:
-            integration_disabler = getattr(
-                registry_disabler,
-                "INTEGRATION",
-                integration_disabler,
-            )
-        missing_live_status_ids = _missing_live_sparse_ids(
-            status_sparse_unique_ids,
-            sparse_reloaded_ids,
-            _entry_entities(),
-            _is_sparse_entity_live,
-        )
-        if missing_live_status_ids:
-            # The allowance is spent when the reload is scheduled; the sensor
-            # platform then creates the entity whether or not it is null.
-            sparse_reloaded_ids.update(missing_live_status_ids)
-            _LOGGER.info(
-                "Helianthus scheduling reload for %d live sparse status entities for entry %s (%s)",
-                len(missing_live_status_ids),
-                entry.entry_id,
-                reason,
-            )
-            schedule_reload("sparse status entities became live")
-            return
-        enabled: list[str] = []
-        for entity_entry in _entry_entities():
-            if entity_entry.platform != DOMAIN:
-                continue
-            if entity_entry.disabled_by != integration_disabler:
-                continue
-            if not _is_sparse_entity_live(str(entity_entry.unique_id or "")):
-                continue
-            entity_registry.async_update_entity(entity_entry.entity_id, disabled_by=None)
-            enabled.append(str(entity_entry.unique_id or ""))
-        if enabled:
-            _LOGGER.info(
-                "Helianthus auto-enabled %d sparse entities for entry %s (%s)",
-                len(enabled),
-                entry.entry_id,
-                reason,
-            )
-            _schedule_unclaimed_sparse_reload(
-                sparse_reloaded_ids, enabled, schedule_reload, "sparse entities became live"
-            )
-
-    def auto_disable_sparse_entities(reason: str) -> None:
-        registry_disabler = getattr(er, "RegistryEntryDisabler", None)
-        integration_disabler = "integration"
-        if registry_disabler is not None:
-            integration_disabler = getattr(
-                registry_disabler,
-                "INTEGRATION",
-                integration_disabler,
-            )
-        disabled = 0
-        # Only an enabled null sparse entity that no action has touched in
-        # this run: one that was disabled and is enabled again (by the user,
-        # or by the integration after its reload) stays enabled. See
-        # _sparse_entities_to_disable for the full rule.
-        for entity_entry in _sparse_entities_to_disable(
-            _entry_entities(),
-            sparse_seen_disabled_ids,
-            sparse_reloaded_ids,
-            _is_sparse_entity_candidate,
-            _is_sparse_entity_live,
-        ):
-            entity_registry.async_update_entity(
-                entity_entry.entity_id,
-                disabled_by=integration_disabler,
-            )
-            disabled += 1
-        # Home Assistant removes an entity disabled in the registry by itself;
-        # no reload is needed.
-        if disabled:
-            _LOGGER.info(
-                "Helianthus auto-disabled %d sparse entities for entry %s (%s)",
-                disabled,
-                entry.entry_id,
-                reason,
-            )
-
-    def run_trusted_cleanup(reason: str) -> None:
-        nonlocal cleanup_ran
-        if cleanup_ran:
-            return
-        if not cleanup_allowed:
-            _LOGGER.info(
-                "Helianthus cleanup skipped for entry %s until admission and inventory are trusted (%s)",
-                entry.entry_id,
-                admission.get("repair_code") or REPAIR_EMPTY_INVENTORY_UNTRUSTED,
-            )
-            return
-        cleanup_obsolete_entity_registry_entries()
-        auto_disable_sparse_entities(reason)
-        auto_enable_sparse_entities(reason)
-        cleanup_obsolete_devices(reason)
-        cleanup_ran = True
-
     def existing_zone_parent_device_ids(zones: list[dict]) -> dict[str, tuple[str, str]]:
         """Recover validated radio parents from existing climate registry entries."""
         zone_ids_by_unique_id = zone_ids_by_climate_unique_id(entry.entry_id, zones)
         radio_identifier_prefix = f"{entry.entry_id}-radio-"
         existing: dict[str, tuple[str, str]] = {}
-        for entity_entry in _entry_entities():
+        for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
             zone_id = zone_ids_by_unique_id.get(entity_entry.unique_id)
             if zone_id is None or entity_entry.device_id is None:
                 continue
@@ -1304,28 +640,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     def handle_device_update() -> None:
         current = device_coordinator.data or []
-        record_cleanup_evidence(current)
+        reconciler.record_cleanup_evidence(current)
         if not current:
             return
         current_ids = current_bus_device_ids(current)
         if not current_ids:
             return
         if current_ids.issubset(known_bus_devices):
-            if cleanup_allowed:
-                run_trusted_cleanup("trusted non-empty inventory refresh")
+            if reconciler.cleanup_allowed:
+                reconciler.run_trusted_cleanup("trusted non-empty inventory refresh")
             return
         schedule_reload("new bus devices discovered")
 
     def handle_status_update() -> None:
         current = device_coordinator.data or []
-        record_cleanup_evidence(current)
+        reconciler.record_cleanup_evidence(current)
         current_ids = current_bus_device_ids(current)
         if current_ids and not current_ids.issubset(known_bus_devices):
             schedule_reload("new bus devices discovered")
             return
-        auto_enable_sparse_entities("status update")
-        if cleanup_allowed and current_ids:
-            run_trusted_cleanup("trusted admission status refresh")
+        reconciler.auto_enable_sparse_entities("status update")
+        if reconciler.cleanup_allowed and current_ids:
+            reconciler.run_trusted_cleanup("trusted admission status refresh")
 
     def handle_semantic_update() -> None:
         payload = semantic_coordinator.data or {}
@@ -1344,7 +680,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if _semantic_inventory_became_available(payload, known_zones, known_has_dhw):
             schedule_reload("semantic inventory became available")
             return
-        auto_enable_sparse_entities("semantic update")
+        reconciler.auto_enable_sparse_entities("semantic update")
 
     def handle_circuit_update() -> None:
         payload = circuit_coordinator.data or {}
@@ -1358,7 +694,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if current_indexes - known_circuit_indexes:
             schedule_reload("circuit inventory became available")
             return
-        auto_enable_sparse_entities("circuit update")
+        reconciler.auto_enable_sparse_entities("circuit update")
 
     def handle_radio_update() -> None:
         nonlocal nonexportable_radio_keys
@@ -1367,7 +703,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         current_nonexportable = nonexportable_radio_bus_keys(radio_devices)
         nonexportable_radio_keys = current_nonexportable
         if current_nonexportable:
-            cleanup_nonexportable_radio_registry_entries(
+            reconciler.cleanup_nonexportable_radio_registry_entries(
                 current_nonexportable,
                 "radio update",
             )
@@ -1384,7 +720,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 trigger_reload_times, ZONE_PARENT_TRIGGER, schedule_reload, "zone parent mapping changed"
             )
             return
-        auto_enable_sparse_entities("radio update")
+        reconciler.auto_enable_sparse_entities("radio update")
         if current_keys - known_radio_bus_keys:
             schedule_reload("radio inventory became available")
 
@@ -1406,13 +742,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if mode == "INTERPRETED" and (current_indexes - known_cylinder_indexes):
             schedule_reload("cylinder inventory became available")
             return
-        auto_enable_sparse_entities("fm5 update")
+        reconciler.auto_enable_sparse_entities("fm5 update")
 
     def handle_boiler_update() -> None:
-        auto_enable_sparse_entities("boiler update")
+        reconciler.auto_enable_sparse_entities("boiler update")
 
     def handle_adapter_info_update() -> None:
-        auto_enable_sparse_entities("adapter info update")
+        reconciler.auto_enable_sparse_entities("adapter info update")
 
     unsub_listeners: list[Callable[[], None]] = []
     unsub_listeners.append(status_coordinator.async_add_listener(handle_status_update))
@@ -1605,9 +941,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         entry,
         PLATFORMS,
-        cleanup_nonexportable_radio_registry_entries=cleanup_nonexportable_radio_registry_entries,
+        reconciler=reconciler,
         nonexportable_radio_keys=nonexportable_radio_keys,
-        run_trusted_cleanup=run_trusted_cleanup,
     )
 
     hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (

@@ -164,6 +164,30 @@
       "count": 12
     },
     {
+      "path": "custom_components/helianthus/entry_entity_cleanup.py",
+      "symbol": "EntryEntityReconciler._is_sparse_entity_live",
+      "rule": "C901",
+      "count": 20
+    },
+    {
+      "path": "custom_components/helianthus/entry_entity_cleanup.py",
+      "symbol": "EntryEntityReconciler.cleanup_nonexportable_radio_registry_entries",
+      "rule": "C901",
+      "count": 13
+    },
+    {
+      "path": "custom_components/helianthus/entry_entity_cleanup.py",
+      "symbol": "EntryEntityReconciler.cleanup_obsolete_devices",
+      "rule": "C901",
+      "count": 16
+    },
+    {
+      "path": "custom_components/helianthus/entry_entity_cleanup.py",
+      "symbol": "EntryEntityReconciler.cleanup_obsolete_entity_registry_entries",
+      "rule": "C901",
+      "count": 12
+    },
+    {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "<module>",
       "rule": "F401",
@@ -173,37 +197,13 @@
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "C901",
-      "count": 199
+      "count": 82
     },
     {
       "path": "custom_components/helianthus/entry_setup.py",
       "symbol": "async_setup_entry",
       "rule": "PLR0915",
-      "count": 579
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry._is_sparse_entity_live",
-      "rule": "C901",
-      "count": 20
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.cleanup_nonexportable_radio_registry_entries",
-      "rule": "C901",
-      "count": 13
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.cleanup_obsolete_devices",
-      "rule": "C901",
-      "count": 16
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry.cleanup_obsolete_entity_registry_entries",
-      "rule": "C901",
-      "count": 12
+      "count": 300
     },
     {
       "path": "custom_components/helianthus/evse_m2m.py",

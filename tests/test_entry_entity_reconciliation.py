@@ -35,7 +35,7 @@ from entry_setup_harness import (
     run,
 )
 
-from custom_components.helianthus import DOMAIN, entry_setup
+from custom_components.helianthus import DOMAIN, entry_entity_cleanup
 from custom_components.helianthus.device_ids import bus_identifier
 
 ENTRY = "entry-a"
@@ -582,7 +582,7 @@ def test_the_disable_selection_skips_a_seen_disabled_entity_on_its_own():
     rows.append(SimpleNamespace(unique_id="foreign", platform="other_domain", disabled_by=None))
     seen = {"seen"}
 
-    selected = entry_setup._sparse_entities_to_disable(
+    selected = entry_entity_cleanup._sparse_entities_to_disable(
         tuple(rows), seen, set(), lambda uid: uid != "not-sparse", lambda uid: uid == "live")
 
     assert [row.unique_id for row in selected] == ["fresh"]

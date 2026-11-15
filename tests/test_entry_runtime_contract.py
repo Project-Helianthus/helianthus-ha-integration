@@ -159,8 +159,9 @@ def setup_case(*, failure=None, optional=False, callback=True, source=None):
                   PLATFORMS=["sensor", "climate"], cast=cast,
                   EntryRuntime=dict, _LOGGER=SimpleNamespace(warning=lambda *args: None),
                   async_setup_semantic_snapshot=snapshot, nonexportable_radio_keys={"synthetic"},
-                  cleanup_nonexportable_radio_registry_entries=lambda *args: record("radio-cleanup"),
-                  run_trusted_cleanup=lambda *args: record("trusted-cleanup"))
+                  reconciler=SimpleNamespace(
+                      cleanup_nonexportable_radio_registry_entries=lambda *args: record("radio-cleanup"),
+                      run_trusted_cleanup=lambda *args: record("trusted-cleanup")))
     for family in ("pv", "storage", "evse"):
         boundary = None if optional else SimpleNamespace(coordinator=values[family + "_coordinator"])
         values[family + "_boundary"] = boundary
