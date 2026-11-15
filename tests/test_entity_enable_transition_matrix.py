@@ -73,16 +73,13 @@ def test_admission_listener_rechecks_each_entity_at_every_transition(
         "status_coordinator": SimpleNamespace(async_add_listener=add_listener),
     }
     hass = SimpleNamespace(data={})
-    attach_runtime(hass, "synthetic-entry", data)
+    entry = SimpleNamespace(entry_id="synthetic-entry")
+    runtime = attach_runtime(entry, data)
     entities = []
-    asyncio.run(
-        select_platform.async_setup_entry(
-            hass, SimpleNamespace(entry_id="synthetic-entry"), entities.extend
-        )
-    )
+    asyncio.run(select_platform.async_setup_entry(hass, entry, entities.extend))
     assert len(entities) == 2
     assert len(listeners) == 1
-    assert len(data["unsub_listeners"]) == 1
+    assert len(runtime.listeners.unsub_listeners) == 1
     transitioning = entities[transitioning_index]
     peer = entities[1 - transitioning_index]
 
@@ -112,7 +109,7 @@ def test_admission_listener_rechecks_each_entity_at_every_transition(
         assert (transitioning.write_count - before[0]) in (0, 1), phase
         assert peer.write_count - before[1] == 1, phase
 
-    data["unsub_listeners"][0]()
+    runtime.listeners.unsub_listeners[0]()
     assert listeners == []
 
 

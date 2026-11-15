@@ -173,9 +173,8 @@ def test_exact_circuit_setter_document_variables_bounds_and_identity(key, read_k
     payload, _, client = _build_payload()
     payload["circuit_coordinator"].data["circuits"][0]["index"] = circuit_index
     entities = []
-    hass = _FakeHass(payload)
-    hass.data[number.DOMAIN][entry_id] = payload
-    asyncio.run(number.async_setup_entry(hass, _FakeEntry(entry_id), entities.extend))
+    hass = _FakeHass()
+    asyncio.run(number.async_setup_entry(hass, _FakeEntry(entry_id, payload), entities.extend))
     entity = next(e for e in entities if e._field.key == key)
     assert entity._attr_unique_id == f"{entry_id}-circuit-{circuit_index}-number-{key}"
     assert (entity._field.config_key, entity._field.minimum, entity._field.maximum, entity._field.step) == (read_key, minimum, maximum, step)
@@ -232,11 +231,10 @@ def _system_and_boiler_unique_ids(entry_id):
         "partload_hwc_kw": 14.0, "phone_number": "401234", "installer_menu_code": 12,
     }}})
     payload["boiler_device_id"] = ("helianthus", f"{entry_id}-bus-BAI00-08")
-    hass = _FakeHass(payload)
-    hass.data[number.DOMAIN][entry_id] = payload
+    hass, entry = _FakeHass(), _FakeEntry(entry_id, payload)
     entities = []
     for platform in (sensor_platform, binary_sensor_platform, number_platform, text_platform, date_platform):
-        asyncio.run(platform.async_setup_entry(hass, _FakeEntry(entry_id), entities.extend))
+        asyncio.run(platform.async_setup_entry(hass, entry, entities.extend))
     prefix = f"{entry_id}-"
     return {
         entity._attr_unique_id[len(prefix):]

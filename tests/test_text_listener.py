@@ -8,6 +8,7 @@ import sys
 
 import pytest
 
+from runtime_fixtures import attach_runtime
 from custom_components.helianthus.const import DOMAIN
 
 
@@ -129,13 +130,13 @@ def test_text_listener_skips_entities_until_home_assistant_attaches_them() -> No
     status_coordinator = _FakeStatusCoordinator()
     data = {
         "system_coordinator": SimpleNamespace(data={"config": {}}),
-        "manufacturer": "Vaillant",
         "graphql_client": object(),
         "status_coordinator": status_coordinator,
         "regulator_device_id": (DOMAIN, "regulator"),
     }
-    hass = SimpleNamespace(data={DOMAIN: {"entry-1": data}})
+    hass = SimpleNamespace(data={})
     entry = SimpleNamespace(entry_id="entry-1")
+    attach_runtime(entry, data)
     entities = []
 
     asyncio.run(text_platform.async_setup_entry(hass, entry, entities.extend))
@@ -167,14 +168,14 @@ def test_no_boiler_installer_menu_code_text_entity_is_created(entry_id: str) -> 
     data = {
         "system_coordinator": SimpleNamespace(data={"config": {"installer_access_code": 7}}),
         "boiler_coordinator": SimpleNamespace(data={"boiler_status": {"config": boiler_config}}),
-        "manufacturer": "Vaillant",
         "graphql_client": object(),
         "status_coordinator": status_coordinator,
         "regulator_device_id": (DOMAIN, "regulator"),
         "boiler_device_id": (DOMAIN, f"{entry_id}-bus-BAI00-08"),
     }
-    hass = SimpleNamespace(data={DOMAIN: {entry_id: data}})
+    hass = SimpleNamespace(data={})
     entry = SimpleNamespace(entry_id=entry_id)
+    attach_runtime(entry, data)
     entities = []
 
     asyncio.run(text_platform.async_setup_entry(hass, entry, entities.extend))

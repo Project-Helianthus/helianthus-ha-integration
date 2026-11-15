@@ -151,13 +151,14 @@ def semantic_device_model(asset):
 def _asset_device(data, entry_id, asset):
     """The device of a consumer bound to the asset, else the asset's own device."""
     asset_id = asset["asset_id"]
-    return bound_asset_device(data, entry_id, asset_id) or AssetDevice(
+    return bound_asset_device(data.services, entry_id, asset_id) or AssetDevice(
         semantic_device_identifier(entry_id, asset_id), semantic_device_model(asset), asset_id)
 
 
 def _legacy_bound_asset(data, pack_id):
     """The one asset the legacy single-asset consumer for this pack already owns."""
-    coordinator = data.get(LEGACY_COORDINATORS.get(pack_id, ''))
+    field = LEGACY_COORDINATORS.get(pack_id)
+    coordinator = None if field is None else getattr(data.services, field)
     asset_ref = getattr(coordinator, 'asset_ref', None)
     return asset_ref if isinstance(asset_ref, str) and asset_ref else None
 
@@ -313,15 +314,15 @@ class SemanticSnapshotSensor(CoordinatorEntity, SensorEntity):
 
 def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
     """Discover supported keys once, retaining entities through missing/lost reads."""
-    coordinator = data.get("semantic_snapshot_coordinator")
+    coordinator = data.semantic_snapshot_coordinator
     if coordinator is None:
-        if "semantic_snapshot_coordinator" not in data:
+        if not data.semantic_snapshot_attached:
             def setup_when_ready():
                 entities = setup_semantic_snapshot_sensors(data, entry_id, async_add_entities)
                 if entities:
                     async_add_entities(entities)
 
-            data["semantic_snapshot_sensors_setup"] = setup_when_ready
+            data.semantic_snapshot_sensors_setup = setup_when_ready
         return []
     known = set()
 
@@ -359,5 +360,5 @@ def setup_semantic_snapshot_sensors(data, entry_id, async_add_entities):
         if entities:
             async_add_entities(entities)
 
-    data.setdefault("unsub_listeners", []).append(coordinator.async_add_listener(add_discovered))
+    data.listeners.unsub_listeners.append(coordinator.async_add_listener(add_discovered))
     return initial

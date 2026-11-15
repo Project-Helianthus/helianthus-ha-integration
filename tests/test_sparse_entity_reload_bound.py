@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import entry_setup_harness as paths
+from runtime_fixtures import runtime_value
 from test_sensor import _ensure_homeassistant_stubs
 
 _ensure_homeassistant_stubs()
@@ -132,11 +133,11 @@ class Bench:
 
     @property
     def runtime(self):
-        return self.setup.hass.data[DOMAIN][self.entry.entry_id]
+        return self.entry.runtime_data
 
     async def _forward(self, entry, platforms):
         """Sensor platform: the repair-code sensor is created while live or once reloaded."""
-        daemon = self.setup.hass.data[DOMAIN][entry.entry_id]["status_coordinator"].data["daemon"]
+        daemon = entry.runtime_data.coordinators.status_coordinator.data["daemon"]
         uid = repair_uid(entry.entry_id)
         if (daemon.get("admission_repair_code") is not None
                 or uid in settled_ids(self.setup, entry.entry_id)) and uid not in (
@@ -159,9 +160,9 @@ class Bench:
         self.harness.data.update(payload(self.kind, value, self.extra))
         for name, key in self.runtime_keys.items():
             if name in fresh:
-                self.runtime[key].data = fresh[name]
+                runtime_value(self.runtime, key).data = fresh[name]
         for key in self.listened:
-            for listener in list(self.runtime[key].listeners):
+            for listener in list(runtime_value(self.runtime, key).listeners):
                 listener()
         await self._drain()
         await self._reload_if_requested(value)
@@ -369,12 +370,12 @@ def _sensor_platform_unique_ids(reloaded, repair_code):
     payload["status_coordinator"] = sensor_tests._FakeCoordinator(
         {"daemon": {"admission_repair_code": repair_code}, "adapter": {}})
     payload["daemon_device_id"] = ("helianthus", "daemon-entry-1")
-    hass = sensor_tests._FakeHass(payload)
+    hass = sensor_tests._FakeHass()
     if reloaded:
-        hass.data[DOMAIN][SETTLED_KEY] = {"entry-1": {"daemon-entry-1-admission_repair_code"}}
+        hass.data[DOMAIN] = {SETTLED_KEY: {"entry-1": {"daemon-entry-1-admission_repair_code"}}}
     entities: list = []
     asyncio.run(sensor_setup.async_setup_entry(
-        hass, sensor_tests._FakeEntry("entry-1"), entities.extend))
+        hass, sensor_tests._FakeEntry("entry-1", payload), entities.extend))
     return {getattr(e, "_attr_unique_id", ""): e for e in entities}
 
 
@@ -518,15 +519,15 @@ def _radio_metadata_unique_ids(reloaded, values):
               "device_class_address": None, "hardware_identifier": 7,
               "remote_control_address": None, "zone_assignment": None, **values}
     payload = radio_tests._base_payload([device])
-    hass = sensor_tests._FakeHass(payload)
+    hass = sensor_tests._FakeHass()
     if reloaded:
-        hass.data[DOMAIN][SETTLED_KEY] = {"entry-1": {
+        hass.data[DOMAIN] = {SETTLED_KEY: {"entry-1": {
             f"entry-1-radio-0c-01-sensor-{key}" for key in
             ("device_class_address", "hardware_identifier",
-             "remote_control_address", "zone_assignment")}}
+             "remote_control_address", "zone_assignment")}}}
     entities: list = []
     asyncio.run(sensor_setup.async_setup_entry(
-        hass, sensor_tests._FakeEntry("entry-1"), entities.extend))
+        hass, sensor_tests._FakeEntry("entry-1", payload), entities.extend))
     return {getattr(e, "_attr_unique_id", ""): e for e in entities
             if "-radio-0c-" in getattr(e, "_attr_unique_id", "")}
 

@@ -8,6 +8,8 @@ import types
 
 import pytest
 
+from runtime_fixtures import attach_runtime
+
 
 def _ensure_homeassistant_stubs() -> None:
     homeassistant_module = sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
@@ -197,7 +199,6 @@ from custom_components.helianthus import date as date_platform
 from custom_components.helianthus import number as number_platform
 from custom_components.helianthus import sensor as sensor_platform
 from custom_components.helianthus import text as text_platform
-from custom_components.helianthus.const import DOMAIN
 
 
 class _FakeCoordinator:
@@ -220,13 +221,14 @@ class _FakeClient:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
-        self.data = {DOMAIN: {"entry-1": payload}}
+    def __init__(self) -> None:
+        self.data = {}
 
 
 def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
@@ -281,8 +283,8 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
 
 def test_system_sensor_entities_attach_to_basv2_device() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -323,8 +325,8 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
 
 def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -354,8 +356,8 @@ def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
 
 def test_system_number_entities_write_set_system_config_mutation() -> None:
     payload, system_coordinator, client = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
@@ -391,8 +393,8 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
         {"boiler_status": {"config": {"phone_number": "401234", "installer_menu_code": 12}}}
     )
     payload["boiler_device_id"] = ("helianthus", "entry-1-bus-BAI00-08")
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     number_entities: list = []
     date_entities: list = []

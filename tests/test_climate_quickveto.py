@@ -197,13 +197,15 @@ class _FakeStatusCoordinator:
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 class _FakeEntry:
     entry_id = "entry-1"
+
+    def __init__(self, runtime_fields: dict) -> None:
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeClient:
@@ -398,7 +400,7 @@ def test_climate_setup_refreshes_state_on_admission_updates(monkeypatch: pytest.
     }
     entities = []
 
-    asyncio.run(climate_platform.async_setup_entry(_FakeHass(payload), _FakeEntry(), entities.extend))
+    asyncio.run(climate_platform.async_setup_entry(_FakeHass(), _FakeEntry(payload), entities.extend))
     for entity in entities:
         entity.hass = object()
     status.listeners[0]()

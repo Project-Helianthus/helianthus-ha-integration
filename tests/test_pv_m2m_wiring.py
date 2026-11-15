@@ -245,10 +245,10 @@ def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it(monkeypatc
     hass, entry = object(), SimpleNamespace(entry_id="synthetic-entry", options={}, data={})
     boundaries = asyncio.run(entry_services.async_setup_m2m_boundaries(hass, entry, 31))
     admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
-    fields = entry_services.service_runtime_fields(entry, admin, boundaries)
+    services = entry_services.service_boundaries(entry, admin, boundaries)
     assert calls == [("pv", hass, entry, 31)]
-    assert fields["pv_m2m_boundary"] is boundary
-    assert fields["pv_m2m_coordinator"] is boundary.coordinator
+    assert services.pv_m2m_boundary is boundary
+    assert services.pv_m2m_coordinator is boundary.coordinator
     connection_source = (COMPONENT / "entry_connection.py").read_text(encoding="utf-8")
     cleanup_source = (COMPONENT / "entry_cleanup.py").read_text(encoding="utf-8")
     assert "await pv_m2m_boundary.async_close()" in cleanup_source
@@ -269,7 +269,7 @@ def test_sensor_platform_restores_descriptors_and_listens_for_new_valid_discover
     facade_source = (COMPONENT / "sensor.py").read_text(encoding="utf-8")
     factory_source = (COMPONENT / "sensor_setup.py").read_text(encoding="utf-8")
     assert "HelianthusPVM2MSensor" in facade_source
-    assert 'data.get("pv_m2m_coordinator")' in factory_source
+    assert "data.services.pv_m2m_coordinator" in factory_source
     assert "async_add_listener" in factory_source
     assert "known_descriptor_keys" in factory_source
 

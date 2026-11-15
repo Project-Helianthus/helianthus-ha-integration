@@ -184,14 +184,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def _payload(mode: str) -> dict:
@@ -239,8 +239,8 @@ def _payload(mode: str) -> dict:
 
 def test_interpreted_mode_creates_solar_and_cylinder_sensors_only() -> None:
     payload = _payload("INTERPRETED")
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     fan_entities: list = []
     binary_sensor_entities: list = []
@@ -295,8 +295,8 @@ def test_interpreted_mode_creates_solar_and_cylinder_sensors_only() -> None:
 
 def test_gpio_only_mode_suppresses_interpreted_entities_and_keeps_fm5_marker() -> None:
     payload = _payload("GPIO_ONLY")
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     fan_entities: list = []
     binary_sensor_entities: list = []

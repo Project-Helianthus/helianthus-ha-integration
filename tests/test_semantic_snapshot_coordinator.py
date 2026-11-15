@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from runtime_fixtures import attach_runtime
 from custom_components.helianthus import DOMAIN, entry_cleanup
 from custom_components.helianthus.semantic_snapshot import SEMANTIC_SNAPSHOT_QUERY
 from custom_components.helianthus.semantic_snapshot_coordinator import (
@@ -173,11 +174,12 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
                 assert coordinator._poll_task is coordinator._refresh_task is None
                 order.append(name)
             return SimpleNamespace(async_close=close)
-        runtime = {"semantic_snapshot_coordinator": coordinator,
-                   **{name + "_m2m_boundary": boundary(name)
-                      for name in ("pv", "storage", "evse")}}
-        other = {"semantic_snapshot_coordinator": object()}
-        ha.data = {DOMAIN: {configured.entry_id: runtime, "other": other}}
+        runtime = attach_runtime(configured, {
+            "semantic_snapshot_coordinator": coordinator,
+            **{name + "_m2m_boundary": boundary(name) for name in ("pv", "storage", "evse")}})
+        other = SimpleNamespace(entry_id="other")
+        other_runtime = attach_runtime(other, {"semantic_snapshot_coordinator": object()})
+        ha.data = {DOMAIN: {}}
         ha.config_entries = SimpleNamespace(async_unload_platforms=unload_platforms)
         assert not await entry_cleanup.async_unload_entry(ha, configured)
         assert not poll.done() and not refresh.done()
@@ -187,7 +189,8 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
         assert coordinator._refresh_task is coordinator._poll_task is None
         assert not coordinator.last_update_success and coordinator.data is retained
         assert order == ["pv", "storage", "evse"]
-        assert ha.data[DOMAIN] == {"other": other}
+        assert configured.runtime_data is runtime and other.runtime_data is other_runtime
+        assert ha.data[DOMAIN] == {}
         # Restart after joined teardown creates one new owner, no old read survives.
         client.release.set()
         await coordinator.async_start()
@@ -437,8 +440,8 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         forwarded = []
         entities = []
         async def forward(entry, platforms):
-            runtime = ha.data[DOMAIN][entry.entry_id]
-            assert "semantic_snapshot_coordinator" not in runtime
+            runtime = entry.runtime_data
+            assert not runtime.semantic_snapshot_attached
             forwarded.append(tuple(platforms))
             await sensor_platform.async_setup_entry(ha, entry, entities.extend)
             assert shared(entities) == []
@@ -450,10 +453,10 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
             async_entries=lambda domain: [configured], async_update_entry=update,
             async_forward_entry_setups=forward, async_unload_platforms=AsyncMock(return_value=True)))
         assert await entry_setup.async_setup_entry(ha, configured)
-        first = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
+        first = configured.runtime_data.semantic_snapshot_coordinator
         assert first.client is client and first.supported is readable_snapshot
         assert first.update_interval == 17 and len(client.calls) == 1
-        assert "semantic_snapshot_sensors_setup" not in ha.data[DOMAIN][configured.entry_id]
+        assert configured.runtime_data.semantic_snapshot_sensors_setup is None
         if readable_snapshot:
             sensor, = shared(entities)
             assert sensor.available and sensor.native_value == Decimal("12.5")
@@ -466,12 +469,12 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
             assert shared(entities) == []
         assert all(task.done() for task in tracked)
         assert await entry_cleanup.async_unload_entry(ha, configured)
-        assert configured.entry_id not in ha.data[DOMAIN]
+        del configured.runtime_data  # Home Assistant discards it after the unload
         assert first._closed and first._refresh_task is first._poll_task is None
         entities.clear()
         client.payload = unavailable("asset:pv" if readable_snapshot else "a")
         assert await entry_setup.async_setup_entry(ha, configured)
-        second = ha.data[DOMAIN][configured.entry_id]["semantic_snapshot_coordinator"]
+        second = configured.runtime_data.semantic_snapshot_coordinator
         assert second is not first and second.supported is True
         assert len(client.calls) == (3 if readable_snapshot else 2) and len(forwarded) == 2
         # HA waits only for tracked finite work; the poll must not be in this set.
@@ -517,22 +520,23 @@ def test_snapshot_joined_despite_admin_teardown_failure(monkeypatch, services_re
         else:
             monkeypatch.setattr(eebus_admin_coordinator, "close_admin_session", close_admin)
         session = object()
-        ha.data = {DOMAIN: {configured.entry_id: {
+        runtime = attach_runtime(configured, {
             "semantic_snapshot_coordinator": coordinator,
             "eebus_admin_session": session,
             "eebus_admin_services_registered": services_registered,
-        }}}
+        })
+        ha.data = {DOMAIN: {}}
         ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
         try:
             with pytest.raises(RuntimeError) as raised:
                 await entry_cleanup.async_unload_entry(ha, configured)
             assert raised.value is error
-            assert configured.entry_id not in ha.data[DOMAIN]
+            # A failed unload keeps the runtime; Home Assistant does not unload it again.
+            assert configured.runtime_data is runtime
             assert coordinator._closed and poll.done() and read.done()
             assert client.finished.is_set()
             assert coordinator._poll_task is coordinator._refresh_task is None
             assert not coordinator.last_update_success
-            assert await entry_cleanup.async_unload_entry(ha, configured)
             close_admin.assert_awaited_once()
         finally:
             await coordinator.async_close()
@@ -551,8 +555,8 @@ def test_snapshot_closed_before_a_boundary_teardown_failure(failing_boundary):
         boundaries = {name + "_m2m_boundary": SimpleNamespace(async_close=AsyncMock(
             side_effect=RuntimeError("synthetic teardown failure") if name == failing_boundary else None
         )) for name in ("pv", "storage", "evse")}
-        ha.data = {DOMAIN: {configured.entry_id: {
-            "semantic_snapshot_coordinator": coordinator, **boundaries}}}
+        attach_runtime(configured, {"semantic_snapshot_coordinator": coordinator, **boundaries})
+        ha.data = {DOMAIN: {}}
         ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
         with pytest.raises(RuntimeError, match="synthetic teardown failure"):
             await entry_cleanup.async_unload_entry(ha, configured)

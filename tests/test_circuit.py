@@ -239,14 +239,14 @@ class _FakeClient:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def _circuits() -> list[dict]:
@@ -323,8 +323,8 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
 
 def test_circuit_fan_platform_is_empty_after_read_only_cleanup() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
@@ -334,8 +334,8 @@ def test_circuit_fan_platform_is_empty_after_read_only_cleanup() -> None:
 
 def test_circuit_valve_platform_is_empty_after_read_only_cleanup() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
@@ -345,8 +345,8 @@ def test_circuit_valve_platform_is_empty_after_read_only_cleanup() -> None:
 
 def test_circuit_binary_sensor_platform_adds_one_pump_per_circuit() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -369,8 +369,8 @@ def test_circuit_binary_sensor_platform_adds_one_pump_per_circuit() -> None:
 
 def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs() -> None:
     payload, _, _ = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -397,8 +397,8 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
 def test_circuit_sparse_sensors_are_disabled_by_default_when_value_null() -> None:
     payload, _, _ = _build_payload()
     payload["circuit_coordinator"].data["circuits"][0]["state"]["calc_flow_temp_c"] = None
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     sensor_entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))
@@ -414,8 +414,8 @@ def test_circuit_sparse_sensors_are_disabled_by_default_when_value_null() -> Non
 
 def test_circuit_number_select_entities_call_circuit_config_mutation_without_cooling_enabled() -> None:
     payload, circuit_coordinator, client = _build_payload()
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     number_entities: list = []
     select_entities: list = []
@@ -448,8 +448,8 @@ def test_circuit_number_select_entities_call_circuit_config_mutation_without_coo
 def test_circuit_writable_entities_fail_closed_when_admission_untrusted() -> None:
     payload, circuit_coordinator, client = _build_payload()
     payload["status_coordinator"].data["admission"]["trusted"] = False
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     number_entities: list = []
     select_entities: list = []
@@ -501,8 +501,8 @@ def test_circuit_state_token_set_of_gateway_1004_is_exposed_raw_and_fail_safe() 
     circuits = _gateway_golden_circuits()
     payload, circuit_coordinator, _ = _build_payload()
     circuit_coordinator.data = {"circuits": circuits}
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     sensors: list = []
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensors.extend))

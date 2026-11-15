@@ -1325,7 +1325,7 @@
       "path": "tests/test_binary_sensor.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_binary_sensor.py",
@@ -1595,7 +1595,7 @@
       "path": "tests/test_entry_cleanup_retry_isolation.py",
       "symbol": "test_unload_retry_cleans_only_target_once",
       "rule": "PLR0915",
-      "count": 66
+      "count": 63
     },
     {
       "path": "tests/test_evse_binding_single_faults.py",
@@ -1715,7 +1715,7 @@
       "path": "tests/test_number.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 2
+      "count": 1
     },
     {
       "path": "tests/test_number_dhw_bivalence.py",
@@ -2027,7 +2027,7 @@
       "path": "tests/test_semantic_snapshot_coordinator.py",
       "symbol": "test_entry_setup_publication_unload_and_fresh_setup",
       "rule": "PLR0915",
-      "count": 84
+      "count": 83
     },
     {
       "path": "tests/test_semantic_snapshot_coordinator.py",
@@ -2129,7 +2129,7 @@
       "path": "tests/test_system.py",
       "symbol": "<module>",
       "rule": "E402",
-      "count": 6
+      "count": 5
     },
     {
       "path": "tests/test_system.py",

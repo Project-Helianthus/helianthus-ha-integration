@@ -362,7 +362,7 @@ def test_options_controller_uses_entry_shared_terminal_broker() -> None:
             "entry-one": SimpleNamespace(client=client)
         },
     )
-    attach_runtime(hass, "entry-one", {"eebus_admin_action_broker": broker})
+    attach_runtime(entry, {"eebus_admin_action_broker": broker})
     flow = HelianthusOptionsFlow(entry)
     flow.hass = hass
     controller = flow._pairing_controller()

@@ -9,7 +9,7 @@ import pytest
 import sys
 import types
 
-from runtime_fixtures import attach_runtime
+from runtime_fixtures import attach_runtime, build_runtime
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -142,15 +142,15 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
         self.data = {"transport": "https", "host": "gateway.example.test", "port": 8443}
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
@@ -296,8 +296,8 @@ def test_async_setup_entry_skips_address_only_bus_devices() -> None:
             },
         ]
     )
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -314,8 +314,8 @@ def test_async_setup_entry_skips_address_only_bus_devices() -> None:
 def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -360,8 +360,8 @@ def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only
 
 def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00() -> None:
     payload = _build_payload(boiler_device_id=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -379,8 +379,8 @@ def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_n
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
     payload["boiler_coordinator"].data["boiler_status"]["state"]["return_temperature_c"] = None
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -398,8 +398,8 @@ def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_n
 def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -457,8 +457,8 @@ def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
 
 def test_async_setup_entry_skips_diagnostics_without_boiler() -> None:
     payload = _build_payload(boiler_device_id=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -509,8 +509,8 @@ def test_async_setup_entry_skips_null_optional_status_sensor() -> None:
             "adapter": {},
         }
     )
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -530,8 +530,8 @@ def test_async_setup_entry_creates_live_optional_status_sensor() -> None:
             "adapter": {},
         }
     )
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -768,7 +768,7 @@ def _pv_entity(
         asset_ref="pv-asset-01",
         descriptor=descriptor,
         device=bound_asset_device(
-            {"pv_m2m_coordinator": coordinator}, "entry-1", "pv-asset-01"),
+            build_runtime({"pv_m2m_coordinator": coordinator}).services, "entry-1", "pv-asset-01"),
     )
 
 
@@ -867,7 +867,7 @@ def _evse_allocated_current_entity(connector: str):
         asset_ref="asset:evse-01",
         descriptor=descriptor,
         device=bound_asset_device(
-            {"evse_m2m_coordinator": coordinator}, "entry-1", "asset:evse-01"),
+            build_runtime({"evse_m2m_coordinator": coordinator}).services, "entry-1", "asset:evse-01"),
     )
 
 
@@ -915,7 +915,7 @@ def _storage_entity(*, fact_id: str, value: Decimal | str, unit: str):
         asset_ref="asset:storage-01",
         descriptor=descriptor,
         device=bound_asset_device(
-            {"storage_m2m_coordinator": coordinator}, "entry-1", "asset:storage-01"),
+            build_runtime({"storage_m2m_coordinator": coordinator}).services, "entry-1", "asset:storage-01"),
     )
 
 

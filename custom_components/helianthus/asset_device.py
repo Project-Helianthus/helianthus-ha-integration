@@ -9,14 +9,18 @@ the owner never depends on the order in which consumers were set up.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .evse_m2m import build_evse_device_identifier
 from .pv_m2m import build_pv_device_identifier
 from .storage_m2m import build_storage_device_identifier
+
+if TYPE_CHECKING:
+    from .entry_runtime import ServiceBoundaries
 
 
 @dataclass(frozen=True)
@@ -37,7 +41,8 @@ class AssetDevice:
         )
 
 
-# (runtime data key, identifier builder, model, name), in ownership order.
+# (consumer coordinator field of the service boundaries, identifier builder,
+# model, name), in ownership order.
 ASSET_DEVICE_OWNERS: tuple[
     tuple[str, Callable[[str, str], tuple[str, str]], str, str], ...
 ] = (
@@ -51,11 +56,11 @@ ASSET_DEVICE_OWNERS: tuple[
 
 
 def bound_asset_device(
-    data: Mapping[str, object], entry_id: str, asset_ref: str
+    services: ServiceBoundaries, entry_id: str, asset_ref: str
 ) -> AssetDevice | None:
     """Return the device of the first consumer bound to ``asset_ref``, else None."""
-    for key, build, model, name in ASSET_DEVICE_OWNERS:
-        bound = getattr(data.get(key), "asset_ref", None)
+    for field, build, model, name in ASSET_DEVICE_OWNERS:
+        bound = getattr(getattr(services, field), "asset_ref", None)
         if isinstance(bound, str) and bound and bound == asset_ref:
             return AssetDevice(build(entry_id, asset_ref), model, name)
     return None

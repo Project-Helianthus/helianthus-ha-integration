@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from runtime_fixtures import attach_runtime, runtime_value
 from custom_components.helianthus import DOMAIN, async_unload_entry
 from custom_components.helianthus import entry_cleanup
 
@@ -87,16 +88,12 @@ def test_unload_retry_cleans_only_target_once(monkeypatch, services_registered) 
             "evse_m2m_boundary": _Boundary(record, "close-evse"),
         }
 
-    target_runtime = runtime_for(target)
-    other_runtime = runtime_for(other)
-    target_snapshot = target_runtime.copy()
-    other_snapshot = other_runtime.copy()
+    target_fields = runtime_for(target)
+    other_fields = runtime_for(other)
+    target_runtime = attach_runtime(target, target_fields)
+    other_runtime = attach_runtime(other, other_fields)
     counts = {target.entry_id: 2, other.entry_id: 3}
-    domain_data = {
-        target.entry_id: target_runtime,
-        other.entry_id: other_runtime,
-        "_admission_cleanup_counts": counts,
-    }
+    domain_data = {"_admission_cleanup_counts": counts}
     hass = SimpleNamespace(
         config_entries=_ConfigEntries(events), data={DOMAIN: domain_data}
     )
@@ -104,7 +101,7 @@ def test_unload_retry_cleans_only_target_once(monkeypatch, services_registered) 
     async def unload_admin_boundary(actual_hass, *, entry_id, session):
         assert actual_hass is hass
         assert entry_id == target.entry_id
-        assert session is target_runtime["eebus_admin_session"]
+        assert session is target_fields["eebus_admin_session"]
         events.append((entry_id, "unregister-admin-services"))
         await session.close()
 
@@ -112,18 +109,18 @@ def test_unload_retry_cleans_only_target_once(monkeypatch, services_registered) 
         entry_cleanup, "async_unload_eebus_admin_boundary", unload_admin_boundary
     )
 
-    def assert_runtime_untouched(runtime, snapshot):
-        assert runtime == snapshot
-        assert all(runtime[key] is value for key, value in snapshot.items())
-        assert runtime["subscription_task"].cancel_requests == 0
-        assert runtime["eebus_admin_coordinator"].lifecycle.state == {
+    def assert_runtime_untouched(entry, runtime, fields):
+        assert entry.runtime_data is runtime
+        assert all(runtime_value(runtime, key) is value for key, value in fields.items())
+        assert fields["subscription_task"].cancel_requests == 0
+        assert fields["eebus_admin_coordinator"].lifecycle.state == {
             "retained": "synthetic-state"
         }
         for key in (
             "eebus_admin_session", "pv_m2m_boundary",
             "storage_m2m_boundary", "evse_m2m_boundary",
         ):
-            assert runtime[key].close_calls == 0
+            assert fields[key].close_calls == 0
 
     # Assert the exact platform request independently of the production constant.
     platforms = (
@@ -134,21 +131,18 @@ def test_unload_retry_cleans_only_target_once(monkeypatch, services_registered) 
     async def exercise_retry():
         assert await async_unload_entry(hass, target) is False
         assert hass.data[DOMAIN] is domain_data
-        assert domain_data[target.entry_id] is target_runtime
-        assert domain_data[other.entry_id] is other_runtime
+        assert domain_data == {"_admission_cleanup_counts": counts}
         assert counts == {target.entry_id: 2, other.entry_id: 3}
         assert events == [(target.entry_id, "unload-platforms", platforms, False)]
-        assert_runtime_untouched(target_runtime, target_snapshot)
-        assert_runtime_untouched(other_runtime, other_snapshot)
+        assert_runtime_untouched(target, target_runtime, target_fields)
+        assert_runtime_untouched(other, other_runtime, other_fields)
 
         assert await async_unload_entry(hass, target) is True
         assert hass.data[DOMAIN] is domain_data
-        assert set(domain_data) == {other.entry_id, "_admission_cleanup_counts"}
-        assert domain_data[other.entry_id] is other_runtime
-        assert domain_data["_admission_cleanup_counts"] is counts
+        assert domain_data == {"_admission_cleanup_counts": counts}
         assert counts == {other.entry_id: 3}
-        assert target_runtime["subscription_task"].cancel_requests == 1
-        assert target_runtime["eebus_admin_coordinator"].lifecycle.state == {}
+        assert target_fields["subscription_task"].cancel_requests == 1
+        assert target_fields["eebus_admin_coordinator"].lifecycle.state == {}
         expected = [
             (target.entry_id, "unload-platforms", platforms, False),
             (target.entry_id, "unload-platforms", platforms, True),
@@ -164,22 +158,23 @@ def test_unload_retry_cleans_only_target_once(monkeypatch, services_registered) 
             "close-admin-session", "close-pv", "close-storage", "close-evse",
         ))
         assert events == expected
-        assert_runtime_untouched(other_runtime, other_snapshot)
+        assert_runtime_untouched(other, other_runtime, other_fields)
 
-        # HA can ask again; resources already removed must not be cleaned twice.
+        # Home Assistant discards the runtime after a successful unload and can
+        # ask again; resources already removed must not be cleaned twice.
+        del target.runtime_data
         assert await async_unload_entry(hass, target) is True
         assert events == expected + [
             (target.entry_id, "unload-platforms", platforms, True)
         ]
-        assert target_runtime["subscription_task"].cancel_requests == 1
+        assert target_fields["subscription_task"].cancel_requests == 1
         for key in (
             "eebus_admin_session", "pv_m2m_boundary",
             "storage_m2m_boundary", "evse_m2m_boundary",
         ):
-            assert target_runtime[key].close_calls == 1
-        assert set(domain_data) == {other.entry_id, "_admission_cleanup_counts"}
-        assert domain_data[other.entry_id] is other_runtime
+            assert target_fields[key].close_calls == 1
+        assert domain_data == {"_admission_cleanup_counts": counts}
         assert counts == {other.entry_id: 3}
-        assert_runtime_untouched(other_runtime, other_snapshot)
+        assert_runtime_untouched(other, other_runtime, other_fields)
 
     asyncio.run(exercise_retry())

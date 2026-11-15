@@ -101,14 +101,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def _payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
@@ -140,8 +140,8 @@ def _payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
 
 def test_async_setup_entry_no_longer_creates_read_only_boiler_fans() -> None:
     payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     entities: list = []
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
@@ -151,8 +151,8 @@ def test_async_setup_entry_no_longer_creates_read_only_boiler_fans() -> None:
 
 def test_async_setup_entry_skips_boiler_fans_without_physical_bai00() -> None:
     payload = _payload(boiler_device_id=None)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     entities: list = []
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))
@@ -165,8 +165,8 @@ def test_async_setup_entry_skips_boiler_fans_without_physical_bai00() -> None:
 
 def test_async_setup_entry_keeps_fan_platform_empty_even_with_boiler_payload() -> None:
     payload = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
 
     entities: list = []
     asyncio.run(fan_platform.async_setup_entry(hass, entry, entities.extend))

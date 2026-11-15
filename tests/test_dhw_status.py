@@ -115,14 +115,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def test_sensor_platform_adds_dhw_status_sensor() -> None:
@@ -157,8 +157,8 @@ def test_sensor_platform_adds_dhw_status_sensor() -> None:
         "regulator_device_id": ("helianthus", "entry-1-bus-BASV2-15"),
         "regulator_manufacturer": "Vaillant",
     }
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))

@@ -64,14 +64,14 @@ def install(hass, configured):
     admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
     unset = _Unset()
     entry_setup.publish_entry_runtime(
-        hass, configured, connection=unset, coordinators=unset, gateway_devices=unset,
+        configured, connection=unset, coordinators=unset, gateway_devices=unset,
         identities=unset, reconciliation=SimpleNamespace(admission={}), listeners=unset,
-        services=entry_services.service_runtime_fields(
+        services=entry_services.service_boundaries(
             configured, admin, entry_services.M2MBoundaries(pv=None, storage=None, evse=None)),
     )
     entry_services.register_option_reload_listener(configured)
     assert len(configured.listeners) == len(configured.removers) == 1
-    return hass.data[const.DOMAIN][configured.entry_id]
+    return configured.runtime_data.services
 
 
 def harness(options=None, data=None, entry_id="synthetic-primary"):
@@ -85,7 +85,11 @@ def invoke(hass, owner, updated=None, *, reload=False):
     target = updated if updated is not None else owner
     hass.config_entries.async_reload.reset_mock()
     before = deepcopy(hass.data)
+    runtime = getattr(target, "runtime_data", None)
+    services = getattr(runtime, "services", None)
     asyncio.run(asyncio.wait_for(owner.listeners[0](hass, target), timeout=5))
+    assert getattr(target, "runtime_data", None) is runtime
+    assert getattr(runtime, "services", None) is services
     if reload:
         hass.config_entries.async_reload.assert_awaited_once_with(target.entry_id)
         assert hass.config_entries.async_reload.call_count == 1
@@ -108,7 +112,7 @@ def invoke(hass, owner, updated=None, *, reload=False):
         "unicode-bytes", "opaque-content"])
 def test_changed_selection_reloads_exactly_once(before, after):
     hass, configured, runtime = harness({KEY: before})
-    assert runtime["semantic_asset_selection_signature"] == tuple(before)
+    assert runtime.semantic_asset_selection_signature == tuple(before)
     configured.options[KEY] = after
     invoke(hass, configured, reload=True)
     # A pending reload must not mask the change on the next invocation.
@@ -119,7 +123,7 @@ def test_changed_selection_reloads_exactly_once(before, after):
                                    ["é" * 128], [str(i) for i in range(32)]])
 def test_unchanged_selection_and_unrelated_options_are_inert(saved):
     hass, configured, runtime = harness({KEY: saved}, {KEY: ["ignored"]})
-    assert runtime["semantic_asset_selection_signature"] == tuple(saved)
+    assert runtime.semantic_asset_selection_signature == tuple(saved)
     configured.options = deepcopy(configured.options)
     configured.options["unrelated_synthetic_setting"] = True
     configured.data[KEY] = ["different-ignored"]
@@ -134,7 +138,7 @@ def test_unchanged_selection_and_unrelated_options_are_inert(saved):
 ])
 def test_effective_signature_precedence_is_read_only(options, data, expected):
     hass, configured, runtime = harness(options, data)
-    assert runtime["semantic_asset_selection_signature"] == expected
+    assert runtime.semantic_asset_selection_signature == expected
     assert configured.options == options
     assert configured.data == data
     invoke(hass, configured)
@@ -179,7 +183,7 @@ def test_invalidated_selection_reloads_without_mutation_or_id_logging(invalid, s
 @pytest.mark.parametrize("invalid", INVALID)
 def test_invalid_runtime_uses_bounded_sentinel_and_valid_recovery_reloads(invalid):
     hass, configured, runtime = harness({KEY: invalid}, {KEY: ["must-not-fallback"]})
-    assert runtime["semantic_asset_selection_signature"] is None
+    assert runtime.semantic_asset_selection_signature is None
     configured.options[KEY] = ["different", "different"]
     invoke(hass, configured)
     configured.options[KEY] = []
@@ -197,7 +201,7 @@ def test_existing_family_signature_fields_still_reload(family, field):
     options.update({f"{family}_m2m_{name}": f"synthetic-{name}" for name in fields})
     hass, configured, runtime = harness(options)
     expected = (41, *(f"synthetic-{name}" for name in fields))
-    assert runtime[f"{family}_m2m_option_signature"] == expected
+    assert getattr(runtime, f"{family}_m2m_option_signature") == expected
     key = "scan_interval" if field == "scan_interval" else f"{family}_m2m_{field}"
     configured.options[key] = 43 if field == "scan_interval" else "synthetic-changed"
     invoke(hass, configured, reload=True)
@@ -216,8 +220,8 @@ def test_updated_entry_controls_runtime_lookup_and_reload_target():
     other_runtime = install(hass, other)
     other.options[KEY] = ["changed-other"]
     invoke(hass, owner, other, reload=True)
-    assert owner_runtime["semantic_asset_selection_signature"] == ("owner",)
-    assert other_runtime["semantic_asset_selection_signature"] == ("other",)
+    assert owner_runtime.semantic_asset_selection_signature == ("owner",)
+    assert other_runtime.semantic_asset_selection_signature == ("other",)
     invoke(hass, owner)
     # The other entry's unchanged state is inert even if the owner changed.
     other.options[KEY] = ["other"]
@@ -229,7 +233,7 @@ def test_updated_entry_controls_runtime_lookup_and_reload_target():
 def test_missing_or_unloaded_runtime_is_inert(runtime):
     hass, configured, _ = harness({KEY: ["asset:a"]})
     configured.options[KEY] = ["changed"]
-    hass.data[const.DOMAIN][configured.entry_id] = runtime
+    configured.runtime_data = runtime
     invoke(hass, configured)
-    hass.data.clear()
+    del configured.runtime_data
     invoke(hass, configured)

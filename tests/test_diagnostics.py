@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 import copy
+import dataclasses
 import json
 from pathlib import Path
 import sys
@@ -73,8 +74,11 @@ def _ensure_diagnostics_stub() -> None:
 
 _ensure_diagnostics_stub()
 
-from custom_components.helianthus import diagnostics  # noqa: E402
-from custom_components.helianthus.const import DOMAIN  # noqa: E402
+from custom_components.helianthus import diagnostics, entry_services, entry_setup  # noqa: E402
+from custom_components.helianthus.entry_connection import GatewayConnection  # noqa: E402
+from custom_components.helianthus.entry_coordinators import DomainCoordinators  # noqa: E402
+from custom_components.helianthus.entry_devices import DeviceIdentities  # noqa: E402
+from custom_components.helianthus.entry_runtime import StartedListeners  # noqa: E402
 from custom_components.helianthus.graphql import (  # noqa: E402
     GraphQLRequestError,
     GraphQLResponseError,
@@ -109,7 +113,41 @@ def _coordinator(success: bool, exception: Exception | None = None) -> SimpleNam
     return SimpleNamespace(last_update_success=success, last_exception=exception)
 
 
-def _setup(client: _FakeClient) -> tuple[SimpleNamespace, SimpleNamespace]:
+def _publish(entry: SimpleNamespace, client: _FakeClient, *, pv_coordinator=None) -> None:
+    """Publish the entry's runtime through the shipped setup functions, as setup does."""
+    coordinators = dict.fromkeys(field.name for field in dataclasses.fields(DomainCoordinators))
+    coordinators.update(
+        device_coordinator=_coordinator(True),
+        status_coordinator=_coordinator(False, GraphQLRequestError(f"cannot reach {SYNTHETIC_HOST}")),
+        fm5_coordinator=_coordinator(True),
+    )
+    admin = _coordinator(True)
+    admin.lifecycle = SimpleNamespace(action_broker=object())
+    pv = None if pv_coordinator is None else SimpleNamespace(coordinator=pv_coordinator)
+    adapter = ("helianthus", "synthetic-adapter")
+    entry_setup.publish_entry_runtime(
+        entry,
+        connection=GatewayConnection(session=object(), graphql_url="http://gateway.invalid/graphql",
+                                     client=client, instance_guid=None),
+        coordinators=DomainCoordinators(**coordinators),
+        gateway_devices=SimpleNamespace(adapter_device_id=adapter),
+        identities=DeviceIdentities(
+            daemon_device_id=("helianthus", "synthetic-daemon"), adapter_device_id=adapter,
+            boiler_device_id=None, regulator_device_id=None, vr71_device_id=None,
+            regulator_manufacturer="Vaillant", regulator_bus_address=None,
+            known_bus_devices=set(), nonexportable_radio_keys=set(), b524_merge_targets={},
+            known_radio_bus_keys=set(), known_circuit_indexes=set(), known_fm5_mode="ABSENT",
+            known_cylinder_indexes=set()),
+        reconciliation=SimpleNamespace(admission={}),
+        listeners=StartedListeners(
+            listeners=None, unsub_listeners=[], subscription_task=None,
+            zone_parent_device_ids={}, unresolved_zone_ids=(), radio_device_zone_names={}),
+        services=entry_services.service_boundaries(
+            entry, (admin, None, False), entry_services.M2MBoundaries(pv=pv, storage=None, evse=None)),
+    )
+
+
+def _setup(client: _FakeClient, **published: Any) -> tuple[SimpleNamespace, SimpleNamespace]:
     entry = SimpleNamespace(
         entry_id="entry-1",
         title=SYNTHETIC_HOST,
@@ -135,16 +173,8 @@ def _setup(client: _FakeClient) -> tuple[SimpleNamespace, SimpleNamespace]:
             },
         },
     )
-    runtime = {
-        "graphql_client": client,
-        "device_coordinator": _coordinator(True),
-        "status_coordinator": _coordinator(False, GraphQLRequestError(f"cannot reach {SYNTHETIC_HOST}")),
-        "fm5_coordinator": _coordinator(True),
-        "pv_m2m_coordinator": None,
-        "regulator_manufacturer": "Vaillant",
-    }
-    hass = SimpleNamespace(data={DOMAIN: {entry.entry_id: runtime}})
-    return hass, entry
+    _publish(entry, client, **published)
+    return SimpleNamespace(data={}), entry
 
 
 def _download(client: _FakeClient) -> dict[str, Any]:
@@ -179,7 +209,25 @@ def test_the_download_reports_each_coordinator_last_update_state() -> None:
         "device_coordinator": {"last_update_success": True, "last_exception": None},
         "status_coordinator": {"last_update_success": False, "last_exception": "GraphQLRequestError"},
         "fm5_coordinator": {"last_update_success": True, "last_exception": None},
+        "eebus_admin_coordinator": {"last_update_success": True, "last_exception": None},
     }
+
+
+def test_the_download_names_consumer_and_snapshot_coordinators_in_publication_order() -> None:
+    """Each optional coordinator is reported under its runtime field name, after the domain ones."""
+    hass, entry = _setup(_FakeClient(response=_fixture_data()),
+                         pv_coordinator=_coordinator(False, TimeoutError()))
+    entry.runtime_data.semantic_snapshot_coordinator = _coordinator(True)
+    entry.runtime_data.semantic_snapshot_attached = True
+
+    result = asyncio.run(diagnostics.async_get_config_entry_diagnostics(hass, entry))
+
+    assert list(result["coordinators"]) == [
+        "device_coordinator", "status_coordinator", "fm5_coordinator",
+        "eebus_admin_coordinator", "pv_m2m_coordinator", "semantic_snapshot_coordinator",
+    ]
+    assert result["coordinators"]["pv_m2m_coordinator"] == {
+        "last_update_success": False, "last_exception": "TimeoutError"}
 
 
 @pytest.mark.parametrize(
@@ -332,7 +380,8 @@ def test_a_failing_read_yields_an_error_entry(error: Exception) -> None:
     result = _download(_FakeClient(error=error))
 
     assert result["gateway"] == {"error": type(error).__name__}
-    assert set(result["coordinators"]) == {"device_coordinator", "status_coordinator", "fm5_coordinator"}
+    assert set(result["coordinators"]) == {
+        "device_coordinator", "status_coordinator", "fm5_coordinator", "eebus_admin_coordinator"}
     assert SYNTHETIC_HOST not in json.dumps(result)
 
 
@@ -345,7 +394,7 @@ def test_a_response_without_data_yields_an_error_entry(response: Any) -> None:
 
 def test_an_entry_without_runtime_yields_an_error_entry() -> None:
     hass, entry = _setup(_FakeClient(response=_fixture_data()))
-    hass.data[DOMAIN].clear()
+    del entry.runtime_data  # Home Assistant holds no runtime for an entry that is not loaded
     result = asyncio.run(diagnostics.async_get_config_entry_diagnostics(hass, entry))
 
     assert result["coordinators"] == {}

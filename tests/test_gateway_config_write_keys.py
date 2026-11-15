@@ -159,8 +159,8 @@ def _write_controls():
         }
     )
     payload["boiler_device_id"] = ("helianthus", "entry-1-bus-BAI00-08")
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
     for platform in (number_platform, text_platform, date_platform):
         asyncio.run(platform.async_setup_entry(hass, entry, entities.extend))

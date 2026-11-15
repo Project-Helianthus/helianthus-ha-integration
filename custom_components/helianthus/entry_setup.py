@@ -4,8 +4,9 @@
 register the gateway devices, create the coordinators, set up the optional
 admin boundary, register the inventory devices, reconcile entities, start
 listeners and subscriptions, set up the consumer boundaries, publish the
-entry mapping, add the option-change listener, register the platforms with
-the post-platform clean-up, then attach the semantic snapshot.
+entry's runtime to ``entry.runtime_data``, add the option-change listener,
+register the platforms with the post-platform clean-up, then attach the
+semantic snapshot.
 """
 
 from __future__ import annotations
@@ -46,19 +47,20 @@ from .entry_ownership import (
     async_prepare_entry,
     refuse_duplicate_setup,
 )
-from .entry_runtime import EntryRuntime
+from .entry_runtime import HelianthusRuntime, ServiceBoundaries, StartedListeners
 from .entry_schedule_helpers import register_schedule_helper_listeners
 from .entry_services import (
     async_setup_m2m_boundaries,
     register_option_reload_listener,
-    service_runtime_fields,
+    service_boundaries,
 )
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
 from .zone_parent import ZoneParentBindings, normalize_zone_id
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+
+    from .entry_runtime import HelianthusConfigEntry
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -185,18 +187,6 @@ class EntityReconciliation:
     admission: dict
     reconciler: EntryEntityReconciler
     trigger_reload_times: dict[str, float]
-
-
-@dataclass(frozen=True)
-class StartedListeners:
-    """The listener phase: coordinator listeners, callbacks, subscription and zone parents."""
-
-    listeners: EntryCoordinatorListeners
-    unsub_listeners: list[Callable[[], None]]
-    subscription_task: object | None
-    zone_parent_device_ids: dict[str, tuple[str, str]]
-    unresolved_zone_ids: tuple[str, ...]
-    radio_device_zone_names: dict[tuple[str, str], str]
 
 
 def reconcile_entities(
@@ -359,7 +349,6 @@ async def async_start_listeners(
 
 
 def publish_entry_runtime(
-    hass: object,
     entry: object,
     *,
     connection: GatewayConnection,
@@ -368,61 +357,41 @@ def publish_entry_runtime(
     identities: DeviceIdentities,
     reconciliation: EntityReconciliation,
     listeners: StartedListeners,
-    services: dict[str, object],
+    services: ServiceBoundaries,
 ) -> None:
-    """Publish the complete required entry mapping in one assignment."""
+    """Publish the entry's complete runtime to ``entry.runtime_data`` in one assignment."""
     boiler_device = identities.boiler_device_id
     regulator_device = identities.regulator_device_id
     admission = reconciliation.admission
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = cast(EntryRuntime, {
-        "device_coordinator": coordinators.device_coordinator,
-        "status_coordinator": coordinators.status_coordinator,
-        "semantic_coordinator": coordinators.semantic_coordinator,
-        "energy_coordinator": coordinators.energy_coordinator,
-        "circuit_coordinator": coordinators.circuit_coordinator,
-        "radio_coordinator": coordinators.radio_coordinator,
-        "fm5_coordinator": coordinators.fm5_coordinator,
-        "system_coordinator": coordinators.system_coordinator,
-        "boiler_coordinator": coordinators.boiler_coordinator,
-        "schedule_coordinator": coordinators.schedule_coordinator,
-        "adapter_info_coordinator": coordinators.adapter_info_coordinator,
-        **services,
-        "graphql_client": connection.client,
-        "subscription_task": listeners.subscription_task,
-        "unsub_listeners": listeners.unsub_listeners,
-        "daemon_device_id": gateway_devices.daemon_device_id,
-        "adapter_device_id": gateway_devices.adapter_device_id,
-        "boiler_device_id": boiler_device,
-        "regulator_device_id": regulator_device,
-        "vr71_device_id": identities.vr71_device_id,
-        "regulator_manufacturer": identities.regulator_manufacturer,
-        "regulator_bus_address": identities.regulator_bus_address,
-        "admission_repair_code": admission.get("repair_code"),
-        "source_selection": admission.get("source_selection"),
-        "boiler_physical_device_id": resolve_boiler_physical_device_id(boiler_device, regulator_device),
-        "boiler_via_device_id": resolve_boiler_via_device_id(
+    entry.runtime_data = HelianthusRuntime(
+        connection=connection,
+        coordinators=coordinators,
+        identities=identities,
+        services=services,
+        listeners=listeners,
+        admission_repair_code=admission.get("repair_code"),
+        source_selection=admission.get("source_selection"),
+        boiler_physical_device_id=resolve_boiler_physical_device_id(boiler_device, regulator_device),
+        boiler_via_device_id=resolve_boiler_via_device_id(
             boiler_device, regulator_device, gateway_devices.adapter_device_id
         ),
         # HA-1 reduced profile: boiler Burner/Hydraulics sub-devices are not registered yet.
-        "boiler_burner_device_id": boiler_burner_identifier(entry.entry_id),
-        "boiler_hydraulics_device_id": boiler_hydraulics_identifier(entry.entry_id),
-        "zone_parent_device_ids": listeners.zone_parent_device_ids,
-        "radio_device_zone_names": listeners.radio_device_zone_names,
-        "unresolved_zone_ids": listeners.unresolved_zone_ids,
-        "b524_merge_targets": identities.b524_merge_targets,
-    })
+        boiler_burner_device_id=boiler_burner_identifier(entry.entry_id),
+        boiler_hydraulics_device_id=boiler_hydraulics_identifier(entry.entry_id),
+    )
 
 
 async def async_attach_semantic_snapshot(
     hass: object, entry: object, client: object, scan_interval: object
 ) -> None:
-    """Assign the semantic snapshot coordinator, then run the deferred sensor setup."""
-    hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (
-        await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
+    """Attach the semantic snapshot coordinator, then run the deferred sensor setup."""
+    runtime: HelianthusRuntime = entry.runtime_data
+    runtime.semantic_snapshot_coordinator = await async_setup_semantic_snapshot(
+        hass, entry, client, scan_interval
     )
-    setup_snapshot_sensors = hass.data[DOMAIN][entry.entry_id].pop(
-        "semantic_snapshot_sensors_setup", None
-    )
+    runtime.semantic_snapshot_attached = True
+    setup_snapshot_sensors = runtime.semantic_snapshot_sensors_setup
+    runtime.semantic_snapshot_sensors_setup = None
     if setup_snapshot_sensors is not None:
         setup_snapshot_sensors()
 
@@ -432,7 +401,7 @@ def _admin_origin(graphql_url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -> bool:
     """Set up Helianthus from a config entry through its ordered phases."""
     from homeassistant.const import CONF_SCAN_INTERVAL
     from homeassistant.helpers import device_registry as dr
@@ -472,7 +441,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     boundaries = await async_setup_m2m_boundaries(hass, entry, scan_interval)
     publish_entry_runtime(
-        hass,
         entry,
         connection=connection,
         coordinators=coordinators,
@@ -480,7 +448,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         identities=identities,
         reconciliation=reconciliation,
         listeners=listeners,
-        services=service_runtime_fields(entry, admin, boundaries),
+        services=service_boundaries(entry, admin, boundaries),
     )
     register_option_reload_listener(entry)
 

@@ -82,17 +82,18 @@ class Client:
 def setup(records, runtime=None):
     async def exercise():
         client = Client(records)
-        ha = _FakeHass({"device_coordinator": _FakeCoordinator([]),
-                        "status_coordinator": _FakeCoordinator({})})
-        entry_runtime(ha, "entry-1").update(runtime or {})
+        ha = _FakeHass()
         ha.async_create_task = asyncio.create_task
         coordinator = SemanticSnapshotCoordinator(ha, client, tuple(r["asset_id"] for r in records))
         await coordinator.async_request_refresh()
         assert coordinator.last_update_success, coordinator.last_exception
-        entry_runtime(ha, "entry-1")["semantic_snapshot_coordinator"] = coordinator
+        entry = _FakeEntry("entry-1", {"device_coordinator": _FakeCoordinator([]),
+                                       "status_coordinator": _FakeCoordinator({}),
+                                       "semantic_snapshot_coordinator": coordinator,
+                                       **(runtime or {})})
         entities = []
-        await sensor_platform.async_setup_entry(ha, _FakeEntry("entry-1"), entities.extend)
-        return client, coordinator, ha, entities
+        await sensor_platform.async_setup_entry(ha, entry, entities.extend)
+        return client, coordinator, entry, entities
     return asyncio.run(asyncio.wait_for(exercise(), 5))
 
 
@@ -217,7 +218,7 @@ def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
     empty["projection"]["manifest"]["pack_versions"] = []
     empty["projection"]["dispositions"] = []
     empty["projection"]["requested"] = []
-    client, coordinator, ha, entities = setup([empty])
+    client, coordinator, entry, entities = setup([empty])
     assert shared(entities) == []
     client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
@@ -228,7 +229,7 @@ def test_discovery_after_empty_read_retains_omitted_keys_and_listener_cleanup():
     client.payload = {"semantic_snapshot": {"assets": [record]}}
     refresh(coordinator)
     assert shared(entities) == [sensor] and sensor.available
-    for remove in entry_runtime(ha, "entry-1")["unsub_listeners"]:
+    for remove in entry_runtime(entry).listeners.unsub_listeners:
         remove()
     assert coordinator._listeners == []
 

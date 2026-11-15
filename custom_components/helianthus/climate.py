@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 from datetime import date, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import ClimateEntity, HVACMode
 from homeassistant.components.climate.const import ClimateEntityFeature
@@ -14,7 +14,6 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
-from .const import DOMAIN
 from .device_ids import build_radio_bus_key, radio_device_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -26,6 +25,9 @@ from .zone_parent import (
     select_zone_radio_candidate as _select_zone_radio_candidate,
     zone_via_device,
 )
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 _INVOKE_SET_EXT_REGISTER = """
 mutation SetExtRegister($address:Int!, $params:json!){
@@ -130,16 +132,18 @@ def _zone_default_name(zone_id: object | None) -> str:
     return f"Zone {instance + 1}"
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["semantic_coordinator"]
-    radio_coordinator = data.get("radio_coordinator")
-    regulator_device_id = data.get("regulator_device_id") or data.get("adapter_device_id")
-    zone_parent_device_ids = data.get("zone_parent_device_ids") or {}
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    client = data.get("graphql_client")
-    regulator_bus_address = data.get("regulator_bus_address")
-    status_coordinator = data.get("status_coordinator")
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
+    data = entry.runtime_data
+    coordinator = data.coordinators.semantic_coordinator
+    radio_coordinator = data.coordinators.radio_coordinator
+    regulator_device_id = data.identities.regulator_device_id or data.identities.adapter_device_id
+    zone_parent_device_ids = data.listeners.zone_parent_device_ids or {}
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
+    client = data.connection.client
+    regulator_bus_address = data.identities.regulator_bus_address
+    status_coordinator = data.coordinators.status_coordinator
 
     zones = coordinator.data.get("zones", []) if coordinator.data else []
     entities = []
@@ -180,7 +184,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
-        data.setdefault("unsub_listeners", []).append(unsub)
+        data.listeners.unsub_listeners.append(unsub)
 
 
 class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):

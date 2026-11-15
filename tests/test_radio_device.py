@@ -157,14 +157,14 @@ class _FakeCoordinator:
 
 
 class _FakeEntry:
-    def __init__(self, entry_id: str) -> None:
+    def __init__(self, entry_id: str, runtime_fields: dict) -> None:
         self.entry_id = entry_id
+        attach_runtime(self, runtime_fields)
 
 
 class _FakeHass:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self) -> None:
         self.data = {}
-        attach_runtime(self, "entry-1", payload)
 
 
 def _base_payload(radio_devices: list[dict]) -> dict:
@@ -214,8 +214,8 @@ def test_radio_sensor_entities_cover_room_and_inventory_devices() -> None:
             "stale_cycles": 0,
         },
     ]
-    hass = _FakeHass(_base_payload(radio_devices))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _base_payload(radio_devices))
     entities: list = []
 
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -243,8 +243,8 @@ def test_identityless_inventory_radio_slot_exports_no_entities() -> None:
             "stale_cycles": 0,
         },
     ]
-    hass = _FakeHass(_base_payload(radio_devices))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _base_payload(radio_devices))
     sensor_entities: list = []
     binary_entities: list = []
 
@@ -269,8 +269,8 @@ def test_radio_connected_entity_becomes_unavailable_after_third_stale_cycle() ->
         }
     ]
     payload = _base_payload(radio_devices)
-    hass = _FakeHass(payload)
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
     entities: list = []
 
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
@@ -626,8 +626,8 @@ def test_adr027_merged_group_0c_sensor_entities_suppressed() -> None:
         },
     ]
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
-    hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _merge_payload(radio_devices, merge_targets))
     entities: list = []
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
@@ -655,8 +655,8 @@ def test_adr027_unmerged_group_0c_sensor_entities_created() -> None:
         },
     ]
     # No merge targets — bus device at 0x99 doesn't exist.
-    hass = _FakeHass(_merge_payload(radio_devices, {}))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _merge_payload(radio_devices, {}))
     entities: list = []
     asyncio.run(sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
@@ -682,8 +682,8 @@ def test_adr027_merged_binary_sensor_reparented_to_bus_device() -> None:
         },
     ]
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
-    hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _merge_payload(radio_devices, merge_targets))
     entities: list = []
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
@@ -712,8 +712,8 @@ def test_adr027_unmerged_binary_sensor_stays_on_radio_device() -> None:
             "stale_cycles": 0,
         },
     ]
-    hass = _FakeHass(_merge_payload(radio_devices, {}))
-    entry = _FakeEntry("entry-1")
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", _merge_payload(radio_devices, {}))
     entities: list = []
     asyncio.run(binary_sensor_platform.async_setup_entry(hass, entry, entities.extend))
 
@@ -757,8 +757,8 @@ def test_adr027_idempotency_multiple_runs_same_result() -> None:
     merge_targets = {"g0c-i01": _VR71_BUS_DEVICE_ID}
 
     def run_once():
-        hass = _FakeHass(_merge_payload(radio_devices, merge_targets))
-        entry = _FakeEntry("entry-1")
+        hass = _FakeHass()
+        entry = _FakeEntry("entry-1", _merge_payload(radio_devices, merge_targets))
         sensor_entities: list = []
         binary_entities: list = []
         asyncio.run(sensor_platform.async_setup_entry(hass, entry, sensor_entities.extend))

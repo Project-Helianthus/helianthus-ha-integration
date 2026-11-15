@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import dataclasses
+import importlib.util
 import logging
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import cast
 
 import pytest
 
+from runtime_fixtures import attach_runtime
 from custom_components.helianthus.entry_connection import GatewayConnection
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "helianthus"
+TABLE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "adopt_entry_runtime_data.py"
 DOMAIN = "helianthus"
+MISSING = object()
 # Each published key gets its own sentinel at its source, so a swapped or
-# dropped assignment is observable.
+# dropped assignment is observable. The key is the flat name of the runtime
+# field; the committed key-to-attribute table says where the runtime holds it.
 RUNTIME_KEYS = (
     "device_coordinator", "status_coordinator", "semantic_coordinator", "energy_coordinator",
     "circuit_coordinator", "radio_coordinator", "fm5_coordinator", "system_coordinator",
@@ -38,8 +43,9 @@ RUNTIME_KEYS = (
     "b524_merge_targets",
 )
 COORDINATOR_KEYS = RUNTIME_KEYS[:11]
-IDENTITY_KEYS = ("boiler_device_id", "regulator_device_id", "vr71_device_id",
-                 "regulator_manufacturer", "regulator_bus_address", "b524_merge_targets")
+IDENTITY_KEYS = ("daemon_device_id", "adapter_device_id", "boiler_device_id",
+                 "regulator_device_id", "vr71_device_id", "regulator_manufacturer",
+                 "regulator_bus_address", "b524_merge_targets")
 LISTENER_KEYS = ("subscription_task", "unsub_listeners", "zone_parent_device_ids",
                  "radio_device_zone_names", "unresolved_zone_ids")
 DERIVED_KEYS = ("boiler_physical_device_id", "boiler_via_device_id",
@@ -51,6 +57,40 @@ BOILER = ("helianthus", "synthetic-boiler")
 REGULATOR = ("helianthus", "synthetic-regulator")
 ADAPTER = ("helianthus", "synthetic-adapter")
 BOILER_CASES = {"boiler": (BOILER, REGULATOR), "regulator": (None, REGULATOR), "adapter": (None, None)}
+
+
+def runtime_table():
+    spec = importlib.util.spec_from_file_location("adopt_entry_runtime_data", TABLE_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+ATTRIBUTES = runtime_table().RUNTIME_ATTRIBUTES
+
+
+def flat_view(runtime):
+    """Every published key with the value the runtime holds for it."""
+    view = {}
+    for key in RUNTIME_KEYS:
+        value = runtime
+        for name in ATTRIBUTES[key].split("."):
+            value = getattr(value, name, MISSING)
+        view[key] = value
+    return view
+
+
+class PublishingEntry(SimpleNamespace):
+    """A config entry that records the one assignment of its runtime."""
+
+    def __init__(self, on_publish, **attrs):
+        super().__init__(**attrs)
+        object.__setattr__(self, "_on_publish", on_publish)
+
+    def __setattr__(self, name, value):
+        if name == "runtime_data":
+            self._on_publish(value)
+        super().__setattr__(name, value)
 
 
 def phase_recorder(events, failure, primary, secondary=None):
@@ -75,15 +115,27 @@ def install_module(monkeypatch, name, **attrs):
     return module
 
 
-def mutant_module(monkeypatch, filename, original, replacement):
-    """Load one shipped module with a single textual change, under a separate name."""
+def function_span(source, function):
+    """Return the character span of one top-level function in ``source``."""
+    node = next(node for node in ast.parse(source).body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function)
+    lines = source.splitlines(keepends=True)
+    start = sum(len(line) for line in lines[:node.lineno - 1])
+    return start, start + sum(len(line) for line in lines[node.lineno - 1:node.end_lineno])
+
+
+def mutant_module(monkeypatch, filename, function, original, replacement):
+    """Load one shipped module with one textual change inside ``function``, under a separate name."""
     source = (COMPONENT / filename).read_text()
-    assert source.count(original) == 1
+    start, end = function_span(source, function)
+    body = source[start:end]
+    assert body.count(original) == 1
+    source = source[:start] + body.replace(original, replacement, 1) + source[end:]
     name = "custom_components.helianthus._mutant_" + filename.removesuffix(".py")
     module = ModuleType(name)
     module.__package__ = "custom_components.helianthus"
     monkeypatch.setitem(sys.modules, name, module)
-    exec(compile(source.replace(original, replacement, 1), filename, "exec"), module.__dict__)
+    exec(compile(source, filename, "exec"), module.__dict__)
     return module
 
 
@@ -108,7 +160,7 @@ class SetupTail:
         self.error = RuntimeError("synthetic lifecycle failure")
         self.failure, self.optional, self.callback = failure, optional, callback
         self.record = phase_recorder(self.events, failure, self.error)
-        self.entry = SimpleNamespace(entry_id="synthetic-entry", data={},
+        self.entry = PublishingEntry(self._published, entry_id="synthetic-entry", data={},
                                      options={"semantic_asset_ids": ["asset:synthetic"]})
         self.entry.add_update_listener = lambda listener: self.record("add-update-listener")
         self.entry.async_on_unload = lambda unsub: self.record("own-update-listener")
@@ -118,23 +170,20 @@ class SetupTail:
                            semantic_asset_selection_signature=("asset:synthetic",))
         self.values["eebus_admin_coordinator"] = SimpleNamespace(
             lifecycle=SimpleNamespace(action_broker=self.values["eebus_admin_action_broker"]))
-        self.data = self._entry_data()
-        self.hass = SimpleNamespace(data={DOMAIN: self.data}, config_entries=SimpleNamespace(
+        self.hass = SimpleNamespace(data={}, config_entries=SimpleNamespace(
             async_forward_entry_setups=self.forward))
         self._install(monkeypatch)
 
-    def _entry_data(self):
-        bench = self
+    def _published(self, runtime):
+        from custom_components.helianthus.entry_runtime import HelianthusRuntime
 
-        class EntryData(dict):
-            def __setitem__(self, key, value):
-                bench.record("publish")
-                assert key == "synthetic-entry"
-                assert type(value) is dict
-                assert value == bench.expected()
-                bench.published.append(value.copy())
-                super().__setitem__(key, value)
-        return EntryData()
+        self.record("publish")
+        assert type(runtime) is HelianthusRuntime
+        assert flat_view(runtime) == self.expected()
+        assert runtime.semantic_snapshot_attached is False
+        assert runtime.semantic_snapshot_coordinator is None
+        assert runtime.semantic_snapshot_sensors_setup is None
+        self.published.append(flat_view(runtime))
 
     def expected(self):
         values = self.values
@@ -163,7 +212,7 @@ class SetupTail:
                 session=object(), graphql_url="https://gateway.example.test/graphql",
                 client=values["graphql_client"], instance_guid="guid-synthetic"),
             "register_gateway_devices": SimpleNamespace(
-                daemon_device_id=values["daemon_device_id"], adapter_device_id=ADAPTER),
+                daemon_device_id=object(), adapter_device_id=ADAPTER),
             "async_create_domain_coordinators": SimpleNamespace(
                 **{key: values[key] for key in COORDINATOR_KEYS}),
             "register_inventory_devices": SimpleNamespace(**{key: values[key] for key in IDENTITY_KEYS}),
@@ -201,7 +250,7 @@ class SetupTail:
     def _boundary_factory(self, family):
         async def create(hass, entry, *, scan_interval):
             assert hass is self.hass and entry is self.entry and scan_interval == 60
-            assert entry.entry_id not in self.data
+            assert self.published == []
             self.record("create-" + family)
             if self.failure == "optional-" + family:
                 raise ValueError("synthetic optional configuration")
@@ -214,15 +263,15 @@ class SetupTail:
 
     async def forward(self, actual_entry, platforms):
         assert actual_entry is self.entry and platforms == ["sensor", "climate"]
-        assert "semantic_snapshot_coordinator" not in self.data[self.entry.entry_id]
+        assert self.entry.runtime_data.semantic_snapshot_attached is False
         self.record("forward")
         if self.callback:
-            self.data[self.entry.entry_id]["semantic_snapshot_sensors_setup"] = lambda: self.record("sensors")
+            self.entry.runtime_data.semantic_snapshot_sensors_setup = lambda: self.record("sensors")
 
     async def snapshot(self, actual_hass, actual_entry, client, interval):
         assert actual_hass is self.hass and actual_entry is self.entry
         assert client is self.values["graphql_client"] and interval == 60
-        assert "semantic_snapshot_coordinator" not in self.data[self.entry.entry_id]
+        assert self.entry.runtime_data.semantic_snapshot_attached is False
         self.record("snapshot")
         return self.values["snapshot"]
 
@@ -235,15 +284,17 @@ class SetupTail:
 @pytest.mark.parametrize("optional", (False, True))
 @pytest.mark.parametrize("callback", (False, True))
 @pytest.mark.parametrize("parents", tuple(BOILER_CASES))
-def test_publication_order_and_exact_mapping(monkeypatch, optional, callback, parents):
+def test_publication_order_and_exact_runtime(monkeypatch, optional, callback, parents):
     """Fields varied: every published key, optional boundaries, the boiler parent chain."""
     bench = SetupTail(monkeypatch, optional=optional, callback=callback, parents=parents)
     assert bench.run() is True
     assert bench.events == PHASES + (["sensors"] if callback else [])
-    runtime = bench.data[bench.entry.entry_id]
+    runtime = bench.entry.runtime_data
     assert len(bench.published) == 1
-    assert runtime == {**bench.published[0], "semantic_snapshot_coordinator": bench.values["snapshot"]}
-    assert "semantic_snapshot_sensors_setup" not in runtime
+    assert flat_view(runtime) == bench.published[0]
+    assert runtime.semantic_snapshot_attached is True
+    assert runtime.semantic_snapshot_coordinator is bench.values["snapshot"]
+    assert runtime.semantic_snapshot_sensors_setup is None
 
 
 @pytest.mark.parametrize("family,label", (("pv", "PV"), ("storage", "storage"), ("evse", "EVSE")))
@@ -270,11 +321,12 @@ def test_partial_setup_keeps_current_publication_and_propagates(monkeypatch, pha
     expected = PHASES + ["sensors"]
     assert bench.events == expected[:expected.index(phase) + 1]
     if phase.startswith("create-"):
-        assert bench.entry.entry_id not in bench.data and bench.published == []
+        assert not hasattr(bench.entry, "runtime_data") and bench.published == []
         return
-    runtime = bench.data[bench.entry.entry_id]
-    assert ("semantic_snapshot_sensors_setup" in runtime) is (phase == "snapshot")
-    assert runtime.get("semantic_snapshot_coordinator") is (bench.values["snapshot"] if phase == "sensors" else None)
+    runtime = bench.entry.runtime_data
+    assert (runtime.semantic_snapshot_sensors_setup is not None) is (phase == "snapshot")
+    assert runtime.semantic_snapshot_attached is (phase == "sensors")
+    assert runtime.semantic_snapshot_coordinator is (bench.values["snapshot"] if phase == "sensors" else None)
 
 
 def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, optional=False):
@@ -289,7 +341,7 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
 
     def boundary(name):
         async def close():
-            assert entry.entry_id not in hass.data[DOMAIN]
+            assert entry.entry_id not in counts
             record(name)
         return SimpleNamespace(async_close=close)
 
@@ -297,7 +349,7 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
         record("listener-error")
         raise RuntimeError("synthetic listener error")
 
-    runtime = {} if optional else {
+    fields = {} if optional else {
         "subscription_task": SimpleNamespace(cancel=lambda: record("cancel")),
         "unsub_listeners": [lambda: record("listener-first"), listener_failure,
                             lambda: record("listener-last")],
@@ -307,9 +359,11 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
         "pv_m2m_boundary": boundary("pv"), "storage_m2m_boundary": boundary("storage"),
         "evse_m2m_boundary": boundary("evse"),
     }
+    runtime = attach_runtime(entry, fields)
     counts = {entry.entry_id: 2, "synthetic-other": 3}
-    other = {"untouched": object()}
-    domain_data = {entry.entry_id: runtime, "synthetic-other": other, "_admission_cleanup_counts": counts}
+    other = attach_runtime(SimpleNamespace(entry_id="synthetic-other"), {
+        "subscription_task": SimpleNamespace(cancel=lambda: record("other-cancel"))})
+    domain_data = {"_admission_cleanup_counts": counts}
 
     async def unload(actual_entry, platforms):
         assert actual_entry is entry and platforms == ["sensor", "climate"]
@@ -317,7 +371,7 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
         return result
 
     async def close_admin(session):
-        assert session is runtime["eebus_admin_session"]
+        assert session is fields["eebus_admin_session"]
         record("admin")
 
     async def unregister(actual_hass, *, entry_id, session):
@@ -343,15 +397,17 @@ def test_unload_false_retains_state_and_success_clears_only_owned_state(monkeypa
     assert run_cleanup(case) is False
     _, hass, entry, events, runtime, counts, other, *_ = case
     assert events == ["platforms"]
-    assert hass.data[DOMAIN][entry.entry_id] is runtime
+    assert entry.runtime_data is runtime
     assert counts == {entry.entry_id: 2, "synthetic-other": 3}
     case = cleanup_case(monkeypatch, registered=registered)
     assert run_cleanup(case) is True
     _, hass, entry, events, runtime, counts, other, *_ = case
     assert events == ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear"] + (["unregister"] if registered else []) + ["admin", "snapshot", "pv", "storage", "evse"]
-    assert entry.entry_id not in hass.data[DOMAIN]
     assert counts == {"synthetic-other": 3}
-    assert hass.data[DOMAIN]["synthetic-other"] is other
+    assert hass.data[DOMAIN] == {"_admission_cleanup_counts": counts}
+    # Home Assistant discards the runtime after a successful unload; a later
+    # unload then finds none and closes nothing twice.
+    del entry.runtime_data
     assert run_cleanup(case) is True
     assert events[-1] == "platforms" and events.count("cancel") == 1
 
@@ -362,9 +418,9 @@ def test_optional_or_missing_resources(monkeypatch, state):
     if state == "missing-domain":
         case[1].data.clear()
     elif state == "missing-entry":
-        case[1].data[DOMAIN].pop(case[2].entry_id)
+        del case[2].runtime_data
     elif state == "none":
-        case[4].update(dict.fromkeys((
+        attach_runtime(case[2], dict.fromkeys((
             "subscription_task", "unsub_listeners", "eebus_admin_coordinator",
             "eebus_admin_session", "semantic_snapshot_coordinator",
             "pv_m2m_boundary", "storage_m2m_boundary", "evse_m2m_boundary")))
@@ -393,7 +449,7 @@ def test_cleanup_finally_and_error_propagation(monkeypatch, phase, expected):
     if not phase.startswith("cancel-"):
         assert caught.value is case[-2]
     assert case[3] == expected
-    assert (case[2].entry_id in case[1].data[DOMAIN]) is phase.endswith("platforms")
+    assert (case[2].entry_id in case[5]) is phase.endswith("platforms")
 
 
 def test_snapshot_finally_error_replaces_admin_error(monkeypatch):
@@ -406,51 +462,83 @@ def test_snapshot_finally_error_replaces_admin_error(monkeypatch):
 
 
 def test_publication_order_negative_control(monkeypatch):
-    """Forwarding without the published mapping fails, so the order checks are live."""
+    """Forwarding without the published runtime fails, so the order checks are live."""
     from custom_components.helianthus import entry_setup
 
     bench = SetupTail(monkeypatch)
     monkeypatch.setattr(entry_setup, "publish_entry_runtime", lambda *args, **kwargs: None)
-    with pytest.raises(KeyError):
+    with pytest.raises(AttributeError):
         bench.run()
 
 
-@pytest.mark.parametrize("key", RUNTIME_KEYS)
-def test_publication_key_mutation_is_rejected(monkeypatch, key):
-    """Renaming any one published key, in setup or in the service fields, is rejected."""
+def _writers():
+    """Map every published field to (file, writing function, line prefix, patched function)."""
+    from custom_components.helianthus.entry_runtime import HelianthusRuntime, ServiceBoundaries
+
+    writers = {
+        field.name: ("entry_setup.py", "publish_entry_runtime", f"        {field.name}=",
+                     "publish_entry_runtime")
+        for field in dataclasses.fields(HelianthusRuntime)
+        if field.default is dataclasses.MISSING
+    }
+    for field in dataclasses.fields(ServiceBoundaries):
+        if field.name.endswith("_signature"):
+            writer = ("_option_reload_signatures", f'    yield "{field.name}", ')
+        else:
+            writer = ("service_boundaries", f"        {field.name}=")
+        writers[field.name] = ("entry_services.py", *writer, "service_boundaries")
+    del writers["services"]
+    return writers
+
+
+WRITERS = sorted(_writers())
+
+
+@pytest.mark.parametrize("field", WRITERS)
+def test_publication_writer_mutation_is_rejected(monkeypatch, field):
+    """Publishing None for any one field, in setup or in the service boundaries, is rejected."""
     from custom_components.helianthus import entry_setup
 
-    original = f'        "{key}":'
-    owner = next(name for name in ("entry_setup.py", "entry_services.py")
-                 if original in (COMPONENT / name).read_text())
-    function = "publish_entry_runtime" if owner == "entry_setup.py" else "service_runtime_fields"
-    mutant = mutant_module(monkeypatch, owner, original, '        "unexpected_runtime_key":')
+    owner, writer, prefix, function = _writers()[field]
+    mutant = mutant_module(monkeypatch, owner, writer, prefix, prefix + "None and ")
     bench = SetupTail(monkeypatch)
     monkeypatch.setattr(entry_setup, function, getattr(mutant, function))
     with pytest.raises(AssertionError):
         bench.run()
 
 
-def test_each_published_key_has_exactly_one_writer():
-    sources = [(COMPONENT / name).read_text() for name in ("entry_setup.py", "entry_services.py")]
-    writers = {key: sorted(source.count(f'        "{key}":') for source in sources) for key in RUNTIME_KEYS}
-    assert all(counts == [0, 1] for counts in writers.values()), writers
+def test_each_published_field_has_exactly_one_writer():
+    sources = {name: (COMPONENT / name).read_text() for name in ("entry_setup.py", "entry_services.py")}
+    counts = {}
+    for field, (owner, writer, prefix, _) in _writers().items():
+        start, end = function_span(sources[owner], writer)
+        counts[field] = sources[owner][start:end].count(prefix)
+    assert set(counts.values()) == {1}, counts
+    assert len(counts) == 24
 
 
 def test_runtime_type_matches_publication_and_conditional_fields():
-    from custom_components.helianthus import entry_cleanup, entry_setup
-    from custom_components.helianthus.entry_runtime import EntryRuntime
+    from custom_components.helianthus import entry_services, entry_setup
+    from custom_components.helianthus.entry_runtime import (
+        HelianthusRuntime,
+        ServiceBoundaries,
+        StartedListeners,
+    )
 
-    assert entry_setup.EntryRuntime is entry_cleanup.EntryRuntime is EntryRuntime
-    assert entry_setup.cast is cast
-    assert EntryRuntime.__required_keys__ == frozenset(RUNTIME_KEYS)
-    assert EntryRuntime.__optional_keys__ == frozenset({
-        "semantic_snapshot_coordinator", "semantic_snapshot_sensors_setup",
-        "manufacturer", "solar_device_id",
-    })
-    runtime = EntryRuntime(device_coordinator=None)
-    assert type(runtime) is dict
-    assert runtime == {"device_coordinator": None}
+    assert entry_setup.HelianthusRuntime is entry_services.HelianthusRuntime is HelianthusRuntime
+    assert entry_setup.StartedListeners is StartedListeners
+    assert "__slots__" in vars(HelianthusRuntime) and "__slots__" in vars(ServiceBoundaries)
+    defaults = {field.name: field.default for field in dataclasses.fields(HelianthusRuntime)
+                if field.default is not dataclasses.MISSING}
+    assert defaults == {"semantic_snapshot_attached": False,
+                        "semantic_snapshot_coordinator": None,
+                        "semantic_snapshot_sensors_setup": None}
+    table = runtime_table()
+    assert set(table.RUNTIME_ATTRIBUTES) == set(RUNTIME_KEYS) | {
+        "semantic_snapshot_coordinator", "semantic_snapshot_sensors_setup"}
+    assert table.UNPUBLISHED_KEYS == frozenset({"manufacturer", "solar_device_id"})
+    assert not set(table.UNPUBLISHED_KEYS) & set(table.RUNTIME_ATTRIBUTES)
+    assert table.table_errors(COMPONENT.parents[1]) == []
 
 
 def test_runtime_type_imports_dependencies_only_for_type_checking():
@@ -458,10 +546,11 @@ def test_runtime_type_imports_dependencies_only_for_type_checking():
 
     tree = ast.parse((COMPONENT / "entry_runtime.py").read_text())
     direct_imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)]
-    assert [node.module for node in direct_imports] == ["typing"]
+    assert [node.module for node in direct_imports] == ["__future__", "dataclasses", "typing"]
     namespace = runpy.run_path(str(COMPONENT / "entry_runtime.py"))
     assert "HelianthusCoordinator" not in namespace
     assert "ClientSession" not in namespace
+    assert "ConfigEntry" not in namespace
 
 
 def test_setup_without_entry_update_listener_hooks(monkeypatch):

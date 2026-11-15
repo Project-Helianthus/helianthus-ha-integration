@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.number import NumberEntity
+
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
 
 try:
     from homeassistant.components.number import NumberMode
@@ -20,7 +23,6 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .admission import assert_admission_trusted, status_admission_trusted
-from .const import DOMAIN
 from .device_ids import circuit_display_name, circuit_identifier, cylinder_identifier
 from .entity_updates import async_write_entity_state_if_enabled
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
@@ -292,18 +294,20 @@ def _fm5_mode(payload: dict[str, Any] | None) -> str:
     return mode
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data.get("circuit_coordinator")
-    system_coordinator = data.get("system_coordinator")
-    fm5_coordinator = data.get("fm5_coordinator")
-    boiler_coordinator = data.get("boiler_coordinator")
-    boiler_device_id = data.get("boiler_device_id")
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
-    client = data.get("graphql_client")
-    status_coordinator = data.get("status_coordinator")
-    regulator_device_id = data.get("regulator_device_id")
-    vr71_device_id = data.get("vr71_device_id") or regulator_device_id
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
+    data = entry.runtime_data
+    coordinator = data.coordinators.circuit_coordinator
+    system_coordinator = data.coordinators.system_coordinator
+    fm5_coordinator = data.coordinators.fm5_coordinator
+    boiler_coordinator = data.coordinators.boiler_coordinator
+    boiler_device_id = data.identities.boiler_device_id
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
+    client = data.connection.client
+    status_coordinator = data.coordinators.status_coordinator
+    regulator_device_id = data.identities.regulator_device_id
+    vr71_device_id = data.identities.vr71_device_id or regulator_device_id
 
     entities: list[NumberEntity] = []
     if boiler_coordinator and boiler_device_id:
@@ -363,7 +367,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 async_write_entity_state_if_enabled(entity)
 
         unsub = status_coordinator.async_add_listener(_handle_admission_update)
-        data.setdefault("unsub_listeners", []).append(unsub)
+        data.listeners.unsub_listeners.append(unsub)
 
 
 def _assert_admission_trusted(status_coordinator: object | None) -> None:

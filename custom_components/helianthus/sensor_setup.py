@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfTemperature
 
 from .asset_device import AssetDevice, bound_asset_device
-from .const import DOMAIN
 from .device_ids import (
     build_bus_device_key,
     bus_identifier,
@@ -45,6 +44,9 @@ from .sensor_values import (
     radio_slot,
 )
 
+if TYPE_CHECKING:
+    from .entry_runtime import HelianthusConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -60,7 +62,9 @@ def _daemon_field_wanted(has_reloaded, daemon_device_id, daemon_status, field) -
     return bool(daemon_device_id) and has_reloaded(f"{daemon_device_id[1]}-{field.key}")
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> None:
+async def async_setup_entry(
+    hass, entry: HelianthusConfigEntry, async_add_entities
+) -> None:
     """Add the sensor entities of every domain in one call, then wire B503."""
     from .sensor import (
         HelianthusEVSEM2MSensor,
@@ -70,59 +74,59 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     from .entry_setup import sparse_entity_has_reloaded
     from .semantic_snapshot_sensors import setup_semantic_snapshot_sensors
 
-    data = hass.data[DOMAIN][entry.entry_id]
+    data = entry.runtime_data
     entry_id = entry.entry_id
     has_reloaded = partial(sparse_entity_has_reloaded, hass, entry_id)
-    device_coordinator = data["device_coordinator"]
-    status_coordinator = data["status_coordinator"]
-    boiler_device_id = data.get("boiler_device_id")
-    regulator_device_id = data.get("regulator_device_id")
-    adapter_device_id = data.get("adapter_device_id")
+    device_coordinator = data.coordinators.device_coordinator
+    status_coordinator = data.coordinators.status_coordinator
+    boiler_device_id = data.identities.boiler_device_id
+    regulator_device_id = data.identities.regulator_device_id
+    adapter_device_id = data.identities.adapter_device_id
     via_device = regulator_device_id or adapter_device_id
-    manufacturer = data.get("regulator_manufacturer") or "Helianthus"
+    manufacturer = data.identities.regulator_manufacturer or "Helianthus"
 
     sensors: list[SensorEntity] = []
     sensors.extend(setup_semantic_snapshot_sensors(data, entry_id, async_add_entities))
-    sensors.extend(_build_eebus_admin_sensors(data.get("eebus_admin_coordinator"), entry))
+    sensors.extend(_build_eebus_admin_sensors(data.services.eebus_admin_coordinator, entry))
     sensors.extend(_build_bus_address_sensors(device_coordinator, entry_id))
     sensors.extend(_build_status_sensors(
-        status_coordinator, data.get("daemon_device_id"), adapter_device_id,
+        status_coordinator, data.identities.daemon_device_id, adapter_device_id,
         has_reloaded))
     sensors.extend(_build_boiler_sensors(
-        data.get("boiler_coordinator"), entry_id, manufacturer, boiler_device_id))
+        data.coordinators.boiler_coordinator, entry_id, manufacturer, boiler_device_id))
     sensors.extend(_build_circuit_sensors(
-        data.get("circuit_coordinator"), entry_id, manufacturer))
+        data.coordinators.circuit_coordinator, entry_id, manufacturer))
     sensors.extend(_build_system_sensors(
-        data.get("system_coordinator"), entry_id, manufacturer, regulator_device_id))
+        data.coordinators.system_coordinator, entry_id, manufacturer, regulator_device_id))
     sensors.extend(_build_radio_sensors(
-        data.get("radio_coordinator"), entry_id, manufacturer,
-        data.get("radio_device_zone_names") or {}, data.get("b524_merge_targets") or {},
+        data.coordinators.radio_coordinator, entry_id, manufacturer,
+        data.listeners.radio_device_zone_names or {}, data.identities.b524_merge_targets or {},
         has_reloaded))
     sensors.extend(_build_fm5_sensors(
-        data.get("fm5_coordinator"), entry_id, manufacturer,
-        data.get("vr71_device_id") or regulator_device_id))
+        data.coordinators.fm5_coordinator, entry_id, manufacturer,
+        data.identities.vr71_device_id or regulator_device_id))
     sensors.extend(_build_zone_and_dhw_sensors(
-        data.get("semantic_coordinator"), entry_id, manufacturer, via_device,
-        regulator_device_id, data.get("zone_parent_device_ids") or {}))
+        data.coordinators.semantic_coordinator, entry_id, manufacturer, via_device,
+        regulator_device_id, data.listeners.zone_parent_device_ids or {}))
     sensors.extend(_build_energy_sensors(
-        data.get("energy_coordinator"), entry_id, via_device, manufacturer))
+        data.coordinators.energy_coordinator, entry_id, via_device, manufacturer))
     for coordinator, entity_class in (
-        (data.get("pv_m2m_coordinator"), HelianthusPVM2MSensor),
-        (data.get("storage_m2m_coordinator"), HelianthusStorageM2MSensor),
-        (data.get("evse_m2m_coordinator"), HelianthusEVSEM2MSensor),
+        (data.services.pv_m2m_coordinator, HelianthusPVM2MSensor),
+        (data.services.storage_m2m_coordinator, HelianthusStorageM2MSensor),
+        (data.services.evse_m2m_coordinator, HelianthusEVSEM2MSensor),
     ):
         if coordinator is not None:
             sensors.extend(_build_descriptor_sensors(
                 coordinator, entity_class, entry_id,
-                bound_asset_device(data, entry_id, coordinator.asset_ref),
-                async_add_entities, data.setdefault("unsub_listeners", [])))
+                bound_asset_device(data.services, entry_id, coordinator.asset_ref),
+                async_add_entities, data.listeners.unsub_listeners))
     sensors.extend(_build_adapter_info_sensors(
-        data.get("adapter_info_coordinator"), entry_id, adapter_device_id))
+        data.coordinators.adapter_info_coordinator, entry_id, adapter_device_id))
 
     async_add_entities(sensors)
 
     await _async_wire_b503_diagnostics(
-        hass, entry, async_add_entities, data.get("graphql_client"),
+        hass, entry, async_add_entities, data.connection.client,
         boiler_device_id or regulator_device_id)
 
 

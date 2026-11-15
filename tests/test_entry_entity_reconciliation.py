@@ -32,8 +32,10 @@ from entry_setup_harness import (
     TRUSTED_STATUS,
     config_entry,
     install_harness,
+    published_runtime,
     run,
 )
+from runtime_fixtures import runtime_value
 
 from custom_components.helianthus import DOMAIN, entry_entity_cleanup
 from custom_components.helianthus.device_ids import bus_identifier
@@ -87,12 +89,12 @@ def reload_reasons(caplog, entry_id=ENTRY):
 
 
 def runtime(setup, entry_id=ENTRY):
-    return setup.hass.data[DOMAIN][entry_id]
+    return published_runtime(setup, entry_id)
 
 
 def notify(setup, coordinator_key, data, entry_id=ENTRY):
     """Publish new coordinator data and call the listeners the setup registered."""
-    coordinator = runtime(setup, entry_id)[coordinator_key]
+    coordinator = runtime_value(runtime(setup, entry_id), coordinator_key)
     coordinator.data = data
 
     async def exercise():
@@ -683,8 +685,8 @@ def test_a_later_trusted_poll_admits_the_cleanup_once_per_setup(harness, logs, c
     harness.entities.add(ENTRY, PROBE_FAN, domain="fan")
     burner = harness.devices.add(ENTRY, (DOMAIN, f"{ENTRY}-boiler-burner"))
 
-    data = [INVENTORY_DEVICE] if coordinator == "device_coordinator" else runtime(setup)[
-        "status_coordinator"].data
+    data = [INVENTORY_DEVICE] if coordinator == "device_coordinator" else runtime(
+        setup).coordinators.status_coordinator.data
     notify(setup, coordinator, data)
 
     assert setup.hass.data[DOMAIN][COUNTS_KEY][ENTRY] == 2
