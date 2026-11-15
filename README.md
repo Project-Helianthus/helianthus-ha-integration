@@ -132,6 +132,20 @@ owns one Tesla production-acquisition producer; it does not constrain this
 protocol-neutral consumer's SemReg lifecycle or loss policy. This consumer
 does not perform acquisition, credential, device, or Home Assistant actions.
 
+## Diagnostics download
+
+The config entry offers Home Assistant's diagnostics download. On request it
+sends one GraphQL read for the gateway's bus observability summary
+(`bus_summary`: status, counters and bounded-list counts), `watch_summary`,
+`fm5_interpretation`, `vaillant_regulator_capability`, `daemon_status` and
+`adapter_status`, and adds each coordinator's last update state (success and
+the error type, never its message). Bus message items, periodicity items and
+identification evidence are never requested; the download polls nothing,
+creates no entity and triggers no reload. A failed read appears as an error
+entry. The host, host aliases, instance GUID, serial numbers, MAC addresses
+and the M2M endpoints, asset references and certificate or key file paths are
+redacted.
+
 ## Quickstart (copy/paste)
 
 ### 0) Prerequisites

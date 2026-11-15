@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add the config-entry diagnostics download: one on-demand GraphQL read of
+  `bus_summary`, `watch_summary`, `fm5_interpretation`,
+  `vaillant_regulator_capability`, `daemon_status` and `adapter_status`, plus
+  each coordinator's last update state, with the host, instance GUID, serial
+  numbers, MAC addresses and M2M endpoints and file paths redacted. A failed
+  read becomes an error entry. No entity, unique ID, coordinator or platform
+  query changes.
 - Stop selecting `frost_prot_c` in the circuit configuration query. The
   gateway no longer publishes that field, and a query that still selected it
   was refused, so the circuit coordinator returned no circuits and every
