@@ -357,7 +357,7 @@ def test_delayed_status_terminal_survives_exact_connect_replay_once() -> None:
 
 
 def test_successful_admin_boundary_setup_and_final_unload_close_session_and_remove_services() -> None:
-    component = importlib.import_module("custom_components.helianthus")
+    component = importlib.import_module("custom_components.helianthus.entry_services")
     calls: list[str] = []
 
     class Session:

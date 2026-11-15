@@ -1,8 +1,52 @@
-"""Optional config-entry service boundaries."""
+"""The register-services phase of config-entry setup.
+
+This module owns the optional isolated eeBUS admin boundary, the PV, storage
+and EVSE consumer boundaries, the runtime fields that describe them and the
+option-change listener that reloads the entry when one of their options or
+the semantic asset selection changes.
+"""
 
 from __future__ import annotations
 
-from . import _LOGGER, async_setup_eebus_admin_boundary, async_unload_eebus_admin_boundary
+import logging
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
+
+from .const import DOMAIN
+from .semantic_snapshot_coordinator import semantic_asset_ids
+
+_LOGGER = logging.getLogger(__package__)
+
+
+@dataclass(frozen=True)
+class _EEBusAdminBoundary:
+    client: object
+    lifecycle: object
+    session: object
+
+
+async def async_setup_eebus_admin_boundary(
+    hass: object, *, entry_id: str, origin: str, instance_guid: str, session: object
+) -> _EEBusAdminBoundary:
+    """Create one isolated operator boundary and register fixed entry services."""
+    from .eebus_admin import EEBusAdminV1Client
+    from .eebus_admin_coordinator import EEBusAdminV1Lifecycle
+    from .eebus_admin_services import register_eebus_admin_services
+
+    lifecycle = EEBusAdminV1Lifecycle(entry_id=entry_id)
+    lifecycle.reconcile_binding(origin=origin, instance_guid=instance_guid)
+    client = EEBusAdminV1Client(session=session, base_url=origin)
+    register_eebus_admin_services(hass, entry_id=entry_id, client=client)
+    return _EEBusAdminBoundary(client=client, lifecycle=lifecycle, session=session)
+
+
+async def async_unload_eebus_admin_boundary(hass: object, *, entry_id: str, session: object) -> None:
+    """Close one isolated session; fixed services remain until final entry unload."""
+    from .eebus_admin_coordinator import close_admin_session
+    from .eebus_admin_services import unregister_eebus_admin_services
+
+    unregister_eebus_admin_services(hass, entry_id=entry_id)
+    await close_admin_session(session)
 
 
 async def async_setup_optional_eebus_admin_service(
@@ -65,3 +109,120 @@ async def async_setup_optional_eebus_admin_service(
         )
         await admin_coordinator.async_refresh()
         return admin_coordinator, None, False
+
+
+@dataclass(frozen=True)
+class M2MBoundaries:
+    """The PV, storage and EVSE consumer boundaries of one setup; each may be ``None``."""
+
+    pv: object | None
+    storage: object | None
+    evse: object | None
+
+
+async def _async_setup_m2m_boundary(
+    setup: Callable[..., Awaitable[object | None]],
+    hass: object,
+    entry: object,
+    scan_interval: object,
+    failure_message: str,
+) -> object | None:
+    """Create one consumer boundary; a configuration error leaves it ``None``."""
+    try:
+        return await setup(hass, entry, scan_interval=scan_interval)
+    except (OSError, TypeError, ValueError):
+        _LOGGER.warning(failure_message, entry.entry_id)
+        return None
+
+
+async def async_setup_m2m_boundaries(
+    hass: object, entry: object, scan_interval: object
+) -> M2MBoundaries:
+    """Create the PV, storage and EVSE consumer boundaries, in that order."""
+    from .evse_m2m import async_setup_evse_m2m_boundary
+    from .pv_m2m import async_setup_pv_m2m_boundary
+    from .storage_m2m import async_setup_storage_m2m_boundary
+
+    pv = await _async_setup_m2m_boundary(
+        async_setup_pv_m2m_boundary, hass, entry, scan_interval,
+        "Canonical PV consumer configuration failed for entry %s",
+    )
+    storage = await _async_setup_m2m_boundary(
+        async_setup_storage_m2m_boundary, hass, entry, scan_interval,
+        "Canonical storage consumer configuration failed for entry %s",
+    )
+    evse = await _async_setup_m2m_boundary(
+        async_setup_evse_m2m_boundary, hass, entry, scan_interval,
+        "Canonical EVSE consumer configuration failed for entry %s",
+    )
+    return M2MBoundaries(pv=pv, storage=storage, evse=evse)
+
+
+def semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
+    """Retain exact validated IDs, or one bounded invalid-selection sentinel."""
+    try:
+        return semantic_asset_ids(entry)
+    except ValueError:
+        return None
+
+
+def _option_reload_signatures(entry: object) -> Iterator[tuple[str, object]]:
+    """Yield each reload-signature key with the signature of the entry's current options.
+
+    The signatures are computed one at a time, so a comparison that stops at
+    the first difference computes no later signature.
+    """
+    from .evse_m2m import evse_m2m_option_signature
+    from .pv_m2m import pv_m2m_option_signature
+    from .storage_m2m import storage_m2m_option_signature
+
+    yield "pv_m2m_option_signature", pv_m2m_option_signature(entry.options)
+    yield "storage_m2m_option_signature", storage_m2m_option_signature(entry.options)
+    yield "evse_m2m_option_signature", evse_m2m_option_signature(entry.options)
+    yield "semantic_asset_selection_signature", semantic_asset_selection_signature(entry)
+
+
+def _boundary_coordinator(boundary: object | None) -> object | None:
+    return None if boundary is None else boundary.coordinator
+
+
+def service_runtime_fields(
+    entry: object,
+    admin: tuple[object, object | None, bool],
+    boundaries: M2MBoundaries,
+) -> dict[str, object]:
+    """Return the admin, consumer-boundary and reload-signature runtime fields."""
+    admin_coordinator, admin_session, admin_services_registered = admin
+    signatures = dict(_option_reload_signatures(entry))
+    return {
+        "eebus_admin_coordinator": admin_coordinator,
+        "eebus_admin_action_broker": admin_coordinator.lifecycle.action_broker,
+        "eebus_admin_session": admin_session,
+        "eebus_admin_services_registered": admin_services_registered,
+        "pv_m2m_coordinator": _boundary_coordinator(boundaries.pv),
+        "pv_m2m_boundary": boundaries.pv,
+        "pv_m2m_option_signature": signatures["pv_m2m_option_signature"],
+        "storage_m2m_coordinator": _boundary_coordinator(boundaries.storage),
+        "storage_m2m_boundary": boundaries.storage,
+        "storage_m2m_option_signature": signatures["storage_m2m_option_signature"],
+        "evse_m2m_coordinator": _boundary_coordinator(boundaries.evse),
+        "evse_m2m_boundary": boundaries.evse,
+        "evse_m2m_option_signature": signatures["evse_m2m_option_signature"],
+        "semantic_asset_selection_signature": signatures["semantic_asset_selection_signature"],
+    }
+
+
+async def _async_reload_on_option_change(hass: object, entry: object) -> None:
+    """Reload a published entry when one of its reload signatures has changed."""
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if not isinstance(runtime, dict):
+        return
+    if all(runtime.get(key) == signature for key, signature in _option_reload_signatures(entry)):
+        return
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def register_option_reload_listener(entry: object) -> None:
+    """Add the option-change listener through the entry's unload hook when it has both."""
+    if hasattr(entry, "add_update_listener") and hasattr(entry, "async_on_unload"):
+        entry.async_on_unload(entry.add_update_listener(_async_reload_on_option_change))

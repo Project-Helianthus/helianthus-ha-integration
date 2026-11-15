@@ -74,7 +74,7 @@ sys.modules.setdefault("homeassistant.helpers.update_coordinator", _update_coord
 
 import custom_components.helianthus as helianthus_pkg  # noqa: E402
 import custom_components.helianthus.coordinator as coordinator_mod  # noqa: E402
-from custom_components.helianthus import PLATFORMS  # noqa: E402
+from custom_components.helianthus.const import PLATFORMS  # noqa: E402
 
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "mcp_forward_compat_synthetic.json"

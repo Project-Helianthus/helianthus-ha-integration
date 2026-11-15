@@ -2,12 +2,6 @@
   "version": 1,
   "findings": [
     {
-      "path": "custom_components/helianthus/__init__.py",
-      "symbol": "<module>",
-      "rule": "F401",
-      "count": 7
-    },
-    {
       "path": "custom_components/helianthus/binary_sensor.py",
       "symbol": "HelianthusBoilerStateBinarySensor.__init__",
       "rule": "N806",
@@ -186,24 +180,6 @@
       "symbol": "EntryEntityReconciler.cleanup_obsolete_entity_registry_entries",
       "rule": "C901",
       "count": 12
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "<module>",
-      "rule": "F401",
-      "count": 2
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "C901",
-      "count": 22
-    },
-    {
-      "path": "custom_components/helianthus/entry_setup.py",
-      "symbol": "async_setup_entry",
-      "rule": "PLR0915",
-      "count": 123
     },
     {
       "path": "custom_components/helianthus/evse_m2m.py",

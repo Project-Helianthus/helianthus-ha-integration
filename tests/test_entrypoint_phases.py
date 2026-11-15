@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import copy
-from pathlib import Path
+import importlib
+import logging
 from types import SimpleNamespace
 
 import pytest
 
-from entry_setup_harness import INVENTORY_DEVICE, TRUSTED_STATUS, config_entry, install_harness
+from entry_setup_harness import (
+    INVENTORY_DEVICE,
+    TRUSTED_STATUS,
+    config_entry,
+    install_harness,
+    install_module,
+)
 
-from custom_components.helianthus import DOMAIN, PLATFORMS, async_unload_entry
+from custom_components.helianthus import DOMAIN, async_unload_entry
+from custom_components.helianthus.const import PLATFORMS
 from custom_components.helianthus.entry_listeners import _semantic_inventory_became_available
 from custom_components.helianthus.entry_setup import _async_forward_platforms_and_finalize
 
-COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "helianthus"
 COUNTS_KEY = "_admission_cleanup_counts"
 RECONCILER_METHODS = (
     "record_cleanup_evidence",
@@ -108,31 +114,86 @@ def test_delayed_positive_semantic_inventory_requests_platform_reload() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _function(tree: ast.AST, name: str) -> ast.AST:
-    return next(node for node in ast.walk(tree)
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-                and node.name == name)
+class _RecordingReconciler:
+    created: list[tuple[tuple, dict]] = []
+
+    def __init__(self, *args, **kwargs) -> None:
+        _RecordingReconciler.created.append((args, kwargs))
+        self.evidence: list[object] = []
+
+    def record_cleanup_evidence(self, devices) -> None:
+        self.evidence.append(devices)
 
 
-def test_entry_setup_delegates_registry_reconciliation_to_one_object() -> None:
-    """Setup defines no reconciliation closure; one reconciler object holds them."""
-    setup_tree = ast.parse((COMPONENT / "entry_setup.py").read_text(encoding="utf-8"))
-    setup = _function(setup_tree, "async_setup_entry")
-    nested = {node.name for node in ast.walk(setup)
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not setup}
-    assert nested.isdisjoint(RECONCILER_METHODS)
-    assert nested.isdisjoint({"_entry_entities", "_device_has_entities", "_live_keys"})
-    assert not [node for node in ast.walk(setup)
-                if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "compile"]
-    constructions = [node for node in ast.walk(setup) if isinstance(node, ast.Call)
-                     and getattr(node.func, "id", None) == "EntryEntityReconciler"]
-    assert len(constructions) == 1
+def test_entity_reconciler_holds_every_reconciliation_method() -> None:
+    from custom_components.helianthus.entry_entity_cleanup import EntryEntityReconciler
 
-    cleanup_tree = ast.parse(
-        (COMPONENT / "entry_entity_cleanup.py").read_text(encoding="utf-8"))
-    reconciler = _function(cleanup_tree, "EntryEntityReconciler")
-    methods = {node.name for node in reconciler.body if isinstance(node, ast.FunctionDef)}
-    assert set(RECONCILER_METHODS) <= methods
+    assert set(RECONCILER_METHODS) <= set(vars(EntryEntityReconciler))
+
+
+@pytest.mark.parametrize("entry_id", ("entry-1", "entry-2"))
+@pytest.mark.parametrize("device_data", (None, [INVENTORY_DEVICE]))
+def test_reconcile_phase_builds_one_reconciler_on_the_run_records(monkeypatch, entry_id, device_data):
+    """Fields varied: entry id, device inventory (absent and present), every argument.
+
+    Building the reconciler on another entry's records, another registry, the
+    raw inventory instead of the empty fallback, or skipping the first
+    admission observation each fail one assertion.
+    """
+    from custom_components.helianthus import entry_setup
+
+    entity_calls: list[tuple] = []
+    entity_entries = [SimpleNamespace(unique_id="sparse-a", platform=DOMAIN, disabled_by="integration")]
+    registry = install_module(monkeypatch, "homeassistant.helpers.entity_registry",
+                              async_entries_for_config_entry=lambda *args: entity_calls.append(args)
+                              or list(entity_entries))
+    install_module(monkeypatch, "homeassistant.helpers", entity_registry=registry)
+    admissions: list[tuple] = []
+    admission = {"repair_code": "synthetic-code"}
+    monkeypatch.setattr(entry_setup, "update_effective_admission",
+                        lambda status, devices: admissions.append((status, devices)) or admission)
+    monkeypatch.setattr(entry_setup, "EntryEntityReconciler", _RecordingReconciler)
+    monkeypatch.setattr(_RecordingReconciler, "created", [])
+    hass, entry = SimpleNamespace(data={}), SimpleNamespace(entry_id=entry_id)
+    prepared = SimpleNamespace(device_registry=object(), entity_registry=object(),
+                               active_entry_ids={entry_id})
+    coordinators = SimpleNamespace(device_coordinator=SimpleNamespace(data=device_data),
+                                   status_coordinator=object())
+    identities, schedule_reload = object(), object()
+
+    result = entry_setup.reconcile_entities(hass, entry, prepared, coordinators, identities, schedule_reload)
+
+    devices = device_data or []
+    domain = hass.data[DOMAIN]
+    assert entity_calls == [(prepared.entity_registry, entry_id)]
+    assert admissions == [(coordinators.status_coordinator, devices)]
+    [(args, kwargs)] = _RecordingReconciler.created
+    assert args == (hass, entry)
+    assert kwargs == {
+        "device_registry": prepared.device_registry, "entity_registry": prepared.entity_registry,
+        "coordinators": coordinators, "identities": identities, "admission": admission,
+        "sparse_reloaded_ids": set(), "sparse_seen_disabled_ids": {"sparse-a"},
+        "schedule_reload": schedule_reload,
+        "parse_identifier_index": entry_setup._parse_identifier_index,
+    }
+    assert kwargs["sparse_reloaded_ids"] is domain["_sparse_reload_unique_ids"][entry_id]
+    assert kwargs["sparse_seen_disabled_ids"] is domain["_sparse_seen_disabled_unique_ids"][entry_id]
+    assert result.admission is admission
+    assert result.trigger_reload_times is domain["_trigger_reload_times"][entry_id]
+    assert result.reconciler.evidence == [devices]
+
+
+@pytest.mark.parametrize("token,prefix,expected", (
+    ("entry-1-cylinder-3", "entry-1-cylinder-", 3),
+    ("entry-1-cylinder-0", "entry-1-cylinder-", 0),
+    ("entry-2-cylinder-3", "entry-1-cylinder-", None),
+    ("entry-1-cylinder-x", "entry-1-cylinder-", None),
+    ("entry-1-cylinder-", "entry-1-cylinder-", None),
+))
+def test_identifier_index_parses_only_a_digit_suffix_of_the_prefix(token, prefix, expected):
+    from custom_components.helianthus.entry_setup import _parse_identifier_index
+
+    assert _parse_identifier_index(token, prefix) == expected
 
 
 def _reconciler(monkeypatch, *, entry_id="entry-1", status=None, counts=None):
@@ -235,3 +296,342 @@ def test_reconciler_spends_the_sparse_reload_in_the_run_record_it_holds(monkeypa
     reconciler.auto_disable_sparse_entities("status update")
     assert next(iter(bench.entities.entities.values())).disabled_by is None
     assert bench.seen_disabled == set()
+
+
+# ---------------------------------------------------------------------------
+# Setup phase sequence
+# ---------------------------------------------------------------------------
+
+SETUP_PHASES = (
+    "prepare", "connect", "gateway-devices", "coordinators", "admin", "inventory-devices",
+    "reload-request", "reconcile", "listeners", "m2m-boundaries", "service-fields",
+    "publish", "option-listener", "forward", "snapshot",
+)
+PHASE_FUNCTIONS = {
+    "async_prepare_entry": "prepare",
+    "async_connect_gateway": "connect",
+    "register_gateway_devices": "gateway-devices",
+    "async_create_domain_coordinators": "coordinators",
+    "register_inventory_devices": "inventory-devices",
+    "entry_reload_scheduler": "reload-request",
+    "reconcile_entities": "reconcile",
+    "async_start_listeners": "listeners",
+    "async_setup_m2m_boundaries": "m2m-boundaries",
+    "service_runtime_fields": "service-fields",
+    "publish_entry_runtime": "publish",
+    "register_option_reload_listener": "option-listener",
+    "_async_forward_platforms_and_finalize": "forward",
+    "async_attach_semantic_snapshot": "snapshot",
+    "refuse_duplicate_setup": "refuse",
+}
+ASYNC_PHASES = {"prepare", "connect", "coordinators", "admin", "listeners",
+                "m2m-boundaries", "forward", "snapshot"}
+
+
+class _PhaseSequence:
+    """Replaces every phase of entry setup with a recorder of its call and result."""
+
+    def __init__(self, monkeypatch, *, options, connection, failure=None):
+        from custom_components.helianthus import entry_services, entry_setup
+
+        self.events: list[str] = []
+        self.calls: dict[str, tuple] = {}
+        self.failure = failure
+        self.error = RuntimeError("synthetic phase failure")
+        self.entry = SimpleNamespace(entry_id="synthetic-entry", options=options)
+        self.hass = SimpleNamespace(data={})
+        self.existing = [SimpleNamespace(id="existing-device")]
+        self.results = {phase: SimpleNamespace(phase=phase) for phase in SETUP_PHASES}
+        self.results.update(
+            prepare=SimpleNamespace(device_registry=SimpleNamespace(), entity_registry=object(),
+                                    active_entry_ids={"synthetic-entry"}),
+            connect=connection,
+            admin=(object(), object(), True),
+            reconcile=SimpleNamespace(reconciler=object()),
+            listeners=SimpleNamespace(listeners=SimpleNamespace(nonexportable_radio_keys={"radio"})),
+            refuse=False,
+        )
+        install_module(monkeypatch, "homeassistant.const", CONF_SCAN_INTERVAL="scan_interval")
+        registry = install_module(monkeypatch, "homeassistant.helpers.device_registry",
+                                  async_entries_for_config_entry=self._existing_devices)
+        install_module(monkeypatch, "homeassistant.helpers", device_registry=registry)
+        for name, phase in PHASE_FUNCTIONS.items():
+            monkeypatch.setattr(entry_setup, name, self._recorder(phase))
+        monkeypatch.setattr(entry_services, "async_setup_optional_eebus_admin_service",
+                            self._recorder("admin"))
+
+    def _existing_devices(self, registry, entry_id):
+        self.calls["existing-devices"] = ((registry, entry_id), {})
+        return list(self.existing)
+
+    def _record(self, phase, args, kwargs):
+        self.events.append(phase)
+        self.calls[phase] = (args, kwargs)
+        if phase == self.failure:
+            raise self.error
+        return self.results[phase]
+
+    def _recorder(self, phase):
+        if phase in ASYNC_PHASES:
+            async def record(*args, **kwargs):
+                return self._record(phase, args, kwargs)
+        else:
+            def record(*args, **kwargs):
+                return self._record(phase, args, kwargs)
+        return record
+
+    def run(self):
+        from custom_components.helianthus.entry_setup import async_setup_entry
+
+        return asyncio.run(async_setup_entry(self.hass, self.entry))
+
+
+def _connection(url="https://gateway.example.test:8443/graphql", guid="guid-synthetic"):
+    from custom_components.helianthus.entry_connection import GatewayConnection
+
+    return GatewayConnection(session=object(), graphql_url=url, client=object(), instance_guid=guid)
+
+
+@pytest.mark.parametrize("options,interval", (({"scan_interval": 23}, 23), ({}, 60)))
+@pytest.mark.parametrize("url,origin", (
+    ("https://gateway.example.test:8443/graphql", "https://gateway.example.test:8443"),
+    ("http://other.example.test/api/graphql", "http://other.example.test"),
+))
+@pytest.mark.parametrize("guid", ("guid-synthetic", None))
+def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
+    monkeypatch, options, interval, url, origin, guid
+):
+    """Fields varied: scan interval (set and default), admin origin, instance GUID.
+
+    Swapping two phases, passing a phase anything but the result it needs, a
+    fixed interval, an origin carrying the path, or a GUID without the entry
+    fallback each fail one assertion.
+    """
+    bench = _PhaseSequence(monkeypatch, options=options, connection=_connection(url, guid))
+    assert bench.run() is True
+    assert bench.events == list(SETUP_PHASES)
+    hass, entry, result = bench.hass, bench.entry, bench.results
+    prepared, connection = result["prepare"], result["connect"]
+    assert bench.calls == {
+        "prepare": ((hass, entry), {}),
+        "connect": ((hass, entry), {}),
+        "existing-devices": ((prepared.device_registry, "synthetic-entry"), {}),
+        "gateway-devices": ((prepared.device_registry, "synthetic-entry", tuple(bench.existing)), {}),
+        "coordinators": ((hass, connection.client, interval), {}),
+        "admin": ((hass,), {"entry_id": "synthetic-entry", "origin": origin,
+                            "instance_guid": guid or "synthetic-entry",
+                            "scan_interval": interval}),
+        "inventory-devices": ((prepared.device_registry, "synthetic-entry",
+                               result["gateway-devices"], result["coordinators"]), {}),
+        "reload-request": ((hass, "synthetic-entry"), {}),
+        "reconcile": ((hass, entry, prepared, result["coordinators"],
+                       result["inventory-devices"], result["reload-request"]), {}),
+        "listeners": ((hass, entry), {
+            "prepared": prepared, "connection": connection,
+            "coordinators": result["coordinators"], "identities": result["inventory-devices"],
+            "reconciliation": result["reconcile"], "schedule_reload": result["reload-request"]}),
+        "m2m-boundaries": ((hass, entry, interval), {}),
+        "service-fields": ((entry, result["admin"], result["m2m-boundaries"]), {}),
+        "publish": ((hass, entry), {
+            "connection": connection, "coordinators": result["coordinators"],
+            "gateway_devices": result["gateway-devices"],
+            "identities": result["inventory-devices"], "reconciliation": result["reconcile"],
+            "listeners": result["listeners"], "services": result["service-fields"]}),
+        "option-listener": ((entry,), {}),
+        "forward": ((hass, entry, PLATFORMS), {
+            "reconciler": result["reconcile"].reconciler,
+            "nonexportable_radio_keys": {"radio"}}),
+        "snapshot": ((hass, entry, connection.client, interval), {}),
+    }
+
+
+@pytest.mark.parametrize("phase", SETUP_PHASES)
+def test_a_failing_setup_phase_stops_the_sequence_and_propagates(monkeypatch, phase):
+    bench = _PhaseSequence(monkeypatch, options={}, connection=_connection(), failure=phase)
+    with pytest.raises(RuntimeError) as caught:
+        bench.run()
+    assert caught.value is bench.error
+    assert bench.events == list(SETUP_PHASES[:SETUP_PHASES.index(phase) + 1])
+
+
+def test_skipped_connection_ends_setup_after_the_connect_phase(monkeypatch):
+    from custom_components.helianthus.entry_connection import ConnectionSkipped
+
+    bench = _PhaseSequence(monkeypatch, options={}, connection=ConnectionSkipped())
+    assert bench.run() is True
+    assert bench.events == ["prepare", "connect"]
+
+
+@pytest.mark.parametrize("refused", (False, True))
+def test_duplicate_owner_hands_the_prepared_entry_to_the_refusal(monkeypatch, refused):
+    from custom_components.helianthus.entry_ownership import DuplicateOwnerRefusal
+
+    refusal = DuplicateOwnerRefusal(owner_entry=object(), instance_guid="guid-owner", host="owner")
+    bench = _PhaseSequence(monkeypatch, options={}, connection=refusal)
+    bench.results["refuse"] = refused
+    assert bench.run() is refused
+    assert bench.events == ["prepare", "connect", "refuse"]
+    assert bench.calls["refuse"] == ((bench.hass, bench.entry, bench.results["prepare"], refusal), {})
+
+
+def test_platforms_are_the_constant_list_of_the_integration():
+    from custom_components.helianthus import const
+
+    assert PLATFORMS is const.PLATFORMS
+    assert not hasattr(importlib.import_module("custom_components.helianthus"), "PLATFORMS")
+
+
+# ---------------------------------------------------------------------------
+# Listener and subscription phase
+# ---------------------------------------------------------------------------
+
+REGULATOR = ("helianthus", "synthetic-regulator")
+RADIO = ("helianthus", "synthetic-radio")
+
+
+class _ListenerBench:
+    """Records the zone-parent, listener, helper and subscription calls in order."""
+
+    def __init__(self, monkeypatch, *, parents, unresolved) -> None:
+        from custom_components.helianthus import entry_setup
+
+        self.events: list[object] = []
+        self.parents, self.unresolved = parents, unresolved
+        self.task = object()
+        self.listener_unsub, self.helper_unsub = (lambda: None), (lambda: None)
+        registry = install_module(monkeypatch, "homeassistant.helpers.entity_registry",
+                                  async_entries_for_config_entry=self.entity_entries)
+        install_module(monkeypatch, "homeassistant.helpers", entity_registry=registry)
+        install_module(monkeypatch, "custom_components.helianthus.subscriptions",
+                       start_subscriptions=self.start_subscriptions)
+        bench = self
+
+        class Bindings:
+            def __init__(self, *args, **kwargs) -> None:
+                bench.events.append(("bindings", args, kwargs))
+                bench.bindings = self
+
+            def persist(self) -> None:
+                bench.events.append("persist")
+
+            def current_parent_device_ids(self):
+                bench.events.append("resolve")
+                return bench.parents, bench.unresolved
+
+        class Listeners:
+            def __init__(self, *args, **kwargs) -> None:
+                bench.events.append(("listeners", args, kwargs))
+                bench.listeners = self
+
+            def register(self):
+                bench.events.append("register")
+                return [bench.listener_unsub]
+
+        monkeypatch.setattr(entry_setup, "ZoneParentBindings", Bindings)
+        monkeypatch.setattr(entry_setup, "EntryCoordinatorListeners", Listeners)
+        monkeypatch.setattr(entry_setup, "register_schedule_helper_listeners", self.helpers)
+
+    def entity_entries(self, registry, entry_id):
+        self.events.append(("entity-entries", registry, entry_id))
+        return ["synthetic-entity-entry"]
+
+    def helpers(self, *args, **kwargs):
+        self.events.append(("helpers", args, kwargs))
+        return [self.helper_unsub]
+
+    async def start_subscriptions(self, *args):
+        self.events.append(("subscriptions", args))
+        return self.task
+
+
+def _listener_inputs(options, boiler_supported):
+    coordinators = SimpleNamespace(
+        semantic_coordinator=SimpleNamespace(data={"zones": [{"id": "1", "name": " Synthetic "}]}),
+        radio_coordinator=object(), status_coordinator=object(), energy_coordinator=object(),
+        boiler_coordinator=SimpleNamespace(boiler_supported=boiler_supported))
+    return SimpleNamespace(
+        hass=SimpleNamespace(data={}),
+        entry=SimpleNamespace(entry_id="synthetic-entry", options=options),
+        prepared=SimpleNamespace(device_registry=object(), entity_registry=object()),
+        connection=_connection(), coordinators=coordinators,
+        identities=SimpleNamespace(regulator_device_id=REGULATOR, regulator_bus_address=0x15),
+        reconciliation=SimpleNamespace(reconciler=object(), trigger_reload_times={}),
+        schedule_reload=object())
+
+
+@pytest.mark.parametrize("options,subscribed", (({}, True), ({"use_subscriptions": True}, True),
+                                                ({"use_subscriptions": False}, False)))
+@pytest.mark.parametrize("boiler_supported", (False, True))
+@pytest.mark.parametrize("unresolved", ((), ("zone-2", "zone-3")))
+def test_listener_phase_binds_parents_then_listeners_helpers_and_subscriptions(
+    monkeypatch, caplog, options, subscribed, boiler_supported, unresolved
+):
+    """Fields varied: subscription option (default, on, off), boiler support, unresolved zones.
+
+    Registering the listeners before the bindings resolve, dropping the helper
+    callbacks, subscribing an unsupported boiler or ignoring the option each
+    fail one assertion.
+    """
+    from custom_components.helianthus.entry_setup import async_start_listeners
+
+    bench = _ListenerBench(monkeypatch, parents={"zone-1": RADIO}, unresolved=unresolved)
+    given = _listener_inputs(options, boiler_supported)
+    coordinators, connection = given.coordinators, given.connection
+    caplog.set_level(logging.WARNING, logger="custom_components.helianthus")
+
+    started = asyncio.run(async_start_listeners(
+        given.hass, given.entry, prepared=given.prepared, connection=connection,
+        coordinators=coordinators, identities=given.identities,
+        reconciliation=given.reconciliation, schedule_reload=given.schedule_reload))
+
+    subscription = ("subscriptions", (
+        connection.session, connection.graphql_url, coordinators.semantic_coordinator,
+        coordinators.energy_coordinator,
+        coordinators.boiler_coordinator if boiler_supported else None,
+        coordinators.radio_coordinator))
+    assert bench.events == [
+        ("entity-entries", given.prepared.entity_registry, "synthetic-entry"),
+        ("bindings", (given.hass, given.entry), {
+            "semantic_coordinator": coordinators.semantic_coordinator,
+            "radio_coordinator": coordinators.radio_coordinator,
+            "regulator_device_id": REGULATOR, "entity_entries": ["synthetic-entity-entry"],
+            "device_registry": given.prepared.device_registry}),
+        "persist", "resolve",
+        ("listeners", (coordinators, given.identities, given.reconciliation.reconciler,
+                       bench.bindings), {
+            "zone_parent_device_ids": bench.parents, "unresolved_zone_ids": unresolved,
+            "trigger_reload_times": given.reconciliation.trigger_reload_times,
+            "schedule_reload": given.schedule_reload}),
+        "register",
+        ("helpers", (given.hass, given.entry), {
+            "client": connection.client,
+            "semantic_coordinator": coordinators.semantic_coordinator,
+            "status_coordinator": coordinators.status_coordinator,
+            "regulator_bus_address": 0x15}),
+    ] + ([subscription] if subscribed else [])
+    assert started.listeners is bench.listeners
+    assert started.unsub_listeners == [bench.listener_unsub, bench.helper_unsub]
+    assert started.subscription_task is (bench.task if subscribed else None)
+    assert started.zone_parent_device_ids is bench.parents
+    assert started.unresolved_zone_ids is unresolved
+    assert started.radio_device_zone_names == {RADIO: "Synthetic"}
+    warnings = [record.getMessage() for record in caplog.records]
+    assert warnings == ([
+        "Helianthus zone parent resolution incomplete for entry synthetic-entry; "
+        "skipping unresolved zones until reload: zone-2, zone-3"] if unresolved else [])
+
+
+@pytest.mark.parametrize("data,expected", (
+    (None, {}),
+    ({"zones": None}, {}),
+    ({"zones": ["not-a-zone", {"id": None, "name": "No id"}, {"id": "2", "name": ""}]}, {}),
+    ({"zones": [{"id": "  ", "name": "Blank id"}]}, {}),
+    ({"zones": [{"id": "Zone-01", "name": " Named "}]}, {RADIO: "Named"}),
+    ({"zones": [{"id": 3, "name": "Regulator parent"}]}, {}),
+    ({"zones": [{"id": "4", "name": "Unbound"}]}, {}),
+))
+def test_radio_zone_names_map_only_radio_parents_of_named_zones(data, expected):
+    from custom_components.helianthus.entry_setup import radio_device_zone_names
+
+    parents = {"zone-1": RADIO, "zone-3": REGULATOR}
+    assert radio_device_zone_names(data, parents, REGULATOR) == expected

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import sys
 from copy import deepcopy
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.helianthus import const, entry_setup
+from custom_components.helianthus import const, entry_services, entry_setup
 
 KEY = "semantic_asset_ids"
 COMPONENT = Path(entry_setup.__file__).parent
@@ -32,55 +33,43 @@ def entry(options=None, data=None, entry_id="synthetic-primary"):
     )
 
 
-def runtime_dictionary(value):
-    """Find a literal mapping through only the production typing cast.
+@pytest.fixture(autouse=True)
+def family_signatures(monkeypatch):
+    """Serve each family's shipped option signature without its Home Assistant imports."""
+    for family in FAMILIES:
+        name = f"{family}_m2m_option_signature"
+        family_tree = ast.parse((COMPONENT / f"{family}_m2m.py").read_text())
+        signature = next(n for n in family_tree.body
+                         if isinstance(n, ast.FunctionDef) and n.name == name)
+        namespace = dict(vars(const))
+        module = ast.Module(body=[
+            ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
+            signature,
+        ], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(module), f"{family}_m2m.py", "exec"), namespace)
+        stub = ModuleType(f"custom_components.helianthus.{family}_m2m")
+        setattr(stub, name, namespace[name])
+        monkeypatch.setitem(sys.modules, stub.__name__, stub)
 
-    The original assignment, including its cast, still executes in the harness.
-    """
-    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
-            and value.func.id == "cast"):
-        assert len(value.args) == 2 and not value.keywords
-        assert isinstance(value.args[0], ast.Name) and value.args[0].id == "EntryRuntime"
-        value = value.args[1]
-    return value if isinstance(value, ast.Dict) else ast.Dict(keys=[], values=[])
+
+class _Unset:
+    """A phase result whose every field is absent; publication reads ``None``."""
+
+    def __getattr__(self, name):
+        return None
 
 
 def install(hass, configured):
-    """Execute the actual setup assignment/registration without unrelated I/O.
-
-    Extract existing family signatures too, avoiding Home Assistant imports.
-    Placeholder coordinators are never called by this setup segment.
-    """
-    tree = ast.parse(Path(entry_setup.__file__).read_text(encoding="utf-8"))
-    setup = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef)
-                 and n.name == "async_setup_entry")
-    assignment = next(n for n in setup.body if isinstance(n, ast.Assign)
-                      and any(isinstance(k, ast.Constant)
-                              and k.value == "pv_m2m_option_signature"
-                              for k in runtime_dictionary(n.value).keys))
-    listener = next(n for n in setup.body if isinstance(n, ast.AsyncFunctionDef)
-                    and n.name == "_reload_on_pv_m2m_option_change")
-    registration = setup.body[setup.body.index(listener) + 1]
-    namespace = {n.id: None for n in ast.walk(assignment.value)
-                 if isinstance(n, ast.Name)}
-    namespace.update(vars(const))
-    namespace.update(
-        hass=hass, entry=configured, admission={},
-        cast=entry_setup.cast, EntryRuntime=entry_setup.EntryRuntime,
-        admin_coordinator=SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)),
-        _semantic_asset_selection_signature=entry_setup._semantic_asset_selection_signature,
+    """Publish through the shipped setup functions, then add the shipped listener."""
+    admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
+    unset = _Unset()
+    entry_setup.publish_entry_runtime(
+        hass, configured, connection=unset, coordinators=unset, gateway_devices=unset,
+        identities=unset, reconciliation=SimpleNamespace(admission={}), listeners=unset,
+        services=entry_services.service_runtime_fields(
+            configured, admin, entry_services.M2MBoundaries(pv=None, storage=None, evse=None)),
     )
-    signatures = []
-    for family in FAMILIES:
-        family_tree = ast.parse((COMPONENT / f"{family}_m2m.py").read_text())
-        signatures.append(next(n for n in family_tree.body
-                               if isinstance(n, ast.FunctionDef)
-                               and n.name == f"{family}_m2m_option_signature"))
-    module = ast.Module(body=[
-        ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
-        *signatures, assignment, listener, registration,
-    ], type_ignores=[])
-    exec(compile(ast.fix_missing_locations(module), "<entry-options-setup>", "exec"), namespace)
+    entry_services.register_option_reload_listener(configured)
     assert len(configured.listeners) == len(configured.removers) == 1
     return hass.data[const.DOMAIN][configured.entry_id]
 

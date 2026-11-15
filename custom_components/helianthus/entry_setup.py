@@ -1,49 +1,78 @@
-"""Config-entry setup orchestration for the Helianthus integration."""
+"""Config-entry setup orchestration for the Helianthus integration.
+
+``async_setup_entry`` runs the setup phases in order: prepare, connect,
+register the gateway devices, create the coordinators, set up the optional
+admin boundary, register the inventory devices, reconcile entities, start
+listeners and subscriptions, set up the consumer boundaries, publish the
+entry mapping, add the option-change listener, register the platforms with
+the post-platform clean-up, then attach the semantic snapshot.
+"""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
-from . import (
+from .admission import update_effective_admission
+from .const import (
     CONF_USE_SUBSCRIPTIONS,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_USE_SUBSCRIPTIONS,
     DOMAIN,
     PLATFORMS,
-    _LOGGER,
-    _parse_identifier_index,
-    async_setup_eebus_admin_boundary,
-    async_unload_eebus_admin_boundary,
-    update_effective_admission,
 )
-from .entry_connection import ConnectionSkipped, async_connect_gateway
-from .entry_coordinators import async_create_domain_coordinators
-from .entry_devices import register_gateway_devices, register_inventory_devices
+from .device_ids import (
+    boiler_burner_identifier,
+    boiler_hydraulics_identifier,
+    resolve_boiler_physical_device_id,
+    resolve_boiler_via_device_id,
+)
+from .entry_connection import ConnectionSkipped, GatewayConnection, async_connect_gateway
+from .entry_coordinators import DomainCoordinators, async_create_domain_coordinators
+from .entry_devices import (
+    DeviceIdentities,
+    GatewayDevices,
+    register_gateway_devices,
+    register_inventory_devices,
+)
 from .entry_entity_cleanup import EntryEntityReconciler, claim_sparse_reloads
 from .entry_listeners import EntryCoordinatorListeners, entry_reload_scheduler
 from .entry_ownership import (
     DuplicateOwnerRefusal,
+    PreparedEntry,
     async_prepare_entry,
     refuse_duplicate_setup,
 )
 from .entry_runtime import EntryRuntime
 from .entry_schedule_helpers import register_schedule_helper_listeners
-from .semantic_snapshot_coordinator import async_setup_semantic_snapshot, semantic_asset_ids
-from .zone_parent import ZoneParentBindings
+from .entry_services import (
+    async_setup_m2m_boundaries,
+    register_option_reload_listener,
+    service_runtime_fields,
+)
+from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
+from .zone_parent import ZoneParentBindings, normalize_zone_id
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
+_LOGGER = logging.getLogger(__package__)
 
-def _semantic_asset_selection_signature(entry: object) -> tuple[str, ...] | None:
-    """Retain exact validated IDs, or one bounded invalid-selection sentinel."""
-    try:
-        return semantic_asset_ids(entry)
-    except ValueError:
+
+def _parse_identifier_index(token: str, prefix: str) -> int | None:
+    if not token.startswith(prefix):
         return None
+    suffix = token[len(prefix) :]
+    if not suffix.isdigit():
+        return None
+    value = int(suffix)
+    if value < 0:
+        return None
+    return value
 
 
 async def _async_forward_platforms_and_finalize(
@@ -149,105 +178,51 @@ def sparse_entity_has_reloaded(hass: object, entry_id: str, unique_id: str) -> b
     return unique_id in store.get(entry_id, ())
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Helianthus from a config entry."""
-    from homeassistant.helpers import device_registry as dr
+@dataclass(frozen=True)
+class EntityReconciliation:
+    """The reconcile-entities phase: admission, the one reconciler and the trigger record."""
+
+    admission: dict
+    reconciler: EntryEntityReconciler
+    trigger_reload_times: dict[str, float]
+
+
+@dataclass(frozen=True)
+class StartedListeners:
+    """The listener phase: coordinator listeners, callbacks, subscription and zone parents."""
+
+    listeners: EntryCoordinatorListeners
+    unsub_listeners: list[Callable[[], None]]
+    subscription_task: object | None
+    zone_parent_device_ids: dict[str, tuple[str, str]]
+    unresolved_zone_ids: tuple[str, ...]
+    radio_device_zone_names: dict[tuple[str, str], str]
+
+
+def reconcile_entities(
+    hass: object,
+    entry: object,
+    prepared: PreparedEntry,
+    coordinators: DomainCoordinators,
+    identities: DeviceIdentities,
+    schedule_reload: Callable[[str], None],
+) -> EntityReconciliation:
+    """Create the entry's reconciler on its run records and record the first admission."""
     from homeassistant.helpers import entity_registry as er
-    from homeassistant.const import CONF_SCAN_INTERVAL
-    from .device_ids import (
-        boiler_burner_identifier,
-        boiler_hydraulics_identifier,
-        resolve_boiler_physical_device_id,
-        resolve_boiler_via_device_id,
-    )
-    from .subscriptions import start_subscriptions
-    from .pv_m2m import (
-        async_setup_pv_m2m_boundary,
-        pv_m2m_option_signature,
-    )
-    from .storage_m2m import (
-        async_setup_storage_m2m_boundary,
-        storage_m2m_option_signature,
-    )
-    from .evse_m2m import (
-        async_setup_evse_m2m_boundary,
-        evse_m2m_option_signature,
-    )
-    from .entry_services import async_setup_optional_eebus_admin_service
 
-    prepared = await async_prepare_entry(hass, entry)
-    device_registry = prepared.device_registry
-    entity_registry = prepared.entity_registry
-    active_entry_ids = prepared.active_entry_ids
-
-    connection = await async_connect_gateway(hass, entry)
-    if isinstance(connection, ConnectionSkipped):
-        return True
-    if isinstance(connection, DuplicateOwnerRefusal):
-        return refuse_duplicate_setup(hass, entry, prepared, connection)
-    session = connection.session
-    graphql_url = connection.graphql_url
-    client = connection.client
-    entry_instance_guid = connection.instance_guid
-
-    existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
-    gateway_devices = register_gateway_devices(device_registry, entry.entry_id, existing_entry_devices)
-    daemon_device_id = gateway_devices.daemon_device_id
-    adapter_device_id = gateway_devices.adapter_device_id
-
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    coordinators = await async_create_domain_coordinators(hass, client, scan_interval)
-    device_coordinator = coordinators.device_coordinator
-    status_coordinator = coordinators.status_coordinator
-    semantic_coordinator = coordinators.semantic_coordinator
-    energy_coordinator = coordinators.energy_coordinator
-    circuit_coordinator = coordinators.circuit_coordinator
-    radio_coordinator = coordinators.radio_coordinator
-    fm5_coordinator = coordinators.fm5_coordinator
-    system_coordinator = coordinators.system_coordinator
-    boiler_coordinator = coordinators.boiler_coordinator
-    schedule_coordinator = coordinators.schedule_coordinator
-    adapter_info_coordinator = coordinators.adapter_info_coordinator
-
-    # AdminV1 is optional and isolated from the GraphQL session. Its failure
-    # must leave the primary integration available with diagnostics only.
-    parsed_graphql_url = urlsplit(graphql_url)
-    admin_origin = f"{parsed_graphql_url.scheme}://{parsed_graphql_url.netloc}"
-    admin_coordinator, admin_session, admin_services_registered = (
-        await async_setup_optional_eebus_admin_service(
-            hass,
-            entry_id=entry.entry_id,
-            origin=admin_origin,
-            instance_guid=entry_instance_guid or entry.entry_id,
-            scan_interval=scan_interval,
-        )
-    )
-
-    identities = register_inventory_devices(
-        device_registry, entry.entry_id, gateway_devices, coordinators
-    )
-    regulator_device = identities.regulator_device_id
-    regulator_bus_address = identities.regulator_bus_address
-    boiler_device = identities.boiler_device_id
-    vr71_device = identities.vr71_device_id
-    regulator_manufacturer = identities.regulator_manufacturer
-    b524_merge_targets = identities.b524_merge_targets
-
-    devices = device_coordinator.data or []
-    schedule_reload = entry_reload_scheduler(hass, entry.entry_id)
-
-    admission = update_effective_admission(status_coordinator, devices)
+    devices = coordinators.device_coordinator.data or []
+    admission = update_effective_admission(coordinators.status_coordinator, devices)
     sparse_reloaded_ids, sparse_seen_disabled_ids, trigger_reload_times = _entry_run_records(
         hass,
         entry.entry_id,
-        active_entry_ids,
-        er.async_entries_for_config_entry(entity_registry, entry.entry_id),
+        prepared.active_entry_ids,
+        er.async_entries_for_config_entry(prepared.entity_registry, entry.entry_id),
     )
     reconciler = EntryEntityReconciler(
         hass,
         entry,
-        device_registry=device_registry,
-        entity_registry=entity_registry,
+        device_registry=prepared.device_registry,
+        entity_registry=prepared.entity_registry,
         coordinators=coordinators,
         identities=identities,
         admission=admission,
@@ -257,18 +232,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         parse_identifier_index=_parse_identifier_index,
     )
     reconciler.record_cleanup_evidence(devices)
+    return EntityReconciliation(admission, reconciler, trigger_reload_times)
+
+
+def radio_device_zone_names(
+    semantic_data: object,
+    zone_parent_device_ids: dict[str, tuple[str, str]],
+    regulator_device_id: tuple[str, str] | None,
+) -> dict[tuple[str, str], str]:
+    """Map each radio parent device of a named zone to that zone's name."""
+    names: dict[tuple[str, str], str] = {}
+    if not isinstance(semantic_data, dict):
+        return names
+    for zone in semantic_data.get("zones", []) or []:
+        if not isinstance(zone, dict):
+            continue
+        zone_name = zone.get("name")
+        normalized = normalize_zone_id(zone.get("id"))
+        if normalized is None or not zone_name:
+            continue
+        device_id = zone_parent_device_ids.get(normalized)
+        if device_id is not None and device_id != regulator_device_id:
+            names[device_id] = str(zone_name).strip()
+    return names
+
+
+def _bind_zone_parents(
+    hass: object,
+    entry: object,
+    prepared: PreparedEntry,
+    coordinators: DomainCoordinators,
+    identities: DeviceIdentities,
+) -> tuple[ZoneParentBindings, dict[str, tuple[str, str]], tuple[str, ...]]:
+    """Bind, store and resolve the zone parents; log the zones left unresolved."""
+    from homeassistant.helpers import entity_registry as er
 
     zone_parents = ZoneParentBindings(
         hass,
         entry,
-        semantic_coordinator=semantic_coordinator,
-        radio_coordinator=radio_coordinator,
-        regulator_device_id=regulator_device,
-        entity_entries=er.async_entries_for_config_entry(entity_registry, entry.entry_id),
-        device_registry=device_registry,
+        semantic_coordinator=coordinators.semantic_coordinator,
+        radio_coordinator=coordinators.radio_coordinator,
+        regulator_device_id=identities.regulator_device_id,
+        entity_entries=er.async_entries_for_config_entry(prepared.entity_registry, entry.entry_id),
+        device_registry=prepared.device_registry,
     )
     zone_parents.persist()
-
     zone_parent_device_ids, unresolved_zone_ids = zone_parents.current_parent_device_ids()
     if unresolved_zone_ids:
         _LOGGER.warning(
@@ -276,33 +284,56 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
             ", ".join(unresolved_zone_ids),
         )
+    return zone_parents, zone_parent_device_ids, unresolved_zone_ids
 
-    # Reverse map: device_id → zone_name for radio device naming (HA 2026.4).
-    radio_device_zone_names: dict[tuple[str, str], str] = {}
-    if isinstance(semantic_coordinator.data, dict):
-        for zone in semantic_coordinator.data.get("zones", []) or []:
-            if not isinstance(zone, dict):
-                continue
-            zone_id = zone.get("id")
-            zone_name = zone.get("name")
-            if zone_id is None or not zone_name:
-                continue
-            from .climate import _normalize_zone_id as _nzid
-            normalized = _nzid(zone_id)
-            if normalized is None:
-                continue
-            device_id = zone_parent_device_ids.get(normalized)
-            if device_id is not None and device_id != regulator_device:
-                radio_device_zone_names[device_id] = str(zone_name).strip()
 
+async def _async_start_subscriptions(
+    entry: object, connection: GatewayConnection, coordinators: DomainCoordinators
+) -> object | None:
+    """Start the GraphQL subscriptions when the entry's option enables them."""
+    from .subscriptions import start_subscriptions
+
+    if not entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS):
+        return None
+    boiler_coordinator = coordinators.boiler_coordinator
+    return await start_subscriptions(
+        connection.session,
+        connection.graphql_url,
+        coordinators.semantic_coordinator,
+        coordinators.energy_coordinator,
+        boiler_coordinator if getattr(boiler_coordinator, "boiler_supported", False) else None,
+        coordinators.radio_coordinator,
+    )
+
+
+async def async_start_listeners(
+    hass: object,
+    entry: object,
+    *,
+    prepared: PreparedEntry,
+    connection: GatewayConnection,
+    coordinators: DomainCoordinators,
+    identities: DeviceIdentities,
+    reconciliation: EntityReconciliation,
+    schedule_reload: Callable[[str], None],
+) -> StartedListeners:
+    """Bind the zone parents, add the listeners and helpers, then start subscriptions."""
+    zone_parents, zone_parent_device_ids, unresolved_zone_ids = _bind_zone_parents(
+        hass, entry, prepared, coordinators, identities
+    )
+    zone_names = radio_device_zone_names(
+        coordinators.semantic_coordinator.data,
+        zone_parent_device_ids,
+        identities.regulator_device_id,
+    )
     listeners = EntryCoordinatorListeners(
         coordinators,
         identities,
-        reconciler,
+        reconciliation.reconciler,
         zone_parents,
         zone_parent_device_ids=zone_parent_device_ids,
         unresolved_zone_ids=unresolved_zone_ids,
-        trigger_reload_times=trigger_reload_times,
+        trigger_reload_times=reconciliation.trigger_reload_times,
         schedule_reload=schedule_reload,
     )
     unsub_listeners: list[Callable[[], None]] = listeners.register()
@@ -310,170 +341,82 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         register_schedule_helper_listeners(
             hass,
             entry,
-            client=client,
-            semantic_coordinator=semantic_coordinator,
-            status_coordinator=status_coordinator,
-            regulator_bus_address=regulator_bus_address,
+            client=connection.client,
+            semantic_coordinator=coordinators.semantic_coordinator,
+            status_coordinator=coordinators.status_coordinator,
+            regulator_bus_address=identities.regulator_bus_address,
         )
     )
-
-    use_subscriptions = entry.options.get(CONF_USE_SUBSCRIPTIONS, DEFAULT_USE_SUBSCRIPTIONS)
-    subscription_task = None
-    if use_subscriptions:
-        boiler_subscription_coordinator = (
-            boiler_coordinator if getattr(boiler_coordinator, "boiler_supported", False) else None
-        )
-        subscription_task = await start_subscriptions(
-            session,
-            graphql_url,
-            semantic_coordinator,
-            energy_coordinator,
-            boiler_subscription_coordinator,
-            radio_coordinator,
-        )
-
-    boiler_physical_device_id = resolve_boiler_physical_device_id(
-        boiler_device,
-        regulator_device,
+    subscription_task = await _async_start_subscriptions(entry, connection, coordinators)
+    return StartedListeners(
+        listeners=listeners,
+        unsub_listeners=unsub_listeners,
+        subscription_task=subscription_task,
+        zone_parent_device_ids=zone_parent_device_ids,
+        unresolved_zone_ids=unresolved_zone_ids,
+        radio_device_zone_names=zone_names,
     )
-    boiler_via_device_id = resolve_boiler_via_device_id(
-        boiler_device,
-        regulator_device,
-        adapter_device_id,
-    )
-    # HA-1 reduced profile: boiler Burner/Hydraulics sub-devices are not registered yet.
-    boiler_burner_device_id = boiler_burner_identifier(entry.entry_id)
-    boiler_hydraulics_device_id = boiler_hydraulics_identifier(entry.entry_id)
 
-    pv_m2m_boundary = None
-    pv_m2m_coordinator = None
-    try:
-        pv_m2m_boundary = await async_setup_pv_m2m_boundary(
-            hass,
-            entry,
-            scan_interval=scan_interval,
-        )
-    except (OSError, TypeError, ValueError):
-        _LOGGER.warning(
-            "Canonical PV consumer configuration failed for entry %s",
-            entry.entry_id,
-        )
-    if pv_m2m_boundary is not None:
-        pv_m2m_coordinator = pv_m2m_boundary.coordinator
 
-    storage_m2m_boundary = None
-    storage_m2m_coordinator = None
-    try:
-        storage_m2m_boundary = await async_setup_storage_m2m_boundary(
-            hass,
-            entry,
-            scan_interval=scan_interval,
-        )
-    except (OSError, TypeError, ValueError):
-        _LOGGER.warning(
-            "Canonical storage consumer configuration failed for entry %s",
-            entry.entry_id,
-        )
-    if storage_m2m_boundary is not None:
-        storage_m2m_coordinator = storage_m2m_boundary.coordinator
-
-    evse_m2m_boundary = None
-    evse_m2m_coordinator = None
-    try:
-        evse_m2m_boundary = await async_setup_evse_m2m_boundary(
-            hass,
-            entry,
-            scan_interval=scan_interval,
-        )
-    except (OSError, TypeError, ValueError):
-        _LOGGER.warning(
-            "Canonical EVSE consumer configuration failed for entry %s",
-            entry.entry_id,
-        )
-    if evse_m2m_boundary is not None:
-        evse_m2m_coordinator = evse_m2m_boundary.coordinator
-
+def publish_entry_runtime(
+    hass: object,
+    entry: object,
+    *,
+    connection: GatewayConnection,
+    coordinators: DomainCoordinators,
+    gateway_devices: GatewayDevices,
+    identities: DeviceIdentities,
+    reconciliation: EntityReconciliation,
+    listeners: StartedListeners,
+    services: dict[str, object],
+) -> None:
+    """Publish the complete required entry mapping in one assignment."""
+    boiler_device = identities.boiler_device_id
+    regulator_device = identities.regulator_device_id
+    admission = reconciliation.admission
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = cast(EntryRuntime, {
-        "device_coordinator": device_coordinator,
-        "status_coordinator": status_coordinator,
-        "semantic_coordinator": semantic_coordinator,
-        "energy_coordinator": energy_coordinator,
-        "circuit_coordinator": circuit_coordinator,
-        "radio_coordinator": radio_coordinator,
-        "fm5_coordinator": fm5_coordinator,
-        "system_coordinator": system_coordinator,
-        "boiler_coordinator": boiler_coordinator,
-        "schedule_coordinator": schedule_coordinator,
-        "adapter_info_coordinator": adapter_info_coordinator,
-        "eebus_admin_coordinator": admin_coordinator,
-        "eebus_admin_action_broker": admin_coordinator.lifecycle.action_broker,
-        "eebus_admin_session": admin_session,
-        "eebus_admin_services_registered": admin_services_registered,
-        "pv_m2m_coordinator": pv_m2m_coordinator,
-        "pv_m2m_boundary": pv_m2m_boundary,
-        "pv_m2m_option_signature": pv_m2m_option_signature(entry.options),
-        "storage_m2m_coordinator": storage_m2m_coordinator,
-        "storage_m2m_boundary": storage_m2m_boundary,
-        "storage_m2m_option_signature": storage_m2m_option_signature(entry.options),
-        "evse_m2m_coordinator": evse_m2m_coordinator,
-        "evse_m2m_boundary": evse_m2m_boundary,
-        "evse_m2m_option_signature": evse_m2m_option_signature(entry.options),
-        "semantic_asset_selection_signature": _semantic_asset_selection_signature(entry),
-        "graphql_client": client,
-        "subscription_task": subscription_task,
-        "unsub_listeners": unsub_listeners,
-        "daemon_device_id": daemon_device_id,
-        "adapter_device_id": adapter_device_id,
+        "device_coordinator": coordinators.device_coordinator,
+        "status_coordinator": coordinators.status_coordinator,
+        "semantic_coordinator": coordinators.semantic_coordinator,
+        "energy_coordinator": coordinators.energy_coordinator,
+        "circuit_coordinator": coordinators.circuit_coordinator,
+        "radio_coordinator": coordinators.radio_coordinator,
+        "fm5_coordinator": coordinators.fm5_coordinator,
+        "system_coordinator": coordinators.system_coordinator,
+        "boiler_coordinator": coordinators.boiler_coordinator,
+        "schedule_coordinator": coordinators.schedule_coordinator,
+        "adapter_info_coordinator": coordinators.adapter_info_coordinator,
+        **services,
+        "graphql_client": connection.client,
+        "subscription_task": listeners.subscription_task,
+        "unsub_listeners": listeners.unsub_listeners,
+        "daemon_device_id": gateway_devices.daemon_device_id,
+        "adapter_device_id": gateway_devices.adapter_device_id,
         "boiler_device_id": boiler_device,
         "regulator_device_id": regulator_device,
-        "vr71_device_id": vr71_device,
-        "regulator_manufacturer": regulator_manufacturer,
-        "regulator_bus_address": regulator_bus_address,
+        "vr71_device_id": identities.vr71_device_id,
+        "regulator_manufacturer": identities.regulator_manufacturer,
+        "regulator_bus_address": identities.regulator_bus_address,
         "admission_repair_code": admission.get("repair_code"),
         "source_selection": admission.get("source_selection"),
-        "boiler_physical_device_id": boiler_physical_device_id,
-        "boiler_via_device_id": boiler_via_device_id,
-        "boiler_burner_device_id": boiler_burner_device_id,
-        "boiler_hydraulics_device_id": boiler_hydraulics_device_id,
-        "zone_parent_device_ids": zone_parent_device_ids,
-        "radio_device_zone_names": radio_device_zone_names,
-        "unresolved_zone_ids": unresolved_zone_ids,
-        "b524_merge_targets": b524_merge_targets,
+        "boiler_physical_device_id": resolve_boiler_physical_device_id(boiler_device, regulator_device),
+        "boiler_via_device_id": resolve_boiler_via_device_id(
+            boiler_device, regulator_device, gateway_devices.adapter_device_id
+        ),
+        # HA-1 reduced profile: boiler Burner/Hydraulics sub-devices are not registered yet.
+        "boiler_burner_device_id": boiler_burner_identifier(entry.entry_id),
+        "boiler_hydraulics_device_id": boiler_hydraulics_identifier(entry.entry_id),
+        "zone_parent_device_ids": listeners.zone_parent_device_ids,
+        "radio_device_zone_names": listeners.radio_device_zone_names,
+        "unresolved_zone_ids": listeners.unresolved_zone_ids,
+        "b524_merge_targets": identities.b524_merge_targets,
     })
 
-    async def _reload_on_pv_m2m_option_change(
-        updated_hass: HomeAssistant,
-        updated_entry: ConfigEntry,
-    ) -> None:
-        runtime = updated_hass.data.get(DOMAIN, {}).get(updated_entry.entry_id)
-        if not isinstance(runtime, dict):
-            return
-        if (
-            runtime.get("pv_m2m_option_signature")
-            == pv_m2m_option_signature(updated_entry.options)
-            and runtime.get("storage_m2m_option_signature")
-            == storage_m2m_option_signature(updated_entry.options)
-            and runtime.get("evse_m2m_option_signature")
-            == evse_m2m_option_signature(updated_entry.options)
-            and runtime.get("semantic_asset_selection_signature")
-            == _semantic_asset_selection_signature(updated_entry)
-        ):
-            return
-        await updated_hass.config_entries.async_reload(updated_entry.entry_id)
 
-    if hasattr(entry, "add_update_listener") and hasattr(entry, "async_on_unload"):
-        entry.async_on_unload(entry.add_update_listener(_reload_on_pv_m2m_option_change))
-
-    # Run stale cleanup again after platform setup so registry-backed entities
-    # created by prior installs are removed from the fully materialized registry.
-    await _async_forward_platforms_and_finalize(
-        hass,
-        entry,
-        PLATFORMS,
-        reconciler=reconciler,
-        nonexportable_radio_keys=listeners.nonexportable_radio_keys,
-    )
-
+async def async_attach_semantic_snapshot(
+    hass: object, entry: object, client: object, scan_interval: object
+) -> None:
+    """Assign the semantic snapshot coordinator, then run the deferred sensor setup."""
     hass.data[DOMAIN][entry.entry_id]["semantic_snapshot_coordinator"] = (
         await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
     )
@@ -483,4 +426,72 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if setup_snapshot_sensors is not None:
         setup_snapshot_sensors()
 
+
+def _admin_origin(graphql_url: str) -> str:
+    parsed = urlsplit(graphql_url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Helianthus from a config entry through its ordered phases."""
+    from homeassistant.const import CONF_SCAN_INTERVAL
+    from homeassistant.helpers import device_registry as dr
+
+    from .entry_services import async_setup_optional_eebus_admin_service
+
+    prepared = await async_prepare_entry(hass, entry)
+    connection = await async_connect_gateway(hass, entry)
+    if isinstance(connection, ConnectionSkipped):
+        return True
+    if isinstance(connection, DuplicateOwnerRefusal):
+        return refuse_duplicate_setup(hass, entry, prepared, connection)
+
+    device_registry = prepared.device_registry
+    existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
+    gateway_devices = register_gateway_devices(device_registry, entry.entry_id, existing_entry_devices)
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    coordinators = await async_create_domain_coordinators(hass, connection.client, scan_interval)
+
+    # AdminV1 is optional and isolated from the GraphQL session. Its failure
+    # must leave the primary integration available with diagnostics only.
+    admin = await async_setup_optional_eebus_admin_service(
+        hass,
+        entry_id=entry.entry_id,
+        origin=_admin_origin(connection.graphql_url),
+        instance_guid=connection.instance_guid or entry.entry_id,
+        scan_interval=scan_interval,
+    )
+    identities = register_inventory_devices(device_registry, entry.entry_id, gateway_devices, coordinators)
+
+    schedule_reload = entry_reload_scheduler(hass, entry.entry_id)
+    reconciliation = reconcile_entities(hass, entry, prepared, coordinators, identities, schedule_reload)
+    listeners = await async_start_listeners(
+        hass, entry, prepared=prepared, connection=connection, coordinators=coordinators,
+        identities=identities, reconciliation=reconciliation, schedule_reload=schedule_reload,
+    )
+
+    boundaries = await async_setup_m2m_boundaries(hass, entry, scan_interval)
+    publish_entry_runtime(
+        hass,
+        entry,
+        connection=connection,
+        coordinators=coordinators,
+        gateway_devices=gateway_devices,
+        identities=identities,
+        reconciliation=reconciliation,
+        listeners=listeners,
+        services=service_runtime_fields(entry, admin, boundaries),
+    )
+    register_option_reload_listener(entry)
+
+    # Run stale cleanup again after platform setup so registry-backed entities
+    # created by prior installs are removed from the fully materialized registry.
+    await _async_forward_platforms_and_finalize(
+        hass,
+        entry,
+        PLATFORMS,
+        reconciler=reconciliation.reconciler,
+        nonexportable_radio_keys=listeners.listeners.nonexportable_radio_keys,
+    )
+    await async_attach_semantic_snapshot(hass, entry, connection.client, scan_interval)
     return True
