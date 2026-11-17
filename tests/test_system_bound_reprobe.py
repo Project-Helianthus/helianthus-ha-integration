@@ -30,17 +30,17 @@ def harness(modules, monkeypatch):
     return types.SimpleNamespace(module=module, modules=modules, clock=clock, make=make)
 
 
-def _missing(module, field="dhw_bivalence_point_bound"):
+def _missing(module, field="dhw_outdoor_bivalence_temperature_limit_bound"):
     return module.GraphQLResponseError([
         {"message": f'Cannot query field "{field}" on type "SystemConfig".'}
     ])
 
 
-def _refresh(h, pair, query, *, unsupported=False, field="dhw_bivalence_point_bound", bound=None):
+def _refresh(h, pair, query, *, unsupported=False, field="dhw_outdoor_bivalence_temperature_limit_bound", bound=None):
     coordinator, client = pair
-    config = {"dhw_bivalence_point": 3, "room_humidity_limit_maximum": 45}
+    config = {"dhw_outdoor_bivalence_temperature_limit": 3, "room_humidity_limit_maximum": 45}
     if bound is not None:
-        config["dhw_bivalence_point_bound"] = bound
+        config["dhw_outdoor_bivalence_temperature_limit_bound"] = bound
     client.actions = _cycle(h.module, query, config)
     if unsupported:
         client.actions.insert(0, (h.module.QUERY_SYSTEM, _missing(h.module, field)))
@@ -78,7 +78,7 @@ def test_cooldown_boundary_and_upgrade(harness, elapsed):
         _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-6, 34))
 
 
-@pytest.mark.parametrize("field", ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"])
+@pytest.mark.parametrize("field", ["dhw_outdoor_bivalence_temperature_limit_bound", "dhw_outdoor_bivalence_temperature_limit_bound"])
 def test_repeated_unsupported_reschedules_from_response(harness, field):
     h = harness
     pair = h.make()
@@ -106,7 +106,7 @@ def test_transient_failure_keeps_snapshot_and_retries_full_query(harness, kind, 
         failure = h.module.GraphQLClientError("Synthetic transport failure")
     elif kind == "resolver":
         failure = h.module.GraphQLResponseError([
-            {"message": "Synthetic resolver failure for dhw_bivalence_point_bound"}
+            {"message": "Synthetic resolver failure for dhw_outdoor_bivalence_temperature_limit_bound"}
         ])
     else:
         failure = _missing(h.module, "unrelated_synthetic_field")

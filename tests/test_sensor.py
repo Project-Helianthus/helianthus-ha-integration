@@ -163,20 +163,20 @@ def _build_payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
             {
                 "boiler_status": {
                     "state": {
-                        "flow_temperature_c": 63.1,
+                        "flow_temperature": 63.1,
                         "return_temperature_c": 51.0,
                         "dhw_temperature_c": 49.5,
                         "dhw_storage_temperature_c": 46.2,
                     },
                     "diagnostics": {
-                        "central_heating_hours": 13150.0,
-                        "dhw_hours": 116.0,
-                        "central_heating_starts": 64,
-                        "dhw_starts": 50,
-                        "pump_hours": 134.0,
-                        "fan_hours": 108.0,
-                        "deactivations_ifc": 52,
-                        "deactivations_templimiter": 0,
+                        "central_heating_operating_time": 13150.0,
+                        "dhw_operating_time": 116.0,
+                        "central_heating_start_count": 64,
+                        "dhw_start_count": 50,
+                        "pump_operating_time": 134.0,
+                        "fan_operating_time": 108.0,
+                        "fire_control_deactivation_count": 52,
+                        "temperature_limiter_deactivation_count": 0,
                     }
                 }
             }
@@ -328,7 +328,7 @@ def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only
 
     assert len(boiler_entities) == 4
     assert {entity._attr_unique_id for entity in boiler_entities} == {
-        "entry-1-boiler-flow_temperature_c",
+        "entry-1-boiler-flow_temperature",
         "entry-1-boiler-return_temperature_c",
         "entry-1-boiler-dhw_temperature_c",
         "entry-1-boiler-dhw_storage_temperature_c",
@@ -391,7 +391,7 @@ def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_n
         if isinstance(entity, sensor_platform.HelianthusBoilerTemperatureSensor)
     }
 
-    assert boiler_entities["entry-1-boiler-flow_temperature_c"]._attr_entity_registry_enabled_default is True
+    assert boiler_entities["entry-1-boiler-flow_temperature"]._attr_entity_registry_enabled_default is True
     assert boiler_entities["entry-1-boiler-return_temperature_c"]._attr_entity_registry_enabled_default is False
 
 
@@ -412,44 +412,44 @@ def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
 
     assert len(diag_entities) == 8
     assert {entity._attr_unique_id for entity in diag_entities} == {
-        "entry-1-boiler-diag-central_heating_hours",
-        "entry-1-boiler-diag-dhw_hours",
-        "entry-1-boiler-diag-pump_hours",
-        "entry-1-boiler-diag-fan_hours",
-        "entry-1-boiler-diag-central_heating_starts",
-        "entry-1-boiler-diag-dhw_starts",
-        "entry-1-boiler-diag-deactivations_ifc",
-        "entry-1-boiler-diag-deactivations_templimiter",
+        "entry-1-boiler-diag-central_heating_operating_time",
+        "entry-1-boiler-diag-dhw_operating_time",
+        "entry-1-boiler-diag-pump_operating_time",
+        "entry-1-boiler-diag-fan_operating_time",
+        "entry-1-boiler-diag-central_heating_start_count",
+        "entry-1-boiler-diag-dhw_start_count",
+        "entry-1-boiler-diag-fire_control_deactivation_count",
+        "entry-1-boiler-diag-temperature_limiter_deactivation_count",
     }
     values = {entity._attr_unique_id: entity.native_value for entity in diag_entities}
-    assert values["entry-1-boiler-diag-central_heating_hours"] == 13150.0
-    assert values["entry-1-boiler-diag-dhw_hours"] == 116.0
-    assert values["entry-1-boiler-diag-central_heating_starts"] == 64
-    assert values["entry-1-boiler-diag-dhw_starts"] == 50
-    assert values["entry-1-boiler-diag-pump_hours"] == 134.0
-    assert values["entry-1-boiler-diag-fan_hours"] == 108.0
-    assert values["entry-1-boiler-diag-deactivations_ifc"] == 52
-    assert values["entry-1-boiler-diag-deactivations_templimiter"] == 0
+    assert values["entry-1-boiler-diag-central_heating_operating_time"] == 13150.0
+    assert values["entry-1-boiler-diag-dhw_operating_time"] == 116.0
+    assert values["entry-1-boiler-diag-central_heating_start_count"] == 64
+    assert values["entry-1-boiler-diag-dhw_start_count"] == 50
+    assert values["entry-1-boiler-diag-pump_operating_time"] == 134.0
+    assert values["entry-1-boiler-diag-fan_operating_time"] == 108.0
+    assert values["entry-1-boiler-diag-fire_control_deactivation_count"] == 52
+    assert values["entry-1-boiler-diag-temperature_limiter_deactivation_count"] == 0
 
     for entity in diag_entities:
         assert entity.device_info["identifiers"] == {boiler_device_id}
 
     # Verify metadata on duration counter
-    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_hours")
+    hours_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_operating_time")
     assert hours_entity._attr_device_class == "duration"
     assert hours_entity._attr_native_unit_of_measurement == "h"
     assert hours_entity._attr_state_class == "total_increasing"
     assert hours_entity._attr_entity_category == "diagnostic"
 
     # Verify metadata on starts counter
-    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_starts")
+    starts_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-central_heating_start_count")
     assert not hasattr(starts_entity, "_attr_device_class") or starts_entity._attr_device_class is None
     assert not hasattr(starts_entity, "_attr_native_unit_of_measurement")
     assert starts_entity._attr_state_class == "total_increasing"
     assert starts_entity._attr_entity_category == "diagnostic"
 
     # Verify metadata on deactivation counter
-    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-deactivations_ifc")
+    deact_entity = next(e for e in diag_entities if e._attr_unique_id == "entry-1-boiler-diag-fire_control_deactivation_count")
     assert not hasattr(deact_entity, "_attr_device_class") or deact_entity._attr_device_class is None
     assert not hasattr(deact_entity, "_attr_state_class") or deact_entity._attr_state_class is None
     assert deact_entity._attr_entity_category == "diagnostic"
@@ -947,7 +947,7 @@ def test_static_sensor_descriptor_inventory_and_order_are_stable() -> None:
         "updates_available",
     ]
     assert [field.key for field in sensor_platform.REDUCED_BOILER_TEMPERATURE_FIELDS] == [
-        "flow_temperature_c",
+        "flow_temperature",
         "return_temperature_c",
         "dhw_temperature_c",
         "dhw_storage_temperature_c",

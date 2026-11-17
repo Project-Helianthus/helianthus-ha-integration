@@ -30,15 +30,15 @@ _LOGGER = logging.getLogger(__package__)
 # The unique ID of a boiler number or text and of a system text carries the
 # key the control writes; its value is read from the field named here.
 SPARSE_BOILER_CONFIG_READ_KEYS: dict[str, str] = {
-    "maximum_heating_flow_temperature_setpoint": "flowset_hc_max_c",
-    "maximum_dhw_flow_temperature_setpoint": "flowset_hwc_max_c",
-    "heating_partial_load_power": "partload_hc_kw",
-    "dhw_partial_load_power": "partload_hwc_kw",
-    "installer_phone_number": "phone_number",
+    "maximum_heating_flow_temperature_setpoint": "maximum_heating_flow_temperature_setpoint",
+    "maximum_dhw_flow_temperature_setpoint": "maximum_dhw_flow_temperature_setpoint",
+    "heating_partial_load_power": "heating_partial_load_power",
+    "dhw_partial_load_power": "dhw_partial_load_power",
+    "installer_phone_number": "installer_phone_number",
 }
 SPARSE_SYSTEM_TEXT_READ_KEYS: dict[str, str] = {
     "installer_name": "installer_name",
-    "installer_phone_number": "installer_phone",
+    "installer_phone_number": "installer_phone_number",
 }
 
 
@@ -209,10 +209,10 @@ class EntryEntityReconciler:
             }
         )
         self.boiler_temp_unique_id_re = re.compile(
-            rf"^{escaped_entry_id}-boiler-(?P<key>(?:flow|return|dhw|dhw_storage)_temperature_c)$"
+            rf"^{escaped_entry_id}-boiler-(?P<key>flow_temperature|(?:return|dhw|dhw_storage)_temperature_c)$"
         )
         self.boiler_sensor_sparse_unique_id_re = re.compile(
-            rf"^{escaped_entry_id}-boiler-sensor-(?P<key>hours_till_service)$"
+            rf"^{escaped_entry_id}-boiler-sensor-(?P<key>service_time_remaining)$"
         )
         self.boiler_number_unique_id_re = re.compile(
             rf"^{escaped_entry_id}-boiler-number-(?P<key>.+)$"

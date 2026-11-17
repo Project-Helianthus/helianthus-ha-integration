@@ -121,10 +121,10 @@ def _payload(*, boiler_device_id: tuple[str, str] | None):
         {
             "boiler_status": {
                 "config": {
-                    "flowset_hc_max_c": 70.0,
-                    "flowset_hwc_max_c": 59.0,
-                    "partload_hc_kw": 18.5,
-                    "partload_hwc_kw": 22.0,
+                    "maximum_heating_flow_temperature_setpoint": 70.0,
+                    "maximum_dhw_flow_temperature_setpoint": 59.0,
+                    "heating_partial_load_power": 18.5,
+                    "dhw_partial_load_power": 22.0,
                 }
             }
         }
@@ -181,7 +181,7 @@ def test_async_setup_entry_skips_boiler_config_numbers_without_physical_bai00() 
 
 def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None:
     payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
-    payload["boiler_coordinator"].data["boiler_status"]["config"]["partload_hwc_kw"] = None
+    payload["boiler_coordinator"].data["boiler_status"]["config"]["dhw_partial_load_power"] = None
     hass = _FakeHass()
     entry = _FakeEntry("entry-1", payload)
     entities: list = []
@@ -194,8 +194,8 @@ def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None
         if isinstance(entity, number_platform.HelianthusBoilerNumber)
     }
 
-    assert boiler_numbers["flowset_hc_max_c"]._attr_entity_registry_enabled_default is True
-    assert boiler_numbers["partload_hwc_kw"]._attr_entity_registry_enabled_default is False
+    assert boiler_numbers["maximum_heating_flow_temperature_setpoint"]._attr_entity_registry_enabled_default is True
+    assert boiler_numbers["dhw_partial_load_power"]._attr_entity_registry_enabled_default is False
 
 
 def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
@@ -209,8 +209,8 @@ def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:
     boiler_numbers = [
         entity for entity in entities if isinstance(entity, number_platform.HelianthusBoilerNumber)
     ]
-    ch_max = next(entity for entity in boiler_numbers if entity._field.config_key == "flowset_hc_max_c")
-    dhw_partload = next(entity for entity in boiler_numbers if entity._field.config_key == "partload_hwc_kw")
+    ch_max = next(entity for entity in boiler_numbers if entity._field.config_key == "maximum_heating_flow_temperature_setpoint")
+    dhw_partload = next(entity for entity in boiler_numbers if entity._field.config_key == "dhw_partial_load_power")
 
     asyncio.run(ch_max.async_set_native_value(68.0))
     asyncio.run(dhw_partload.async_set_native_value(21.5))
@@ -238,7 +238,7 @@ def test_boiler_number_write_fails_closed_when_admission_untrusted() -> None:
         entity
         for entity in entities
         if isinstance(entity, number_platform.HelianthusBoilerNumber)
-        and entity._field.config_key == "flowset_hc_max_c"
+        and entity._field.config_key == "maximum_heating_flow_temperature_setpoint"
     )
 
     with pytest.raises(number_platform.HomeAssistantError, match="source admission is not trusted"):

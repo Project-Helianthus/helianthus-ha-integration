@@ -1,5 +1,5 @@
 {
- "source": "Type map of the gateway /graphql schema, recorded from the gateway main branch after the canonical register names of the system and boiler types landed.",
+ "source": "Type map of the gateway /graphql schema, recorded from the gateway's main branch on 2026-11-17 after the boiler status fields took their docs-ebus names.",
  "query": "query",
  "mutation": "mutation",
  "subscription": "subscription",
@@ -139,29 +139,29 @@
   "boiler_config": {
    "kind": "object",
    "fields": {
+    "central_heating_pump_mode": {
+     "type": "Int"
+    },
     "dhw_operating_mode": {
      "type": "String"
     },
-    "flowset_hc_max_c": {
+    "dhw_partial_load_power": {
      "type": "Float"
     },
-    "flowset_hwc_max_c": {
+    "heating_partial_load_power": {
      "type": "Float"
     },
-    "hours_till_service": {
-     "type": "Int"
-    },
-    "installer_menu_code": {
-     "type": "Int"
-    },
-    "partload_hc_kw": {
-     "type": "Float"
-    },
-    "partload_hwc_kw": {
-     "type": "Float"
-    },
-    "phone_number": {
+    "installer_phone_number": {
      "type": "String"
+    },
+    "maximum_dhw_flow_temperature_setpoint": {
+     "type": "Float"
+    },
+    "maximum_heating_flow_temperature_setpoint": {
+     "type": "Float"
+    },
+    "service_time_remaining": {
+     "type": "Int"
     }
    }
   },
@@ -179,41 +179,44 @@
   "boiler_diagnostics": {
    "kind": "object",
    "fields": {
-    "central_heating_hours": {
+    "central_heating_operating_time": {
      "type": "Float"
     },
-    "central_heating_starts": {
+    "central_heating_start_count": {
      "type": "Int"
     },
-    "deactivations_ifc": {
-     "type": "Int"
-    },
-    "deactivations_templimiter": {
-     "type": "Int"
-    },
-    "dhw_hours": {
+    "dhw_operating_time": {
      "type": "Float"
     },
-    "dhw_starts": {
+    "dhw_start_count": {
      "type": "Int"
     },
     "dhw_status_raw": {
      "type": "Int"
     },
-    "fan_hours": {
+    "fan_operating_time": {
      "type": "Float"
+    },
+    "fire_control_deactivation_count": {
+     "type": "Int"
     },
     "heating_status_raw": {
      "type": "Int"
     },
-    "pump_hours": {
+    "pump_operating_time": {
      "type": "Float"
+    },
+    "temperature_limiter_deactivation_count": {
+     "type": "Int"
     }
    }
   },
   "boiler_state": {
    "kind": "object",
    "fields": {
+    "boiler_state_code": {
+     "type": "Int"
+    },
     "central_heating_pump_active": {
      "type": "Boolean"
     },
@@ -226,31 +229,37 @@
     "dhw_target_temperature_c": {
      "type": "Float"
     },
-    "dhw_temp_desired_c": {
-     "type": "Float"
-    },
     "dhw_temperature_c": {
      "type": "Float"
     },
-    "dhw_water_flow_lpm": {
+    "dhw_temperature_setpoint": {
      "type": "Float"
     },
-    "diverter_valve_position_pct": {
+    "dhw_water_flow_rate": {
+     "type": "Float"
+    },
+    "diverter_valve_position": {
      "type": "Float"
     },
     "external_pump_active": {
      "type": "Boolean"
     },
-    "fan_speed_rpm": {
+    "fan_speed": {
+     "type": "Int"
+    },
+    "fan_speed_setpoint": {
      "type": "Int"
     },
     "flame_active": {
      "type": "Boolean"
     },
-    "flow_temp_desired_c": {
+    "flame_ionization_current": {
      "type": "Float"
     },
-    "flow_temperature_c": {
+    "flow_temperature": {
+     "type": "Float"
+    },
+    "flow_temperature_setpoint": {
      "type": "Float"
     },
     "gas_valve_active": {
@@ -259,28 +268,19 @@
     "heating_switch_active": {
      "type": "Boolean"
     },
-    "ionisation_voltage_ua": {
+    "modulation_setpoint": {
      "type": "Float"
     },
-    "modulation_pct": {
-     "type": "Float"
-    },
-    "primary_circuit_flow_lpm": {
+    "primary_circuit_flow_rate": {
      "type": "Float"
     },
     "return_temperature_c": {
      "type": "Float"
     },
-    "state_number": {
-     "type": "Int"
-    },
-    "storage_load_pump_pct": {
+    "storage_loading_pump_level": {
      "type": "Float"
     },
-    "target_fan_speed_rpm": {
-     "type": "Int"
-    },
-    "water_pressure_bar": {
+    "water_pressure": {
      "type": "Float"
     }
    }
@@ -747,6 +747,9 @@
   "circuit_config": {
    "kind": "object",
    "fields": {
+    "circuit_special_function_mode": {
+     "type": "Int"
+    },
     "cooling_enabled": {
      "type": "Boolean"
     },
@@ -754,9 +757,6 @@
      "type": "Float"
     },
     "flow_temp_min_c": {
-     "type": "Float"
-    },
-    "frost_prot_c": {
      "type": "Float"
     },
     "heating_curve": {
@@ -1642,6 +1642,17 @@
     }
    }
   },
+  "semantic_anchor_supersession": {
+   "kind": "object",
+   "fields": {
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "previous": {
+     "type": "semantic_resource_anchor!"
+    }
+   }
+  },
   "semantic_capability_instance": {
    "kind": "object",
    "fields": {
@@ -2057,6 +2068,12 @@
     "binding_id": {
      "type": "String!"
     },
+    "key": {
+     "type": "String"
+    },
+    "resource": {
+     "type": "String"
+    },
     "revision": {
      "type": "String!"
     },
@@ -2349,6 +2366,64 @@
     "unit": "String!"
    }
   },
+  "semantic_relation_absence": {
+   "kind": "object",
+   "fields": {
+    "basis": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "basis_class": {
+     "type": "String!"
+    },
+    "definition": {
+     "type": "semantic_definition_ref!"
+    },
+    "origin": {
+     "type": "semantic_origin_ref!"
+    },
+    "resource": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "side": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    }
+   }
+  },
+  "semantic_relation_instance": {
+   "kind": "object",
+   "fields": {
+    "basis": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "basis_class": {
+     "type": "String!"
+    },
+    "definition": {
+     "type": "semantic_definition_ref!"
+    },
+    "from": {
+     "type": "String!"
+    },
+    "origin": {
+     "type": "semantic_origin_ref!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    },
+    "to": {
+     "type": "String!"
+    }
+   }
+  },
   "semantic_requested_item": {
    "kind": "object",
    "fields": {
@@ -2357,6 +2432,58 @@
     },
     "kind": {
      "type": "String!"
+    }
+   }
+  },
+  "semantic_resource": {
+   "kind": "object",
+   "fields": {
+    "anchor": {
+     "type": "semantic_resource_anchor!"
+    },
+    "kind": {
+     "type": "String!"
+    },
+    "origin": {
+     "type": "semantic_origin_ref!"
+    },
+    "resource_id": {
+     "type": "String!"
+    },
+    "revision": {
+     "type": "String!"
+    },
+    "state": {
+     "type": "String!"
+    },
+    "supersedes": {
+     "type": "semantic_anchor_supersession"
+    }
+   }
+  },
+  "semantic_resource_anchor": {
+   "kind": "object",
+   "fields": {
+    "basis": {
+     "type": "String!"
+    },
+    "class": {
+     "type": "String!"
+    },
+    "evidence": {
+     "type": "[semantic_evidence_ref!]!"
+    },
+    "key": {
+     "type": "String"
+    },
+    "parent": {
+     "type": "String"
+    },
+    "scheme": {
+     "type": "String"
+    },
+    "slot": {
+     "type": "String"
     }
    }
   },
@@ -2391,6 +2518,9 @@
     },
     "services": {
      "type": "String!"
+    },
+    "structure": {
+     "type": "String"
     }
    }
   },
@@ -2456,6 +2586,9 @@
     "qualification": {
      "type": "String!"
     },
+    "resource": {
+     "type": "String"
+    },
     "revision": {
      "type": "String!"
     },
@@ -2496,6 +2629,15 @@
     },
     "identity_links": {
      "type": "[semantic_identity_link!]!"
+    },
+    "relation_absences": {
+     "type": "[semantic_relation_absence!]"
+    },
+    "relations": {
+     "type": "[semantic_relation_instance!]"
+    },
+    "resources": {
+     "type": "[semantic_resource!]"
     },
     "retained_observations": {
      "type": "[semantic_retained_observation_record!]"
@@ -2770,22 +2912,22 @@
     "adaptive_heating_curve_enabled": {
      "type": "Boolean"
     },
-    "alternative_point": {
+    "dhw_flow_temperature_setpoint_maximum": {
      "type": "Float"
     },
-    "dhw_bivalence_point": {
+    "dhw_outdoor_bivalence_temperature_limit": {
      "type": "Float"
     },
-    "dhw_bivalence_point_bound": {
+    "dhw_outdoor_bivalence_temperature_limit_bound": {
      "type": "system_config_bound"
     },
-    "hc_emergency_temperature": {
+    "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault": {
+     "type": "Float"
+    },
+    "heating_outdoor_alternative_temperature_limit": {
      "type": "Float"
     },
     "heating_outdoor_bivalence_temperature_limit": {
-     "type": "Float"
-    },
-    "hwc_max_flow_temp_desired": {
      "type": "Float"
     },
     "installer_access_code": {
@@ -2794,7 +2936,7 @@
     "installer_name": {
      "type": "String"
     },
-    "installer_phone": {
+    "installer_phone_number": {
      "type": "String"
     },
     "maintenance_date": {
@@ -2842,22 +2984,22 @@
   "system_state": {
    "kind": "object",
    "fields": {
+    "dhw_cylinder_bottom_temperature": {
+     "type": "Float"
+    },
+    "dhw_cylinder_top_temperature": {
+     "type": "Float"
+    },
     "flow_temperature": {
      "type": "Float"
     },
-    "hwc_cylinder_temperature_bottom": {
-     "type": "Float"
-    },
-    "hwc_cylinder_temperature_top": {
-     "type": "Float"
-    },
-    "maintenance_due": {
+    "maintenance_active": {
      "type": "Boolean"
     },
     "outdoor_temperature": {
      "type": "Float"
     },
-    "outdoor_temperature_avg24h": {
+    "outdoor_temperature_daily_average": {
      "type": "Float"
     },
     "system_off": {

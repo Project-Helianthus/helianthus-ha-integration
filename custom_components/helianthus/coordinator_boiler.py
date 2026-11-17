@@ -20,35 +20,35 @@ QUERY_BOILER = """
 query BoilerStatus {
   boiler_status {
     state {
-      flow_temperature_c
+      flow_temperature
       return_temperature_c
       central_heating_pump_active
       flame_active
-      modulation_pct
+      modulation_setpoint
       gas_valve_active
-      fan_speed_rpm
-      ionisation_voltage_ua
+      fan_speed
+      flame_ionization_current
       external_pump_active
       circulation_pump_active
-      storage_load_pump_pct
-      diverter_valve_position_pct
+      storage_loading_pump_level
+      diverter_valve_position
     }
     config {
-      flowset_hc_max_c
-      flowset_hwc_max_c
-      partload_hc_kw
-      partload_hwc_kw
+      maximum_heating_flow_temperature_setpoint
+      maximum_dhw_flow_temperature_setpoint
+      heating_partial_load_power
+      dhw_partial_load_power
     }
     diagnostics {
       heating_status_raw
-      central_heating_hours
-      dhw_hours
-      central_heating_starts
-      dhw_starts
-      pump_hours
-      fan_hours
-      deactivations_ifc
-      deactivations_templimiter
+      central_heating_operating_time
+      dhw_operating_time
+      central_heating_start_count
+      dhw_start_count
+      pump_operating_time
+      fan_operating_time
+      fire_control_deactivation_count
+      temperature_limiter_deactivation_count
     }
   }
 }
@@ -59,8 +59,8 @@ QUERY_BOILER_INSTALLER = """
 query BoilerInstaller {
   boiler_status {
     config {
-      phone_number
-      hours_till_service
+      installer_phone_number
+      service_time_remaining
     }
   }
 }
@@ -70,7 +70,7 @@ QUERY_BOILER_SENSITIVE = """
 query BoilerSensitive {
   boiler_status {
     config {
-      installer_menu_code
+      central_heating_pump_mode
     }
   }
 }
@@ -112,31 +112,31 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 exc.errors,
                 [
                     "boiler_status",
-                    "flow_temperature_c",
+                    "flow_temperature",
                     "return_temperature_c",
                     "central_heating_pump_active",
                     "flame_active",
-                    "modulation_pct",
+                    "modulation_setpoint",
                     "gas_valve_active",
-                    "fan_speed_rpm",
-                    "ionisation_voltage_ua",
+                    "fan_speed",
+                    "flame_ionization_current",
                     "external_pump_active",
                     "circulation_pump_active",
-                    "storage_load_pump_pct",
-                    "diverter_valve_position_pct",
-                    "flowset_hc_max_c",
-                    "flowset_hwc_max_c",
-                    "partload_hc_kw",
-                    "partload_hwc_kw",
+                    "storage_loading_pump_level",
+                    "diverter_valve_position",
+                    "maximum_heating_flow_temperature_setpoint",
+                    "maximum_dhw_flow_temperature_setpoint",
+                    "heating_partial_load_power",
+                    "dhw_partial_load_power",
                     "heating_status_raw",
-                    "central_heating_hours",
-                    "dhw_hours",
-                    "central_heating_starts",
-                    "dhw_starts",
-                    "pump_hours",
-                    "fan_hours",
-                    "deactivations_ifc",
-                    "deactivations_templimiter",
+                    "central_heating_operating_time",
+                    "dhw_operating_time",
+                    "central_heating_start_count",
+                    "dhw_start_count",
+                    "pump_operating_time",
+                    "fan_operating_time",
+                    "fire_control_deactivation_count",
+                    "temperature_limiter_deactivation_count",
                 ],
             ):
                 self.boiler_supported = False
@@ -181,7 +181,7 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(
-                    exc.errors, ["phone_number", "hours_till_service"]
+                    exc.errors, ["installer_phone_number", "service_time_remaining"]
                 ):
                     self._boiler_installer_available = next_optional_query_state(
                         self._boiler_installer_available,
@@ -211,7 +211,7 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     response_received=True,
                 )
             except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["installer_menu_code"]):
+                if _is_missing_field_error(exc.errors, ["central_heating_pump_mode"]):
                     self._boiler_sensitive_available = next_optional_query_state(
                         self._boiler_sensitive_available,
                         schema_field_missing=True,

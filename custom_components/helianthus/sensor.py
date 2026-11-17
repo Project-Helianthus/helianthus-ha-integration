@@ -1498,7 +1498,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
-        self._attr_unique_id = f"{entry_id}-boiler-sensor-hours_till_service"
+        self._attr_unique_id = f"{entry_id}-boiler-sensor-service_time_remaining"
         self._attr_name = "Hours Till Service"
         self._attr_entity_registry_enabled_default = self.native_value is not None
 
@@ -1518,7 +1518,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
         payload = self.coordinator.data or {}
         boiler_status = payload.get("boiler_status") if isinstance(payload, dict) else None
         config = boiler_status.get("config", {}) if isinstance(boiler_status, dict) else {}
-        value = config.get("hours_till_service")
+        value = config.get("service_time_remaining")
         if value is None:
             return None
         try:

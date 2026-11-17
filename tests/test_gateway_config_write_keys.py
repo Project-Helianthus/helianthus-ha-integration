@@ -148,12 +148,12 @@ def _write_controls():
         {
             "boiler_status": {
                 "config": {
-                    "flowset_hc_max_c": 70.0,
-                    "flowset_hwc_max_c": 55.0,
-                    "partload_hc_kw": 12.0,
-                    "partload_hwc_kw": 14.0,
-                    "phone_number": "401234",
-                    "installer_menu_code": 12,
+                    "maximum_heating_flow_temperature_setpoint": 70.0,
+                    "maximum_dhw_flow_temperature_setpoint": 55.0,
+                    "heating_partial_load_power": 12.0,
+                    "dhw_partial_load_power": 14.0,
+                    "installer_phone_number": "401234",
+                    "central_heating_pump_mode": 12,
                 }
             }
         }

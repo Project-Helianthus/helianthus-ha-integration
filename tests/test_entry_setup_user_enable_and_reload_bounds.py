@@ -85,7 +85,7 @@ def zone_payload(mapping):
 def boiler_payload(value):
     """Coordinator data of one poll; only the sparse boiler value varies."""
     return {**base(), "HelianthusBoilerCoordinator": {
-        "boiler_status": {"config": {"hours_till_service": value}}}}
+        "boiler_status": {"config": {"service_time_remaining": value}}}}
 
 
 class Bench:
@@ -317,15 +317,15 @@ def boiler_bench(harness, *, disabled_by, entry_id=ENTRY, setup=None):
     return bench
 
 
-def entity_id(entry_id=ENTRY, key="hours_till_service"):
+def entity_id(entry_id=ENTRY, key="service_time_remaining"):
     return f"sensor.{sparse.boiler_uid(entry_id, key).replace('-', '_')}"
 
 
-def disabled_by(harness, entry_id=ENTRY, key="hours_till_service"):
+def disabled_by(harness, entry_id=ENTRY, key="service_time_remaining"):
     return harness.entities.entities[entity_id(entry_id, key)].disabled_by
 
 
-def user_enables(harness, bench, entry_id=ENTRY, key="hours_till_service"):
+def user_enables(harness, bench, entry_id=ENTRY, key="service_time_remaining"):
     """A poll where the user enables the entity in the registry first."""
     async def exercise():
         harness.entities.async_update_entity(entity_id(entry_id, key), disabled_by=None)

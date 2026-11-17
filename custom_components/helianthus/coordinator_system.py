@@ -24,22 +24,22 @@ query System {
       water_pressure
       flow_temperature
       outdoor_temperature
-      outdoor_temperature_avg24h
-      maintenance_due
-      hwc_cylinder_temperature_top
-      hwc_cylinder_temperature_bottom
+      outdoor_temperature_daily_average
+      maintenance_active
+      dhw_cylinder_top_temperature
+      dhw_cylinder_bottom_temperature
     }
     config {
       adaptive_heating_curve_enabled
       heating_outdoor_bivalence_temperature_limit
-      dhw_bivalence_point
-      dhw_bivalence_point_bound {
+      dhw_outdoor_bivalence_temperature_limit
+      dhw_outdoor_bivalence_temperature_limit_bound {
         min_c
         max_c
         source
       }
-      hc_emergency_temperature
-      hwc_max_flow_temp_desired
+      heating_flow_temperature_setpoint_maximum_at_heat_pump_fault
+      dhw_flow_temperature_setpoint_maximum
       room_humidity_limit_maximum
     }
     properties {
@@ -51,7 +51,7 @@ query System {
 """
 
 QUERY_SYSTEM_LEGACY = QUERY_SYSTEM.replace(
-    "      dhw_bivalence_point_bound {\n"
+    "      dhw_outdoor_bivalence_temperature_limit_bound {\n"
     "        min_c\n"
     "        max_c\n"
     "        source\n"
@@ -75,7 +75,7 @@ query SystemInstaller {
     config {
       maintenance_date
       installer_name
-      installer_phone
+      installer_phone_number
     }
   }
 }
@@ -128,15 +128,15 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "water_pressure",
             "flow_temperature",
             "outdoor_temperature",
-            "outdoor_temperature_avg24h",
-            "maintenance_due",
-            "hwc_cylinder_temperature_top",
-            "hwc_cylinder_temperature_bottom",
+            "outdoor_temperature_daily_average",
+            "maintenance_active",
+            "dhw_cylinder_top_temperature",
+            "dhw_cylinder_bottom_temperature",
             "adaptive_heating_curve_enabled",
             "heating_outdoor_bivalence_temperature_limit",
-            "dhw_bivalence_point",
-            "hc_emergency_temperature",
-            "hwc_max_flow_temp_desired",
+            "dhw_outdoor_bivalence_temperature_limit",
+            "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
+            "dhw_flow_temperature_setpoint_maximum",
             "room_humidity_limit_maximum",
             "hydraulic_scheme_code",
             "functional_module_configuration_code",
@@ -150,7 +150,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 payload = await self._client.execute(query)
             except GraphQLResponseError as exc:
                 if not probe_bounds or not _is_missing_field_error(
-                    exc.errors, ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"]
+                    exc.errors, ["dhw_outdoor_bivalence_temperature_limit_bound"]
                 ):
                     raise
                 self._system_dhw_bound_next_probe = (
@@ -228,7 +228,7 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except GraphQLResponseError as exc:
                 if _is_missing_field_error(
                     exc.errors,
-                    ["maintenance_date", "installer_name", "installer_phone"],
+                    ["maintenance_date", "installer_name", "installer_phone_number"],
                 ):
                     self._system_installer_available = next_optional_query_state(
                         self._system_installer_available,

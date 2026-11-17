@@ -141,7 +141,7 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
 
     @property
     def percentage(self) -> int | None:
-        return _coerce_percentage(self._state().get("modulation_pct"))
+        return _coerce_percentage(self._state().get("modulation_setpoint"))
 
     @property
     def speed_count(self) -> int:
@@ -153,8 +153,8 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
         return {
             "helianthus_role": "modulating_burner",
             "gas_valve_active": state.get("gas_valve_active"),
-            "fan_speed_rpm": state.get("fan_speed_rpm"),
-            "ionisation_ua": state.get("ionisation_voltage_ua"),
+            "fan_speed_rpm": state.get("fan_speed"),
+            "ionisation_ua": state.get("flame_ionization_current"),
         }
 
 

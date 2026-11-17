@@ -349,7 +349,7 @@ def test_valve_base_has_dynamic_icon_property() -> None:
 
 
 def test_valve_icon_at_zero_is_closed() -> None:
-    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 0}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position": 0}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -361,7 +361,7 @@ def test_valve_icon_at_zero_is_closed() -> None:
 
 
 def test_valve_icon_at_100_is_open() -> None:
-    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 100}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position": 100}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -373,7 +373,7 @@ def test_valve_icon_at_100_is_open() -> None:
 
 
 def test_valve_icon_intermediate() -> None:
-    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position_pct": 42}}})
+    coord = _FakeCoordinator({"boiler_status": {"state": {"diverter_valve_position": 42}}})
     valve = HelianthusBoilerDiverterValve(
         coordinator=coord,
         entry_id="test",
@@ -535,11 +535,11 @@ def test_boiler_state_fields_have_icons() -> None:
 
 def test_boiler_state_specific_icons() -> None:
     expected = {
-        "modulation_pct": "mdi:gas-burner",
-        "fan_speed_rpm": "mdi:fan",
-        "ionisation_voltage_ua": "mdi:flash-triangle-outline",
-        "storage_load_pump_pct": "mdi:pump",
-        "diverter_valve_position_pct": "mdi:valve",
+        "modulation_setpoint": "mdi:gas-burner",
+        "fan_speed": "mdi:fan",
+        "flame_ionization_current": "mdi:flash-triangle-outline",
+        "storage_loading_pump_level": "mdi:pump",
+        "diverter_valve_position": "mdi:valve",
     }
     for field in BOILER_STATE_SENSOR_FIELDS:
         key = field["key"]
@@ -857,15 +857,15 @@ def test_system_binary_adaptive_heating_curve_icon() -> None:
 
 
 def test_system_binary_maintenance_due_no_icon_override() -> None:
-    """maintenance_due has PROBLEM device_class — should NOT override icon."""
-    coord = _FakeCoordinator({"state": {"maintenance_due": False}})
+    """maintenance_active has PROBLEM device_class — should NOT override icon."""
+    coord = _FakeCoordinator({"state": {"maintenance_active": False}})
     sensor = HelianthusSystemBinarySensor(
         coordinator=coord,
         entry_id="test",
         manufacturer="V",
         regulator_device_id=("r", "x"),
         source="state",
-        key="maintenance_due",
+        key="maintenance_active",
         label="Maintenance Due",
         device_class="problem",
         entity_category="diagnostic",

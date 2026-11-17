@@ -162,7 +162,7 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
 
     @property
     def current_valve_position(self) -> int | None:
-        return _coerce_position(_boiler_state(self.coordinator.data).get("diverter_valve_position_pct"))
+        return _coerce_position(_boiler_state(self.coordinator.data).get("diverter_valve_position"))
 
     @property
     def is_closed(self) -> bool | None:

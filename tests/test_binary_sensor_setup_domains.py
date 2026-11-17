@@ -107,7 +107,7 @@ def _full_runtime(listener_log: list[str]) -> dict:
         "radio_coordinator": _Coordinator("radio", _radio_data(), listener_log),
         "system_coordinator": _Coordinator(
             "system",
-            {"state": {"maintenance_due": False}, "config": {"adaptive_heating_curve_enabled": True}},
+            {"state": {"maintenance_active": False}, "config": {"adaptive_heating_curve_enabled": True}},
             listener_log,
         ),
         "boiler_coordinator": _Coordinator("boiler", {"boiler_status": {"state": {}}}, listener_log),
@@ -250,7 +250,7 @@ def _system_rows(regulator: tuple[str, str]) -> list[tuple]:
     return [
         (
             "HelianthusSystemBinarySensor",
-            f"{ENTRY_ID}-system-binary-maintenance_due",
+            f"{ENTRY_ID}-system-binary-maintenance_active",
             "Maintenance Due",
             frozenset({regulator}),
             "system",
