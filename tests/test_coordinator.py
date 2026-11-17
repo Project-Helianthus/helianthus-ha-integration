@@ -1,4 +1,4 @@
-"""Tests for coordinator fallback queries."""
+"""Tests for domain coordinator updates."""
 
 from __future__ import annotations
 
@@ -62,14 +62,8 @@ QUERY_ENERGY_LEGACY = coordinator_energy.QUERY_ENERGY_LEGACY
 QUERY_EXTENDED_V3 = coordinator_devices.QUERY_EXTENDED_V3
 QUERY_FM5 = coordinator_fm5.QUERY_FM5
 QUERY_RADIO_DEVICES = coordinator_radio.QUERY_RADIO_DEVICES
-QUERY_SEMANTIC = coordinator_semantic.QUERY_SEMANTIC
 QUERY_SEMANTIC_PROMOTED = coordinator_semantic.QUERY_SEMANTIC_PROMOTED
-QUERY_SEMANTIC_NO_HOLIDAY = coordinator_semantic.QUERY_SEMANTIC_NO_HOLIDAY
-QUERY_SEMANTIC_NO_QV = coordinator_semantic.QUERY_SEMANTIC_NO_QV
-QUERY_SEMANTIC_LEGACY = coordinator_semantic.QUERY_SEMANTIC_LEGACY
 QUERY_STATUS = coordinator_status.QUERY_STATUS
-QUERY_STATUS_NO_INITIATOR = coordinator_status.QUERY_STATUS_NO_INITIATOR
-QUERY_STATUS_MINIMAL = coordinator_status.QUERY_STATUS_MINIMAL
 QUERY_SYSTEM = coordinator_system.QUERY_SYSTEM
 QUERY_SYSTEM_GATEWAY_METADATA = coordinator_system.QUERY_SYSTEM_GATEWAY_METADATA
 QUERY_SYSTEM_INSTALLER = coordinator_system.QUERY_SYSTEM_INSTALLER
@@ -302,124 +296,25 @@ def test_status_query_uses_initiator_field_when_available() -> None:
     assert client.calls == [QUERY_STATUS]
 
 
-def test_status_query_falls_back_when_initiator_field_missing() -> None:
+@pytest.mark.parametrize(
+    "field",
+    [
+        "initiator_address",
+        "bus_summary",
+        "failed_source",
+        "status",
+    ],
+)
+def test_status_field_rejection_fails_after_one_query(field: str) -> None:
+    """Each rejected status field fails the update after the full query.
+
+    Returning daemon status, or sending another query, when ``field`` is
+    rejected fails this test.
+    """
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "initiator_address" on type "ServiceStatus".'
-                    }
-                ]
-            ),
-            {
-                "daemon_status": {
-                    "status": "running",
-                    "firmware_version": "0.3.10",
-                    "updates_available": False,
-                },
-                "adapter_status": {
-                    "status": "ok",
-                    "firmware_version": "3.0",
-                    "updates_available": False,
-                },
-            },
-        ]
-    )
-    coordinator = _build_status_coordinator(client)
-
-    data = asyncio.run(coordinator._async_update_data())
-
-    assert data["daemon"]["status"] == "running"
-    assert "initiator_address" not in data["daemon"]
-    assert data["admission"]["trusted"] is False
-    assert data["admission"]["repair_code"] == "schema_incompatible"
-    assert client.calls == [QUERY_STATUS, QUERY_STATUS_NO_INITIATOR]
-
-
-def test_status_query_legacy_gateway_falls_back_after_no_initiator_query_error() -> (
-    None
-):
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "initiator_address" on type "ServiceStatus".'
-                    }
-                ]
-            ),
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "bus_summary" on type "Query".'}]
-            ),
-            {
-                "daemon_status": {
-                    "status": "running",
-                    "firmware_version": "0.3.10",
-                    "updates_available": False,
-                },
-                "adapter_status": {
-                    "status": "ok",
-                    "firmware_version": "3.0",
-                    "updates_available": False,
-                },
-            },
-        ]
-    )
-    coordinator = _build_status_coordinator(client)
-
-    data = asyncio.run(coordinator._async_update_data())
-
-    assert data["daemon"]["status"] == "running"
-    assert data["admission"]["trusted"] is False
-    assert data["admission"]["repair_code"] == "schema_incompatible"
-    assert client.calls == [
-        QUERY_STATUS,
-        QUERY_STATUS_NO_INITIATOR,
-        QUERY_STATUS_MINIMAL,
-    ]
-
-
-def test_status_query_partial_source_selection_schema_fails_closed() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "failed_source" on type "BusAdmissionSourceSelection".'
-                    }
-                ]
-            ),
-            {
-                "daemon_status": {
-                    "status": "running",
-                    "firmware_version": "0.3.10",
-                    "updates_available": False,
-                },
-                "adapter_status": {
-                    "status": "ok",
-                    "firmware_version": "3.0",
-                    "updates_available": False,
-                },
-            },
-        ]
-    )
-    coordinator = _build_status_coordinator(client)
-
-    data = asyncio.run(coordinator._async_update_data())
-
-    assert data["daemon"]["status"] == "running"
-    assert data["admission"]["trusted"] is False
-    assert data["admission"]["repair_code"] == "schema_incompatible"
-    assert data["daemon"]["admission_trusted"] is False
-    assert client.calls == [QUERY_STATUS, QUERY_STATUS_MINIMAL]
-
-
-def test_status_query_missing_bus_summary_status_field_fails_closed() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "status" on type "BusSummary".'}]
+                [{"message": f'Cannot query field "{field}" on type "Query".'}]
             ),
             {
                 "daemon_status": {"status": "running"},
@@ -429,12 +324,10 @@ def test_status_query_missing_bus_summary_status_field_fails_closed() -> None:
     )
     coordinator = _build_status_coordinator(client)
 
-    data = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert data["daemon"]["status"] == "running"
-    assert data["admission"]["trusted"] is False
-    assert data["admission"]["repair_code"] == "schema_incompatible"
-    assert client.calls == [QUERY_STATUS, QUERY_STATUS_MINIMAL]
+    assert client.calls == [QUERY_STATUS]
 
 
 def test_status_query_marks_degraded_admission_untrusted() -> None:
@@ -997,7 +890,7 @@ def test_schedule_coordinator_returns_empty_on_null_schedules() -> None:
     assert result == {"programs": []}
 
 
-# --- Semantic coordinator quick veto fallback tests ---
+# --- Zones coordinator rejection and retention tests ---
 
 
 def _build_semantic_coordinator(
@@ -1056,119 +949,36 @@ def test_semantic_full_query_succeeds() -> None:
     assert client.calls == [QUERY_SEMANTIC_PROMOTED]
 
 
-def test_semantic_falls_back_to_no_holiday() -> None:
+@pytest.mark.parametrize(
+    "field",
+    [
+        "source_label",
+        "zone_holiday_start_date",
+        "quick_veto",
+        "room_temperature_zone_mapping",
+        "zones",
+    ],
+)
+def test_zones_field_rejection_fails_after_one_query(field: str) -> None:
+    """Each rejected zones field fails the update after the one zones query.
+
+    Returning a zone payload, or sending another query, when ``field`` is
+    rejected fails this test.
+    """
     client = _ScriptedClient(
         [
             GraphQLResponseError(
-                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
-            ),
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
-                    }
-                ]
+                [{"message": f'Cannot query field "{field}" on type "Query".'}]
             ),
             _semantic_payload(),
         ]
     )
     coordinator = _build_semantic_coordinator(client)
 
-    result = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert len(result["zones"]) == 1
-    assert client.calls == [
-        QUERY_SEMANTIC_PROMOTED,
-        QUERY_SEMANTIC,
-        QUERY_SEMANTIC_NO_HOLIDAY,
-    ]
-
-
-def test_semantic_falls_back_to_no_qv() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
-            ),
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
-                    }
-                ]
-            ),
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
-            ),
-            _semantic_payload(),
-        ]
-    )
-    coordinator = _build_semantic_coordinator(client)
-
-    result = asyncio.run(coordinator._async_update_data())
-
-    assert len(result["zones"]) == 1
-    assert client.calls == [
-        QUERY_SEMANTIC_PROMOTED,
-        QUERY_SEMANTIC,
-        QUERY_SEMANTIC_NO_HOLIDAY,
-        QUERY_SEMANTIC_NO_QV,
-    ]
-
-
-def test_semantic_falls_back_to_legacy() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
-            ),
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
-                    }
-                ]
-            ),
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "quick_veto" on type "ZoneConfig".'}]
-            ),
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "room_temperature_zone_mapping" on type "ZoneConfig".'
-                    }
-                ]
-            ),
-            _semantic_payload(),
-        ]
-    )
-    coordinator = _build_semantic_coordinator(client)
-
-    result = asyncio.run(coordinator._async_update_data())
-
-    assert len(result["zones"]) == 1
-    assert client.calls == [
-        QUERY_SEMANTIC_PROMOTED,
-        QUERY_SEMANTIC,
-        QUERY_SEMANTIC_NO_HOLIDAY,
-        QUERY_SEMANTIC_NO_QV,
-        QUERY_SEMANTIC_LEGACY,
-    ]
-
-
-def test_semantic_returns_empty_on_zones_missing() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "zones" on type "Query".'}]
-            ),
-        ]
-    )
-    coordinator = _build_semantic_coordinator(client)
-
-    result = asyncio.run(coordinator._async_update_data())
-
-    assert result == {"zones": [], "dhw": None}
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED]
 
 
 def test_semantic_retains_last_known_good_for_two_transient_empty_payloads() -> None:
@@ -1458,30 +1268,6 @@ def test_semantic_partial_subscription_does_not_clear_full_poll_failure() -> Non
     coordinator.apply_zone_subscription(coordinator.data["zones"], "zone-1")
 
     assert coordinator.last_update_success is False
-
-
-def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payload() -> (
-    None
-):
-    payload = _semantic_payload()
-    payload["dhw"] = {
-        "state": {"dhw_temperature": 0.0},
-        "config": {"dhw_temperature_setpoint": 0.0},
-    }
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "source_label" on type "ZoneConfig".'}]
-            ),
-            payload,
-        ]
-    )
-    coordinator = _build_semantic_coordinator(client)
-
-    result = asyncio.run(coordinator._async_update_data())
-
-    assert result == payload
-    assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC]
 
 
 def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leaks() -> (

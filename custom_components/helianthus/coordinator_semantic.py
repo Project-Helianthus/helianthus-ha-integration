@@ -9,62 +9,10 @@ from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .coordinator import is_missing_field_error as _is_missing_field_error
+from .gateway_capabilities import GatewayCapabilities, query_field_paths
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
-QUERY_SEMANTIC = """
-query Semantic {
-  zones {
-    id
-    name
-    state {
-      zone_room_temperature
-      zone_room_humidity
-      hvac_action
-      zone_special_function_mode
-      heating_demand_pct
-      zone_valve_position
-    }
-    config {
-      operating_mode
-      preset
-      target_temp_c
-      allowed_modes
-      circuit_type
-      associated_circuit
-      room_temperature_zone_mapping
-      quick_veto
-      zone_room_temperature_setpoint_at_quick_veto
-      zone_quick_veto_time
-      quick_veto_expiry
-      zone_holiday_start_date
-      zone_holiday_end_date
-      zone_room_temperature_setpoint_at_holiday
-      zone_holiday_start_clock_time
-      zone_holiday_end_clock_time
-    }
-  }
-  dhw {
-    state {
-      dhw_temperature
-      dhw_special_function_mode
-      heating_demand_pct
-    }
-    config {
-      dhw_operating_mode
-      preset
-      dhw_temperature_setpoint
-      dhw_holiday_start_date
-      dhw_holiday_end_date
-    }
-  }
-}
-"""
-
-# MSP-09C intentionally uses a separate primary query.  An older gateway that
-# lacks any promoted field must continue through the established semantic
-# fallback chain below, rather than losing zones or DHW as a side effect.
 QUERY_SEMANTIC_PROMOTED = """
 query Semantic {
   zones {
@@ -118,154 +66,19 @@ query Semantic {
 }
 """
 
-QUERY_SEMANTIC_NO_HOLIDAY = """
-query Semantic {
-  zones {
-    id
-    name
-    state {
-      zone_room_temperature
-      zone_room_humidity
-      hvac_action
-      zone_special_function_mode
-      heating_demand_pct
-      zone_valve_position
-    }
-    config {
-      operating_mode
-      preset
-      target_temp_c
-      allowed_modes
-      circuit_type
-      associated_circuit
-      room_temperature_zone_mapping
-      quick_veto
-      zone_room_temperature_setpoint_at_quick_veto
-      zone_quick_veto_time
-      quick_veto_expiry
-    }
-  }
-  dhw {
-    state {
-      dhw_temperature
-      dhw_special_function_mode
-      heating_demand_pct
-    }
-    config {
-      dhw_operating_mode
-      preset
-      dhw_temperature_setpoint
-    }
-  }
-}
-"""
-
-QUERY_SEMANTIC_NO_QV = """
-query Semantic {
-  zones {
-    id
-    name
-    state {
-      zone_room_temperature
-      zone_room_humidity
-      hvac_action
-      zone_special_function_mode
-      heating_demand_pct
-      zone_valve_position
-    }
-    config {
-      operating_mode
-      preset
-      target_temp_c
-      allowed_modes
-      circuit_type
-      associated_circuit
-      room_temperature_zone_mapping
-    }
-  }
-  dhw {
-    state {
-      dhw_temperature
-      dhw_special_function_mode
-      heating_demand_pct
-    }
-    config {
-      dhw_operating_mode
-      preset
-      dhw_temperature_setpoint
-    }
-  }
-}
-"""
-
-QUERY_SEMANTIC_LEGACY = """
-query Semantic {
-  zones {
-    id
-    name
-    state {
-      zone_room_temperature
-      zone_room_humidity
-      hvac_action
-      zone_special_function_mode
-      heating_demand_pct
-      zone_valve_position
-    }
-    config {
-      operating_mode
-      preset
-      target_temp_c
-      allowed_modes
-      circuit_type
-      associated_circuit
-    }
-  }
-  dhw {
-    state {
-      dhw_temperature
-      dhw_special_function_mode
-      heating_demand_pct
-    }
-    config {
-      dhw_operating_mode
-      preset
-      dhw_temperature_setpoint
-    }
-  }
-}
-"""
-
-_HOLIDAY_FIELDS = [
-    "zone_holiday_start_date",
-    "zone_holiday_end_date",
-    "zone_room_temperature_setpoint_at_holiday",
-    "zone_holiday_start_clock_time",
-    "zone_holiday_end_clock_time",
-    "dhw_holiday_start_date",
-    "dhw_holiday_end_date",
-]
-_QV_FIELDS = [
-    "quick_veto",
-    "zone_room_temperature_setpoint_at_quick_veto",
-    "zone_quick_veto_time",
-    "quick_veto_expiry",
-]
-_SEMANTIC_RECOVERABLE_FIELDS = (
-    _HOLIDAY_FIELDS + _QV_FIELDS + ["room_temperature_zone_mapping"]
-)
-_PROMOTED_SEMANTIC_FIELDS = [
-    "operation_mode_changeable",
-    "source_label",
-    "overrun_active",
-]
-
 
 class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic zone/DHW data."""
 
     _TRANSIENT_GAP_LIMIT = 2
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: GatewayCapabilities | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -273,6 +86,8 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._capabilities = capabilities
+        self._absence_warned = False
         self._last_zones: list[Any] = []
         self._last_dhw: dict[str, Any] | None = None
         self._zone_gap_cycles: dict[str, int] = {}
@@ -405,31 +220,39 @@ class HelianthusSemanticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             {"zones": zones if isinstance(zones, list) else [], "dhw": current_dhw}
         )
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        queries = [
-            QUERY_SEMANTIC_PROMOTED,
-            QUERY_SEMANTIC,
-            QUERY_SEMANTIC_NO_HOLIDAY,
-            QUERY_SEMANTIC_NO_QV,
-            QUERY_SEMANTIC_LEGACY,
+    def _semantic_domain_absent(self) -> bool:
+        """Return whether the recorded paths omit a field of the zones query."""
+        capabilities = getattr(self, "_capabilities", None)
+        if not isinstance(capabilities, GatewayCapabilities):
+            return False
+        missing = [
+            path
+            for path in query_field_paths(QUERY_SEMANTIC_PROMOTED)
+            if path not in capabilities.paths
         ]
-        payload = None
-        for query in queries:
-            try:
-                payload = await self._client.execute(query)
-                break
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["zones", "dhw"]):
-                    return self._materialize_payload({"zones": [], "dhw": None})
-                if _is_missing_field_error(exc.errors, _PROMOTED_SEMANTIC_FIELDS):
-                    continue
-                if _is_missing_field_error(exc.errors, _SEMANTIC_RECOVERABLE_FIELDS):
-                    continue
-                raise UpdateFailed(str(exc)) from exc
-            except GraphQLClientError as exc:
-                retained = self._retain_transport_gap()
-                if retained is not None:
-                    return retained
-                raise UpdateFailed(str(exc)) from exc
+        if not missing:
+            return False
+        if not getattr(self, "_absence_warned", False):
+            self._absence_warned = True
+            logging.getLogger(__name__).warning(
+                "Helianthus semantic domain is unavailable for this connection; "
+                "unsupported path %s",
+                ", ".join(missing),
+            )
+        return True
 
-        return self._materialize_payload(payload if isinstance(payload, dict) else {})
+    async def _async_update_data(self) -> dict[str, Any]:
+        if self._semantic_domain_absent():
+            return {"zones": [], "dhw": None}
+        try:
+            payload = await self._client.execute(QUERY_SEMANTIC_PROMOTED)
+        except GraphQLResponseError as exc:
+            raise UpdateFailed(str(exc)) from exc
+        except GraphQLClientError as exc:
+            retained = self._retain_transport_gap()
+            if retained is not None:
+                return retained
+            raise UpdateFailed(str(exc)) from exc
+        if not isinstance(payload, dict):
+            payload = {}
+        return self._materialize_payload(payload)

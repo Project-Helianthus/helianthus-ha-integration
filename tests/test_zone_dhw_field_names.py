@@ -2,10 +2,10 @@
 
 ``fixtures/gateway_register_derived_names.json`` names every published field of
 the ``zone_state``, ``zone_config``, ``dhw_state`` and ``dhw_config`` objects.
-The tests check that the semantic documents and subscriptions request each
+The tests check that the zones query and the subscriptions request each
 single-register field under its object and never a previous name, and that a
-missing published holiday or quick veto field steps down to the next document
-while a previous name fails the update.
+rejected published field or previous spelling fails the update after that one
+query.
 """
 from __future__ import annotations
 
@@ -18,10 +18,6 @@ import pytest
 
 from test_coordinator import (
     GraphQLResponseError,
-    QUERY_SEMANTIC,
-    QUERY_SEMANTIC_LEGACY,
-    QUERY_SEMANTIC_NO_HOLIDAY,
-    QUERY_SEMANTIC_NO_QV,
     QUERY_SEMANTIC_PROMOTED,
     _build_semantic_coordinator,
     _semantic_payload,
@@ -81,15 +77,6 @@ SUBSCRIPTIONS = next(
     and any(isinstance(target, ast.Name) and target.id == "SUBSCRIPTIONS" for target in node.targets)
 )
 
-QUERIES = {
-    "promoted": QUERY_SEMANTIC_PROMOTED,
-    "full": QUERY_SEMANTIC,
-    "no holiday": QUERY_SEMANTIC_NO_HOLIDAY,
-    "no quick veto": QUERY_SEMANTIC_NO_QV,
-    "oldest": QUERY_SEMANTIC_LEGACY,
-}
-
-
 def _field(plane: str, name: str) -> dict:
     return next(f for f in SINGLE if f["plane"] == plane and f["name"] == name)
 
@@ -108,7 +95,7 @@ def test_promoted_document_requests_every_published_field_under_its_object(field
 
 
 def _documents() -> list[tuple[str, str, dict[str, str]]]:
-    documents = [(label, document, QUERY_ROOTS) for label, document in QUERIES.items()]
+    documents = [("zones query", QUERY_SEMANTIC_PROMOTED, QUERY_ROOTS)]
     documents += [
         (f"{key} subscription", SUBSCRIPTIONS[key], SUBSCRIPTION_ROOTS)
         for key in ("zones", "dhw")
@@ -129,43 +116,34 @@ def _missing(field: str, owner: str) -> GraphQLResponseError:
     return GraphQLResponseError([{"message": f'Cannot query field "{field}" on type "{owner}".'}])
 
 
-# Published name -> the document the coordinator steps down to once the first
-# full document reports it missing.
-RECOVERABLE = {
-    "zone_holiday_start_date": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_holiday_end_date": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_room_temperature_setpoint_at_holiday": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_holiday_start_clock_time": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_holiday_end_clock_time": QUERY_SEMANTIC_NO_HOLIDAY,
-    "dhw_holiday_start_date": QUERY_SEMANTIC_NO_HOLIDAY,
-    "dhw_holiday_end_date": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_room_temperature_setpoint_at_quick_veto": QUERY_SEMANTIC_NO_HOLIDAY,
-    "zone_quick_veto_time": QUERY_SEMANTIC_NO_HOLIDAY,
-}
+PUBLISHED = sorted(PREVIOUS)
 
 
-def test_step_down_documents_omit_the_recoverable_fields_they_drop() -> None:
-    no_holiday = _leaf_paths(QUERY_SEMANTIC_NO_HOLIDAY)
-    no_qv = _leaf_paths(QUERY_SEMANTIC_NO_QV)
-    for name in RECOVERABLE:
-        assert not any(path.endswith(f".{name}") for path in no_qv), name
-        holiday = "holiday" in name
-        assert any(path.endswith(f".{name}") for path in no_holiday) is not holiday, name
+@pytest.mark.parametrize(("plane", "name"), PUBLISHED)
+def test_a_rejected_published_field_fails_after_one_query(plane: str, name: str) -> None:
+    """Each published field, named in a rejection, fails the update.
 
-
-@pytest.mark.parametrize("name", sorted(RECOVERABLE))
-def test_missing_published_field_steps_down_and_a_previous_name_fails(name) -> None:  # noqa: ANN001
-    plane = "dhw" if name.startswith("dhw_") else "zone"
+    Returning a payload, or sending a second query, after ``name`` is rejected
+    fails this test. ``plane`` is the zone or hot-water object that owns it.
+    """
     owner = "DhwConfig" if plane == "dhw" else "ZoneConfig"
-    client = _ScriptedClient(
-        [_missing("source_label", "ZoneConfig"), _missing(name, owner), _semantic_payload()]
-    )
-    result = asyncio.run(_build_semantic_coordinator(client)._async_update_data())
-    assert len(result["zones"]) == 1
-    assert client.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC, RECOVERABLE[name]]
-
-    previous = PREVIOUS[(plane, name)]
-    failing = _ScriptedClient([_missing("source_label", "ZoneConfig"), _missing(previous, owner)])
+    client = _ScriptedClient([_missing(name, owner), _semantic_payload()])
     with pytest.raises(coordinator_semantic.UpdateFailed):
-        asyncio.run(_build_semantic_coordinator(failing)._async_update_data())
-    assert failing.calls == [QUERY_SEMANTIC_PROMOTED, QUERY_SEMANTIC]
+        asyncio.run(_build_semantic_coordinator(client)._async_update_data())
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED]
+
+
+@pytest.mark.parametrize(("plane", "name"), PUBLISHED)
+def test_a_rejected_previous_spelling_fails_after_one_query(plane: str, name: str) -> None:
+    """Each previous spelling, named in a rejection, fails the update.
+
+    Returning a payload, or sending a second query, after that spelling is
+    rejected fails this test. ``plane`` and ``name`` select the published
+    field whose previous spelling is rejected.
+    """
+    previous = PREVIOUS[(plane, name)]
+    owner = "DhwConfig" if plane == "dhw" else "ZoneConfig"
+    client = _ScriptedClient([_missing(previous, owner), _semantic_payload()])
+    with pytest.raises(coordinator_semantic.UpdateFailed):
+        asyncio.run(_build_semantic_coordinator(client)._async_update_data())
+    assert client.calls == [QUERY_SEMANTIC_PROMOTED]
