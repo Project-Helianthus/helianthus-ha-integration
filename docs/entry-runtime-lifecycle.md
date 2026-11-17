@@ -3,10 +3,12 @@
 Each loaded config entry has one typed runtime object,
 [`HelianthusRuntime`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_runtime.py),
 in `entry.runtime_data`. It is a slotted dataclass composed of the outputs of
-the setup phases. Entry setup publishes it in one assignment after every phase
-before platform registration has succeeded; Home Assistant discards it when
-the entry unloads. The platforms, diagnostics, the options flow and teardown
-read it through the typed config entry `HelianthusConfigEntry`
+the setup phases and the entry's release stack. Entry setup publishes it in
+one assignment after every phase before platform registration has succeeded;
+a setup that fails afterwards releases what it acquired and withdraws it
+again, and Home Assistant discards it after the entry unloads. The platforms,
+diagnostics, the options flow and teardown read it through the typed config
+entry `HelianthusConfigEntry`
 (`ConfigEntry[HelianthusRuntime]`). Publication does not validate gateway data
 or accept setup: a field can hold `None`, and a present runtime does not mean
 that a resource is enabled or that setup has succeeded.
@@ -20,6 +22,7 @@ that a resource is enabled or that setup has succeeded.
 | `identities` | The `DeviceIdentities` of the inventory step: daemon and adapter identifiers, the boiler, regulator and function-module parents (each may be `None`), the regulator's manufacturer and parsed address, the merge targets and the inventory the listeners compare against. |
 | `services` | The `ServiceBoundaries` of the register-services phase, built by `service_boundaries` in [entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py): the admin coordinator and its lifecycle's action broker (optional admin setup still returns an unavailable diagnostic coordinator on handled failure), the isolated admin session or `None`, the service-registration ownership flag, each PV, storage and EVSE consumer coordinator and boundary or `None`, and the four reload signatures (the three option tuples and the exact semantic asset-selection tuple; an invalid selection yields `None`). |
 | `listeners` | The `StartedListeners` of the listener phase: the coordinator listeners, the mutable list of unsubscribe callbacks, the optional subscription task, the zone-to-device map, the unresolved-zone tuple and the device-to-zone-name map. |
+| `resources` | The entry's one `EntryResources` of [entry cleanup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py): the release of every resource the setup phases acquired, in acquisition order. Unload releases it; see [Resource ownership](#resource-ownership). |
 | `admission_repair_code`, `source_selection` | The optional repair code and the optional API-owned source-selection dictionary of the first admission. The type adds no protocol semantics to that payload. |
 | `boiler_physical_device_id`, `boiler_via_device_id`, `boiler_burner_device_id`, `boiler_hydraulics_device_id` | Derived boiler identifiers. The resolved physical and via parents may be `None`; the burner and hydraulics identifiers are always constructed. |
 | `semantic_snapshot_attached`, `semantic_snapshot_coordinator`, `semantic_snapshot_sensors_setup` | The only fields that change after publication. `semantic_snapshot_attached` starts `False` and becomes `True` when the snapshot is attached after platform forwarding; the coordinator is `None` when no asset selection is configured or it is invalid. Snapshot sensor setup stores a deferred callback in `semantic_snapshot_sensors_setup` while the snapshot is not attached; entry setup clears the field and calls the callback after attaching. |
@@ -124,8 +127,11 @@ delegate to setup and teardown, and the platform list lives in
 5. Establish optional isolated admin state ([entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py)):
    the admin boundary gets the scheme and host of the GraphQL URL as its
    origin and the instance GUID, or the entry id when no GUID is known. A
-   failure is logged and leaves an unavailable diagnostic coordinator; it does
-   not fail setup.
+   failure releases what the boundary had acquired, is logged and leaves an
+   unavailable diagnostic coordinator; it does not fail setup. A cancellation
+   releases what the boundary had acquired and propagates. The entry's
+   resources own the admin lifecycle and, when the boundary is up, the
+   registered admin services and the isolated session.
 6. Register the inventory devices ([entry devices](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_devices.py)):
    record the adapter firmware, then register the bus devices, the radio
    devices and the circuit devices from the first refresh, in that order. A bus
@@ -162,36 +168,82 @@ delegate to setup and teardown, and the platform list lives in
    and the GraphQL subscriptions start when the entry's option enables them
    (the boiler coordinator takes part only when it reports boiler support).
    All unsubscribe callbacks go into the one `unsub_listeners` list in that
-   order. The phase returns a `StartedListeners`. Steps 3 to 8 precede
-   runtime publication.
+   order. The entry's resources own the list before the first listener is
+   added, and each registration appends an unsubscribe callback as soon as its
+   listener is added, so a registration that fails midway leaves the listeners
+   it already added owned; the subscription task is owned once it is started. The
+   phase returns a `StartedListeners`. Steps 3 to 8 precede runtime
+   publication.
 9. Register services ([entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py)):
    attempt PV, storage and EVSE boundary creation, in that order. Each catches
    `OSError`, `TypeError` and `ValueError`, logs a warning and leaves that
    family's boundary and coordinator as `None`. Other errors and cancellation
-   propagate. `service_boundaries` then describes the admin state, the three
+   propagate. The entry's resources own the close of each boundary that is
+   created. `service_boundaries` then describes the admin state, the three
    boundaries and the four reload signatures.
-10. Publish the complete runtime to `entry.runtime_data`
-    (`publish_entry_runtime`), then register the option-update listener of
-    entry services through the entry's unload hook when those entry methods
-    exist.
-11. Register the platforms: await platform forwarding, then run the
-    reconciler's radio-registry cleanup for the non-exportable radio slots of
-    the latest radio update, then its trusted-admission cleanup.
+10. Publish the complete runtime, with the entry's resources, to
+    `entry.runtime_data` (`publish_entry_runtime`), then add the
+    option-update listener of entry services when the entry offers
+    `add_update_listener`, and register its removal with the entry's
+    resources.
+11. Register the platforms: register the platform unload with the entry's
+    resources, then await platform forwarding, so a failure or cancellation
+    during forwarding unloads the platforms already set up; then run the reconciler's
+    radio-registry cleanup for the non-exportable radio slots of the latest
+    radio update, then its trusted-admission cleanup.
 12. Attach the semantic snapshot (`async_attach_semantic_snapshot`): await
-    semantic snapshot setup, store its result (including `None`) and mark the
-    snapshot attached. Take the deferred sensor callback, clear its field and
-    call it if present. Return `True` only after these steps complete.
+    semantic snapshot setup, register the close of its coordinator with the
+    entry's resources when it is not `None`, store the result (including
+    `None`) and mark the snapshot attached. Take the deferred sensor callback,
+    clear its field and call it if present. Return `True` only after these
+    steps complete.
 
-A phase that raises ends setup there: no later phase runs and the exception
-propagates.
+A phase that raises ends setup there: no later phase runs, the setup rolls
+back as described below and the error propagates. Publication is earlier than
+setup acceptance: the platforms read the runtime while they are forwarded.
 
-Publication is earlier than setup acceptance. A forwarding or snapshot error or
-cancellation propagates and leaves the published runtime. A snapshot failure
-leaves the snapshot not attached and may leave the deferred callback present. A
-callback error occurs after the callback's field is cleared and after the
-snapshot is attached. There is no entry-wide rollback in this setup function,
-including for resources created before publication. The admission clean-up
-count recorded by the failed setup stays in the domain data for the retry.
+### Setup failure and rollback
+
+`async_setup_entry` creates the entry's `EntryResources` and runs the phases.
+When a phase raises an exception or the setup is cancelled, the setup:
+
+1. releases every resource registered so far, newest first, as described in
+   [Resource ownership](#resource-ownership): a resource is released only if
+   its phase had acquired it, and each is released once;
+2. withdraws `entry.runtime_data` when this setup had published it, so no
+   runtime of a failed setup remains on the entry;
+3. raises the primary error. A gateway connection failure (`OSError`,
+   including `TimeoutError`, or the GraphQL client's `GraphQLRequestError` or
+   `GraphQLTimeoutError`) is raised as `ConfigEntryNotReady` with the original
+   error as its cause, so Home Assistant retries the setup. Every other error,
+   including the `ConfigEntryNotReady` of a failed first coordinator refresh
+   and a `GraphQLResponseError`, and every cancellation propagates unchanged.
+
+When the rollback's platform unload returns `False`, raises or is cancelled,
+the platforms are not confirmed unloaded and may still use the older
+resources: the rollback stops there. The platforms, the older resources and
+the published runtime stay on the entry, a warning is logged and the primary
+error (or the cancellation) still propagates. The next setup of the entry
+releases them first, platforms first, before it acquires anything; while the
+platforms still are not confirmed unloaded, that setup raises
+`ConfigEntryNotReady` and acquires nothing, so the platforms are never set up
+a second time over loaded ones. When the platforms do unload but releasing
+one of the kept older resources fails, every other kept resource is still
+released, the runtime is withdrawn and that setup raises the first release
+failure and acquires nothing, so no replacement is acquired beside a resource
+whose release failed.
+
+A release that fails during the rollback is logged and does not replace the
+primary error. A cancellation that arrives during the rollback still lets the
+later releases run and then propagates instead of the primary error.
+
+The rollback does not touch the device and entity registries, the stored
+zone-parent record or the domain-data records: the admission clean-up
+count recorded by the failed setup stays for the retry. The option-update
+listener is removed by the rollback like every other owned resource, so a
+retried setup adds one listener, not a second one. A skipped connection
+(`True`) and a duplicate refusal (`False`) end setup before any resource is
+acquired.
 
 ## Entity registry reconciliation
 
@@ -284,55 +336,89 @@ listener per helper. A helper that turns on starts its register write as a
 task. The write is refused unless the source admission is trusted, the
 regulator address is known and the semantic target is available and fresh.
 
-## Unload and resource ownership
+## Resource ownership
 
-[Teardown](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py) first awaits platform
-unload. `False` leaves the runtime, the admission clean-up count and all owned
-resources untouched. A platform-unload error or cancellation also propagates
-before any entry state is removed.
+`EntryResources` in
+[entry cleanup](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py)
+is one async exit stack per setup. Each phase registers the release of a
+resource as soon as it has acquired it:
 
-On success, teardown removes that entry's admission clean-up count from the
-domain data and reads `entry.runtime_data`; an entry without a runtime has
-nothing else to release. It requests subscription cancellation without
-awaiting the task, and invokes unsubscribe callbacks in list order.
-Ordinary listener exceptions are suppressed so later listeners still run.
-Cancellation derives from `BaseException` and is not suppressed by that handler.
-The entry-managed update-listener hook remains Home Assistant's responsibility;
-it is distinct from this callback list.
+| Phase | Resource | Release |
+| --- | --- | --- |
+| Admin state (5) | The isolated admin session, when the boundary is up | Close the session. |
+| Admin state (5) | The registered admin services, when the boundary is up | Unregister the entry's admin services. |
+| Admin state (5) | The admin lifecycle, of the available or the unavailable diagnostic coordinator | Clear the lifecycle and its action broker. |
+| Listeners (8) | The `unsub_listeners` list: the coordinator listeners, the schedule helpers and the callbacks the platforms append later | Call each callback in list order. The list is read when it is released. |
+| Listeners (8) | The subscription task, when subscriptions are enabled | Request its cancellation; the task is not awaited. |
+| Register services (9) | The PV, storage and EVSE boundaries that were created, in that order | Close the boundary. |
+| Publish (10) | The option-update listener, when the entry offers `add_update_listener` | Remove the listener. |
+| Register platforms (11) | The forwarded platforms | Unload them, registered before forwarding starts so a partial forwarding is unloaded too; during a rollback only, because unload unloads them itself first. A `False` result keeps the platforms and every older resource registered (see the rollback above). |
+| Semantic snapshot (12) | The snapshot coordinator, when it is not `None` | Close the coordinator. |
 
-Next teardown clears the admin lifecycle and its broker. When an isolated admin
-session exists and services were registered, it unregisters that entry's admin
-services and closes the session through the admin boundary helper. An unregistered
-session is closed directly. An absent session requires no close. Optional admin
-setup normally closes its own failed session before publishing diagnostic-only
-state. None of these paths closes the Home Assistant GraphQL session.
+Releases run newest first: the snapshot coordinator, the platforms, the
+option-update listener, the EVSE, storage and PV boundaries, the
+subscription task, the listener callbacks, the admin lifecycle, the admin
+services and the admin session. Each release runs
+once. An ordinary exception from a release is logged with its traceback, and
+the later releases still run; the first such exception is the primary error
+of the release. A failing unsubscribe callback is logged and the later
+callbacks of the list still run; it is not a release failure. A cancellation
+is not caught: the later releases still run, then the cancellation
+propagates. The stack is empty after it is released, so releasing it again
+releases nothing.
 
-The semantic snapshot coordinator is closed in `finally`, including when task
-cancellation requests, listener cancellation or admin cleanup raise. Its absence
-or a `None` value is allowed. After that protected block completes normally,
-teardown closes PV, storage and EVSE boundaries sequentially. Missing boundaries
-are allowed. Teardown does not remove the runtime itself: Home Assistant
-discards `entry.runtime_data` after a successful unload, so a later unload finds
-no runtime and closes nothing twice. Other entries and their counts remain
-untouched.
+Not owned by the stack: the GraphQL session, which comes from Home Assistant;
+the domain coordinators, which hold no resource of their own beyond the
+listeners above; the registry rows and the domain-data records.
 
-Current limitations are preserved: an error or cancellation escaping the
-protected block still runs semantic close but prevents all three later M2M
-closes. A semantic-close error can replace the earlier exception. A PV close
-error prevents storage and EVSE closes; a storage close error prevents EVSE
-close. An error that escapes teardown leaves the runtime on the entry and Home
-Assistant records the failed unload. These are observations for later
-lifecycle work, not fixes or promises introduced by the typed runtime.
+## Unload
+
+[Teardown](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_cleanup.py)
+first awaits platform unload. `False` releases nothing: the runtime, the
+admission clean-up count and every owned resource stay for a later unload. A
+platform-unload error or cancellation also propagates before any entry state
+is removed.
+
+After a successful platform unload, teardown removes that entry's admission
+clean-up count from the domain data and reads `entry.runtime_data`; an entry
+without a runtime, or a runtime without resources, has nothing else to
+release. Otherwise teardown marks the platforms unloaded and releases the
+entry's resources as described above. When a release failed, teardown raises
+the first failure after every other release has run; otherwise it returns
+`True`. Other entries, their runtimes and their counts are untouched.
+
+Home Assistant discards `entry.runtime_data` after a successful unload. An
+error that escapes teardown leaves the runtime on the entry and Home Assistant
+records the failed unload; a repeated unload of that runtime finds its stack
+empty and closes nothing twice.
+
+Limitations: the subscription task's cancellation is requested, not awaited.
+A cancellation inside an unsubscribe callback skips the remaining
+callbacks of that list; the other releases still run.
 
 ## Evidence and scope
 
+[Rollback tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_lifecycle_rollback.py)
+run the shipped setup with every acquiring phase real (the admin boundary, the
+listeners and subscription task, the three consumer boundaries, forwarding and
+the snapshot coordinator) and inject a failure and a cancellation after each
+phase. They check that exactly the resources acquired up to that phase are
+released, newest first and once, that the runtime is withdrawn, that the
+primary error propagates even when a release fails, that a connection failure
+becomes `ConfigEntryNotReady`, and that unload unloads the platforms first,
+releases nothing when that is refused, that a refused rollback platform unload
+keeps the older resources and the runtime for the next setup to release, that a
+listener registration failing midway releases the listeners it already added,
+keeps releasing after a failing close,
+raises the first failure and closes nothing twice when repeated.
 [Synthetic contract tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_runtime_contract.py) run the
 shipped setup from the consumer boundaries through return, with sentinel results
 for the earlier phases, plus the complete teardown function, with fake entries,
 Home Assistant objects and resources. They check that one `HelianthusRuntime`
 is published and the exact value it holds for every runtime key (read through
 the rewrite table), the boiler parent chain, ordering, optional resources,
-partial failures, cancellation, listener cleanup and exception propagation.
+the rollback inside each late phase, cancellation, listener cleanup, the
+release order and that a failing release does not stop the later ones.
 They do not assert that published state is accepted setup. Mutation controls
 reject forwarding without publication and a `None` written for any one field, in
 `publish_entry_runtime` or in the service boundaries, and check that every

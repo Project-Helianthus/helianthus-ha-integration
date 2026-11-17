@@ -3,10 +3,12 @@
 ``HelianthusRuntime`` is composed of the outputs of the setup phases: the
 gateway connection, the domain coordinators, the device identities, the
 service boundaries and the started listeners, plus the admission result, the
-derived boiler devices and the semantic snapshot fields that are attached
-after the platforms. Entry setup publishes it in one assignment after every
-phase has succeeded; Home Assistant discards it when the entry unloads. The
-records that must outlive an unload stay in the domain data instead. See
+derived boiler devices, the semantic snapshot fields that are attached after
+the platforms, and the ``EntryResources`` that release what the phases
+acquired. Entry setup publishes it in one assignment before the platforms are
+forwarded; a failed setup releases its resources and removes it again, and
+Home Assistant discards it after the entry unloads. The records that must
+outlive an unload stay in the domain data instead. See
 docs/entry-runtime-lifecycle.md for failure and unload behavior.
 """
 
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from .device_ids import DeviceIdentifier
     from .eebus_admin_coordinator import EEBusAdminV1Coordinator
     from .eebus_pairing import EEBusActionTerminalBroker
+    from .entry_cleanup import EntryResources
     from .entry_connection import GatewayConnection
     from .entry_coordinators import DomainCoordinators
     from .entry_devices import DeviceIdentities
@@ -77,8 +80,10 @@ class ServiceBoundaries:
 class HelianthusRuntime:
     """The runtime of one loaded config entry.
 
-    Every field is set at publication; a field can hold None. The semantic
-    snapshot fields change once more after the platforms are set up:
+    Every field is set at publication; a field can hold None. ``resources``
+    holds the release of every resource the setup phases acquired; unload
+    releases it. The semantic snapshot fields change once more after the
+    platforms are set up:
     ``semantic_snapshot_attached`` becomes True when the snapshot coordinator
     (None when no asset selection is configured) is attached, and a sensor
     setup deferred until then is held in ``semantic_snapshot_sensors_setup``.
@@ -90,6 +95,7 @@ class HelianthusRuntime:
     identities: DeviceIdentities
     services: ServiceBoundaries
     listeners: StartedListeners
+    resources: EntryResources
     admission_repair_code: str | None
     source_selection: dict[str, Any] | None
     boiler_physical_device_id: DeviceIdentifier | None

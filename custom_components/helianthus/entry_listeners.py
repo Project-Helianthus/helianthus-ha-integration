@@ -143,21 +143,30 @@ class EntryCoordinatorListeners:
         }
         self._known_has_dhw = isinstance(semantic.get("dhw"), dict)
 
-    def register(self) -> list[Callable[[], None]]:
-        """Add every listener to its coordinator; return the unsubscribe callbacks."""
+    def register(
+        self, unsubscribes: list[Callable[[], None]] | None = None
+    ) -> list[Callable[[], None]]:
+        """Add every listener to its coordinator; return the unsubscribe callbacks.
+
+        Each unsubscribe callback is appended to ``unsubscribes`` as soon as
+        its listener is added, so a caller that owns the list before this call
+        releases the listeners already added when a later one fails.
+        """
+        if unsubscribes is None:
+            unsubscribes = []
         coordinators = self._coordinators
-        return [
-            coordinators.status_coordinator.async_add_listener(self.handle_status_update),
-            coordinators.device_coordinator.async_add_listener(self.handle_device_update),
-            coordinators.semantic_coordinator.async_add_listener(self.handle_semantic_update),
-            coordinators.circuit_coordinator.async_add_listener(self.handle_circuit_update),
-            coordinators.radio_coordinator.async_add_listener(self.handle_radio_update),
-            coordinators.fm5_coordinator.async_add_listener(self.handle_fm5_update),
-            coordinators.boiler_coordinator.async_add_listener(self.handle_boiler_update),
-            coordinators.adapter_info_coordinator.async_add_listener(
-                self.handle_adapter_info_update
-            ),
-        ]
+        for coordinator, listener in (
+            (coordinators.status_coordinator, self.handle_status_update),
+            (coordinators.device_coordinator, self.handle_device_update),
+            (coordinators.semantic_coordinator, self.handle_semantic_update),
+            (coordinators.circuit_coordinator, self.handle_circuit_update),
+            (coordinators.radio_coordinator, self.handle_radio_update),
+            (coordinators.fm5_coordinator, self.handle_fm5_update),
+            (coordinators.boiler_coordinator, self.handle_boiler_update),
+            (coordinators.adapter_info_coordinator, self.handle_adapter_info_update),
+        ):
+            unsubscribes.append(coordinator.async_add_listener(listener))
+        return unsubscribes
 
     def _reload_on_zone_parent_change(self) -> bool:
         """Adopt live parent bindings; request the bounded reload if the parents changed."""

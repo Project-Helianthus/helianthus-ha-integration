@@ -86,14 +86,12 @@ def test_failed_optional_admin_setup_retains_an_unavailable_diagnostic_coordinat
         / "helianthus"
         / "entry_services.py"
     ).read_text()
-    cleanup_source = (
-        Path(__file__).parents[1]
-        / "custom_components"
-        / "helianthus"
-        / "entry_cleanup.py"
-    ).read_text()
     assert "create_unavailable_eebus_admin_coordinator" in component_source
-    assert "admin_coordinator.lifecycle.clear()" in cleanup_source
+    # Both the available and the unavailable coordinator's lifecycle are owned
+    # by the entry's resources and cleared when they are released.
+    assert component_source.count(
+        'resources.own("eeBUS admin lifecycle", admin_coordinator.lifecycle.clear)'
+    ) == 2
 
     broker.own("b" * 64)
     lifecycle.clear()

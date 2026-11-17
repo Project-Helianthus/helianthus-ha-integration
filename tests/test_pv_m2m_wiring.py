@@ -229,8 +229,14 @@ def test_cancelled_first_refresh_closes_untransferred_https_client() -> None:
 def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it(monkeypatch) -> None:
     from custom_components.helianthus import entry_services, evse_m2m, storage_m2m
 
+    from custom_components.helianthus.entry_cleanup import EntryResources
+
     calls = []
-    boundary = SimpleNamespace(coordinator=object())
+
+    async def close():
+        calls.append("close-pv")
+
+    boundary = SimpleNamespace(coordinator=object(), async_close=close)
 
     async def create_pv(hass, entry, *, scan_interval):
         calls.append(("pv", hass, entry, scan_interval))
@@ -243,15 +249,19 @@ def test_primary_setup_stores_dedicated_boundary_and_unload_closes_it(monkeypatc
     monkeypatch.setattr(storage_m2m, "async_setup_storage_m2m_boundary", disabled)
     monkeypatch.setattr(evse_m2m, "async_setup_evse_m2m_boundary", disabled)
     hass, entry = object(), SimpleNamespace(entry_id="synthetic-entry", options={}, data={})
-    boundaries = asyncio.run(entry_services.async_setup_m2m_boundaries(hass, entry, 31))
+    resources = EntryResources(entry.entry_id)
+    boundaries = asyncio.run(
+        entry_services.async_setup_m2m_boundaries(hass, entry, 31, resources=resources))
     admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
     services = entry_services.service_boundaries(entry, admin, boundaries)
     assert calls == [("pv", hass, entry, 31)]
     assert services.pv_m2m_boundary is boundary
     assert services.pv_m2m_coordinator is boundary.coordinator
+    # The entry's resources own the boundary's close: releasing them closes it once.
+    assert asyncio.run(resources.async_release()) is None
+    assert asyncio.run(resources.async_release()) is None
+    assert calls == [("pv", hass, entry, 31), "close-pv"]
     connection_source = (COMPONENT / "entry_connection.py").read_text(encoding="utf-8")
-    cleanup_source = (COMPONENT / "entry_cleanup.py").read_text(encoding="utf-8")
-    assert "await pv_m2m_boundary.async_close()" in cleanup_source
     assert "GraphQLClient(session=session" in connection_source
 
 

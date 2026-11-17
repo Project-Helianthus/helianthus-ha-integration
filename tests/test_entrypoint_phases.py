@@ -24,6 +24,7 @@ from entry_setup_harness import (
 
 from custom_components.helianthus import DOMAIN, async_unload_entry
 from custom_components.helianthus.const import PLATFORMS
+from custom_components.helianthus.entry_cleanup import EntryResources
 from custom_components.helianthus.entry_listeners import _semantic_inventory_became_available
 from custom_components.helianthus.entry_setup import _async_forward_platforms_and_finalize
 
@@ -70,6 +71,7 @@ def test_platform_forwarding_precedes_existing_post_setup_cleanup() -> None:
         cleanup_nonexportable_radio_registry_entries=cleanup_nonexportable,
         run_trusted_cleanup=trusted_cleanup,
     )
+    resources = EntryResources(entry.entry_id)
     asyncio.run(
         _async_forward_platforms_and_finalize(
             hass,
@@ -77,6 +79,7 @@ def test_platform_forwarding_precedes_existing_post_setup_cleanup() -> None:
             ["sensor", "climate"],
             reconciler=reconciler,
             nonexportable_radio_keys={"radio-1"},
+            resources=resources,
         )
     )
 
@@ -85,6 +88,10 @@ def test_platform_forwarding_precedes_existing_post_setup_cleanup() -> None:
         ("nonexportable-cleanup", {"radio-1"}, "post-platform setup"),
         ("trusted-cleanup", "post-platform setup"),
     ]
+    # The forwarded platforms are owned: releasing the resources unloads them once.
+    assert asyncio.run(resources.async_release()) is None
+    assert asyncio.run(resources.async_release()) is None
+    assert events[3:] == [("unload-platforms", "entry-1", ("sensor", "climate"))]
 
 
 def test_unload_failure_preserves_runtime_for_home_assistant_retry() -> None:
@@ -457,6 +464,9 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
     assert bench.run() is True
     assert bench.events == list(SETUP_PHASES)
     hass, entry, result = bench.hass, bench.entry, bench.results
+    # One release stack of the entry is handed to every acquiring phase and published.
+    resources = bench.calls["admin"][1]["resources"]
+    assert type(resources) is EntryResources and resources.entry_id == "synthetic-entry"
     prepared, connection = result["prepare"], result["connect"]
     assert bench.calls == {
         "prepare": ((hass, entry), {}),
@@ -466,7 +476,7 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
         "coordinators": ((hass, connection.client, interval), {}),
         "admin": ((hass,), {"entry_id": "synthetic-entry", "origin": origin,
                             "instance_guid": guid or "synthetic-entry",
-                            "scan_interval": interval}),
+                            "scan_interval": interval, "resources": resources}),
         "inventory-devices": ((prepared.device_registry, "synthetic-entry",
                                result["gateway-devices"], result["coordinators"]), {}),
         "reload-request": ((hass, "synthetic-entry"), {}),
@@ -475,19 +485,21 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
         "listeners": ((hass, entry), {
             "prepared": prepared, "connection": connection,
             "coordinators": result["coordinators"], "identities": result["inventory-devices"],
-            "reconciliation": result["reconcile"], "schedule_reload": result["reload-request"]}),
-        "m2m-boundaries": ((hass, entry, interval), {}),
+            "reconciliation": result["reconcile"], "schedule_reload": result["reload-request"],
+            "resources": resources}),
+        "m2m-boundaries": ((hass, entry, interval), {"resources": resources}),
         "service-boundaries": ((entry, result["admin"], result["m2m-boundaries"]), {}),
         "publish": ((entry,), {
             "connection": connection, "coordinators": result["coordinators"],
             "gateway_devices": result["gateway-devices"],
             "identities": result["inventory-devices"], "reconciliation": result["reconcile"],
-            "listeners": result["listeners"], "services": result["service-boundaries"]}),
-        "option-listener": ((entry,), {}),
+            "listeners": result["listeners"], "services": result["service-boundaries"],
+            "resources": resources}),
+        "option-listener": ((entry,), {"resources": resources}),
         "forward": ((hass, entry, PLATFORMS), {
             "reconciler": result["reconcile"].reconciler,
-            "nonexportable_radio_keys": {"radio"}}),
-        "snapshot": ((hass, entry, connection.client, interval), {}),
+            "nonexportable_radio_keys": {"radio"}, "resources": resources}),
+        "snapshot": ((hass, entry, connection.client, interval), {"resources": resources}),
     }
 
 
@@ -543,8 +555,9 @@ class _ListenerBench:
 
         self.events: list[object] = []
         self.parents, self.unresolved = parents, unresolved
-        self.task = object()
-        self.listener_unsub, self.helper_unsub = (lambda: None), (lambda: None)
+        self.task = SimpleNamespace(cancel=lambda: self.events.append("cancel"))
+        self.listener_unsub = lambda: self.events.append("listener-unsub")
+        self.helper_unsub = lambda: self.events.append("helper-unsub")
         registry = install_module(monkeypatch, "homeassistant.helpers.entity_registry",
                                   async_entries_for_config_entry=self.entity_entries)
         install_module(monkeypatch, "homeassistant.helpers", entity_registry=registry)
@@ -569,9 +582,10 @@ class _ListenerBench:
                 bench.events.append(("listeners", args, kwargs))
                 bench.listeners = self
 
-            def register(self):
+            def register(self, unsubscribes):
                 bench.events.append("register")
-                return [bench.listener_unsub]
+                unsubscribes.append(bench.listener_unsub)
+                return unsubscribes
 
         monkeypatch.setattr(entry_setup, "ZoneParentBindings", Bindings)
         monkeypatch.setattr(entry_setup, "EntryCoordinatorListeners", Listeners)
@@ -581,9 +595,10 @@ class _ListenerBench:
         self.events.append(("entity-entries", registry, entry_id))
         return ["synthetic-entity-entry"]
 
-    def helpers(self, *args, **kwargs):
+    def helpers(self, *args, unsubscribes, **kwargs):
         self.events.append(("helpers", args, kwargs))
-        return [self.helper_unsub]
+        unsubscribes.append(self.helper_unsub)
+        return unsubscribes
 
     async def start_subscriptions(self, *args):
         self.events.append(("subscriptions", args))
@@ -625,10 +640,12 @@ def test_listener_phase_binds_parents_then_listeners_helpers_and_subscriptions(
     coordinators, connection = given.coordinators, given.connection
     caplog.set_level(logging.WARNING, logger="custom_components.helianthus")
 
+    resources = EntryResources("synthetic-entry")
     started = asyncio.run(async_start_listeners(
         given.hass, given.entry, prepared=given.prepared, connection=connection,
         coordinators=coordinators, identities=given.identities,
-        reconciliation=given.reconciliation, schedule_reload=given.schedule_reload))
+        reconciliation=given.reconciliation, schedule_reload=given.schedule_reload,
+        resources=resources))
 
     subscription = ("subscriptions", (
         connection.session, connection.graphql_url, coordinators.semantic_coordinator,
@@ -665,6 +682,11 @@ def test_listener_phase_binds_parents_then_listeners_helpers_and_subscriptions(
     assert warnings == ([
         "Helianthus zone parent resolution incomplete for entry synthetic-entry; "
         "skipping unresolved zones until reload: zone-2, zone-3"] if unresolved else [])
+    # The resources own the subscription task and every callback of the list.
+    released = len(bench.events)
+    assert asyncio.run(resources.async_release()) is None
+    assert bench.events[released:] == (["cancel"] if subscribed else []) + [
+        "listener-unsub", "helper-unsub"]
 
 
 @pytest.mark.parametrize("data,expected", (

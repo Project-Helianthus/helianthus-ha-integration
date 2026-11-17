@@ -10,6 +10,7 @@ import pytest
 
 from runtime_fixtures import attach_runtime
 from custom_components.helianthus import DOMAIN, entry_cleanup
+from custom_components.helianthus.entry_cleanup import EntryResources
 from custom_components.helianthus.semantic_snapshot import SEMANTIC_SNAPSHOT_QUERY
 from custom_components.helianthus.semantic_snapshot_coordinator import (
     CONF_SEMANTIC_ASSET_IDS,
@@ -17,6 +18,16 @@ from custom_components.helianthus.semantic_snapshot_coordinator import (
     async_setup_semantic_snapshot,
     semantic_asset_ids,
 )
+
+
+
+def owned_runtime(configured, fields, releases):
+    """Attach a runtime whose resources own ``releases`` (name, release), in acquisition order."""
+    runtime = attach_runtime(configured, fields)
+    runtime.resources = EntryResources(configured.entry_id)
+    for name, release in releases:
+        runtime.resources.own(name, release)
+    return runtime
 
 
 def entry(data=None, options=None):
@@ -174,9 +185,11 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
                 assert coordinator._poll_task is coordinator._refresh_task is None
                 order.append(name)
             return SimpleNamespace(async_close=close)
-        runtime = attach_runtime(configured, {
-            "semantic_snapshot_coordinator": coordinator,
-            **{name + "_m2m_boundary": boundary(name) for name in ("pv", "storage", "evse")}})
+        boundaries = {name + "_m2m_boundary": boundary(name) for name in ("pv", "storage", "evse")}
+        runtime = owned_runtime(
+            configured, {"semantic_snapshot_coordinator": coordinator, **boundaries},
+            [*((name, value.async_close) for name, value in boundaries.items()),
+             ("semantic snapshot coordinator", coordinator.async_close)])
         other = SimpleNamespace(entry_id="other")
         other_runtime = attach_runtime(other, {"semantic_snapshot_coordinator": object()})
         ha.data = {DOMAIN: {}}
@@ -188,7 +201,8 @@ def test_start_restart_and_unload_join_tasks_and_preserve_other_entry():
         assert client.finished.is_set() and poll.done()
         assert coordinator._refresh_task is coordinator._poll_task is None
         assert not coordinator.last_update_success and coordinator.data is retained
-        assert order == ["pv", "storage", "evse"]
+        # The snapshot coordinator was acquired last and is released first.
+        assert order == ["evse", "storage", "pv"]
         assert configured.runtime_data is runtime and other.runtime_data is other_runtime
         assert ha.data[DOMAIN] == {}
         # Restart after joined teardown creates one new owner, no old read survives.
@@ -500,7 +514,6 @@ def test_invalid_selection_warning_identifies_entry(caplog):
 def test_snapshot_joined_despite_admin_teardown_failure(monkeypatch, services_registered):
     async def exercise():
         from unittest.mock import AsyncMock
-        from custom_components.helianthus import eebus_admin_coordinator
 
         ha = hass()
         configured = entry(data={CONF_SEMANTIC_ASSET_IDS: ["a"]})
@@ -515,16 +528,17 @@ def test_snapshot_joined_despite_admin_teardown_failure(monkeypatch, services_re
         read = coordinator._refresh_task
         error = RuntimeError("synthetic admin teardown failure")
         close_admin = AsyncMock(side_effect=error)
-        if services_registered:
-            monkeypatch.setattr(entry_cleanup, "async_unload_eebus_admin_boundary", close_admin)
-        else:
-            monkeypatch.setattr(eebus_admin_coordinator, "close_admin_session", close_admin)
+        unregistered = []
         session = object()
-        runtime = attach_runtime(configured, {
+        releases = [("eeBUS admin session", lambda: close_admin(session))]
+        if services_registered:
+            releases.append(("eeBUS admin services", lambda: unregistered.append(session)))
+        releases.append(("semantic snapshot coordinator", coordinator.async_close))
+        runtime = owned_runtime(configured, {
             "semantic_snapshot_coordinator": coordinator,
             "eebus_admin_session": session,
             "eebus_admin_services_registered": services_registered,
-        })
+        }, releases)
         ha.data = {DOMAIN: {}}
         ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
         try:
@@ -537,7 +551,8 @@ def test_snapshot_joined_despite_admin_teardown_failure(monkeypatch, services_re
             assert client.finished.is_set()
             assert coordinator._poll_task is coordinator._refresh_task is None
             assert not coordinator.last_update_success
-            close_admin.assert_awaited_once()
+            close_admin.assert_awaited_once_with(session)
+            assert unregistered == ([session] if services_registered else [])
         finally:
             await coordinator.async_close()
             await asyncio.gather(refresh, return_exceptions=True)
@@ -555,11 +570,17 @@ def test_snapshot_closed_before_a_boundary_teardown_failure(failing_boundary):
         boundaries = {name + "_m2m_boundary": SimpleNamespace(async_close=AsyncMock(
             side_effect=RuntimeError("synthetic teardown failure") if name == failing_boundary else None
         )) for name in ("pv", "storage", "evse")}
-        attach_runtime(configured, {"semantic_snapshot_coordinator": coordinator, **boundaries})
+        owned_runtime(
+            configured, {"semantic_snapshot_coordinator": coordinator, **boundaries},
+            [*((name, value.async_close) for name, value in boundaries.items()),
+             ("semantic snapshot coordinator", coordinator.async_close)])
         ha.data = {DOMAIN: {}}
         ha.config_entries = SimpleNamespace(async_unload_platforms=AsyncMock(return_value=True))
         with pytest.raises(RuntimeError, match="synthetic teardown failure"):
             await entry_cleanup.async_unload_entry(ha, configured)
         assert coordinator._closed and poll.done()
         assert coordinator._poll_task is coordinator._refresh_task is None
+        # A failing boundary close does not keep the other boundaries open.
+        for boundary in boundaries.values():
+            boundary.async_close.assert_awaited_once_with()
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))

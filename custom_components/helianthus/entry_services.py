@@ -3,7 +3,8 @@
 This module owns the optional isolated eeBUS admin boundary, the PV, storage
 and EVSE consumer boundaries, the ``ServiceBoundaries`` of the runtime that
 describe them and the option-change listener that reloads the entry when one
-of their options or the semantic asset selection changes.
+of their options or the semantic asset selection changes. Each boundary that
+is set up registers its release with the entry's ``EntryResources``.
 """
 
 from __future__ import annotations
@@ -11,9 +12,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
+from functools import partial
+from typing import TYPE_CHECKING
 
 from .entry_runtime import HelianthusRuntime, ServiceBoundaries
 from .semantic_snapshot_coordinator import semantic_asset_ids
+
+if TYPE_CHECKING:
+    from .entry_cleanup import EntryResources
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -49,6 +55,23 @@ async def async_unload_eebus_admin_boundary(hass: object, *, entry_id: str, sess
     await close_admin_session(session)
 
 
+async def _async_release_failed_admin(
+    hass: object, entry_id: str, admin_session: object | None, admin_boundary: object | None
+) -> None:
+    """Release what a failed admin setup acquired before it failed."""
+    from .eebus_admin_coordinator import close_admin_session
+
+    if admin_boundary is not None:
+        admin_boundary.lifecycle.clear()
+        await async_unload_eebus_admin_boundary(
+            hass,
+            entry_id=entry_id,
+            session=admin_boundary.session,
+        )
+    elif admin_session is not None:
+        await close_admin_session(admin_session)
+
+
 async def async_setup_optional_eebus_admin_service(
     hass: object,
     *,
@@ -56,15 +79,26 @@ async def async_setup_optional_eebus_admin_service(
     origin: str,
     instance_guid: str,
     scan_interval: object,
+    resources: EntryResources,
 ) -> tuple[object, object | None, bool]:
-    """Set up the isolated AdminV1 diagnostic boundary without failing entry setup."""
+    """Set up the isolated AdminV1 diagnostic boundary without failing entry setup.
+
+    A failure releases what the boundary acquired and leaves an unavailable
+    diagnostic coordinator; a cancellation releases it and propagates. The
+    entry's resources own the lifecycle and, when the boundary is up, the
+    registered services and the session as separate releases, so a failing
+    unregistration still closes the session.
+    """
     from .eebus_admin_coordinator import (
         EEBusAdminV1Coordinator,
         close_admin_session,
         create_admin_session,
         create_unavailable_eebus_admin_coordinator,
     )
-    from .eebus_admin_services import bind_eebus_admin_coordinator
+    from .eebus_admin_services import (
+        bind_eebus_admin_coordinator,
+        unregister_eebus_admin_services,
+    )
 
     admin_session = None
     admin_boundary = None
@@ -89,26 +123,27 @@ async def async_setup_optional_eebus_admin_service(
             coordinator=admin_coordinator,
         )
         await admin_coordinator.async_refresh()
-        return admin_coordinator, admin_session, True
     except Exception:
         _LOGGER.warning("eeBUS AdminV1 setup failed non-fatally for entry %s", entry_id)
-        if admin_boundary is not None:
-            admin_boundary.lifecycle.clear()
-            await async_unload_eebus_admin_boundary(
-                hass,
-                entry_id=entry_id,
-                session=admin_boundary.session,
-            )
-        elif admin_session is not None:
-            await close_admin_session(admin_session)
+        await _async_release_failed_admin(hass, entry_id, admin_session, admin_boundary)
         admin_coordinator = create_unavailable_eebus_admin_coordinator(
             hass,
             entry_id=entry_id,
             interval=scan_interval,
             code="admin_boundary_unavailable",
         )
+        resources.own("eeBUS admin lifecycle", admin_coordinator.lifecycle.clear)
         await admin_coordinator.async_refresh()
         return admin_coordinator, None, False
+    except BaseException:
+        await _async_release_failed_admin(hass, entry_id, admin_session, admin_boundary)
+        raise
+    resources.own("eeBUS admin session", partial(close_admin_session, admin_session))
+    resources.own("eeBUS admin services", partial(
+        unregister_eebus_admin_services, hass, entry_id=entry_id
+    ))
+    resources.own("eeBUS admin lifecycle", admin_coordinator.lifecycle.clear)
+    return admin_coordinator, admin_session, True
 
 
 @dataclass(frozen=True)
@@ -125,18 +160,24 @@ async def _async_setup_m2m_boundary(
     hass: object,
     entry: object,
     scan_interval: object,
-    failure_message: str,
+    family: str,
+    resources: EntryResources,
 ) -> object | None:
-    """Create one consumer boundary; a configuration error leaves it ``None``."""
+    """Create one consumer boundary and own its close; a configuration error leaves it ``None``."""
     try:
-        return await setup(hass, entry, scan_interval=scan_interval)
+        boundary = await setup(hass, entry, scan_interval=scan_interval)
     except (OSError, TypeError, ValueError):
-        _LOGGER.warning(failure_message, entry.entry_id)
+        _LOGGER.warning(
+            "Canonical %s consumer configuration failed for entry %s", family, entry.entry_id
+        )
         return None
+    if boundary is not None:
+        resources.own(f"{family} consumer boundary", boundary.async_close)
+    return boundary
 
 
 async def async_setup_m2m_boundaries(
-    hass: object, entry: object, scan_interval: object
+    hass: object, entry: object, scan_interval: object, *, resources: EntryResources
 ) -> M2MBoundaries:
     """Create the PV, storage and EVSE consumer boundaries, in that order."""
     from .evse_m2m import async_setup_evse_m2m_boundary
@@ -144,16 +185,13 @@ async def async_setup_m2m_boundaries(
     from .storage_m2m import async_setup_storage_m2m_boundary
 
     pv = await _async_setup_m2m_boundary(
-        async_setup_pv_m2m_boundary, hass, entry, scan_interval,
-        "Canonical PV consumer configuration failed for entry %s",
+        async_setup_pv_m2m_boundary, hass, entry, scan_interval, "PV", resources
     )
     storage = await _async_setup_m2m_boundary(
-        async_setup_storage_m2m_boundary, hass, entry, scan_interval,
-        "Canonical storage consumer configuration failed for entry %s",
+        async_setup_storage_m2m_boundary, hass, entry, scan_interval, "storage", resources
     )
     evse = await _async_setup_m2m_boundary(
-        async_setup_evse_m2m_boundary, hass, entry, scan_interval,
-        "Canonical EVSE consumer configuration failed for entry %s",
+        async_setup_evse_m2m_boundary, hass, entry, scan_interval, "EVSE", resources
     )
     return M2MBoundaries(pv=pv, storage=storage, evse=evse)
 
@@ -222,7 +260,11 @@ async def _async_reload_on_option_change(hass: object, entry: object) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def register_option_reload_listener(entry: object) -> None:
-    """Add the option-change listener through the entry's unload hook when it has both."""
-    if hasattr(entry, "add_update_listener") and hasattr(entry, "async_on_unload"):
-        entry.async_on_unload(entry.add_update_listener(_async_reload_on_option_change))
+def register_option_reload_listener(entry: object, *, resources: EntryResources) -> None:
+    """Add the option-change listener; ``resources`` removes it on rollback and unload.
+
+    A setup retried after a failure would otherwise add a second listener, and
+    one option change would then schedule several reloads.
+    """
+    if hasattr(entry, "add_update_listener"):
+        resources.own("option listener", entry.add_update_listener(_async_reload_on_option_change))
