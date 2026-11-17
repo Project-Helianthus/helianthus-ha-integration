@@ -168,8 +168,10 @@ delegate to setup and teardown, and the platform list lives in
    and the GraphQL subscriptions start when the entry's option enables them
    (the boiler coordinator takes part only when it reports boiler support).
    All unsubscribe callbacks go into the one `unsub_listeners` list in that
-   order. The entry's resources own the list as soon as the coordinator
-   listeners are added, and the subscription task once it is started. The
+   order. The entry's resources own the list before the first listener is
+   added, and each registration appends an unsubscribe callback as soon as its
+   listener is added, so a registration that fails midway leaves the listeners
+   it already added owned; the subscription task is owned once it is started. The
    phase returns a `StartedListeners`. Steps 3 to 8 precede runtime
    publication.
 9. Register services ([entry services](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_services.py)):
@@ -215,6 +217,15 @@ When a phase raises an exception or the setup is cancelled, the setup:
    error as its cause, so Home Assistant retries the setup. Every other error,
    including the `ConfigEntryNotReady` of a failed first coordinator refresh
    and a `GraphQLResponseError`, and every cancellation propagates unchanged.
+
+When the rollback's platform unload returns `False`, the platforms are still
+loaded and still use the older resources: the rollback stops there. The
+platforms, the older resources and the published runtime stay on the entry,
+a warning is logged and the primary error still propagates. The next setup of
+the entry releases them first, platforms first, before it acquires anything;
+while the platforms still refuse to unload, that setup raises
+`ConfigEntryNotReady` and acquires nothing, so the platforms are never set up
+a second time over loaded ones.
 
 A release that fails during the rollback is logged and does not replace the
 primary error. A cancellation that arrives during the rollback still lets the
@@ -333,7 +344,7 @@ resource as soon as it has acquired it:
 | Listeners (8) | The `unsub_listeners` list: the coordinator listeners, the schedule helpers and the callbacks the platforms append later | Call each callback in list order. The list is read when it is released. |
 | Listeners (8) | The subscription task, when subscriptions are enabled | Request its cancellation; the task is not awaited. |
 | Register services (9) | The PV, storage and EVSE boundaries that were created, in that order | Close the boundary. |
-| Register platforms (11) | The forwarded platforms | Unload them, registered before forwarding starts so a partial forwarding is unloaded too; during a rollback only, because unload unloads them itself first. |
+| Register platforms (11) | The forwarded platforms | Unload them, registered before forwarding starts so a partial forwarding is unloaded too; during a rollback only, because unload unloads them itself first. A `False` result keeps the platforms and every older resource registered (see the rollback above). |
 | Semantic snapshot (12) | The snapshot coordinator, when it is not `None` | Close the coordinator. |
 
 Releases run newest first: the snapshot coordinator, the platforms, the EVSE,
@@ -387,7 +398,10 @@ phase. They check that exactly the resources acquired up to that phase are
 released, newest first and once, that the runtime is withdrawn, that the
 primary error propagates even when a release fails, that a connection failure
 becomes `ConfigEntryNotReady`, and that unload unloads the platforms first,
-releases nothing when that is refused, keeps releasing after a failing close,
+releases nothing when that is refused, that a refused rollback platform unload
+keeps the older resources and the runtime for the next setup to release, that a
+listener registration failing midway releases the listeners it already added,
+keeps releasing after a failing close,
 raises the first failure and closes nothing twice when repeated.
 [Synthetic contract tests](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_entry_runtime_contract.py) run the
 shipped setup from the consumer boundaries through return, with sentinel results

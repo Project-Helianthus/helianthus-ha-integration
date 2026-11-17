@@ -10,7 +10,9 @@
   the entry. A setup that fails or is cancelled releases what it acquired,
   newest first, withdraws the runtime it published and keeps the original
   error; a gateway connection failure is raised as `ConfigEntryNotReady` so
-  Home Assistant retries. Unload unloads the platforms first and releases
+  Home Assistant retries. When the rollback's platform unload is refused, the
+  platforms keep the resources they use and the runtime until the next setup
+  releases them. Unload unloads the platforms first and releases
   nothing when that is refused; otherwise every resource is released once,
   a failing release no longer skips the later ones, and the first failure is
   raised. No entity or unique ID changes.

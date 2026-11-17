@@ -185,6 +185,34 @@ def test_registration_adds_one_listener_per_coordinator_in_order(monkeypatch) ->
         assert len(getattr(bench.coordinators, name).listeners) == 1
 
 
+@pytest.mark.parametrize("failing", LISTENED)
+def test_registration_appends_each_unsubscribe_before_the_next_listener(monkeypatch, failing) -> None:
+    """A listener that cannot be added leaves the earlier unsubscribes in the owned list.
+
+    Collecting the unsubscribes only after every listener was added, or
+    replacing the caller's list, leaves them out of it.
+    """
+    bench = _Bench(monkeypatch)
+    error = RuntimeError("synthetic listener failure")
+
+    def refuse(listener):
+        raise error
+
+    monkeypatch.setattr(getattr(bench.coordinators, failing), "async_add_listener", refuse)
+    owned: list = []
+    with pytest.raises(RuntimeError) as caught:
+        bench.listeners.register(owned)
+    assert caught.value is error
+    assert owned == [("unsubscribe", name) for name in LISTENED[:LISTENED.index(failing)]]
+
+
+def test_registration_appends_to_and_returns_the_given_list(monkeypatch) -> None:
+    bench = _Bench(monkeypatch)
+    owned: list = ["earlier"]
+    assert bench.listeners.register(owned) is owned
+    assert owned == ["earlier", *(("unsubscribe", name) for name in LISTENED)]
+
+
 def test_fm5_mode_change_reloads_at_most_once_per_period(monkeypatch) -> None:
     bench = _Bench(monkeypatch, fm5_mode="ABSENT")
     bench.coordinators.fm5_coordinator.data = {"fm5_semantic_mode": "interpreted"}

@@ -185,12 +185,16 @@ def register_schedule_helper_listeners(
     semantic_coordinator: object,
     status_coordinator: object,
     regulator_bus_address: int | None,
+    unsubscribes: list[Callable[[], None]] | None = None,
 ) -> list[Callable[[], None]]:
     """Track the configured schedule helpers; return the unsubscribe callbacks.
 
     One state listener is added per configured zone helper, then one for the
     hot-water helper when its entity is a schedule. A helper that turns on
-    starts the matching register write as a task.
+    starts the matching register write as a task. Each unsubscribe callback is
+    appended to ``unsubscribes`` as soon as its listener is added, so a caller
+    that owns the list before this call releases the listeners already added
+    when a later one fails.
     """
     from homeassistant.core import callback
     from homeassistant.helpers.event import async_track_state_change_event
@@ -207,7 +211,7 @@ def register_schedule_helper_listeners(
     dhw_schedule_helper = str(
         entry.options.get(CONF_DHW_SCHEDULE_HELPER, DEFAULT_DHW_SCHEDULE_HELPER) or ""
     ).strip()
-    unsub_listeners: list[Callable[[], None]] = []
+    unsub_listeners: list[Callable[[], None]] = [] if unsubscribes is None else unsubscribes
 
     for zone_id, helper_entity in zone_schedule_helpers.items():
         @callback

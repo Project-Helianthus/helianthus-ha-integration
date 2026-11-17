@@ -229,3 +229,40 @@ def test_schedule_helpers_without_valid_schedule_entities_add_no_listener(
     unsubs, tracked, tasks, client = _register(monkeypatch, options)
 
     assert unsubs == [] and tracked == [] and tasks == [] and client.calls == []
+
+
+def test_schedule_helpers_append_each_unsubscribe_before_the_next_listener(monkeypatch) -> None:
+    """A helper listener that cannot be added leaves the earlier unsubscribes in the owned list.
+
+    Collecting the unsubscribes in a list of its own, returned only after
+    every helper was tracked, leaves them out of the caller's list.
+    """
+    tracked = _install_state_tracking(monkeypatch)
+    event = sys.modules["homeassistant.helpers.event"]
+    track = event.async_track_state_change_event
+    error = RuntimeError("synthetic tracking failure")
+
+    def track_until_hot_water(hass, entity_ids, action):
+        if list(entity_ids) == ["schedule.hot_water"]:
+            raise error
+        return track(hass, entity_ids, action)
+
+    monkeypatch.setattr(event, "async_track_state_change_event", track_until_hot_water)
+    owned: list = ["earlier"]
+    with pytest.raises(RuntimeError) as caught:
+        register_schedule_helper_listeners(
+            SimpleNamespace(async_create_task=lambda task: None),
+            SimpleNamespace(options={
+                CONF_ZONE_SCHEDULE_HELPERS: "zone-1=schedule.ground, 2=schedule.upper",
+                CONF_DHW_SCHEDULE_HELPER: "schedule.hot_water",
+            }),
+            client=_FakeClient(),
+            semantic_coordinator=_FakeSemanticCoordinator(),
+            status_coordinator=_FakeStatusCoordinator(),
+            regulator_bus_address=0x15,
+            unsubscribes=owned,
+        )
+    assert caught.value is error
+    assert owned == ["earlier", ("unsubscribe", ("schedule.ground",)),
+                     ("unsubscribe", ("schedule.upper",))]
+    assert len(tracked) == 2

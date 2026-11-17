@@ -35,6 +35,9 @@ class EntryResources:
         self._stack = AsyncExitStack()
         self._errors: list[Exception] = []
         self._forwarded: tuple[object, object, list[str]] | None = None
+        # True while a refused platform unload keeps the platforms and the
+        # older resources they use owned by this stack.
+        self.platforms_retained = False
 
     def own(self, name: str, release: Callable[[], object]) -> None:
         """Register the release of one acquired resource; it may return an awaitable."""
@@ -56,16 +59,35 @@ class EntryResources:
     def platforms_unloaded(self) -> None:
         """Record that the forwarded platforms were unloaded outside this stack."""
         self._forwarded = None
+        self.platforms_retained = False
 
     async def _async_unload_forwarded_platforms(self) -> None:
-        forwarded, self._forwarded = self._forwarded, None
+        forwarded = self._forwarded
         if forwarded is None:
             return
         hass, entry, platforms = forwarded
-        if not await hass.config_entries.async_unload_platforms(entry, platforms):
-            _LOGGER.warning(
-                "Helianthus platforms of entry %s did not unload during release", self.entry_id
-            )
+        try:
+            unloaded = await hass.config_entries.async_unload_platforms(entry, platforms)
+        except BaseException:
+            self.platforms_unloaded()
+            raise
+        if unloaded:
+            self.platforms_unloaded()
+            return
+        # The platforms are still loaded and still use every older resource:
+        # stop the release here and keep the platforms and those resources
+        # owned, the platforms on top, for the next release.
+        self.platforms_retained = True
+        retained = self._stack.pop_all()
+        retained.push_async_callback(
+            self._release, "forwarded platforms", self._async_unload_forwarded_platforms
+        )
+        self._stack = retained
+        _LOGGER.warning(
+            "Helianthus platforms of entry %s did not unload during release; "
+            "keeping the resources they use until the next release",
+            self.entry_id,
+        )
 
     async def _release(self, name: str, release: Callable[[], object]) -> None:
         try:
@@ -85,7 +107,9 @@ class EntryResources:
         A release that fails is logged and the later ones still run. A
         cancellation is not caught: the remaining releases still run, then it
         propagates. The stack is empty afterwards, so a second call releases
-        nothing.
+        nothing. A forwarded-platform unload that returns ``False`` stops the
+        release there: ``platforms_retained`` is set and the platforms and the
+        older resources stay registered for the next call.
         """
         try:
             await self._stack.aclose()

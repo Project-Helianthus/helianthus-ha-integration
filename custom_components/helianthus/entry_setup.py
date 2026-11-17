@@ -327,9 +327,10 @@ async def async_start_listeners(
 ) -> StartedListeners:
     """Bind the zone parents, add the listeners and helpers, then start subscriptions.
 
-    The listener callbacks and the subscription task are owned by ``resources``
-    as soon as they exist; the callback list is read when it is released, so
-    the callbacks the platforms add later are released with it.
+    The callback list is owned by ``resources`` before the first listener is
+    added and the subscription task as soon as it exists; the list is read
+    when it is released, so the callbacks the platforms add later are
+    released with it.
     """
     zone_parents, zone_parent_device_ids, unresolved_zone_ids = _bind_zone_parents(
         hass, entry, prepared, coordinators, identities
@@ -349,17 +350,19 @@ async def async_start_listeners(
         trigger_reload_times=reconciliation.trigger_reload_times,
         schedule_reload=schedule_reload,
     )
-    unsub_listeners: list[Callable[[], None]] = listeners.register()
+    # The list is owned before the first listener is added; each registration
+    # appends its unsubscribe callback as soon as it has it.
+    unsub_listeners: list[Callable[[], None]] = []
     resources.own_unsubscribes("listener callbacks", unsub_listeners)
-    unsub_listeners.extend(
-        register_schedule_helper_listeners(
-            hass,
-            entry,
-            client=connection.client,
-            semantic_coordinator=coordinators.semantic_coordinator,
-            status_coordinator=coordinators.status_coordinator,
-            regulator_bus_address=identities.regulator_bus_address,
-        )
+    listeners.register(unsub_listeners)
+    register_schedule_helper_listeners(
+        hass,
+        entry,
+        client=connection.client,
+        semantic_coordinator=coordinators.semantic_coordinator,
+        status_coordinator=coordinators.status_coordinator,
+        regulator_bus_address=identities.regulator_bus_address,
+        unsubscribes=unsub_listeners,
     )
     subscription_task = await _async_start_subscriptions(entry, connection, coordinators)
     if subscription_task is not None:
@@ -437,8 +440,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
     A failure or a cancellation releases every resource the phases registered,
     newest first, withdraws the runtime this setup published and propagates
     the primary error; a release failure is logged and does not replace it. A
-    gateway connection failure is raised as ``ConfigEntryNotReady``.
+    gateway connection failure is raised as ``ConfigEntryNotReady``. When the
+    rollback cannot unload the forwarded platforms, the platforms, the older
+    resources and the published runtime are kept; the next setup releases
+    them first and raises ``ConfigEntryNotReady`` while they stay loaded.
     """
+    await _async_release_retained_setup(entry)
     resources = EntryResources(entry.entry_id)
     try:
         return await _async_run_setup_phases(hass, entry, resources)
@@ -451,12 +458,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
         raise
 
 
+async def _async_release_retained_setup(entry: object) -> None:
+    """Release what an earlier failed setup kept because its platforms stayed loaded."""
+    resources = getattr(getattr(entry, "runtime_data", None), "resources", None)
+    if resources is None or not resources.platforms_retained:
+        return
+    await _async_roll_back(entry, resources)
+    if resources.platforms_retained:
+        from homeassistant.exceptions import ConfigEntryNotReady
+
+        raise ConfigEntryNotReady(
+            "Helianthus platforms of an earlier failed setup are still loaded"
+        )
+
+
 async def _async_roll_back(entry: object, resources: EntryResources) -> None:
-    """Release what a failed setup acquired, then withdraw the runtime it published."""
+    """Release what a failed setup acquired, then withdraw the runtime it published.
+
+    A refused platform unload keeps the runtime published, with the platforms
+    and the resources they use, for the next setup to release.
+    """
     try:
         await resources.async_release()
     finally:
-        if getattr(getattr(entry, "runtime_data", None), "resources", None) is resources:
+        if resources.platforms_retained:
+            _LOGGER.warning(
+                "Helianthus entry %s keeps the platforms of its failed setup loaded",
+                entry.entry_id,
+            )
+        elif getattr(getattr(entry, "runtime_data", None), "resources", None) is resources:
             object.__delattr__(entry, "runtime_data")
 
 

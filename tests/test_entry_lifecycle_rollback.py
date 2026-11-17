@@ -98,6 +98,10 @@ class Bench:
                                      async_on_unload=lambda unsub: None)
         self.counts = {"synthetic-entry": 1, "synthetic-other": 4}
         self.unload_result = True
+        # Raised by the coordinator listener or schedule helper registration
+        # after it has added its first listener.
+        self.register_failure: BaseException | None = None
+        self.helper_failure: BaseException | None = None
         self.hass = SimpleNamespace(
             data={DOMAIN: {"_admission_cleanup_counts": self.counts}},
             config_entries=SimpleNamespace(async_forward_entry_setups=self.forward,
@@ -205,8 +209,9 @@ class Bench:
             def __init__(self, *args, **kwargs) -> None:
                 return None
 
-            def register(self):
-                return [bench.releaser("unsub-coordinator-listener")]
+            def register(self, unsubscribes):
+                return bench.register(unsubscribes, "unsub-coordinator-listener",
+                                      bench.register_failure)
 
         async def start_subscriptions(*args):
             return SimpleNamespace(cancel=self.releaser("cancel-subscription"))
@@ -214,7 +219,7 @@ class Bench:
         monkeypatch.setattr(entry_setup, "ZoneParentBindings", Bindings)
         monkeypatch.setattr(entry_setup, "EntryCoordinatorListeners", Listeners)
         monkeypatch.setattr(entry_setup, "register_schedule_helper_listeners",
-                            lambda *args, **kwargs: [self.releaser("unsub-schedule-helper")])
+                            self.register_helpers)
         install_module(monkeypatch, "custom_components.helianthus.subscriptions",
                        start_subscriptions=start_subscriptions)
         for family in ("pv", "storage", "evse"):
@@ -225,6 +230,16 @@ class Bench:
         snapshot = SimpleNamespace(async_close=self.async_releaser("close-snapshot"))
         monkeypatch.setattr(entry_setup, "async_setup_semantic_snapshot",
                             self._async_returning(snapshot))
+
+    def register(self, unsubscribes, name, failure):
+        """Append one unsubscribe callback, then raise ``failure`` when it is set."""
+        unsubscribes.append(self.releaser(name))
+        if failure is not None:
+            raise failure
+        return unsubscribes
+
+    def register_helpers(self, *args, unsubscribes, **kwargs):
+        return self.register(unsubscribes, "unsub-schedule-helper", self.helper_failure)
 
     def _boundary_factory(self, family):
         async def create(hass, entry, *, scan_interval):
@@ -485,3 +500,91 @@ def test_a_failing_unsubscribe_is_logged_and_the_unload_succeeds(monkeypatch, ca
     assert bench.released == full_unload()
     assert any(record.exc_info and record.exc_info[1] is bench.release_errors[failing]
                for record in caplog.records)
+
+
+@pytest.mark.parametrize("failing_registration,expected", (
+    ("register_failure", ["unsub-coordinator-listener", *ADMIN]),
+    ("helper_failure", ["unsub-coordinator-listener", "unsub-schedule-helper", *ADMIN]),
+), ids=("coordinator-listeners", "schedule-helpers"))
+@pytest.mark.parametrize("cancel", (False, True), ids=("error", "cancelled"))
+def test_a_registration_failing_midway_releases_the_listeners_it_already_added(
+    monkeypatch, failing_registration, expected, cancel
+):
+    """The callback list is owned before the first listener is added.
+
+    Owning it only after the registration returned leaves the listeners added
+    before the failure subscribed, and a retry adds a second set.
+    """
+    primary = asyncio.CancelledError("synthetic cancellation") if cancel else RuntimeError(
+        "synthetic registration failure")
+    bench = Bench(monkeypatch)
+    setattr(bench, failing_registration, primary)
+    with pytest.raises(type(primary)) as caught:
+        bench.setup()
+    assert caught.value is primary
+    assert bench.reached == list(PHASE_NAMES[:PHASE_NAMES.index("reconcile") + 1])
+    assert bench.released == expected
+    assert not hasattr(bench.entry, "runtime_data")
+
+
+def split_at_platform_unload(after: str) -> tuple[list[str], list[str]]:
+    """The rollback releases up to the platform unload, and the older ones after it."""
+    releases = expected_releases(after)
+    cut = releases.index("unload-platforms") + 1
+    return releases[:cut], releases[cut:]
+
+
+@pytest.mark.parametrize("after", ("forward", "snapshot"))
+def test_refused_rollback_platform_unload_keeps_what_the_platforms_use(monkeypatch, after):
+    """A refused platform unload stops the rollback and keeps the runtime published.
+
+    The next setup unloads the kept platforms first, then releases the older
+    resources once, and only then sets the entry up again. Releasing the older
+    resources after the refusal, withdrawing the runtime, or setting up again
+    over the loaded platforms each fail one assertion.
+    """
+    primary = RuntimeError("synthetic setup failure")
+    bench = Bench(monkeypatch, after=after, primary=primary)
+    bench.unload_result = False
+    with pytest.raises(RuntimeError) as caught:
+        bench.setup()
+    assert caught.value is primary
+    refused, kept = split_at_platform_unload(after)
+    assert bench.released == refused
+    runtime = bench.entry.runtime_data
+    assert runtime.resources.platforms_retained
+
+    bench.after, bench.unload_result = None, True
+    reached = len(bench.reached)
+    assert bench.setup() is True
+    assert bench.released == [*refused, "unload-platforms", *kept]
+    assert bench.reached[reached:] == list(PHASE_NAMES)
+    assert bench.entry.runtime_data is not runtime
+    assert not runtime.resources.platforms_retained
+    # The kept resources were released once; unloading the new setup
+    # releases only its own.
+    assert bench.unload() is True
+    assert bench.released == [*refused, "unload-platforms", *kept, *full_unload()]
+
+
+def test_platforms_still_loaded_at_the_next_setup_raise_not_ready(monkeypatch):
+    """While the kept platforms refuse to unload, the next setup acquires nothing."""
+    bench = Bench(monkeypatch, after="snapshot", primary=RuntimeError("synthetic failure"))
+    bench.unload_result = False
+    with pytest.raises(RuntimeError):
+        bench.setup()
+    refused, kept = split_at_platform_unload("snapshot")
+    runtime = bench.entry.runtime_data
+
+    bench.after = None
+    reached = len(bench.reached)
+    with pytest.raises(NotReadyError):
+        bench.setup()
+    assert bench.released == [*refused, "unload-platforms"]
+    assert bench.reached[reached:] == []
+    assert bench.entry.runtime_data is runtime
+    assert runtime.resources.platforms_retained
+
+    bench.unload_result = True
+    assert bench.setup() is True
+    assert bench.released == [*refused, "unload-platforms", "unload-platforms", *kept]

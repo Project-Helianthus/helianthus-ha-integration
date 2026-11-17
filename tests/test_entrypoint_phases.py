@@ -582,9 +582,10 @@ class _ListenerBench:
                 bench.events.append(("listeners", args, kwargs))
                 bench.listeners = self
 
-            def register(self):
+            def register(self, unsubscribes):
                 bench.events.append("register")
-                return [bench.listener_unsub]
+                unsubscribes.append(bench.listener_unsub)
+                return unsubscribes
 
         monkeypatch.setattr(entry_setup, "ZoneParentBindings", Bindings)
         monkeypatch.setattr(entry_setup, "EntryCoordinatorListeners", Listeners)
@@ -594,9 +595,10 @@ class _ListenerBench:
         self.events.append(("entity-entries", registry, entry_id))
         return ["synthetic-entity-entry"]
 
-    def helpers(self, *args, **kwargs):
+    def helpers(self, *args, unsubscribes, **kwargs):
         self.events.append(("helpers", args, kwargs))
-        return [self.helper_unsub]
+        unsubscribes.append(self.helper_unsub)
+        return unsubscribes
 
     async def start_subscriptions(self, *args):
         self.events.append(("subscriptions", args))
