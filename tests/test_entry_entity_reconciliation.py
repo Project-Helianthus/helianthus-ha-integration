@@ -365,13 +365,25 @@ SPARSE_PATTERNS = {
                     _boiler("config", installer_phone_number="0"),
                     {"key": _boiler("config", phone_number="0"),
                      "bucket": _boiler("state", installer_phone_number="0")}),
-    # The renamed circuit fields: the previous field name never counts.
-    "circuit-sensor": ("{e}-circuit-1-sensor-circuit_flow_temperature",
-                       _circuit(1, "state", circuit_flow_temperature=30.0),
-                       {"index": _circuit(0, "state", circuit_flow_temperature=30.0),
-                        "bucket": _circuit(1, "config", circuit_flow_temperature=30.0),
-                        "key": _circuit(1, "state", return_temperature_c=30.0),
-                        "previous": _circuit(1, "state", flow_temperature_c=30.0)}),
+    # The circuit sensors the integration creates. A previous field name never counts.
+    **{f"circuit-sensor-{key}": (
+        f"{{e}}-circuit-1-sensor-{key}",
+        _circuit(1, "state", **{key: 30.0}),
+        {"index": _circuit(0, "state", **{key: 30.0}),
+         "bucket": _circuit(1, "config", **{key: 30.0}),
+         "key": _circuit(1, "state", return_temperature_c=30.0),
+         **({"previous": _circuit(1, "state", **{previous: 30.0})} if previous else {})})
+       for key, previous in (
+           ("circuit_flow_temperature", "flow_temperature_c"),
+           ("circuit_flow_temperature_setpoint", "flow_setpoint_c"),
+           ("calc_flow_temp_c", None),
+           ("circuit_mixer_position", "mixer_position_pct"),
+           ("circuit_state", None),
+           ("circuit_room_humidity", "humidity"),
+           ("circuit_dew_point_temperature", "dew_point"),
+           ("circuit_pump_operating_time_total", "pump_hours"),
+           ("circuit_pump_start_count_total", "pump_starts"),
+       )},
     "circuit-number": ("{e}-circuit-1-number-circuit_heating_curve_factor",
                        _circuit(1, "config", circuit_heating_curve_factor=1.2),
                        {"index": _circuit(0, "config", circuit_heating_curve_factor=1.2),
@@ -418,6 +430,26 @@ NOT_SPARSE = (
     "{e}-zone-1-sensor-current_temperature_c",
     "{e}-dhw-dhw-temperature",
     "{e}-circuit-x-sensor-circuit_flow_temperature",
+    # Unique IDs of the previous circuit sensor names.
+    "{e}-circuit-1-sensor-flow_temperature_c",
+    "{e}-circuit-1-sensor-flow_setpoint_c",
+    "{e}-circuit-1-sensor-mixer_position_pct",
+    "{e}-circuit-1-sensor-humidity",
+    "{e}-circuit-1-sensor-dew_point",
+    "{e}-circuit-1-sensor-pump_hours",
+    "{e}-circuit-1-sensor-pump_starts",
+)
+
+# Suffixes the circuit sensors used before the published names. Trusted
+# cleanup leaves those registry rows as they are.
+FORMER_CIRCUIT_SENSOR_SUFFIXES = (
+    "flow_temperature_c",
+    "flow_setpoint_c",
+    "mixer_position_pct",
+    "humidity",
+    "dew_point",
+    "pump_hours",
+    "pump_starts",
 )
 
 
@@ -494,6 +526,49 @@ def test_a_lookalike_unique_id_is_not_sparse(harness, template):
 
     assert entity(harness, unique_id).disabled_by is None
     assert unique_id not in run_record(setup, SEEN_DISABLED_KEY)
+
+
+def test_published_circuit_fields_leave_former_sensor_unique_ids_unchanged(harness, logs):
+    """The second trusted refresh keeps the previous circuit-sensor rows.
+
+    The sensor created for a live published field stays enabled. An enabled
+    row whose suffix is a previous name stays enabled, and one the integration
+    already disabled stays disabled.
+    """
+    index = 1
+    former = [
+        f"{ENTRY}-circuit-{index}-sensor-{suffix}" for suffix in FORMER_CIRCUIT_SENSOR_SUFFIXES
+    ]
+    published = f"{ENTRY}-circuit-{index}-sensor-circuit_flow_temperature"
+    for unique_id in former:
+        harness.entities.add(ENTRY, unique_id)
+    harness.entities.add(ENTRY, published)
+    entity(harness, former[0]).disabled_by = INTEGRATION
+    harness.data.update(trusted_data(**_circuit(
+        index,
+        "state",
+        circuit_flow_temperature=30.0,
+        circuit_flow_temperature_setpoint=31.0,
+        circuit_mixer_position=10,
+        circuit_room_humidity=40,
+        circuit_dew_point_temperature=8,
+        circuit_pump_operating_time_total=3,
+        circuit_pump_start_count_total=2,
+        calc_flow_temp_c=29,
+        circuit_state="heating",
+    )))
+    setup = admitted_setup(harness, ENTRY, OTHER)
+
+    assert run(setup, config_entry(ENTRY)) is True
+
+    assert entity(harness, former[0]).disabled_by == INTEGRATION
+    assert former[0] not in run_record(setup, RELOADED_KEY)
+    for unique_id in former[1:]:
+        assert entity(harness, unique_id).disabled_by is None
+        assert unique_id not in run_record(setup, SEEN_DISABLED_KEY)
+        assert unique_id not in run_record(setup, RELOADED_KEY)
+    assert entity(harness, published).disabled_by is None
+    assert reload_reasons(logs) == []
 
 
 def _repair_status(code):
