@@ -56,7 +56,7 @@ def _consumers(hook=False):
                 "zones": [{"id": "zone-a", "state": {"zone_room_temperature": 20.0}}],
                 "dhw": {
                     "state": {"dhw_temperature": 45.0, "dhw_special_function_mode": "off"},
-                    "config": {"operating_mode": "auto", "target_temp_c": 50.0},
+                    "config": {"dhw_operating_mode": "auto", "dhw_temperature_setpoint": 50.0},
                 },
             }
         ),
@@ -92,7 +92,7 @@ def _expected():
             "zones": [{"id": "zone-a", "state": {"zone_room_temperature": 20.0}}],
             "dhw": {
                 "state": {"dhw_temperature": 48.0, "dhw_special_function_mode": "off"},
-                "config": {"operating_mode": "auto", "target_temp_c": 50.0},
+                "config": {"dhw_operating_mode": "auto", "dhw_temperature_setpoint": 50.0},
             },
         },
         {"energy_totals": {"electric": {"climate": {"today": 3.5, "yearly": 80.0}}}},

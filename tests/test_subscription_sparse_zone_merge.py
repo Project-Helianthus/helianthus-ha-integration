@@ -67,7 +67,7 @@ def test_sparse_zone_delivery_sequence(subscriptions, coordinator_type):
         ],
         "dhw": {
             "state": {"zone_room_temperature": 45.0},
-            "config": {"target_temp_c": 50.0, "operating_mode": "auto"},
+            "config": {"dhw_temperature_setpoint": 50.0, "dhw_operating_mode": "auto"},
         },
     }
     semantic = coordinator_type(initial)

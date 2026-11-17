@@ -342,6 +342,57 @@ def test_renamed_circuit_unique_ids_follow_the_published_names(entry_id, circuit
     assert unique_ids == set(renamed.values()) | unchanged
 
 
+class _ZoneCoordinator:
+    def __init__(self, zones: list[dict]) -> None:
+        self.data = {"zones": zones}
+
+
+# Identity fields: entry id and zone id. The sensor's unique ID is
+# "<entry_id>-zone-<zone_id>-sensor-zone_valve_position".
+@pytest.mark.parametrize("entry_id", ["entry-1", "entry-synthetic"])
+@pytest.mark.parametrize("zone_id", ["zone-1", "zone-9"])
+def test_zone_valve_sensor_unique_id_follows_the_published_field(entry_id, zone_id):
+    """Read zone_valve_position for this entry and zone only.
+
+    A unique ID that still ends in valve_position_pct, or a value taken from
+    the former field, the config bucket, or the other zone, fails one case.
+    """
+    from test_circuit import sensor_platform
+
+    other_zone = "zone-9" if zone_id == "zone-1" else "zone-1"
+    coordinator = _ZoneCoordinator(
+        [
+            {"id": zone_id, "name": "Room", "state": {"zone_valve_position": 37.5}, "config": {}},
+            {
+                "id": other_zone,
+                "name": "Other",
+                "state": {"zone_valve_position": 80.0},
+                "config": {},
+            },
+        ]
+    )
+    sensor = sensor_platform.HelianthusZoneValvePositionSensor(
+        coordinator=coordinator,
+        entry_id=entry_id,
+        manufacturer="Vaillant",
+        zone_id=zone_id,
+        zone_name="Room",
+        target_device_id=("helianthus", f"{entry_id}-parent"),
+    )
+    suffix = f"zone-{zone_id}-sensor-zone_valve_position"
+    assert sensor._attr_unique_id == f"{entry_id}-{suffix}"
+    assert not sensor._attr_unique_id.endswith("sensor-valve_position_pct")
+    assert sensor.native_value == 37.5
+
+    coordinator.data["zones"][0]["state"] = {"valve_position_pct": 37.5}
+    assert sensor.native_value is None
+    coordinator.data["zones"][0]["state"] = {}
+    coordinator.data["zones"][0]["config"] = {"zone_valve_position": 37.5}
+    assert sensor.native_value is None
+    coordinator.data["zones"][0]["config"] = {}
+    assert sensor.native_value is None
+
+
 def test_sparse_reload_read_keys_match_the_platform_controls():
     from test_system import number_platform, text_platform
     from custom_components.helianthus import entry_entity_cleanup
