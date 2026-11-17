@@ -52,7 +52,7 @@ DERIVED_KEYS = ("boiler_physical_device_id", "boiler_via_device_id",
                 "boiler_burner_device_id", "boiler_hydraulics_device_id")
 FAMILIES = ("pv", "storage", "evse")
 PHASES = ["create-pv", "create-storage", "create-evse", "publish", "add-update-listener",
-          "own-update-listener", "forward", "radio-cleanup", "trusted-cleanup", "snapshot"]
+          "forward", "radio-cleanup", "trusted-cleanup", "snapshot"]
 BOILER = ("helianthus", "synthetic-boiler")
 REGULATOR = ("helianthus", "synthetic-regulator")
 ADAPTER = ("helianthus", "synthetic-adapter")
@@ -162,8 +162,7 @@ class SetupTail:
         self.record = phase_recorder(self.events, failure, self.error)
         self.entry = PublishingEntry(self._published, entry_id="synthetic-entry", data={},
                                      options={"semantic_asset_ids": ["asset:synthetic"]})
-        self.entry.add_update_listener = lambda listener: self.record("add-update-listener")
-        self.entry.async_on_unload = lambda unsub: self.record("own-update-listener")
+        self.entry.add_update_listener = self._add_update_listener
         self.values = {key: object() for key in RUNTIME_KEYS}
         self.values["boiler_device_id"], self.values["regulator_device_id"] = BOILER_CASES[parents]
         self.values.update(adapter_device_id=ADAPTER, semantic_asset_selection_signature=("asset:synthetic",),
@@ -179,6 +178,10 @@ class SetupTail:
         async def close():
             self.record(name)
         return close
+
+    def _add_update_listener(self, listener):
+        self.record("add-update-listener")
+        return lambda: self.record("remove-update-listener")
 
     async def unload_platforms(self, actual_entry, platforms):
         assert actual_entry is self.entry and platforms == ["sensor", "climate"]
@@ -330,9 +333,12 @@ ROLLBACK = {
     "create-pv": [],
     "create-storage": ["close-pv"],
     "create-evse": ["close-storage", "close-pv"],
-    "forward": ["unload-platforms", "close-evse", "close-storage", "close-pv"],
-    "snapshot": ["unload-platforms", "close-evse", "close-storage", "close-pv"],
-    "sensors": ["close-snapshot", "unload-platforms", "close-evse", "close-storage", "close-pv"],
+    "forward": ["unload-platforms", "remove-update-listener", "close-evse", "close-storage",
+                "close-pv"],
+    "snapshot": ["unload-platforms", "remove-update-listener", "close-evse", "close-storage",
+                 "close-pv"],
+    "sensors": ["close-snapshot", "unload-platforms", "remove-update-listener", "close-evse",
+                "close-storage", "close-pv"],
 }
 
 
@@ -604,10 +610,9 @@ def test_runtime_type_imports_dependencies_only_for_type_checking():
 def test_setup_without_entry_update_listener_hooks(monkeypatch):
     bench = SetupTail(monkeypatch)
     del bench.entry.add_update_listener
-    del bench.entry.async_on_unload
     assert bench.run() is True
-    assert bench.events == [phase for phase in PHASES if phase not in (
-        "add-update-listener", "own-update-listener")] + ["sensors"]
+    assert bench.events == [phase for phase in PHASES
+                            if phase != "add-update-listener"] + ["sensors"]
 
 
 def test_adoption_check_reads_the_requested_base(tmp_path, capsys):

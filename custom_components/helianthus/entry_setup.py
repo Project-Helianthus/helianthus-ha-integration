@@ -550,7 +550,7 @@ async def _async_run_setup_phases(
         services=service_boundaries(entry, admin, boundaries),
         resources=resources,
     )
-    register_option_reload_listener(entry)
+    register_option_reload_listener(entry, resources=resources)
 
     # Run stale cleanup again after platform setup so registry-backed entities
     # created by prior installs are removed from the fully materialized registry.

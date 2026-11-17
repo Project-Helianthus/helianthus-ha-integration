@@ -182,9 +182,10 @@ delegate to setup and teardown, and the platform list lives in
    created. `service_boundaries` then describes the admin state, the three
    boundaries and the four reload signatures.
 10. Publish the complete runtime, with the entry's resources, to
-    `entry.runtime_data` (`publish_entry_runtime`), then register the
-    option-update listener of entry services through the entry's unload hook
-    when those entry methods exist.
+    `entry.runtime_data` (`publish_entry_runtime`), then add the
+    option-update listener of entry services when the entry offers
+    `add_update_listener`, and register its removal with the entry's
+    resources.
 11. Register the platforms: register the platform unload with the entry's
     resources, then await platform forwarding, so a failure or cancellation
     during forwarding unloads the platforms already set up; then run the reconciler's
@@ -239,9 +240,10 @@ later releases run and then propagates instead of the primary error.
 The rollback does not touch the device and entity registries, the stored
 zone-parent record or the domain-data records: the admission clean-up
 count recorded by the failed setup stays for the retry. The option-update
-listener registered through the entry's unload hook is called by Home
-Assistant when a setup fails. A skipped connection (`True`) and a duplicate
-refusal (`False`) end setup before any resource is acquired.
+listener is removed by the rollback like every other owned resource, so a
+retried setup adds one listener, not a second one. A skipped connection
+(`True`) and a duplicate refusal (`False`) end setup before any resource is
+acquired.
 
 ## Entity registry reconciliation
 
@@ -349,12 +351,14 @@ resource as soon as it has acquired it:
 | Listeners (8) | The `unsub_listeners` list: the coordinator listeners, the schedule helpers and the callbacks the platforms append later | Call each callback in list order. The list is read when it is released. |
 | Listeners (8) | The subscription task, when subscriptions are enabled | Request its cancellation; the task is not awaited. |
 | Register services (9) | The PV, storage and EVSE boundaries that were created, in that order | Close the boundary. |
+| Publish (10) | The option-update listener, when the entry offers `add_update_listener` | Remove the listener. |
 | Register platforms (11) | The forwarded platforms | Unload them, registered before forwarding starts so a partial forwarding is unloaded too; during a rollback only, because unload unloads them itself first. A `False` result keeps the platforms and every older resource registered (see the rollback above). |
 | Semantic snapshot (12) | The snapshot coordinator, when it is not `None` | Close the coordinator. |
 
-Releases run newest first: the snapshot coordinator, the platforms, the EVSE,
-storage and PV boundaries, the subscription task, the listener callbacks, the
-admin lifecycle, the admin services and the admin session. Each release runs
+Releases run newest first: the snapshot coordinator, the platforms, the
+option-update listener, the EVSE, storage and PV boundaries, the
+subscription task, the listener callbacks, the admin lifecycle, the admin
+services and the admin session. Each release runs
 once. An ordinary exception from a release is logged with its traceback, and
 the later releases still run; the first such exception is the primary error
 of the release. A failing unsubscribe callback is logged and the later
@@ -365,8 +369,7 @@ releases nothing.
 
 Not owned by the stack: the GraphQL session, which comes from Home Assistant;
 the domain coordinators, which hold no resource of their own beyond the
-listeners above; the option-update listener, which Home Assistant owns through
-the entry's unload hook; the registry rows and the domain-data records.
+listeners above; the registry rows and the domain-data records.
 
 ## Unload
 

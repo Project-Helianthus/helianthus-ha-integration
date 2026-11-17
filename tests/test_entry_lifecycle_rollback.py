@@ -47,13 +47,14 @@ PHASES = (
     ("m2m-boundaries", "entry_setup", "async_setup_m2m_boundaries", M2M),
     ("service-boundaries", "entry_setup", "service_boundaries", ()),
     ("publish", "entry_setup", "publish_entry_runtime", ()),
-    ("option-listener", "entry_setup", "register_option_reload_listener", ()),
+    ("option-listener", "entry_setup", "register_option_reload_listener",
+     ("remove-option-listener",)),
     ("forward", "entry_setup", "_async_forward_platforms_and_finalize", ("unload-platforms",)),
     ("snapshot", "entry_setup", "async_attach_semantic_snapshot", ("close-snapshot",)),
 )
 PHASE_NAMES = tuple(phase for phase, *_ in PHASES)
-CLOSES = ("close-snapshot", *M2M, "cancel-subscription", "clear-admin-lifecycle",
-          "unregister-admin-services", "close-admin-session")
+CLOSES = ("close-snapshot", "remove-option-listener", *M2M, "cancel-subscription",
+          "clear-admin-lifecycle", "unregister-admin-services", "close-admin-session")
 
 
 class NotReadyError(Exception):
@@ -93,9 +94,14 @@ class Bench:
         self.released: list[str] = []
         self.reached: list[str] = []
         self.release_errors: dict[str, Exception] = {}
+        # The option listeners currently added to the entry. The entry's
+        # unload hooks are recorded but never run: a setup that fails is not
+        # unloaded, so only the rollback can remove what it added.
+        self.option_listeners: list[object] = []
+        self.unload_hooks: list[object] = []
         self.entry = SimpleNamespace(entry_id="synthetic-entry", data={}, options={},
-                                     add_update_listener=lambda listener: listener,
-                                     async_on_unload=lambda unsub: None)
+                                     add_update_listener=self.add_update_listener,
+                                     async_on_unload=self.unload_hooks.append)
         self.counts = {"synthetic-entry": 1, "synthetic-other": 4}
         self.unload_result = True
         # Raised by the platform unload, after it was recorded, when set.
@@ -127,6 +133,15 @@ class Bench:
         async def release(*args, **kwargs):
             self.release(name)
         return release
+
+    def add_update_listener(self, listener):
+        self.option_listeners.append(listener)
+
+        def remove():
+            self.release("remove-option-listener")
+            # Removing a listener twice raises, as Home Assistant's does.
+            self.option_listeners.remove(listener)
+        return remove
 
     # -- Home Assistant -----------------------------------------------------
     def _install_home_assistant(self, monkeypatch) -> None:
@@ -656,3 +671,24 @@ def test_a_failing_release_of_kept_resources_stops_the_next_setup(monkeypatch, f
     assert bench.setup() is True
     assert bench.reached[reached:] == list(PHASE_NAMES)
     assert bench.released == [*refused, "unload-platforms", *kept]
+
+
+@pytest.mark.parametrize("after", ("option-listener", "forward", "snapshot"))
+def test_retried_setups_leave_one_option_listener(monkeypatch, after):
+    """A connection failure after the option listener is added, retried by Home Assistant.
+
+    The failed setup is not unloaded, so a listener left to the entry's unload
+    hook stays added; each retry then adds another and one option change
+    schedules one reload per retry. The rollback removes it instead.
+    """
+    bench = Bench(monkeypatch, after=after, primary=OSError("synthetic unreachable"))
+    for _ in range(3):
+        with pytest.raises(NotReadyError):
+            bench.setup()
+        assert bench.option_listeners == []
+    bench.after = None
+    assert bench.setup() is True
+    assert len(bench.option_listeners) == 1
+    assert bench.unload() is True
+    assert bench.option_listeners == []
+    assert bench.released.count("remove-option-listener") == 4

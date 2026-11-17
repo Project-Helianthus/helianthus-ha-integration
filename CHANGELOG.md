@@ -5,7 +5,8 @@
 - Roll back a failed config-entry setup and release every resource on unload.
   Each setup phase registers what it acquires (the eeBUS admin session,
   services and lifecycle, the coordinator and helper listeners, the
-  subscription task, the PV, storage and EVSE boundaries, the forwarded
+  subscription task, the PV, storage and EVSE boundaries, the option-update
+  listener, so a retried setup does not add a second one, the forwarded
   platforms and the semantic snapshot coordinator) with one release stack of
   the entry. A setup that fails or is cancelled releases what it acquired,
   newest first, withdraws the runtime it published and keeps the original

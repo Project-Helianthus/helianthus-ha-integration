@@ -260,7 +260,11 @@ async def _async_reload_on_option_change(hass: object, entry: object) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def register_option_reload_listener(entry: object) -> None:
-    """Add the option-change listener through the entry's unload hook when it has both."""
-    if hasattr(entry, "add_update_listener") and hasattr(entry, "async_on_unload"):
-        entry.async_on_unload(entry.add_update_listener(_async_reload_on_option_change))
+def register_option_reload_listener(entry: object, *, resources: EntryResources) -> None:
+    """Add the option-change listener; ``resources`` removes it on rollback and unload.
+
+    A setup retried after a failure would otherwise add a second listener, and
+    one option change would then schedule several reloads.
+    """
+    if hasattr(entry, "add_update_listener"):
+        resources.own("option listener", entry.add_update_listener(_async_reload_on_option_change))

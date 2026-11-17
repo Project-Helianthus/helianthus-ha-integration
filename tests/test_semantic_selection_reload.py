@@ -21,16 +21,15 @@ FAMILIES = ("pv", "storage", "evse")
 
 
 def entry(options=None, data=None, entry_id="synthetic-primary"):
-    listeners, removers = [], []
+    listeners = []
 
     def register(listener):
         listeners.append(listener)
-        return lambda: None
+        return lambda: listeners.remove(listener)
 
     return SimpleNamespace(
         options=deepcopy(options or {}), data=deepcopy(data or {}),
-        entry_id=entry_id, add_update_listener=register,
-        async_on_unload=removers.append, listeners=listeners, removers=removers,
+        entry_id=entry_id, add_update_listener=register, listeners=listeners,
     )
 
 
@@ -64,15 +63,16 @@ def install(hass, configured):
     """Publish through the shipped setup functions, then add the shipped listener."""
     admin = (SimpleNamespace(lifecycle=SimpleNamespace(action_broker=None)), None, False)
     unset = _Unset()
+    resources = EntryResources(configured.entry_id)
     entry_setup.publish_entry_runtime(
         configured, connection=unset, coordinators=unset, gateway_devices=unset,
         identities=unset, reconciliation=SimpleNamespace(admission={}), listeners=unset,
         services=entry_services.service_boundaries(
             configured, admin, entry_services.M2MBoundaries(pv=None, storage=None, evse=None)),
-        resources=EntryResources(configured.entry_id),
+        resources=resources,
     )
-    entry_services.register_option_reload_listener(configured)
-    assert len(configured.listeners) == len(configured.removers) == 1
+    entry_services.register_option_reload_listener(configured, resources=resources)
+    assert len(configured.listeners) == 1
     return configured.runtime_data.services
 
 
