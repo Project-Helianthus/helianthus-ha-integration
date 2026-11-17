@@ -80,7 +80,8 @@ def test_documents_match_bounded_gateway_contract():
     assert "zone_room_temperature" in zone_subscription
     assert "zone_room_humidity" in zone_subscription
     assert "current_temp_c" not in zone_subscription
-    assert "current_temp_c" in subscriptions.SUBSCRIPTIONS["dhw"]
+    assert "dhw_temperature" in subscriptions.SUBSCRIPTIONS["dhw"]
+    assert "current_temp_c" not in subscriptions.SUBSCRIPTIONS["dhw"]
     _document(SEMANTIC_SNAPSHOT_QUERY)
     assert "semantic_snapshot(asset_ids: $asset_ids)" in SEMANTIC_SNAPSHOT_QUERY
     assert "asset_id" in SEMANTIC_SNAPSHOT_QUERY
@@ -162,10 +163,10 @@ def test_generic_fact_identity_joins_preserve_every_axis(axis):
 @pytest.mark.parametrize("entry_id", ["entry-1", "entry-synthetic"])
 @pytest.mark.parametrize("circuit_index", [0, 2])
 @pytest.mark.parametrize("key,read_key,minimum,maximum,step", [
-    ("circuit_heating_curve_factor", "heating_curve", 0.1, 4.0, 0.1),
-    ("heating_circuit_flow_temperature_setpoint_maximum", "flow_temp_max_c", 15.0, 80.0, 1.0),
-    ("circuit_flow_temperature_setpoint_minimum", "flow_temp_min_c", 5.0, 30.0, 1.0),
-    ("heating_circuit_outdoor_temperature_limit_maximum", "summer_limit_c", 15.0, 30.0, 1.0),
+    ("circuit_heating_curve_factor", "circuit_heating_curve_factor", 0.1, 4.0, 0.1),
+    ("heating_circuit_flow_temperature_setpoint_maximum", "heating_circuit_flow_temperature_setpoint_maximum", 15.0, 80.0, 1.0),
+    ("circuit_flow_temperature_setpoint_minimum", "circuit_flow_temperature_setpoint_minimum", 5.0, 30.0, 1.0),
+    ("heating_circuit_outdoor_temperature_limit_maximum", "heating_circuit_outdoor_temperature_limit_maximum", 15.0, 30.0, 1.0),
 ])
 def test_exact_circuit_setter_document_variables_bounds_and_identity(key, read_key, minimum, maximum, step, entry_id, circuit_index):
     from test_circuit import _build_payload, _FakeHass, _FakeEntry
@@ -279,6 +280,66 @@ def test_renamed_system_and_boiler_unique_ids_follow_the_canonical_names(entry_i
     assert not set(READ_NAME_UNIQUE_ID_RENAMES) & unique_ids
     assert UNCHANGED_UNIQUE_IDS <= unique_ids
     assert WITHDRAWN_UNIQUE_IDS.isdisjoint(unique_ids)
+
+
+# Circuit entities keyed on a field the gateway publishes under its docs-ebus
+# name; "{i}" is the circuit index.
+CIRCUIT_UNIQUE_ID_RENAMES = {
+    "circuit-{i}-binary-pump_active": "circuit-{i}-binary-circuit_pump_unknown_8",
+    "circuit-{i}-sensor-flow_temperature_c": "circuit-{i}-sensor-circuit_flow_temperature",
+    "circuit-{i}-sensor-flow_setpoint_c": "circuit-{i}-sensor-circuit_flow_temperature_setpoint",
+    "circuit-{i}-sensor-mixer_position_pct": "circuit-{i}-sensor-circuit_mixer_position",
+    "circuit-{i}-sensor-humidity": "circuit-{i}-sensor-circuit_room_humidity",
+    "circuit-{i}-sensor-dew_point": "circuit-{i}-sensor-circuit_dew_point_temperature",
+    "circuit-{i}-sensor-pump_hours": "circuit-{i}-sensor-circuit_pump_operating_time_total",
+    "circuit-{i}-sensor-pump_starts": "circuit-{i}-sensor-circuit_pump_start_count_total",
+}
+# Circuit entities whose unique ID already carried the published name or no field name.
+UNCHANGED_CIRCUIT_UNIQUE_IDS = {
+    "circuit-{i}-sensor-calc_flow_temp_c",
+    "circuit-{i}-sensor-circuit_state",
+    "circuit-{i}-number-circuit_heating_curve_factor",
+    "circuit-{i}-number-heating_circuit_flow_temperature_setpoint_maximum",
+    "circuit-{i}-number-circuit_flow_temperature_setpoint_minimum",
+    "circuit-{i}-number-heating_circuit_outdoor_temperature_limit_maximum",
+    "circuit-{i}-circuit_room_temperature_influence_mode",
+}
+
+
+def _circuit_unique_ids(entry_id, circuit_index):
+    from test_circuit import (
+        _build_payload, _FakeEntry, _FakeHass, binary_sensor_platform, number_platform,
+        select_platform, sensor_platform,
+    )
+
+    payload, circuit_coordinator, _ = _build_payload()
+    circuit_coordinator.data["circuits"] = circuit_coordinator.data["circuits"][:1]
+    circuit_coordinator.data["circuits"][0]["index"] = circuit_index
+    hass, entry = _FakeHass(), _FakeEntry(entry_id, payload)
+    entities = []
+    for platform in (sensor_platform, binary_sensor_platform, number_platform, select_platform):
+        asyncio.run(platform.async_setup_entry(hass, entry, entities.extend))
+    prefix = f"{entry_id}-"
+    return {
+        entity._attr_unique_id[len(prefix):]
+        for entity in entities
+        if isinstance(getattr(entity, "_attr_unique_id", None), str)
+        and entity._attr_unique_id.startswith(f"{prefix}circuit-")
+    }
+
+
+@pytest.mark.parametrize("entry_id", ["entry-1", "entry-synthetic"])
+@pytest.mark.parametrize("circuit_index", [0, 2])
+def test_renamed_circuit_unique_ids_follow_the_published_names(entry_id, circuit_index):
+    unique_ids = _circuit_unique_ids(entry_id, circuit_index)
+    renamed = {old.format(i=circuit_index): new.format(i=circuit_index)
+               for old, new in CIRCUIT_UNIQUE_ID_RENAMES.items()}
+    unchanged = {template.format(i=circuit_index) for template in UNCHANGED_CIRCUIT_UNIQUE_IDS}
+    assert len(set(renamed.values())) == 8
+    assert set(renamed.values()) <= unique_ids
+    assert not set(renamed) & unique_ids
+    assert unchanged <= unique_ids
+    assert unique_ids == set(renamed.values()) | unchanged
 
 
 def test_sparse_reload_read_keys_match_the_platform_controls():

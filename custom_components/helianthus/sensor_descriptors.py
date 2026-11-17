@@ -81,14 +81,14 @@ FM5_MODE_INTERPRETED = "INTERPRETED"
 
 CIRCUIT_SENSOR_FIELDS = [
     CircuitSensorField(
-        key="flow_temperature_c",
+        key="circuit_flow_temperature",
         label="Flow Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="flow_setpoint_c",
+        key="circuit_flow_temperature_setpoint",
         label="Flow Setpoint",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
@@ -102,7 +102,7 @@ CIRCUIT_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="mixer_position_pct",
+        key="circuit_mixer_position",
         label="Mixing Valve Position",
         native_unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -116,21 +116,21 @@ CIRCUIT_SENSOR_FIELDS = [
         icon="mdi:information-outline",
     ),
     CircuitSensorField(
-        key="humidity",
+        key="circuit_room_humidity",
         label="Humidity",
         device_class=SensorDeviceClass.HUMIDITY,
         native_unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="dew_point",
+        key="circuit_dew_point_temperature",
         label="Dew Point",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CircuitSensorField(
-        key="pump_hours",
+        key="circuit_pump_operating_time_total",
         label="Pump Hours",
         device_class=SensorDeviceClass.DURATION,
         native_unit="h",
@@ -138,7 +138,7 @@ CIRCUIT_SENSOR_FIELDS = [
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     CircuitSensorField(
-        key="pump_starts",
+        key="circuit_pump_start_count_total",
         label="Pump Starts",
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,

@@ -233,7 +233,7 @@ class EntryEntityReconciler:
             rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-heating-demand$"
         )
         self.zone_valve_unique_id_re = re.compile(
-            rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-sensor-valve_position_pct$"
+            rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-sensor-zone_valve_position$"
         )
         self.dhw_demand_unique_id = f"{self._entry_id}-dhw-dhw-heating-demand"
         self.system_text_unique_id_re = re.compile(
@@ -432,7 +432,7 @@ class EntryEntityReconciler:
 
         zone_valve_match = self.zone_valve_unique_id_re.match(unique_id)
         if zone_valve_match:
-            return "valve_position_pct" in self._current_zone_state_live_keys(zone_valve_match.group("zone_id"))
+            return "zone_valve_position" in self._current_zone_state_live_keys(zone_valve_match.group("zone_id"))
 
         system_text_match = self.system_text_unique_id_re.match(unique_id)
         if system_text_match:

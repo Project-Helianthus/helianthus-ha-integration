@@ -1,5 +1,5 @@
 {
- "source": "Type map of the gateway /graphql schema, recorded from the gateway's main branch on 2026-11-17 after the boiler status fields took their docs-ebus names.",
+ "source": "Type map of the gateway /graphql schema, recorded from the gateway's main branch on 2026-11-17 after the zone, circuit and hot-water fields took their docs-ebus names.",
  "query": "query",
  "mutation": "mutation",
  "subscription": "subscription",
@@ -747,25 +747,25 @@
   "circuit_config": {
    "kind": "object",
    "fields": {
+    "circuit_cooling_enabled": {
+     "type": "Boolean"
+    },
+    "circuit_flow_temperature_setpoint_minimum": {
+     "type": "Float"
+    },
+    "circuit_heating_curve_factor": {
+     "type": "Float"
+    },
+    "circuit_room_temperature_influence_mode": {
+     "type": "String"
+    },
     "circuit_special_function_mode": {
      "type": "Int"
     },
-    "cooling_enabled": {
-     "type": "Boolean"
-    },
-    "flow_temp_max_c": {
+    "heating_circuit_flow_temperature_setpoint_maximum": {
      "type": "Float"
     },
-    "flow_temp_min_c": {
-     "type": "Float"
-    },
-    "heating_curve": {
-     "type": "Float"
-    },
-    "room_temp_control": {
-     "type": "String"
-    },
-    "summer_limit_c": {
+    "heating_circuit_outdoor_temperature_limit_maximum": {
      "type": "Float"
     }
    }
@@ -790,32 +790,32 @@
     "calc_flow_temp_c": {
      "type": "Float"
     },
-    "circuit_state": {
-     "type": "String"
-    },
-    "dew_point": {
+    "circuit_dew_point_temperature": {
      "type": "Float"
     },
-    "flow_setpoint_c": {
+    "circuit_flow_temperature": {
      "type": "Float"
     },
-    "flow_temperature_c": {
+    "circuit_flow_temperature_setpoint": {
      "type": "Float"
     },
-    "humidity": {
+    "circuit_mixer_position": {
      "type": "Float"
     },
-    "mixer_position_pct": {
+    "circuit_pump_operating_time_total": {
      "type": "Float"
     },
-    "pump_active": {
+    "circuit_pump_start_count_total": {
+     "type": "Int"
+    },
+    "circuit_pump_unknown_8": {
      "type": "Boolean"
     },
-    "pump_hours": {
+    "circuit_room_humidity": {
      "type": "Float"
     },
-    "pump_starts": {
-     "type": "Int"
+    "circuit_state": {
+     "type": "String"
     }
    }
   },
@@ -935,30 +935,33 @@
   "dhw_config": {
    "kind": "object",
    "fields": {
-    "holiday_end_date": {
+    "dhw_holiday_end_date": {
      "type": "String"
     },
-    "holiday_start_date": {
+    "dhw_holiday_start_date": {
      "type": "String"
     },
-    "operating_mode": {
+    "dhw_operating_mode": {
      "type": "String"
+    },
+    "dhw_temperature_setpoint": {
+     "type": "Float"
     },
     "operation_mode_changeable": {
      "type": "Boolean"
     },
     "preset": {
      "type": "String"
-    },
-    "target_temp_c": {
-     "type": "Float"
     }
    }
   },
   "dhw_state": {
    "kind": "object",
    "fields": {
-    "current_temp_c": {
+    "dhw_special_function_mode": {
+     "type": "String"
+    },
+    "dhw_temperature": {
      "type": "Float"
     },
     "heating_demand_pct": {
@@ -966,9 +969,6 @@
     },
     "overrun_active": {
      "type": "Boolean"
-    },
-    "special_function": {
-     "type": "String"
     }
    }
   },
@@ -3255,21 +3255,6 @@
     "circuit_type": {
      "type": "String"
     },
-    "holiday_end_date": {
-     "type": "String"
-    },
-    "holiday_end_time": {
-     "type": "String"
-    },
-    "holiday_setpoint": {
-     "type": "Float"
-    },
-    "holiday_start_date": {
-     "type": "String"
-    },
-    "holiday_start_time": {
-     "type": "String"
-    },
     "operating_mode": {
      "type": "String"
     },
@@ -3282,14 +3267,8 @@
     "quick_veto": {
      "type": "Boolean!"
     },
-    "quick_veto_duration": {
-     "type": "Float"
-    },
     "quick_veto_expiry": {
      "type": "String"
-    },
-    "quick_veto_setpoint": {
-     "type": "Float"
     },
     "room_temperature_zone_mapping": {
      "type": "Int"
@@ -3298,6 +3277,27 @@
      "type": "String"
     },
     "target_temp_c": {
+     "type": "Float"
+    },
+    "zone_holiday_end_clock_time": {
+     "type": "String"
+    },
+    "zone_holiday_end_date": {
+     "type": "String"
+    },
+    "zone_holiday_start_clock_time": {
+     "type": "String"
+    },
+    "zone_holiday_start_date": {
+     "type": "String"
+    },
+    "zone_quick_veto_time": {
+     "type": "Float"
+    },
+    "zone_room_temperature_setpoint_at_holiday": {
+     "type": "Float"
+    },
+    "zone_room_temperature_setpoint_at_quick_veto": {
      "type": "Float"
     }
    }
@@ -3311,16 +3311,16 @@
     "hvac_action": {
      "type": "String"
     },
-    "special_function": {
-     "type": "String"
-    },
-    "valve_position_pct": {
-     "type": "Float"
-    },
     "zone_room_humidity": {
      "type": "Float"
     },
     "zone_room_temperature": {
+     "type": "Float"
+    },
+    "zone_special_function_mode": {
+     "type": "String"
+    },
+    "zone_valve_position": {
      "type": "Float"
     }
    }

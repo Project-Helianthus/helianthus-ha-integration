@@ -397,7 +397,7 @@ def test_valve_icon_none_position() -> None:
 
 
 def test_mixing_valve_icon_dynamic() -> None:
-    coord = _FakeCoordinator({"circuits": [{"index": 0, "state": {"mixer_position_pct": 0}}]})
+    coord = _FakeCoordinator({"circuits": [{"index": 0, "state": {"circuit_mixer_position": 0}}]})
     valve = HelianthusCircuitMixingValve(
         coordinator=coord,
         entry_id="test",
@@ -409,7 +409,7 @@ def test_mixing_valve_icon_dynamic() -> None:
 
 
 def test_zone_valve_icon_dynamic() -> None:
-    coord = _FakeCoordinator({"zones": [{"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 100}}]})
+    coord = _FakeCoordinator({"zones": [{"id": "zone-1", "name": "Living", "state": {"zone_valve_position": 100}}]})
     valve = HelianthusZoneValve(
         coordinator=coord,
         entry_id="test",
@@ -422,7 +422,7 @@ def test_zone_valve_icon_dynamic() -> None:
 
 def test_zone_valve_semantic_freshness_and_expiry() -> None:
     coord = _FakeCoordinator(
-        {"zones": [{"id": "zone-1", "state": {"valve_position_pct": 50}}]}
+        {"zones": [{"id": "zone-1", "state": {"zone_valve_position": 50}}]}
     )
     coord.last_update_success = True
     coord.zone_is_stale = lambda zone_id: zone_id == "zone-1"
@@ -510,7 +510,7 @@ def test_circuit_counter_icon_is_mdi_counter() -> None:
 
 def test_circuit_mixer_position_has_valve_icon() -> None:
     for field in CIRCUIT_SENSOR_FIELDS:
-        if field.key == "mixer_position_pct":
+        if field.key == "circuit_mixer_position":
             assert field.icon == "mdi:valve"
 
 
@@ -891,10 +891,10 @@ def test_circuit_number_fields_all_have_icons() -> None:
 
 def test_circuit_number_specific_icons() -> None:
     expected = {
-        "heating_curve": "mdi:chart-bell-curve-cumulative",
-        "flow_temp_max_c": "mdi:thermometer-chevron-up",
-        "flow_temp_min_c": "mdi:thermometer-chevron-down",
-        "summer_limit_c": "mdi:weather-sunny",
+        "circuit_heating_curve_factor": "mdi:chart-bell-curve-cumulative",
+        "heating_circuit_flow_temperature_setpoint_maximum": "mdi:thermometer-chevron-up",
+        "circuit_flow_temperature_setpoint_minimum": "mdi:thermometer-chevron-down",
+        "heating_circuit_outdoor_temperature_limit_maximum": "mdi:weather-sunny",
     }
     for field in _CIRCUIT_NUMBER_FIELDS:
         if field.key in expected:

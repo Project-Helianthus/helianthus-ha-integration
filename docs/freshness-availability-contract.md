@@ -78,8 +78,8 @@ These are reasoned examples of the tables, not device observations or executed t
 | Minimal synthetic input | Expected interpretation |
 | --- | --- |
 | Present `zone-1`, successful refresh, `state: {heating_demand_pct: 0}`, target stale false | Available semantic target with measured zero; zero is not absence. |
-| Present DHW, successful refresh, `state: {special_function: false}`, stale false | Available status sensor with boolean false; false is not unknown or unavailable. |
-| Present DHW with `state: {current_temp_c: null}`, successful refresh, arriving through a full poll | Unknown temperature (`None`), independently of target availability; do not synthesize zero or `off`. Through a subscription delta a null for an existing key is skipped and the prior value is kept, so this example does not apply to that path. |
+| Present DHW, successful refresh, `state: {dhw_special_function_mode: false}`, stale false | Available status sensor with boolean false; false is not unknown or unavailable. |
+| Present DHW with `state: {dhw_temperature: null}`, successful refresh, arriving through a full poll | Unknown temperature (`None`), independently of target availability; do not synthesize zero or `off`. Through a subscription delta a null for an existing key is skipped and the prior value is kept, so this example does not apply to that path. |
 | Retained `zone-1` value 20, fresh `zone-2` value 19, `zones_is_stale: true`, callable target checker marks only `zone-1` | Both semantic targets available; only `zone-1` stale. DHW uses its own flag. |
 | Retained DHW value 45, then `last_update_success: false` | Payload remains accessible to the helper, but availability false and `is_stale: true`. No visible healthy-value claim. |
 | Zone missing after expiry, successful refresh, stale marker true | Unavailable; stale marker alone does not retain a value. Positive return restores presence; clearing stale is a separate input. |

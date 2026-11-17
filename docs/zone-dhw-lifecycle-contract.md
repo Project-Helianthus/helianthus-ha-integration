@@ -130,7 +130,7 @@ These are reasoned examples, not executed tests or physical observations:
 - After that expiry, receive a positive `zone-2` again. Its original entry-scoped
   unique ID applies. The earlier published full-poll omission of a baselined zone
   schedules entry reload; object continuity is unproven.
-- Merge `{"id":"zone-1","state":{"current_temp_c":21}}` as a subscription
+- Merge `{"id":"zone-1","state":{"zone_room_temperature":21}}` as a subscription
   over an existing target with config: keep config. Poll that same sparse object:
   config is absent from the replacement. Neither path establishes field freshness.
 - Disable a registry entry, then recover its semantic data. Guarded callbacks

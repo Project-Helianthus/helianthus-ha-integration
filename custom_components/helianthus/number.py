@@ -108,7 +108,7 @@ class BoilerNumberField:
 
 
 _CIRCUIT_NUMBER_FIELDS = [
-    CircuitNumberField("circuit_heating_curve_factor", "Heating Curve", 0.1, 4.0, 0.1, config_key="heating_curve", icon="mdi:chart-bell-curve-cumulative"),
+    CircuitNumberField("circuit_heating_curve_factor", "Heating Curve", 0.1, 4.0, 0.1, config_key="circuit_heating_curve_factor", icon="mdi:chart-bell-curve-cumulative"),
     CircuitNumberField(
         "heating_circuit_flow_temperature_setpoint_maximum",
         "Flow Temperature Maximum",
@@ -117,7 +117,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:thermometer-chevron-up",
-        config_key="flow_temp_max_c",
+        config_key="heating_circuit_flow_temperature_setpoint_maximum",
     ),
     CircuitNumberField(
         "circuit_flow_temperature_setpoint_minimum",
@@ -127,7 +127,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:thermometer-chevron-down",
-        config_key="flow_temp_min_c",
+        config_key="circuit_flow_temperature_setpoint_minimum",
     ),
     CircuitNumberField(
         "heating_circuit_outdoor_temperature_limit_maximum",
@@ -137,7 +137,7 @@ _CIRCUIT_NUMBER_FIELDS = [
         1.0,
         UnitOfTemperature.CELSIUS,
         icon="mdi:weather-sunny",
-        config_key="summer_limit_c",
+        config_key="heating_circuit_outdoor_temperature_limit_maximum",
     ),
 ]
 

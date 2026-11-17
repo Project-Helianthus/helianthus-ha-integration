@@ -586,7 +586,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_name = "Pump Active"
-        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-binary-pump_active"
+        self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-binary-circuit_pump_unknown_8"
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -608,7 +608,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        value = state.get("pump_active") if isinstance(state, dict) else None
+        value = state.get("circuit_pump_unknown_8") if isinstance(state, dict) else None
         if isinstance(value, bool):
             return value
         return None
@@ -828,7 +828,7 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
 
 
 class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Zone valve open/closed derived from valve_position_pct."""
+    """Zone valve open/closed derived from zone_valve_position."""
 
     _attr_device_class = BinarySensorDeviceClass.OPENING
     _attr_has_entity_name = True
@@ -882,7 +882,7 @@ class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        value = state.get("valve_position_pct") if isinstance(state, dict) else None
+        value = state.get("zone_valve_position") if isinstance(state, dict) else None
         if value is None:
             return None
         try:

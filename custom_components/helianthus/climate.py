@@ -412,8 +412,8 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             attrs["heating_demand_pct"] = demand
         for field, source, key in [
             ("hvac_action", state, "hvac_action"),
-            ("special_function", state, "special_function"),
-            ("valve_position_pct", state, "valve_position_pct"),
+            ("special_function", state, "zone_special_function_mode"),
+            ("valve_position_pct", state, "zone_valve_position"),
             ("circuit_type", config, "circuit_type"),
             ("associated_circuit", config, "associated_circuit"),
         ]:
@@ -432,14 +432,14 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             ("source_label", "source_label"),
             ("operation_mode_changeable", "operation_mode_changeable"),
             ("quick_veto", "quick_veto"),
-            ("quick_veto_setpoint_c", "quick_veto_setpoint"),
-            ("quick_veto_duration_h", "quick_veto_duration"),
+            ("quick_veto_setpoint_c", "zone_room_temperature_setpoint_at_quick_veto"),
+            ("quick_veto_duration_h", "zone_quick_veto_time"),
             ("quick_veto_expiry", "quick_veto_expiry"),
-            ("holiday_start_date", "holiday_start_date"),
-            ("holiday_end_date", "holiday_end_date"),
-            ("holiday_setpoint_c", "holiday_setpoint"),
-            ("holiday_start_time", "holiday_start_time"),
-            ("holiday_end_time", "holiday_end_time"),
+            ("holiday_start_date", "zone_holiday_start_date"),
+            ("holiday_end_date", "zone_holiday_end_date"),
+            ("holiday_setpoint_c", "zone_room_temperature_setpoint_at_holiday"),
+            ("holiday_start_time", "zone_holiday_start_clock_time"),
+            ("holiday_end_time", "zone_holiday_end_clock_time"),
         ]:
             value = config.get(key)
             if value is not None:
@@ -510,7 +510,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         config = self._zone_config()
         temp = config.get("target_temp_c")
         if temp is None:
-            temp = config.get("quick_veto_setpoint")
+            temp = config.get("zone_room_temperature_setpoint_at_quick_veto")
         if temp is None:
             temp = 20.0
         temp = max(5.0, min(30.0, float(temp)))
@@ -527,7 +527,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         the window where the controller sees a partial holiday state.
         """
         config = self._zone_config()
-        setpoint = config.get("holiday_setpoint")
+        setpoint = config.get("zone_room_temperature_setpoint_at_holiday")
         if setpoint is None:
             setpoint = 10.0
         setpoint = max(5.0, min(30.0, float(setpoint)))
@@ -550,7 +550,7 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
         """
         config = self._zone_config()
         has_holiday_dates = bool(
-            config.get("holiday_start_date") or config.get("holiday_end_date")
+            config.get("zone_holiday_start_date") or config.get("zone_holiday_end_date")
         )
         if self.preset_mode != "away" and not has_holiday_dates:
             return

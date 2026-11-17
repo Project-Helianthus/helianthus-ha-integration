@@ -192,14 +192,14 @@ def test_async_setup_entry_skips_boiler_state_binary_sensors_without_physical_ba
     assert boiler_entities == []
 
 
-def _build_zone_payload(valve_position_pct):
+def _build_zone_payload(zone_valve_position):
     return {
         "semantic_coordinator": _FakeCoordinator({
             "zones": [
                 {
                     "id": "zone-1",
                     "name": "Living Room",
-                    "state": {"valve_position_pct": valve_position_pct},
+                    "state": {"zone_valve_position": zone_valve_position},
                     "config": {"room_temperature_zone_mapping": None},
                 },
             ],
@@ -212,7 +212,7 @@ def _build_zone_payload(valve_position_pct):
 
 
 def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
-    payload = _build_zone_payload(valve_position_pct=50.0)
+    payload = _build_zone_payload(zone_valve_position=50.0)
     hass = _FakeHass()
     entry = _FakeEntry("entry-1", payload)
     entities: list = []
@@ -231,8 +231,24 @@ def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
     assert valve.is_on is True
 
 
+def test_zone_valve_binary_sensor_ignores_the_previous_published_name() -> None:
+    payload = _build_zone_payload(zone_valve_position=None)
+    payload["semantic_coordinator"].data["zones"][0]["state"] = {"valve_position_pct": 50.0}
+    entities: list = []
+
+    asyncio.run(binary_sensor_platform.async_setup_entry(_FakeHass(), _FakeEntry("entry-1", payload), entities.extend))
+
+    valve_entities = [
+        entity
+        for entity in entities
+        if isinstance(entity, binary_sensor_platform.HelianthusZoneValveBinarySensor)
+    ]
+    assert len(valve_entities) == 1
+    assert valve_entities[0].is_on is None
+
+
 def test_zone_valve_binary_sensor_closed_when_position_zero() -> None:
-    payload = _build_zone_payload(valve_position_pct=0)
+    payload = _build_zone_payload(zone_valve_position=0)
     hass = _FakeHass()
     entry = _FakeEntry("entry-1", payload)
     entities: list = []
@@ -249,7 +265,7 @@ def test_zone_valve_binary_sensor_closed_when_position_zero() -> None:
 
 
 def test_zone_valve_binary_sensor_none_when_position_absent() -> None:
-    payload = _build_zone_payload(valve_position_pct=None)
+    payload = _build_zone_payload(zone_valve_position=None)
     hass = _FakeHass()
     entry = _FakeEntry("entry-1", payload)
     entities: list = []
@@ -312,7 +328,7 @@ def test_all_semantic_binary_sensors_expose_stale_and_expire_without_false_state
                 {
                     "id": "zone-1",
                     "name": "Living",
-                    "state": {"valve_position_pct": 50.0},
+                    "state": {"zone_valve_position": 50.0},
                     "config": {"preset": "schedule"},
                 }
             ],

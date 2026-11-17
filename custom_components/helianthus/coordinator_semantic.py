@@ -22,9 +22,9 @@ query Semantic {
       zone_room_temperature
       zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -35,28 +35,28 @@ query Semantic {
       associated_circuit
       room_temperature_zone_mapping
       quick_veto
-      quick_veto_setpoint
-      quick_veto_duration
+      zone_room_temperature_setpoint_at_quick_veto
+      zone_quick_veto_time
       quick_veto_expiry
-      holiday_start_date
-      holiday_end_date
-      holiday_setpoint
-      holiday_start_time
-      holiday_end_time
+      zone_holiday_start_date
+      zone_holiday_end_date
+      zone_room_temperature_setpoint_at_holiday
+      zone_holiday_start_clock_time
+      zone_holiday_end_clock_time
     }
   }
   dhw {
     state {
-      current_temp_c
-      special_function
+      dhw_temperature
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       preset
-      target_temp_c
-      holiday_start_date
-      holiday_end_date
+      dhw_temperature_setpoint
+      dhw_holiday_start_date
+      dhw_holiday_end_date
     }
   }
 }
@@ -74,9 +74,9 @@ query Semantic {
       zone_room_temperature
       zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -89,30 +89,30 @@ query Semantic {
       associated_circuit
       room_temperature_zone_mapping
       quick_veto
-      quick_veto_setpoint
-      quick_veto_duration
+      zone_room_temperature_setpoint_at_quick_veto
+      zone_quick_veto_time
       quick_veto_expiry
-      holiday_start_date
-      holiday_end_date
-      holiday_setpoint
-      holiday_start_time
-      holiday_end_time
+      zone_holiday_start_date
+      zone_holiday_end_date
+      zone_room_temperature_setpoint_at_holiday
+      zone_holiday_start_clock_time
+      zone_holiday_end_clock_time
     }
   }
   dhw {
     state {
-      current_temp_c
+      dhw_temperature
       overrun_active
-      special_function
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       operation_mode_changeable
       preset
-      target_temp_c
-      holiday_start_date
-      holiday_end_date
+      dhw_temperature_setpoint
+      dhw_holiday_start_date
+      dhw_holiday_end_date
     }
   }
 }
@@ -127,9 +127,9 @@ query Semantic {
       zone_room_temperature
       zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -140,21 +140,21 @@ query Semantic {
       associated_circuit
       room_temperature_zone_mapping
       quick_veto
-      quick_veto_setpoint
-      quick_veto_duration
+      zone_room_temperature_setpoint_at_quick_veto
+      zone_quick_veto_time
       quick_veto_expiry
     }
   }
   dhw {
     state {
-      current_temp_c
-      special_function
+      dhw_temperature
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       preset
-      target_temp_c
+      dhw_temperature_setpoint
     }
   }
 }
@@ -169,9 +169,9 @@ query Semantic {
       zone_room_temperature
       zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -185,14 +185,14 @@ query Semantic {
   }
   dhw {
     state {
-      current_temp_c
-      special_function
+      dhw_temperature
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       preset
-      target_temp_c
+      dhw_temperature_setpoint
     }
   }
 }
@@ -207,9 +207,9 @@ query Semantic {
       zone_room_temperature
       zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -222,30 +222,32 @@ query Semantic {
   }
   dhw {
     state {
-      current_temp_c
-      special_function
+      dhw_temperature
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       preset
-      target_temp_c
+      dhw_temperature_setpoint
     }
   }
 }
 """
 
 _HOLIDAY_FIELDS = [
-    "holiday_start_date",
-    "holiday_end_date",
-    "holiday_setpoint",
-    "holiday_start_time",
-    "holiday_end_time",
+    "zone_holiday_start_date",
+    "zone_holiday_end_date",
+    "zone_room_temperature_setpoint_at_holiday",
+    "zone_holiday_start_clock_time",
+    "zone_holiday_end_clock_time",
+    "dhw_holiday_start_date",
+    "dhw_holiday_end_date",
 ]
 _QV_FIELDS = [
     "quick_veto",
-    "quick_veto_setpoint",
-    "quick_veto_duration",
+    "zone_room_temperature_setpoint_at_quick_veto",
+    "zone_quick_veto_time",
     "quick_veto_expiry",
 ]
 _SEMANTIC_RECOVERABLE_FIELDS = (
