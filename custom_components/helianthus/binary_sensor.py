@@ -302,7 +302,7 @@ def _system_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) 
             manufacturer=manufacturer,
             regulator_device_id=regulator_device_id,
             source="state",
-            key="maintenance_due",
+            key="maintenance_active",
             label="Maintenance Due",
             device_class=_BINARY_SENSOR_DEVICE_CLASS_PROBLEM,
             entity_category=EntityCategory.DIAGNOSTIC,

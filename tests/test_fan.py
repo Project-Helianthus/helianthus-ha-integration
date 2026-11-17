@@ -122,12 +122,12 @@ def _payload(*, boiler_device_id: tuple[str, str] | None) -> dict:
                         "central_heating_pump_active": True,
                         "external_pump_active": False,
                         "circulation_pump_active": True,
-                        "storage_load_pump_pct": 42.4,
+                        "storage_loading_pump_level": 42.4,
                         "flame_active": True,
-                        "modulation_pct": 37.6,
+                        "modulation_setpoint": 37.6,
                         "gas_valve_active": True,
-                        "fan_speed_rpm": 1860,
-                        "ionisation_voltage_ua": 91,
+                        "fan_speed": 1860,
+                        "flame_ionization_current": 91,
                     }
                 }
             }

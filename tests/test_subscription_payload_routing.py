@@ -64,7 +64,7 @@ def _consumers(hook=False):
         _Spy(
             {
                 "boiler_status": {
-                    "state": {"flow_temperature_c": 60.0, "return_temperature_c": 40.0},
+                    "state": {"flow_temperature": 60.0, "return_temperature_c": 40.0},
                     "diagnostics": {"heating_status_raw": 1},
                 }
             }
@@ -79,7 +79,7 @@ def _frame():
             "data": {
                 "dhw_update": {"state": {"current_temp_c": 48.0}},
                 "energy_update": {"electric": {"climate": {"today": 3.5, "yearly": 80.0}}},
-                "boiler_status_update": {"state": {"flow_temperature_c": 62.0}},
+                "boiler_status_update": {"state": {"flow_temperature": 62.0}},
             }
         },
     }
@@ -98,7 +98,7 @@ def _expected():
         {"energy_totals": {"electric": {"climate": {"today": 3.5, "yearly": 80.0}}}},
         {
             "boiler_status": {
-                "state": {"flow_temperature_c": 62.0, "return_temperature_c": 40.0},
+                "state": {"flow_temperature": 62.0, "return_temperature_c": 40.0},
                 "diagnostics": {"heating_status_raw": 1},
             }
         },
@@ -230,7 +230,7 @@ def test_nested_null_preserves_last_known_dhw_and_boiler_values(handler, hook):
         {"type": "next", "payload": {"data": {
             "dhw_update": {"state": {"current_temp_c": None}, "config": None},
             "energy_update": None,
-            "boiler_status_update": {"state": {"flow_temperature_c": None}, "diagnostics": None},
+            "boiler_status_update": {"state": {"flow_temperature": None}, "diagnostics": None},
         }}},
         consumers,
     )

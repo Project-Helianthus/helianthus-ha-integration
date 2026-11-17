@@ -339,29 +339,32 @@ SPARSE_PATTERNS = {
                          "key": _fm5(cylinders=[{"index": 1, "temperature_c": 60.0}])}),
     **{f"boiler-{key}": (f"{{e}}-boiler-{key}", _boiler("state", **{key: 50.0}),
                          {"bucket": _boiler("config", **{key: 50.0}),
-                          "key": _boiler("state", outdoor_temperature_c=50.0)})
-       for key in ("flow_temperature_c", "return_temperature_c", "dhw_temperature_c",
+                          "key": _boiler("state", outdoor_temperature_c=50.0),
+                          **({"previous": _boiler("state", flow_temperature_c=50.0)}
+                             if key == "flow_temperature" else {})})
+       for key in ("flow_temperature", "return_temperature_c", "dhw_temperature_c",
                    "dhw_storage_temperature_c")},
-    "boiler-sensor": ("{e}-boiler-sensor-hours_till_service",
-                      _boiler("config", hours_till_service=100),
-                      {"bucket": _boiler("state", hours_till_service=100),
-                       "key": _boiler("config", operating_hours=100)}),
-    # The number and text keys are the canonical write keys; the value is read
-    # under the renamed boiler config field.
-    **{f"boiler-number-{write}": (f"{{e}}-boiler-number-{write}", _boiler("config", **{read: 1}),
-                                  {"key": _boiler("config", **{write: 1}),
-                                   "bucket": _boiler("state", **{read: 1})})
-       for write, read in (("maximum_heating_flow_temperature_setpoint", "flowset_hc_max_c"),
-                           ("maximum_dhw_flow_temperature_setpoint", "flowset_hwc_max_c"),
-                           ("heating_partial_load_power", "partload_hc_kw"),
-                           ("dhw_partial_load_power", "partload_hwc_kw"))},
+    "boiler-sensor": ("{e}-boiler-sensor-service_time_remaining",
+                      _boiler("config", service_time_remaining=100),
+                      {"bucket": _boiler("state", service_time_remaining=100),
+                       "key": _boiler("config", operating_hours=100),
+                       "previous": _boiler("config", hours_till_service=100)}),
+    # The number and text keys are the canonical write keys, and the value is
+    # read under the same published field; the previous field name never counts.
+    **{f"boiler-number-{write}": (f"{{e}}-boiler-number-{write}", _boiler("config", **{write: 1}),
+                                  {"key": _boiler("config", **{previous: 1}),
+                                   "bucket": _boiler("state", **{write: 1})})
+       for write, previous in (("maximum_heating_flow_temperature_setpoint", "flowset_hc_max_c"),
+                               ("maximum_dhw_flow_temperature_setpoint", "flowset_hwc_max_c"),
+                               ("heating_partial_load_power", "partload_hc_kw"),
+                               ("dhw_partial_load_power", "partload_hwc_kw"))},
     "boiler-number-unmapped": ("{e}-boiler-number-synthetic_setting",
                                _boiler("config", synthetic_setting=1),
                                {"key": _boiler("config", other_setting=1)}),
     "boiler-text": ("{e}-boiler-text-installer_phone_number",
-                    _boiler("config", phone_number="0"),
-                    {"key": _boiler("config", installer_phone_number="0"),
-                     "bucket": _boiler("state", phone_number="0")}),
+                    _boiler("config", installer_phone_number="0"),
+                    {"key": _boiler("config", phone_number="0"),
+                     "bucket": _boiler("state", installer_phone_number="0")}),
     "circuit-sensor": ("{e}-circuit-1-sensor-flow_temperature_c",
                        _circuit(1, "state", flow_temperature_c=30.0),
                        {"index": _circuit(0, "state", flow_temperature_c=30.0),
@@ -384,12 +387,12 @@ SPARSE_PATTERNS = {
     "system-text-installer_name": (
         "{e}-system-text-installer_name",
         {"HelianthusSystemCoordinator": {"config": {"installer_name": "Synthetic"}}},
-        {"key": {"HelianthusSystemCoordinator": {"config": {"installer_phone": "Synthetic"}}}}),
-    # The renamed system field: the control key differs from the read field.
+        {"key": {"HelianthusSystemCoordinator": {"config": {"installer_phone_number": "Synthetic"}}}}),
+    # The renamed system field: the previous field name never counts.
     "system-text-installer_phone_number": (
         "{e}-system-text-installer_phone_number",
-        {"HelianthusSystemCoordinator": {"config": {"installer_phone": "0"}}},
-        {"key": {"HelianthusSystemCoordinator": {"config": {"installer_phone_number": "0"}}}}),
+        {"HelianthusSystemCoordinator": {"config": {"installer_phone_number": "0"}}},
+        {"key": {"HelianthusSystemCoordinator": {"config": {"installer_phone": "0"}}}}),
 }
 VARIED_FIELDS = [(name, field) for name, (_, _, varied) in SPARSE_PATTERNS.items()
                  for field in varied]
@@ -399,6 +402,8 @@ VARIED_FIELDS = [(name, field) for name, (_, _, varied) in SPARSE_PATTERNS.items
 NOT_SPARSE = (
     "{e}-boiler-text-installer_menu_code",  # the withdrawn boiler text control
     "{e}-boiler-outdoor_temperature_c",
+    "{e}-boiler-flow_temperature_c",  # unique IDs of the previous published names
+    "{e}-boiler-sensor-hours_till_service",
     "{e}-boiler-sensor-operating_hours",
     "{e}-system-text-installer_phone",
     "{e}-system-text-installer_menu_code",
@@ -527,8 +532,8 @@ def test_a_live_repair_code_without_an_entity_schedules_one_reload(harness, logs
 # Enable and disable transitions
 # ---------------------------------------------------------------------------
 
-SPARSE_UID = f"{ENTRY}-boiler-sensor-hours_till_service"
-LIVE = _boiler("config", hours_till_service=100)
+SPARSE_UID = f"{ENTRY}-boiler-sensor-service_time_remaining"
+LIVE = _boiler("config", service_time_remaining=100)
 
 # (case, disabled_by before, seen disabled before, reloaded before, live,
 #  disabled_by after, reload scheduled)
@@ -610,7 +615,7 @@ def test_a_later_live_poll_enables_an_integration_disabled_entity(harness, logs)
     assert run(setup, config_entry(ENTRY)) is True
     assert entity(harness, SPARSE_UID).disabled_by == INTEGRATION
 
-    notify(setup, "boiler_coordinator", {"boiler_status": {"config": {"hours_till_service": 1}}})
+    notify(setup, "boiler_coordinator", {"boiler_status": {"config": {"service_time_remaining": 1}}})
 
     assert entity(harness, SPARSE_UID).disabled_by is None
     assert reload_reasons(logs) == [ENABLE_REASON]
@@ -639,7 +644,7 @@ OBSERVATIONS = (
     ("trusted", TRUSTED_STATUS, [INVENTORY_DEVICE], 2, True),
 )
 PROBE_FAN = f"{ENTRY}-retired-fan"
-PROBE_SPARSE = f"{ENTRY}-boiler-sensor-hours_till_service"
+PROBE_SPARSE = f"{ENTRY}-boiler-sensor-service_time_remaining"
 
 
 def test_admission_counter_admits_the_cleanup_from_the_second_trusted_observation(harness, logs):

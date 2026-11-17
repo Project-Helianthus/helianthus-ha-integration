@@ -174,8 +174,8 @@ def _runtime_payload(listeners: list) -> dict:
             {
                 "state": {
                     "system_water_pressure": 1.6,
-                    "hwc_cylinder_temperature_top": 52.0,
-                    "hwc_cylinder_temperature_bottom": None,
+                    "dhw_cylinder_top_temperature": 52.0,
+                    "dhw_cylinder_bottom_temperature": None,
                 },
                 "properties": {"system_scheme": 8},
             }
@@ -254,7 +254,7 @@ def _expected_initial_entities() -> list[tuple[str, str]]:
         ("HelianthusBoilerDiagnosticsSensor", f"{ENTRY_ID}-boiler-diag-{field['key']}")
         for field in BOILER_DIAGNOSTICS_SENSOR_FIELDS
     ]
-    expected += [("HelianthusBoilerHoursTillServiceSensor", "entry-1-boiler-sensor-hours_till_service")]
+    expected += [("HelianthusBoilerHoursTillServiceSensor", "entry-1-boiler-sensor-service_time_remaining")]
     expected += [
         ("HelianthusCircuitSensor", f"{ENTRY_ID}-circuit-{index}-sensor-{field.key}")
         for index in (0, 2)
@@ -263,7 +263,7 @@ def _expected_initial_entities() -> list[tuple[str, str]]:
     expected += [
         ("HelianthusSystemSensor", f"{ENTRY_ID}-system-sensor-{field.key}")
         for field in SYSTEM_SENSOR_FIELDS
-        if field.key != "hwc_cylinder_temperature_bottom"
+        if field.key != "dhw_cylinder_bottom_temperature"
     ]
     expected += [
         ("HelianthusRadioSensor", "entry-1-radio-09-01-sensor-reception_strength"),

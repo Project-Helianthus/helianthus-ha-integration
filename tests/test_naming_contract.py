@@ -205,14 +205,33 @@ UNIQUE_ID_RENAMES = {
     "boiler-number-partload_hwc_kw": "boiler-number-dhw_partial_load_power",
     "boiler-text-phone_number": "boiler-text-installer_phone_number",
 }
+# Entities keyed on a field the gateway publishes under its docs-ebus name.
+READ_NAME_UNIQUE_ID_RENAMES = {
+    "system-sensor-outdoor_temperature_avg24h": "system-sensor-outdoor_temperature_daily_average",
+    "system-sensor-hwc_cylinder_temperature_top": "system-sensor-dhw_cylinder_top_temperature",
+    "system-sensor-hwc_cylinder_temperature_bottom": "system-sensor-dhw_cylinder_bottom_temperature",
+    "system-binary-maintenance_due": "system-binary-maintenance_active",
+    "boiler-flow_temperature_c": "boiler-flow_temperature",
+    "boiler-sensor-modulation_pct": "boiler-sensor-modulation_setpoint",
+    "boiler-sensor-fan_speed_rpm": "boiler-sensor-fan_speed",
+    "boiler-sensor-ionisation_voltage_ua": "boiler-sensor-flame_ionization_current",
+    "boiler-sensor-storage_load_pump_pct": "boiler-sensor-storage_loading_pump_level",
+    "boiler-sensor-diverter_valve_position_pct": "boiler-sensor-diverter_valve_position",
+    "boiler-sensor-hours_till_service": "boiler-sensor-service_time_remaining",
+    "boiler-diag-central_heating_hours": "boiler-diag-central_heating_operating_time",
+    "boiler-diag-dhw_hours": "boiler-diag-dhw_operating_time",
+    "boiler-diag-pump_hours": "boiler-diag-pump_operating_time",
+    "boiler-diag-fan_hours": "boiler-diag-fan_operating_time",
+    "boiler-diag-central_heating_starts": "boiler-diag-central_heating_start_count",
+    "boiler-diag-dhw_starts": "boiler-diag-dhw_start_count",
+    "boiler-diag-deactivations_ifc": "boiler-diag-fire_control_deactivation_count",
+    "boiler-diag-deactivations_templimiter": "boiler-diag-temperature_limiter_deactivation_count",
+}
 UNCHANGED_UNIQUE_IDS = {
     "system-text-installer_name",
     "system-date-maintenance_date",
     "system-sensor-outdoor_temperature",
-    "system-sensor-outdoor_temperature_avg24h",
-    "system-sensor-hwc_cylinder_temperature_top",
-    "system-sensor-hwc_cylinder_temperature_bottom",
-    "system-binary-maintenance_due",
+    "boiler-return_temperature_c",
 }
 
 # The boiler control for B509 selector 0x4904 is withdrawn: its register meaning is open.
@@ -227,8 +246,12 @@ def _system_and_boiler_unique_ids(entry_id):
 
     payload, _, _ = _build_payload()
     payload["boiler_coordinator"] = _FakeCoordinator({"boiler_status": {"config": {
-        "flowset_hc_max_c": 70.0, "flowset_hwc_max_c": 55.0, "partload_hc_kw": 12.0,
-        "partload_hwc_kw": 14.0, "phone_number": "401234", "installer_menu_code": 12,
+        "maximum_heating_flow_temperature_setpoint": 70.0,
+        "maximum_dhw_flow_temperature_setpoint": 55.0,
+        "heating_partial_load_power": 12.0,
+        "dhw_partial_load_power": 14.0,
+        "installer_phone_number": "401234",
+        "central_heating_pump_mode": 12,
     }}})
     payload["boiler_device_id"] = ("helianthus", f"{entry_id}-bus-BAI00-08")
     hass, entry = _FakeHass(), _FakeEntry(entry_id, payload)
@@ -251,6 +274,9 @@ def test_renamed_system_and_boiler_unique_ids_follow_the_canonical_names(entry_i
     assert len(set(UNIQUE_ID_RENAMES.values())) == 16
     assert set(UNIQUE_ID_RENAMES.values()) <= unique_ids
     assert not set(UNIQUE_ID_RENAMES) & unique_ids
+    assert len(set(READ_NAME_UNIQUE_ID_RENAMES.values())) == 19
+    assert set(READ_NAME_UNIQUE_ID_RENAMES.values()) <= unique_ids
+    assert not set(READ_NAME_UNIQUE_ID_RENAMES) & unique_ids
     assert UNCHANGED_UNIQUE_IDS <= unique_ids
     assert WITHDRAWN_UNIQUE_IDS.isdisjoint(unique_ids)
 

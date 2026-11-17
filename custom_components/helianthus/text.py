@@ -50,11 +50,11 @@ class InstallerTextField:
 
 _SYSTEM_TEXT_FIELDS = [
     InstallerTextField(read_key="installer_name", write_key="installer_name", label="Installer Name", max_length=12, source="system"),
-    InstallerTextField(read_key="installer_phone", write_key="installer_phone_number", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
+    InstallerTextField(read_key="installer_phone_number", write_key="installer_phone_number", label="Installer Phone", max_length=12, source="system", icon="mdi:phone-outline"),
 ]
 
 _BOILER_TEXT_FIELDS = [
-    InstallerTextField(read_key="phone_number", write_key="installer_phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
+    InstallerTextField(read_key="installer_phone_number", write_key="installer_phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
 ]
 
 

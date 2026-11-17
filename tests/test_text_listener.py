@@ -164,7 +164,7 @@ def test_no_boiler_installer_menu_code_text_entity_is_created(entry_id: str) -> 
     from custom_components.helianthus import text as text_platform
 
     status_coordinator = _FakeStatusCoordinator()
-    boiler_config = {"phone_number": "401234", "installer_menu_code": 12}
+    boiler_config = {"installer_phone_number": "401234", "central_heating_pump_mode": 12}
     data = {
         "system_coordinator": SimpleNamespace(data={"config": {"installer_access_code": 7}}),
         "boiler_coordinator": SimpleNamespace(data={"boiler_status": {"config": boiler_config}}),
@@ -201,4 +201,4 @@ def test_no_boiler_installer_menu_code_text_entity_is_created(entry_id: str) -> 
     ]
     assert menu_codes[0].native_value == "007"
     # The boiler configuration value stays readable on the coordinator.
-    assert data["boiler_coordinator"].data["boiler_status"]["config"]["installer_menu_code"] == 12
+    assert data["boiler_coordinator"].data["boiler_status"]["config"]["central_heating_pump_mode"] == 12

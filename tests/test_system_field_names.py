@@ -1,12 +1,18 @@
-"""The system queries request the renamed register-derived fields, and only them.
+"""The system and boiler documents request the published register-derived names.
 
-The renamed rows come from ``fixtures/gateway_register_derived_names.json``.
-Each row is identified by its published name after the rename, its GraphQL
-path and its register; the tests check the name, the path it is requested
-under and that the former name is never requested or read.
+``fixtures/gateway_register_derived_names.json`` is a byte-for-byte copy of the
+gateway's register-derived name table. Each row names the published field, the
+object that publishes it (``surfaces.graphql``) and, where the gateway renamed
+the field, the spelling it published before (``previous_published_name``; a
+``bound`` carries its own pair). The tests check that the system and boiler
+documents request the published names under their objects and never a
+previous one, that a missing published name is handled as an older gateway and
+a previous one is not, and that every entity reads its value from the
+published field, with its unique ID keyed on that name.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 from pathlib import Path
@@ -16,16 +22,19 @@ import pytest
 
 from test_coordinator import (
     GraphQLResponseError,
+    QUERY_BOILER,
     QUERY_SYSTEM,
-    QUERY_SYSTEM_GATEWAY_METADATA,
     QUERY_SYSTEM_INSTALLER,
     QUERY_SYSTEM_SENSITIVE,
+    _build_boiler_coordinator,
     _build_system_coordinator,
     _ScriptedClient,
+    coordinator_boiler,
     coordinator_system,
 )
 from test_system import (
     _build_payload,
+    _FakeCoordinator,
     _FakeEntry,
     _FakeHass,
     binary_sensor_platform,
@@ -33,96 +42,264 @@ from test_system import (
     sensor_platform,
     text_platform,
 )
+from test_fan import fan_platform
+from test_valve import valve_platform
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gateway_register_derived_names.json"
-ROWS = json.loads(FIXTURE.read_text(encoding="utf-8"))["rows"]
-NEW_NAMES = [row["published_name_after"] for row in ROWS]
-OLD_NAMES = [row["published_name_before"] for row in ROWS]
-SENSITIVE = {"installer_access_code"}
+SUBSCRIPTIONS_SOURCE = (
+    Path(__file__).resolve().parents[1] / "custom_components" / "helianthus" / "subscriptions.py"
+)
+SUBSCRIPTIONS = next(
+    ast.literal_eval(node.value)
+    for node in ast.parse(SUBSCRIPTIONS_SOURCE.read_text(encoding="utf-8")).body
+    if isinstance(node, ast.Assign)
+    and any(isinstance(t, ast.Name) and t.id == "SUBSCRIPTIONS" for t in node.targets)
+)
+TABLE = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+# GraphQL object -> (plane, bucket under the plane root).
+OBJECTS = {
+    "system_state": ("system", "state"),
+    "system_config": ("system", "config"),
+    "system_properties": ("system", "properties"),
+    "boiler_state": ("boiler", "state"),
+    "boiler_config": ("boiler", "config"),
+    "boiler_diagnostics": ("boiler", "diagnostics"),
+}
+ROOTS = {"system": "system", "boiler": "boiler_status"}
+
+
+def _fields() -> list[dict]:
+    """One record per published field of a system or boiler object, bounds included."""
+    fields = []
+    for row in TABLE["rows"]:
+        graphql = row["surfaces"]["graphql"]
+        if graphql not in OBJECTS:
+            continue
+        plane, bucket = OBJECTS[graphql]
+        fields.append(
+            {
+                "name": row["published_name"],
+                "previous": row.get("previous_published_name"),
+                "plane": plane,
+                "bucket": bucket,
+            }
+        )
+        bound = row.get("bound")
+        if bound:
+            fields.append(
+                {
+                    "name": bound["published_name"],
+                    "previous": bound.get("previous_published_name"),
+                    "plane": plane,
+                    "bucket": bucket,
+                }
+            )
+    return fields
+
+
+FIELDS = _fields()
+RENAMED = [field for field in FIELDS if field["previous"]]
+PREVIOUS = {field["previous"] for field in RENAMED}
+
+
+def _field(plane: str, name: str) -> dict:
+    return next(f for f in FIELDS if f["plane"] == plane and f["name"] == name)
+
+
+# Published fields no system or boiler document requests: no entity reads them.
+UNREAD = {
+    ("system", "system_off"),
+    ("system", "heating_outdoor_alternative_temperature_limit"),
+    ("boiler", "water_pressure"),
+    ("boiler", "dhw_demand_active"),
+    ("boiler", "heating_switch_active"),
+    ("boiler", "fan_speed_setpoint"),
+    ("boiler", "dhw_water_flow_rate"),
+    ("boiler", "primary_circuit_flow_rate"),
+    ("boiler", "flow_temperature_setpoint"),
+    ("boiler", "dhw_temperature_setpoint"),
+    ("boiler", "boiler_state_code"),
+}
+
+# Document of each requested field that is not in the base query of its plane.
+OPTIONAL_DOCUMENT = {
+    ("system", "maintenance_date"): QUERY_SYSTEM_INSTALLER,
+    ("system", "installer_phone_number"): QUERY_SYSTEM_INSTALLER,
+    ("system", "installer_access_code"): QUERY_SYSTEM_SENSITIVE,
+    ("boiler", "installer_phone_number"): coordinator_boiler.QUERY_BOILER_INSTALLER,
+    ("boiler", "service_time_remaining"): coordinator_boiler.QUERY_BOILER_INSTALLER,
+    ("boiler", "central_heating_pump_mode"): coordinator_boiler.QUERY_BOILER_SENSITIVE,
+}
+BASE_DOCUMENT = {"system": QUERY_SYSTEM, "boiler": QUERY_BOILER}
+DOCUMENTS = (
+    QUERY_SYSTEM,
+    coordinator_system.QUERY_SYSTEM_LEGACY,
+    QUERY_SYSTEM_INSTALLER,
+    QUERY_SYSTEM_SENSITIVE,
+    QUERY_BOILER,
+    coordinator_boiler.QUERY_BOILER_INSTALLER,
+    coordinator_boiler.QUERY_BOILER_SENSITIVE,
+    SUBSCRIPTIONS["boiler"],
+)
 
 
 def _leaf_paths(document: str) -> set[str]:
-    """Dotted paths of the leaf fields a GraphQL document requests."""
+    """Dotted paths of the fields a GraphQL document selects."""
     body = document[document.index("{") + 1 : document.rindex("}")]
     tokens = re.findall(r"\w+|[{}]", body)
     stack: list[str] = []
-    leaves: set[str] = set()
+    paths: set[str] = set()
     for index, token in enumerate(tokens):
         if token == "{":
             continue
         if token == "}":
             stack.pop()
             continue
+        paths.add(".".join([*stack, token]))
         if index + 1 < len(tokens) and tokens[index + 1] == "{":
             stack.append(token)
-        else:
-            leaves.add(".".join([*stack, token]))
-    return leaves
+    return paths
+
+
+def _path(field: dict) -> str:
+    return f"{ROOTS[field['plane']]}.{field['bucket']}.{field['name']}"
+
+
+def test_fixture_is_the_gateway_register_name_table() -> None:
+    assert TABLE["format"] == "helianthus-register-derived-names/v1"
+    names = {(f["plane"], f["name"]) for f in FIELDS}
+    assert len(names) == len(FIELDS)
+    for field in RENAMED:
+        assert field["previous"] != field["name"]
+    assert UNREAD <= names
+
+
+@pytest.mark.parametrize("field", FIELDS, ids=lambda f: f"{f['plane']}.{f['name']}")
+def test_every_published_field_is_requested_under_its_object_or_declared_unread(field) -> None:  # noqa: ANN001
+    key = (field["plane"], field["name"])
+    requested = [d for d in DOCUMENTS[:-1] if _path(field) in _leaf_paths(d)]
+    if key in UNREAD:
+        assert requested == []
+        return
+    expected = OPTIONAL_DOCUMENT.get(key, BASE_DOCUMENT[field["plane"]])
+    assert expected in requested, field
+
+
+@pytest.mark.parametrize("document", DOCUMENTS, ids=range(len(DOCUMENTS)))
+def test_no_document_requests_a_previous_published_name(document) -> None:  # noqa: ANN001
+    assert not set(re.findall(r"\b\w+\b", document)) & PREVIOUS
+
+
+def test_boiler_subscription_requests_the_published_flow_temperature() -> None:
+    paths = _leaf_paths(SUBSCRIPTIONS["boiler"])
+    assert "boiler_status_update.state.flow_temperature" in paths
+    assert "boiler_status_update.state.flow_temperature_c" not in paths
 
 
 def _missing(field: str) -> GraphQLResponseError:
-    return GraphQLResponseError(
-        [{"message": f'Cannot query field "{field}" on type "SystemConfig".'}]
-    )
+    return GraphQLResponseError([{"message": f'Cannot query field "{field}" on type "X".'}])
 
 
-def test_fixture_rows_are_the_eight_renamed_b524_system_registers() -> None:
-    assert len(ROWS) == 8
-    assert len(set(NEW_NAMES)) == 8 and len(set(OLD_NAMES)) == 8
-    assert not set(NEW_NAMES) & set(OLD_NAMES)
-    registers = [(row["opcode"], row["group"], row["register"]) for row in ROWS]
-    assert len(set(registers)) == 8
-    for row in ROWS:
-        assert (row["opcode"], row["group"]) == ("0x02", "0x00")
-        assert row["graphql_path"].rsplit(".", 1)[1] == row["published_name_after"]
+REQUESTED_RENAMED = [f for f in RENAMED if (f["plane"], f["name"]) not in UNREAD]
 
 
-def test_system_queries_request_the_new_names_at_their_paths_and_no_former_name() -> None:
-    requested = _leaf_paths(QUERY_SYSTEM) | _leaf_paths(QUERY_SYSTEM_SENSITIVE)
-    for row in ROWS:
-        document = QUERY_SYSTEM_SENSITIVE if row["published_name_after"] in SENSITIVE else QUERY_SYSTEM
-        assert row["graphql_path"] in _leaf_paths(document), row
-    for document in (QUERY_SYSTEM, QUERY_SYSTEM_SENSITIVE, QUERY_SYSTEM_INSTALLER):
-        words = set(re.findall(r"\b\w+\b", document))
-        assert not words & set(OLD_NAMES), document
-    assert {path.rsplit(".", 1)[1] for path in requested} >= set(NEW_NAMES)
-
-
-@pytest.mark.parametrize("row", ROWS, ids=lambda row: row["published_name_after"])
-def test_missing_new_field_is_handled_and_a_former_field_is_not(row) -> None:  # noqa: ANN001
-    name, former = row["published_name_after"], row["published_name_before"]
-    if name in SENSITIVE:
-        base = {"system": {"state": {}, "config": {}, "properties": {}}}
-        for field, expected in ((name, False), (former, True)):
-            client = _ScriptedClient([base, {}, {}, _missing(field)])
-            coordinator = _build_system_coordinator(client)
+@pytest.mark.parametrize("field", REQUESTED_RENAMED, ids=lambda f: f"{f['plane']}.{f['name']}")
+def test_missing_published_field_is_an_older_gateway_and_a_previous_one_fails(field) -> None:  # noqa: ANN001
+    name, former, plane = field["name"], field["previous"], field["plane"]
+    key = (plane, name)
+    if key in OPTIONAL_DOCUMENT:
+        attribute = {
+            ("system", QUERY_SYSTEM_INSTALLER): "system_installer_available",
+            ("boiler", coordinator_boiler.QUERY_BOILER_INSTALLER): "boiler_installer_available",
+            ("boiler", coordinator_boiler.QUERY_BOILER_SENSITIVE): "boiler_sensitive_available",
+        }[(plane, OPTIONAL_DOCUMENT[key])]
+        for missing, expected in ((name, False), (former, True)):
+            if plane == "system":
+                base = {"system": {"state": {}, "config": {}, "properties": {}}}
+                script = [base, {}, _missing(missing), {}]
+                coordinator = _build_system_coordinator(_ScriptedClient(script))
+            else:
+                base = {"boiler_status": {"state": {}, "config": {}, "diagnostics": {}}}
+                if OPTIONAL_DOCUMENT[key] is coordinator_boiler.QUERY_BOILER_INSTALLER:
+                    script = [base, _missing(missing), {}]
+                else:
+                    script = [base, {}, _missing(missing)]
+                coordinator = _build_boiler_coordinator(_ScriptedClient(script))
             asyncio.run(coordinator._async_update_data())
-            assert client.calls == [
-                QUERY_SYSTEM,
-                QUERY_SYSTEM_GATEWAY_METADATA,
-                QUERY_SYSTEM_INSTALLER,
-                QUERY_SYSTEM_SENSITIVE,
-            ]
-            assert coordinator.system_sensitive_available is expected, field
+            assert getattr(coordinator, attribute) is expected, missing
         return
 
-    client = _ScriptedClient([_missing(name)])
-    result = asyncio.run(_build_system_coordinator(client)._async_update_data())
-    assert result == {"state": {}, "config": {}, "properties": {}, "metadata": {}}
-    with pytest.raises(coordinator_system.UpdateFailed):
-        asyncio.run(_build_system_coordinator(_ScriptedClient([_missing(former)]))._async_update_data())
+    if field["name"].endswith("_bound"):
+        base = {"system": {"state": {}, "config": {}, "properties": {}}}
+        client = _ScriptedClient([_missing(name), base, {}, {}, {}])
+        asyncio.run(_build_system_coordinator(client)._async_update_data())
+        assert client.calls[:2] == [QUERY_SYSTEM, coordinator_system.QUERY_SYSTEM_LEGACY]
+        assert f"system.config.{name}" not in _leaf_paths(coordinator_system.QUERY_SYSTEM_LEGACY)
+        with pytest.raises(coordinator_system.UpdateFailed):
+            asyncio.run(
+                _build_system_coordinator(_ScriptedClient([_missing(former)]))._async_update_data()
+            )
+        return
+
+    if plane == "system":
+        build, empty, failure = (
+            _build_system_coordinator,
+            {"state": {}, "config": {}, "properties": {}, "metadata": {}},
+            coordinator_system.UpdateFailed,
+        )
+    else:
+        build, empty, failure = (
+            _build_boiler_coordinator,
+            {"boiler_status": None},
+            coordinator_boiler.UpdateFailed,
+        )
+    assert asyncio.run(build(_ScriptedClient([_missing(name)]))._async_update_data()) == empty
+    with pytest.raises(failure):
+        asyncio.run(build(_ScriptedClient([_missing(former)]))._async_update_data())
 
 
-def _entities(config_overrides=None, state_overrides=None, properties=None):  # noqa: ANN001, ANN202
+BOILER_DEVICE = ("helianthus", "entry-1-bus-BAI00-08")
+
+
+def _entities(plane: str, bucket: str, values: dict) -> list:
     payload, system, _client = _build_payload()
-    system.data["state"] = state_overrides if state_overrides is not None else system.data["state"]
-    system.data["config"] = config_overrides if config_overrides is not None else system.data["config"]
-    system.data["properties"] = properties if properties is not None else system.data["properties"]
+    system.data.update({"state": {}, "config": {}, "properties": {}})
+    boiler = _FakeCoordinator({"boiler_status": {"state": {}, "config": {}, "diagnostics": {}}})
+    if plane == "system":
+        system.data[bucket] = dict(values)
+    else:
+        boiler.data["boiler_status"][bucket] = dict(values)
+    payload["boiler_coordinator"] = boiler
+    payload["boiler_device_id"] = BOILER_DEVICE
     hass, entry = _FakeHass(), _FakeEntry("entry-1", payload)
     entities: list = []
     for platform in (sensor_platform, binary_sensor_platform, number_platform, text_platform):
         asyncio.run(platform.async_setup_entry(hass, entry, entities.extend))
+    entities.append(
+        fan_platform.HelianthusBoilerBurnerFan(
+            coordinator=boiler,
+            entry_id="entry-1",
+            manufacturer="Vaillant",
+            burner_device_id=("helianthus", "entry-1-boiler-burner"),
+            parent_device_id=BOILER_DEVICE,
+        )
+    )
+    entities.append(
+        valve_platform.HelianthusBoilerDiverterValve(
+            coordinator=boiler,
+            entry_id="entry-1",
+            manufacturer="Vaillant",
+            hydraulics_device_id=("helianthus", "entry-1-boiler-hydraulics"),
+            parent_device_id=BOILER_DEVICE,
+        )
+    )
     return entities
+
+
+def _read(entities: list, unique_id: str, reader):  # noqa: ANN001, ANN202
+    entity = next((e for e in entities if e._attr_unique_id == unique_id), None)
+    return None if entity is None else reader(entity)
 
 
 def _value(entity):  # noqa: ANN001, ANN202
@@ -131,56 +308,142 @@ def _value(entity):  # noqa: ANN001, ANN202
     return entity.native_value
 
 
-# Renamed field -> (bucket, unique ID of the entity reading it, value, read value).
-ENTITY_READS = {
-    "water_pressure": ("state", "entry-1-system-sensor-water_pressure", 1.25, 1.25),
-    "flow_temperature": ("state", "entry-1-system-sensor-flow_temperature", 41.5, 41.5),
-    "hydraulic_scheme_code": ("properties", "entry-1-system-sensor-hydraulic_scheme_code", 7, 7),
-    "adaptive_heating_curve_enabled": (
-        "config",
-        "entry-1-system-binary-adaptive_heating_curve_enabled",
-        True,
-        True,
-    ),
-    "heating_outdoor_bivalence_temperature_limit": (
-        "config",
-        "entry-1-system-number-heating_outdoor_bivalence_temperature_limit",
-        -3.0,
-        -3.0,
-    ),
-    "room_humidity_limit_maximum": (
-        "config",
-        "entry-1-system-number-room_humidity_limit_maximum",
-        55,
-        55.0,
-    ),
-    "installer_access_code": ("config", "entry-1-system-text-installer_access_code", 7, "007"),
+def _bounds(entity):  # noqa: ANN001, ANN202
+    return (entity.native_min_value, entity.native_max_value)
+
+
+# Published field -> (unique ID of the entity reading it, value, reader, value read).
+# A renamed field whose entity unique ID carried the field name carries the
+# published name; numbers and texts keep the unique ID of their write key.
+ENTITY_READS: dict[tuple[str, str], list[tuple]] = {
+    ("system", "outdoor_temperature_daily_average"): [
+        ("entry-1-system-sensor-outdoor_temperature_daily_average", 4.5, _value, 4.5)
+    ],
+    ("system", "maintenance_active"): [("entry-1-system-binary-maintenance_active", True, _value, True)],
+    ("system", "dhw_cylinder_top_temperature"): [
+        ("entry-1-system-sensor-dhw_cylinder_top_temperature", 46.5, _value, 46.5)
+    ],
+    ("system", "dhw_cylinder_bottom_temperature"): [
+        ("entry-1-system-sensor-dhw_cylinder_bottom_temperature", 38.0, _value, 38.0)
+    ],
+    ("system", "dhw_outdoor_bivalence_temperature_limit"): [
+        ("entry-1-system-number-dhw_outdoor_bivalence_temperature_limit", 5, _value, 5.0)
+    ],
+    ("system", "dhw_outdoor_bivalence_temperature_limit_bound"): [
+        (
+            "entry-1-system-number-dhw_outdoor_bivalence_temperature_limit",
+            {"min_c": -7.0, "max_c": 9.0, "source": "controller_profile"},
+            _bounds,
+            (-7.0, 9.0),
+        )
+    ],
+    ("system", "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault"): [
+        (
+            "entry-1-system-number-heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
+            55,
+            _value,
+            55.0,
+        )
+    ],
+    ("system", "dhw_flow_temperature_setpoint_maximum"): [
+        ("entry-1-system-number-dhw_flow_temperature_setpoint_maximum", 62, _value, 62.0)
+    ],
+    ("system", "installer_phone_number"): [
+        ("entry-1-system-text-installer_phone_number", "+401234", _value, "+401234")
+    ],
+    ("boiler", "flow_temperature"): [("entry-1-boiler-flow_temperature", 63.1, _value, 63.1)],
+    ("boiler", "modulation_setpoint"): [
+        ("entry-1-boiler-sensor-modulation_setpoint", 37.6, _value, 37.6),
+        ("entry-1-boiler-burner", 37.6, lambda e: e.percentage, 38),
+    ],
+    ("boiler", "fan_speed"): [
+        ("entry-1-boiler-sensor-fan_speed", 1860, _value, 1860),
+        ("entry-1-boiler-burner", 1860, lambda e: e.extra_state_attributes["fan_speed_rpm"], 1860),
+    ],
+    ("boiler", "flame_ionization_current"): [
+        ("entry-1-boiler-sensor-flame_ionization_current", 91, _value, 91),
+        ("entry-1-boiler-burner", 91, lambda e: e.extra_state_attributes["ionisation_ua"], 91),
+    ],
+    ("boiler", "storage_loading_pump_level"): [
+        ("entry-1-boiler-sensor-storage_loading_pump_level", 42.4, _value, 42.4)
+    ],
+    ("boiler", "diverter_valve_position"): [
+        ("entry-1-boiler-sensor-diverter_valve_position", 30.0, _value, 30.0),
+        ("entry-1-boiler-diverter-valve", 30.0, lambda e: e.current_valve_position, 30),
+    ],
+    ("boiler", "maximum_heating_flow_temperature_setpoint"): [
+        ("entry-1-boiler-number-maximum_heating_flow_temperature_setpoint", 70, _value, 70.0)
+    ],
+    ("boiler", "maximum_dhw_flow_temperature_setpoint"): [
+        ("entry-1-boiler-number-maximum_dhw_flow_temperature_setpoint", 59, _value, 59.0)
+    ],
+    ("boiler", "heating_partial_load_power"): [
+        ("entry-1-boiler-number-heating_partial_load_power", 18.5, _value, 18.5)
+    ],
+    ("boiler", "dhw_partial_load_power"): [
+        ("entry-1-boiler-number-dhw_partial_load_power", 22.0, _value, 22.0)
+    ],
+    ("boiler", "installer_phone_number"): [
+        ("entry-1-boiler-text-installer_phone_number", "0123456", _value, "0123456")
+    ],
+    ("boiler", "service_time_remaining"): [
+        ("entry-1-boiler-sensor-service_time_remaining", 120, _value, 120)
+    ],
+    ("boiler", "central_heating_operating_time"): [
+        ("entry-1-boiler-diag-central_heating_operating_time", 13150.0, _value, 13150.0)
+    ],
+    ("boiler", "dhw_operating_time"): [("entry-1-boiler-diag-dhw_operating_time", 116.0, _value, 116.0)],
+    ("boiler", "central_heating_start_count"): [
+        ("entry-1-boiler-diag-central_heating_start_count", 64, _value, 64)
+    ],
+    ("boiler", "dhw_start_count"): [("entry-1-boiler-diag-dhw_start_count", 50, _value, 50)],
+    ("boiler", "pump_operating_time"): [("entry-1-boiler-diag-pump_operating_time", 134.0, _value, 134.0)],
+    ("boiler", "fan_operating_time"): [("entry-1-boiler-diag-fan_operating_time", 108.0, _value, 108.0)],
+    ("boiler", "fire_control_deactivation_count"): [
+        ("entry-1-boiler-diag-fire_control_deactivation_count", 52, _value, 52)
+    ],
+    ("boiler", "temperature_limiter_deactivation_count"): [
+        ("entry-1-boiler-diag-temperature_limiter_deactivation_count", 3, _value, 3)
+    ],
 }
 
-
-def test_every_renamed_field_with_an_entity_is_covered() -> None:
-    entity_free = {"functional_module_configuration_code"}
-    assert set(ENTITY_READS) | entity_free == set(NEW_NAMES)
+# Renamed fields that an optional document requests and no entity reads.
+ENTITY_FREE = {("boiler", "central_heating_pump_mode")}
 
 
-@pytest.mark.parametrize("name", sorted(ENTITY_READS))
-def test_entity_reads_the_new_field_and_ignores_the_former_one(name) -> None:  # noqa: ANN001
-    bucket, unique_id, value, read = ENTITY_READS[name]
-    former = next(row["published_name_before"] for row in ROWS if row["published_name_after"] == name)
+def test_every_requested_renamed_field_has_its_entity_read_listed() -> None:
+    requested = {(f["plane"], f["name"]) for f in REQUESTED_RENAMED}
+    assert set(ENTITY_READS) | ENTITY_FREE == requested
+    assert not set(ENTITY_READS) & ENTITY_FREE
 
-    buckets = {"state": {}, "config": {}, "properties": {}}
-    buckets[bucket] = {name: value}
-    entity = next(
-        e
-        for e in _entities(buckets["config"], buckets["state"], buckets["properties"])
-        if e._attr_unique_id == unique_id
-    )
-    assert _value(entity) == read
 
-    buckets[bucket] = {former: value}
-    entity = next(
-        e
-        for e in _entities(buckets["config"], buckets["state"], buckets["properties"])
-        if e._attr_unique_id == unique_id
-    )
-    assert _value(entity) is None
+READS = [
+    (key, *read)
+    for key, reads in sorted(ENTITY_READS.items())
+    for read in reads
+]
+
+
+@pytest.mark.parametrize("read", READS, ids=lambda r: f"{r[0][0]}.{r[0][1]}:{r[1]}")
+def test_entity_reads_the_published_field_and_ignores_the_previous_one(read) -> None:  # noqa: ANN001
+    (plane, name), unique_id, value, reader, expected = read
+    field = _field(plane, name)
+    published = _entities(plane, field["bucket"], {name: value})
+    assert _read(published, unique_id, reader) == expected
+
+    previous = _entities(plane, field["bucket"], {field["previous"]: value})
+    stale = _read(previous, unique_id, reader)
+    if reader is _bounds:
+        number = number_platform._SYSTEM_NUMBER_FIELDS
+        spec = next(f for f in number if f.mutation_field == "dhw_outdoor_bivalence_temperature_limit")
+        assert stale == (spec.minimum, spec.maximum)
+    else:
+        assert stale is None
+
+
+@pytest.mark.parametrize("field", RENAMED, ids=lambda f: f"{f['plane']}.{f['name']}")
+def test_no_entity_unique_id_carries_a_previous_published_name(field) -> None:  # noqa: ANN001
+    entities = _entities(field["plane"], field["bucket"], {field["name"]: 1})
+    for entity in entities:
+        suffix = entity._attr_unique_id.removeprefix("entry-1-")
+        assert field["previous"] not in re.split(r"-", suffix), entity._attr_unique_id

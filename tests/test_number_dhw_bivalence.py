@@ -135,8 +135,8 @@ def _set(number, value):
 ])
 def test_supplied_bound_controls_limits_and_validation(modules, minimum, maximum, source):
     number, coordinator, client, _ = _entity(modules, {
-        "dhw_bivalence_point": 0,
-        "dhw_bivalence_point_bound": _bound(minimum, maximum, source),
+        "dhw_outdoor_bivalence_temperature_limit": 0,
+        "dhw_outdoor_bivalence_temperature_limit_bound": _bound(minimum, maximum, source),
     })
     assert (number.native_min_value, number.native_max_value) == (minimum, maximum)
     for value in (minimum - 0.5, maximum + 0.5):
@@ -155,16 +155,16 @@ def test_supplied_bound_controls_limits_and_validation(modules, minimum, maximum
 
 @pytest.mark.parametrize("config", [
     {},
-    {"dhw_bivalence_point_bound": None},
-    {"dhw_bivalence_point_bound": []},
-    {"dhw_bivalence_point_bound": {}},
-    *({"dhw_bivalence_point_bound": {"min_c": -20, "max_c": 50, "source": source}}
+    {"dhw_outdoor_bivalence_temperature_limit_bound": None},
+    {"dhw_outdoor_bivalence_temperature_limit_bound": []},
+    {"dhw_outdoor_bivalence_temperature_limit_bound": {}},
+    *({"dhw_outdoor_bivalence_temperature_limit_bound": {"min_c": -20, "max_c": 50, "source": source}}
       for source in (None, "", "unknown", [], True)),
-    *({"dhw_bivalence_point_bound": {**_bound(-20, 50), key: value}}
+    *({"dhw_outdoor_bivalence_temperature_limit_bound": {**_bound(-20, 50), key: value}}
       for key in ("min_c", "max_c")
       for value in (None, "50", True, False, [], float("nan"), float("inf"), float("-inf"), 10**400)),
-    {"dhw_bivalence_point_bound": {"min_c": 30, "max_c": 20, "source": "controller_profile"}},
-    *({"dhw_bivalence_point_bound": {k: v for k, v in _bound(-20, 50).items() if k != key}}
+    {"dhw_outdoor_bivalence_temperature_limit_bound": {"min_c": 30, "max_c": 20, "source": "controller_profile"}},
+    *({"dhw_outdoor_bivalence_temperature_limit_bound": {k: v for k, v in _bound(-20, 50).items() if k != key}}
       for key in ("min_c", "max_c", "source")),
 ])
 def test_missing_or_malformed_bound_uses_conservative_fallback(modules, config):
@@ -215,14 +215,14 @@ def test_refresh_uses_same_snapshot_for_limits_and_writes(modules):
         (None, -20, 20),
     ]
     for marker, (bound, minimum, maximum) in enumerate(snapshots, 1):
-        config = {"dhw_bivalence_point": marker, "dhw_bivalence_point_bound": bound}
+        config = {"dhw_outdoor_bivalence_temperature_limit": marker, "dhw_outdoor_bivalence_temperature_limit_bound": bound}
         client.actions = _cycle(module, module.QUERY_SYSTEM, config, marker=marker)
         expected_calls = [query for query, _ in client.actions]
         client.calls = []
         coordinator.data = asyncio.run(coordinator._async_update_data())
         assert client.calls == expected_calls
         assert client.actions == []
-        assert coordinator.data["config"]["dhw_bivalence_point_bound"] == bound
+        assert coordinator.data["config"]["dhw_outdoor_bivalence_temperature_limit_bound"] == bound
         assert number.native_value == marker
         assert (number.native_min_value, number.native_max_value) == (minimum, maximum)
         assert number._attr_unique_id == identity
@@ -237,7 +237,7 @@ def test_refresh_uses_same_snapshot_for_limits_and_writes(modules):
             _set(number, maximum)
 
 
-@pytest.mark.parametrize("missing_field", ["dhw_bivalence_point_bound", "dhw_bivalence_point_bound"])
+@pytest.mark.parametrize("missing_field", ["dhw_outdoor_bivalence_temperature_limit_bound", "dhw_outdoor_bivalence_temperature_limit_bound"])
 def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, missing_field):
     module = modules.coordinator
     missing = module.GraphQLResponseError([
@@ -245,12 +245,12 @@ def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, mi
     ])
     client = _Client()
     coordinator = _system_coordinator(module, client)
-    assert "dhw_bivalence_point_bound {" in module.QUERY_SYSTEM
+    assert "dhw_outdoor_bivalence_temperature_limit_bound {" in module.QUERY_SYSTEM
     assert "min_c\n" in module.QUERY_SYSTEM and "max_c\n" in module.QUERY_SYSTEM
     assert "source\n" in module.QUERY_SYSTEM
-    assert "dhw_bivalence_point_bound" not in module.QUERY_SYSTEM_LEGACY
+    assert "dhw_outdoor_bivalence_temperature_limit_bound" not in module.QUERY_SYSTEM_LEGACY
     for marker in (1, 2):
-        config = {"dhw_bivalence_point": marker, "room_humidity_limit_maximum": 40 + marker}
+        config = {"dhw_outdoor_bivalence_temperature_limit": marker, "room_humidity_limit_maximum": 40 + marker}
         client.actions = _cycle(module, module.QUERY_SYSTEM_LEGACY, config, marker=marker)
         if marker == 1:
             client.actions.insert(0, (module.QUERY_SYSTEM, missing))
@@ -281,9 +281,9 @@ def test_transient_system_failure_does_not_mark_bound_unsupported(modules, kind)
     with pytest.raises(module.UpdateFailed):
         asyncio.run(coordinator._async_update_data())
     assert client.calls == [module.QUERY_SYSTEM]
-    client.actions = _cycle(module, module.QUERY_SYSTEM, {"dhw_bivalence_point_bound": _bound()})
+    client.actions = _cycle(module, module.QUERY_SYSTEM, {"dhw_outdoor_bivalence_temperature_limit_bound": _bound()})
     result = asyncio.run(coordinator._async_update_data())
-    assert result["config"]["dhw_bivalence_point_bound"] == _bound()
+    assert result["config"]["dhw_outdoor_bivalence_temperature_limit_bound"] == _bound()
     assert client.actions == []
 
 
@@ -291,7 +291,7 @@ def test_legacy_retry_failure_remains_failed_and_is_bounded(modules):
     module = modules.coordinator
     client = _Client([
         (module.QUERY_SYSTEM, module.GraphQLResponseError([
-            {"message": 'Cannot query field "dhw_bivalence_point_bound" on type "SystemConfig".'}
+            {"message": 'Cannot query field "dhw_outdoor_bivalence_temperature_limit_bound" on type "SystemConfig".'}
         ])),
         (module.QUERY_SYSTEM_LEGACY, module.GraphQLClientError("Synthetic transport failure")),
     ])
@@ -305,7 +305,7 @@ def test_legacy_retry_failure_remains_failed_and_is_bounded(modules):
 @pytest.mark.parametrize("trusted,last_success", [(False, True), (True, False)])
 def test_valid_bound_does_not_bypass_admission_or_availability(modules, trusted, last_success):
     number, coordinator, client, status = _entity(modules, {
-        "dhw_bivalence_point_bound": _bound(-20, 50, "unmatched_policy"),
+        "dhw_outdoor_bivalence_temperature_limit_bound": _bound(-20, 50, "unmatched_policy"),
     })
     status.data["admission"]["trusted"] = trusted
     status.last_update_success = last_success
@@ -326,7 +326,7 @@ def test_valid_bound_does_not_bypass_admission_or_availability(modules, trusted,
 ])
 def test_system_number_identity_and_other_bounds_stay_scoped(modules, entry_id, field, minimum, maximum):
     number, coordinator, client, _ = _entity(
-        modules, {"dhw_bivalence_point_bound": _bound(-3, 4)}, field=field, entry_id=entry_id
+        modules, {"dhw_outdoor_bivalence_temperature_limit_bound": _bound(-3, 4)}, field=field, entry_id=entry_id
     )
     assert number._attr_unique_id == f"{entry_id}-system-number-{field}"
     if field == "dhw_outdoor_bivalence_temperature_limit":

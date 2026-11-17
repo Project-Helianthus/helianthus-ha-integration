@@ -653,7 +653,7 @@ def test_boiler_query_returns_status_payload() -> None:
     payload = {
         "boiler_status": {
             "state": {
-                "flow_temperature_c": 63.0,
+                "flow_temperature": 63.0,
                 "return_temperature_c": None,
                 "central_heating_pump_active": True,
             },
@@ -667,7 +667,7 @@ def test_boiler_query_returns_status_payload() -> None:
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert data["boiler_status"]["state"]["flow_temperature_c"] == 63.0
+    assert data["boiler_status"]["state"]["flow_temperature"] == 63.0
     assert client.calls[0] == QUERY_BOILER
 
 
@@ -756,7 +756,7 @@ def test_system_query_returns_system_payload() -> None:
         "system": {
             "state": {
                 "water_pressure": 1.7,
-                "maintenance_due": False,
+                "maintenance_active": False,
             },
             "config": {
                 "adaptive_heating_curve_enabled": True,

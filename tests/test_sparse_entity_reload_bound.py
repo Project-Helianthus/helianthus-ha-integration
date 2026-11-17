@@ -58,8 +58,8 @@ RUNTIME_KEYS = {"HelianthusBoilerCoordinator": "boiler_coordinator",
                 "HelianthusStatusCoordinator": "status_coordinator"}
 
 
-def boiler_uid(entry_id=ENTRY, key="hours_till_service"):
-    kind = "sensor" if key == "hours_till_service" else "number"
+def boiler_uid(entry_id=ENTRY, key="service_time_remaining"):
+    kind = "sensor" if key == "service_time_remaining" else "number"
     return f"{entry_id}-boiler-{kind}-{key}"
 
 
@@ -86,7 +86,7 @@ def payload(kind, value, extra=None):
         return {"HelianthusRadioDeviceCoordinator": {
                     "radio_devices": [radio_device(value)], "radio_zone_candidates": {}},
                 "HelianthusStatusCoordinator": status_payload(None)}
-    config = {"hours_till_service": value, **(extra or {})}
+    config = {"service_time_remaining": value, **(extra or {})}
     return {"HelianthusBoilerCoordinator": {"boiler_status": {"config": config}},
             "HelianthusStatusCoordinator": status_payload(None)}
 
@@ -404,14 +404,14 @@ def test_the_public_record_reader_is_entry_scoped_and_read_only():
 
 def test_each_unique_id_of_an_entry_has_its_own_bound(paths_harness, logs):
     """A settled entity does not use up the reload of another entity of the entry."""
-    number_uid = boiler_uid(key="flowset_hc_max_c")
+    number_uid = boiler_uid(key="maximum_heating_flow_temperature_setpoint")
     bench = boiler_bench(paths_harness, disabled_by=None)
     paths_harness.entities.add(ENTRY, number_uid, domain="number")
     paths_harness.entities.async_update_entity(
         f"number.{number_uid.replace('-', '_')}", disabled_by="integration")
     alternate = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
     history = drive(paths_harness, bench, alternate[:POLLS // 2], number_uid)
-    bench.extra = {"flowset_hc_max_c": 55}
+    bench.extra = {"maximum_heating_flow_temperature_setpoint": 55}
 
     history += drive_more(paths_harness, bench, alternate[POLLS // 2:], number_uid)
 

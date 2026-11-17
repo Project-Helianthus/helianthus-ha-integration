@@ -70,7 +70,7 @@ DAEMON_STATUS_FIELDS = STATUS_FIELDS + [
 ADAPTER_STATUS_FIELDS = STATUS_FIELDS
 
 REDUCED_BOILER_TEMPERATURE_FIELDS = [
-    BoilerTemperatureField("flow_temperature_c", "Flow Temperature"),
+    BoilerTemperatureField("flow_temperature", "Flow Temperature"),
     BoilerTemperatureField("return_temperature_c", "Return Temperature"),
     BoilerTemperatureField("dhw_temperature_c", "DHW Temperature"),
     BoilerTemperatureField("dhw_storage_temperature_c", "DHW Storage Temperature"),
@@ -165,7 +165,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="outdoor_temperature_avg24h",
+        key="outdoor_temperature_daily_average",
         label="Outdoor Temperature 24h Average",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -181,7 +181,7 @@ SYSTEM_SENSOR_FIELDS = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SystemSensorField(
-        key="hwc_cylinder_temperature_top",
+        key="dhw_cylinder_top_temperature",
         label="HWC Cylinder Temperature Top",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -190,7 +190,7 @@ SYSTEM_SENSOR_FIELDS = [
         optional=True,
     ),
     SystemSensorField(
-        key="hwc_cylinder_temperature_bottom",
+        key="dhw_cylinder_bottom_temperature",
         label="HWC Cylinder Temperature Bottom",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -210,7 +210,7 @@ SYSTEM_SENSOR_FIELDS = [
 
 BOILER_STATE_SENSOR_FIELDS = [
     {
-        "key": "modulation_pct",
+        "key": "modulation_setpoint",
         "label": "Burner Modulation",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -218,7 +218,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:gas-burner",
     },
     {
-        "key": "fan_speed_rpm",
+        "key": "fan_speed",
         "label": "Burner Fan Speed",
         "native_unit": "rpm",
         "state_class": SensorStateClass.MEASUREMENT,
@@ -227,7 +227,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:fan",
     },
     {
-        "key": "ionisation_voltage_ua",
+        "key": "flame_ionization_current",
         "label": "Burner Ionisation",
         "native_unit": "uA",
         "state_class": SensorStateClass.MEASUREMENT,
@@ -236,7 +236,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:flash-triangle-outline",
     },
     {
-        "key": "storage_load_pump_pct",
+        "key": "storage_loading_pump_level",
         "label": "Hydraulics Storage Load Pump",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -244,7 +244,7 @@ BOILER_STATE_SENSOR_FIELDS = [
         "icon": "mdi:pump",
     },
     {
-        "key": "diverter_valve_position_pct",
+        "key": "diverter_valve_position",
         "label": "Hydraulics Diverter Valve Position",
         "native_unit": PERCENTAGE,
         "state_class": SensorStateClass.MEASUREMENT,
@@ -255,7 +255,7 @@ BOILER_STATE_SENSOR_FIELDS = [
 
 BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
     {
-        "key": "central_heating_hours",
+        "key": "central_heating_operating_time",
         "label": "Central Heating Hours",
         "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
@@ -263,7 +263,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "dhw_hours",
+        "key": "dhw_operating_time",
         "label": "DHW Hours",
         "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
@@ -271,7 +271,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "pump_hours",
+        "key": "pump_operating_time",
         "label": "Pump Hours",
         "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
@@ -279,7 +279,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "fan_hours",
+        "key": "fan_operating_time",
         "label": "Fan Hours",
         "device_class": SensorDeviceClass.DURATION,
         "native_unit": "h",
@@ -287,7 +287,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
     {
-        "key": "central_heating_starts",
+        "key": "central_heating_start_count",
         "label": "Central Heating Starts",
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
@@ -295,7 +295,7 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "icon": "mdi:counter",
     },
     {
-        "key": "dhw_starts",
+        "key": "dhw_start_count",
         "label": "DHW Starts",
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "entity_category": EntityCategory.DIAGNOSTIC,
@@ -303,14 +303,14 @@ BOILER_DIAGNOSTICS_SENSOR_FIELDS = [
         "icon": "mdi:counter",
     },
     {
-        "key": "deactivations_ifc",
+        "key": "fire_control_deactivation_count",
         "label": "Deactivations IFC",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,
         "icon": "mdi:counter",
     },
     {
-        "key": "deactivations_templimiter",
+        "key": "temperature_limiter_deactivation_count",
         "label": "Deactivations Temperature Limiter",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "cast_int": True,

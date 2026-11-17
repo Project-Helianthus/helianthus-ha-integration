@@ -154,7 +154,7 @@ _SYSTEM_NUMBER_FIELDS = [
     ),
     SystemNumberField(
         mutation_field="dhw_outdoor_bivalence_temperature_limit",
-        config_key="dhw_bivalence_point",
+        config_key="dhw_outdoor_bivalence_temperature_limit",
         label="DHW Bivalence Point",
         minimum=-20.0,
         maximum=20.0,
@@ -164,7 +164,7 @@ _SYSTEM_NUMBER_FIELDS = [
     ),
     SystemNumberField(
         mutation_field="heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
-        config_key="hc_emergency_temperature",
+        config_key="heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
         label="HC Emergency Temperature",
         minimum=20.0,
         maximum=80.0,
@@ -174,7 +174,7 @@ _SYSTEM_NUMBER_FIELDS = [
     ),
     SystemNumberField(
         mutation_field="dhw_flow_temperature_setpoint_maximum",
-        config_key="hwc_max_flow_temp_desired",
+        config_key="dhw_flow_temperature_setpoint_maximum",
         label="HWC Max Flow Temperature",
         minimum=15.0,
         maximum=80.0,
@@ -228,7 +228,7 @@ _CYLINDER_NUMBER_FIELDS = [
 _BOILER_NUMBER_FIELDS = [
     BoilerNumberField(
         mutation_field="maximum_heating_flow_temperature_setpoint",
-        config_key="flowset_hc_max_c",
+        config_key="maximum_heating_flow_temperature_setpoint",
         label="CH Max Flow Setpoint",
         minimum=20.0,
         maximum=80.0,
@@ -238,7 +238,7 @@ _BOILER_NUMBER_FIELDS = [
     ),
     BoilerNumberField(
         mutation_field="maximum_dhw_flow_temperature_setpoint",
-        config_key="flowset_hwc_max_c",
+        config_key="maximum_dhw_flow_temperature_setpoint",
         label="DHW Max Flow Setpoint",
         minimum=30.0,
         maximum=65.0,
@@ -248,7 +248,7 @@ _BOILER_NUMBER_FIELDS = [
     ),
     BoilerNumberField(
         mutation_field="heating_partial_load_power",
-        config_key="partload_hc_kw",
+        config_key="heating_partial_load_power",
         label="CH Partload",
         minimum=0.0,
         maximum=40.0,
@@ -258,7 +258,7 @@ _BOILER_NUMBER_FIELDS = [
     ),
     BoilerNumberField(
         mutation_field="dhw_partial_load_power",
-        config_key="partload_hwc_kw",
+        config_key="dhw_partial_load_power",
         label="DHW Partload",
         minimum=0.0,
         maximum=40.0,
@@ -640,7 +640,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
             return fallback
         payload = self.coordinator.data
         config = payload.get("config") if isinstance(payload, dict) else None
-        bound = config.get("dhw_bivalence_point_bound") if isinstance(config, dict) else None
+        bound = config.get("dhw_outdoor_bivalence_temperature_limit_bound") if isinstance(config, dict) else None
         if not isinstance(bound, dict) or bound.get("source") not in (
             "controller_profile", "unmatched_policy"
         ):

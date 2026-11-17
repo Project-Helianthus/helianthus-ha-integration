@@ -237,22 +237,22 @@ def _build_payload() -> tuple[dict, _FakeCoordinator, _FakeClient]:
             "state": {
                 "water_pressure": 1.8,
                 "outdoor_temperature": 6.2,
-                "outdoor_temperature_avg24h": 4.1,
+                "outdoor_temperature_daily_average": 4.1,
                 "flow_temperature": 48.0,
-                "hwc_cylinder_temperature_top": 46.5,
-                "hwc_cylinder_temperature_bottom": 38.0,
-                "maintenance_due": True,
+                "dhw_cylinder_top_temperature": 46.5,
+                "dhw_cylinder_bottom_temperature": 38.0,
+                "maintenance_active": True,
             },
             "config": {
                 "adaptive_heating_curve_enabled": False,
                 "heating_outdoor_bivalence_temperature_limit": -2.0,
-                "dhw_bivalence_point": 5.0,
-                "hc_emergency_temperature": 55.0,
-                "hwc_max_flow_temp_desired": 62.0,
+                "dhw_outdoor_bivalence_temperature_limit": 5.0,
+                "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault": 55.0,
+                "dhw_flow_temperature_setpoint_maximum": 62.0,
                 "room_humidity_limit_maximum": 65,
                 "maintenance_date": "2026-05-05",
                 "installer_name": "Installer",
-                "installer_phone": "+401234",
+                "installer_phone_number": "+401234",
                 "installer_access_code": 12,
             },
             "properties": {
@@ -296,10 +296,10 @@ def test_system_sensor_entities_attach_to_basv2_device() -> None:
     assert {entity._attr_unique_id for entity in system_entities} == {
         "entry-1-system-sensor-water_pressure",
         "entry-1-system-sensor-outdoor_temperature",
-        "entry-1-system-sensor-outdoor_temperature_avg24h",
+        "entry-1-system-sensor-outdoor_temperature_daily_average",
         "entry-1-system-sensor-flow_temperature",
-        "entry-1-system-sensor-hwc_cylinder_temperature_top",
-        "entry-1-system-sensor-hwc_cylinder_temperature_bottom",
+        "entry-1-system-sensor-dhw_cylinder_top_temperature",
+        "entry-1-system-sensor-dhw_cylinder_bottom_temperature",
         "entry-1-system-sensor-hydraulic_scheme_code",
     }
     pressure = next(
@@ -340,7 +340,7 @@ def test_system_binary_sensors_expose_maintenance_and_adaptive_flags() -> None:
     maintenance = next(
         entity
         for entity in system_entities
-        if entity._attr_unique_id == "entry-1-system-binary-maintenance_due"
+        if entity._attr_unique_id == "entry-1-system-binary-maintenance_active"
     )
     adaptive = next(
         entity
@@ -390,7 +390,7 @@ def test_system_writable_entities_fail_closed_when_admission_untrusted() -> None
     payload, _system_coordinator, client = _build_payload()
     payload["status_coordinator"].data["admission"]["trusted"] = False
     payload["boiler_coordinator"] = _FakeCoordinator(
-        {"boiler_status": {"config": {"phone_number": "401234", "installer_menu_code": 12}}}
+        {"boiler_status": {"config": {"installer_phone_number": "401234", "central_heating_pump_mode": 12}}}
     )
     payload["boiler_device_id"] = ("helianthus", "entry-1-bus-BAI00-08")
     hass = _FakeHass()

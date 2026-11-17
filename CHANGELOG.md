@@ -2,6 +2,81 @@
 
 ## Unreleased
 
+- Read the remaining system fields and the boiler state, configuration and
+  diagnostics fields under the names the gateway publishes, the docs-ebus
+  register names, with no alias, no fallback query of a former name and no
+  unique-ID migration. Units leave the field names and stay on the entities.
+  The system and boiler queries, their missing-field lists, the boiler
+  subscription, the sensor descriptors, the read keys of the numbers, texts,
+  binary sensors, the burner fan and the diverter valve, and the sparse
+  unique-ID patterns use the published names; the integration's copy of the
+  gateway's register-derived name table equals the gateway's file, and the
+  recorded gateway schema that every GraphQL document of the integration is
+  validated against is a new recording with these names. Nineteen entities
+  whose unique ID carried a renamed field are recreated under their new
+  unique IDs; their display names, devices, categories, units, bounds and
+  icons are unchanged. Numbers and texts keep the unique ID of their write
+  key, and the write keys are unchanged.
+
+  | Former field | Field read |
+  |---|---|
+  | `system.state.outdoor_temperature_avg24h` | `system.state.outdoor_temperature_daily_average` |
+  | `system.state.maintenance_due` | `system.state.maintenance_active` |
+  | `system.state.hwc_cylinder_temperature_top` | `system.state.dhw_cylinder_top_temperature` |
+  | `system.state.hwc_cylinder_temperature_bottom` | `system.state.dhw_cylinder_bottom_temperature` |
+  | `system.config.dhw_bivalence_point` | `system.config.dhw_outdoor_bivalence_temperature_limit` |
+  | `system.config.dhw_bivalence_point_bound` | `system.config.dhw_outdoor_bivalence_temperature_limit_bound` |
+  | `system.config.hc_emergency_temperature` | `system.config.heating_flow_temperature_setpoint_maximum_at_heat_pump_fault` |
+  | `system.config.hwc_max_flow_temp_desired` | `system.config.dhw_flow_temperature_setpoint_maximum` |
+  | `system.config.installer_phone` | `system.config.installer_phone_number` |
+  | `boiler_status.state.flow_temperature_c` | `boiler_status.state.flow_temperature` |
+  | `boiler_status.state.modulation_pct` | `boiler_status.state.modulation_setpoint` |
+  | `boiler_status.state.fan_speed_rpm` | `boiler_status.state.fan_speed` |
+  | `boiler_status.state.ionisation_voltage_ua` | `boiler_status.state.flame_ionization_current` |
+  | `boiler_status.state.storage_load_pump_pct` | `boiler_status.state.storage_loading_pump_level` |
+  | `boiler_status.state.diverter_valve_position_pct` | `boiler_status.state.diverter_valve_position` |
+  | `boiler_status.config.flowset_hc_max_c` | `boiler_status.config.maximum_heating_flow_temperature_setpoint` |
+  | `boiler_status.config.flowset_hwc_max_c` | `boiler_status.config.maximum_dhw_flow_temperature_setpoint` |
+  | `boiler_status.config.partload_hc_kw` | `boiler_status.config.heating_partial_load_power` |
+  | `boiler_status.config.partload_hwc_kw` | `boiler_status.config.dhw_partial_load_power` |
+  | `boiler_status.config.phone_number` | `boiler_status.config.installer_phone_number` |
+  | `boiler_status.config.hours_till_service` | `boiler_status.config.service_time_remaining` |
+  | `boiler_status.config.installer_menu_code` | `boiler_status.config.central_heating_pump_mode` |
+  | `boiler_status.diagnostics.central_heating_hours` | `boiler_status.diagnostics.central_heating_operating_time` |
+  | `boiler_status.diagnostics.dhw_hours` | `boiler_status.diagnostics.dhw_operating_time` |
+  | `boiler_status.diagnostics.central_heating_starts` | `boiler_status.diagnostics.central_heating_start_count` |
+  | `boiler_status.diagnostics.dhw_starts` | `boiler_status.diagnostics.dhw_start_count` |
+  | `boiler_status.diagnostics.pump_hours` | `boiler_status.diagnostics.pump_operating_time` |
+  | `boiler_status.diagnostics.fan_hours` | `boiler_status.diagnostics.fan_operating_time` |
+  | `boiler_status.diagnostics.deactivations_ifc` | `boiler_status.diagnostics.fire_control_deactivation_count` |
+  | `boiler_status.diagnostics.deactivations_templimiter` | `boiler_status.diagnostics.temperature_limiter_deactivation_count` |
+  | `boiler_status_update.state.flow_temperature_c` (subscription) | `boiler_status_update.state.flow_temperature` |
+
+  | Former unique ID (after `<entry_id>-`) | New unique ID |
+  |---|---|
+  | `system-sensor-outdoor_temperature_avg24h` | `system-sensor-outdoor_temperature_daily_average` |
+  | `system-sensor-hwc_cylinder_temperature_top` | `system-sensor-dhw_cylinder_top_temperature` |
+  | `system-sensor-hwc_cylinder_temperature_bottom` | `system-sensor-dhw_cylinder_bottom_temperature` |
+  | `system-binary-maintenance_due` | `system-binary-maintenance_active` |
+  | `boiler-flow_temperature_c` | `boiler-flow_temperature` |
+  | `boiler-sensor-modulation_pct` | `boiler-sensor-modulation_setpoint` |
+  | `boiler-sensor-fan_speed_rpm` | `boiler-sensor-fan_speed` |
+  | `boiler-sensor-ionisation_voltage_ua` | `boiler-sensor-flame_ionization_current` |
+  | `boiler-sensor-storage_load_pump_pct` | `boiler-sensor-storage_loading_pump_level` |
+  | `boiler-sensor-diverter_valve_position_pct` | `boiler-sensor-diverter_valve_position` |
+  | `boiler-sensor-hours_till_service` | `boiler-sensor-service_time_remaining` |
+  | `boiler-diag-central_heating_hours` | `boiler-diag-central_heating_operating_time` |
+  | `boiler-diag-dhw_hours` | `boiler-diag-dhw_operating_time` |
+  | `boiler-diag-pump_hours` | `boiler-diag-pump_operating_time` |
+  | `boiler-diag-fan_hours` | `boiler-diag-fan_operating_time` |
+  | `boiler-diag-central_heating_starts` | `boiler-diag-central_heating_start_count` |
+  | `boiler-diag-dhw_starts` | `boiler-diag-dhw_start_count` |
+  | `boiler-diag-deactivations_ifc` | `boiler-diag-fire_control_deactivation_count` |
+  | `boiler-diag-deactivations_templimiter` | `boiler-diag-temperature_limiter_deactivation_count` |
+
+  `system_off` keeps its published name. The integration does not rewrite
+  registry entries; an existing installation keeps the former unique IDs as
+  orphaned registry entries until they are moved outside the integration.
 - Roll back a failed config-entry setup and release every resource on unload.
   Each setup phase registers what it acquires (the eeBUS admin session,
   services and lifecycle, the coordinator and helper listeners, the

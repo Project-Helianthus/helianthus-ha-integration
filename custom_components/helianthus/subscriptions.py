@@ -66,7 +66,7 @@ SUBSCRIPTIONS = {
     subscription {
       boiler_status_update {
         state {
-          flow_temperature_c
+          flow_temperature
           return_temperature_c
           central_heating_pump_active
         }
