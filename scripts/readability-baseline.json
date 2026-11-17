@@ -134,12 +134,6 @@
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/entry_cleanup.py",
-      "symbol": "async_unload_entry",
-      "rule": "C901",
-      "count": 14
-    },
-    {
       "path": "custom_components/helianthus/entry_devices.py",
       "symbol": "select_bus_migration_target",
       "rule": "C901",
@@ -1584,18 +1578,6 @@
       "symbol": "test_all_icons_are_mdi_prefixed",
       "rule": "C901",
       "count": 22
-    },
-    {
-      "path": "tests/test_entry_cleanup_retry_isolation.py",
-      "symbol": "test_unload_retry_cleans_only_target_once",
-      "rule": "C901",
-      "count": 12
-    },
-    {
-      "path": "tests/test_entry_cleanup_retry_isolation.py",
-      "symbol": "test_unload_retry_cleans_only_target_once",
-      "rule": "PLR0915",
-      "count": 63
     },
     {
       "path": "tests/test_evse_binding_single_faults.py",
