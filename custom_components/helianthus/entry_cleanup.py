@@ -69,11 +69,16 @@ class EntryResources:
         try:
             unloaded = await hass.config_entries.async_unload_platforms(entry, platforms)
         except BaseException:
-            self.platforms_unloaded()
+            # An unload that raised or was cancelled is not confirmed: the
+            # platforms may still use every older resource.
+            self._retain_platforms()
             raise
         if unloaded:
             self.platforms_unloaded()
             return
+        self._retain_platforms()
+
+    def _retain_platforms(self) -> None:
         # The platforms are still loaded and still use every older resource:
         # stop the release here and keep the platforms and those resources
         # owned, the platforms on top, for the next release.
@@ -84,7 +89,7 @@ class EntryResources:
         )
         self._stack = retained
         _LOGGER.warning(
-            "Helianthus platforms of entry %s did not unload during release; "
+            "Helianthus platforms of entry %s were not confirmed unloaded during release; "
             "keeping the resources they use until the next release",
             self.entry_id,
         )
@@ -107,9 +112,9 @@ class EntryResources:
         A release that fails is logged and the later ones still run. A
         cancellation is not caught: the remaining releases still run, then it
         propagates. The stack is empty afterwards, so a second call releases
-        nothing. A forwarded-platform unload that returns ``False`` stops the
-        release there: ``platforms_retained`` is set and the platforms and the
-        older resources stay registered for the next call.
+        nothing. A forwarded-platform unload that returns ``False``, raises or
+        is cancelled stops the release there: ``platforms_retained`` is set and
+        the platforms and the older resources stay registered for the next call.
         """
         try:
             await self._stack.aclose()

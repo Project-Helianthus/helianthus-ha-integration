@@ -218,14 +218,19 @@ When a phase raises an exception or the setup is cancelled, the setup:
    including the `ConfigEntryNotReady` of a failed first coordinator refresh
    and a `GraphQLResponseError`, and every cancellation propagates unchanged.
 
-When the rollback's platform unload returns `False`, the platforms are still
-loaded and still use the older resources: the rollback stops there. The
-platforms, the older resources and the published runtime stay on the entry,
-a warning is logged and the primary error still propagates. The next setup of
-the entry releases them first, platforms first, before it acquires anything;
-while the platforms still refuse to unload, that setup raises
+When the rollback's platform unload returns `False`, raises or is cancelled,
+the platforms are not confirmed unloaded and may still use the older
+resources: the rollback stops there. The platforms, the older resources and
+the published runtime stay on the entry, a warning is logged and the primary
+error (or the cancellation) still propagates. The next setup of the entry
+releases them first, platforms first, before it acquires anything; while the
+platforms still are not confirmed unloaded, that setup raises
 `ConfigEntryNotReady` and acquires nothing, so the platforms are never set up
-a second time over loaded ones.
+a second time over loaded ones. When the platforms do unload but releasing
+one of the kept older resources fails, every other kept resource is still
+released, the runtime is withdrawn and that setup raises the first release
+failure and acquires nothing, so no replacement is acquired beside a resource
+whose release failed.
 
 A release that fails during the rollback is logged and does not replace the
 primary error. A cancellation that arrives during the rollback still lets the

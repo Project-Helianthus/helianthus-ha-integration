@@ -98,6 +98,8 @@ class Bench:
                                      async_on_unload=lambda unsub: None)
         self.counts = {"synthetic-entry": 1, "synthetic-other": 4}
         self.unload_result = True
+        # Raised by the platform unload, after it was recorded, when set.
+        self.unload_error: BaseException | None = None
         # Raised by the coordinator listener or schedule helper registration
         # after it has added its first listener.
         self.register_failure: BaseException | None = None
@@ -146,6 +148,8 @@ class Bench:
     async def unload_platforms(self, entry, platforms) -> bool:
         assert entry is self.entry and list(platforms) == PLATFORMS
         self.release("unload-platforms")
+        if self.unload_error is not None:
+            raise self.unload_error
         return self.unload_result
 
     # -- the real admin boundary on synthetic eeBUS doubles -----------------
@@ -588,3 +592,67 @@ def test_platforms_still_loaded_at_the_next_setup_raise_not_ready(monkeypatch):
     bench.unload_result = True
     assert bench.setup() is True
     assert bench.released == [*refused, "unload-platforms", "unload-platforms", *kept]
+
+
+@pytest.mark.parametrize("make_error", (
+    lambda: RuntimeError("synthetic platform unload failure"),
+    lambda: asyncio.CancelledError("synthetic platform unload cancellation"),
+), ids=("error", "cancelled"))
+def test_rollback_platform_unload_that_raises_keeps_what_the_platforms_use(
+    monkeypatch, make_error
+):
+    """An unload that raised or was cancelled is not confirmed: it is handled like ``False``.
+
+    Releasing the older resources after it, or withdrawing the runtime, leaves
+    loaded platforms on closed resources and lets the next setup duplicate
+    them; each fails one assertion.
+    """
+    primary = RuntimeError("synthetic setup failure")
+    bench = Bench(monkeypatch, after="snapshot", primary=primary)
+    bench.unload_error = make_error()
+    expected = primary if isinstance(bench.unload_error, Exception) else bench.unload_error
+    with pytest.raises(type(expected)) as caught:
+        bench.setup()
+    assert caught.value is expected
+    refused, kept = split_at_platform_unload("snapshot")
+    assert bench.released == refused
+    runtime = bench.entry.runtime_data
+    assert runtime.resources.platforms_retained
+
+    bench.after, bench.unload_error = None, None
+    reached = len(bench.reached)
+    assert bench.setup() is True
+    assert bench.released == [*refused, "unload-platforms", *kept]
+    assert bench.reached[reached:] == list(PHASE_NAMES)
+    assert bench.entry.runtime_data is not runtime
+
+
+@pytest.mark.parametrize("failing", CLOSES[1:])
+def test_a_failing_release_of_kept_resources_stops_the_next_setup(monkeypatch, failing):
+    """The kept platforms unload but one kept close fails: the next setup acquires nothing.
+
+    Every other kept resource is still released once, the runtime is
+    withdrawn and the release failure propagates; a setup that went on would
+    acquire a replacement beside the resource whose close failed.
+    """
+    bench = Bench(monkeypatch, after="snapshot", primary=RuntimeError("synthetic failure"))
+    bench.unload_result = False
+    with pytest.raises(RuntimeError):
+        bench.setup()
+    refused, kept = split_at_platform_unload("snapshot")
+
+    bench.after, bench.unload_result, bench.failing = None, True, {failing}
+    reached = len(bench.reached)
+    with pytest.raises(RuntimeError) as caught:
+        bench.setup()
+    assert caught.value is bench.release_errors[failing]
+    assert bench.released == [*refused, "unload-platforms", *kept]
+    assert bench.reached[reached:] == []
+    assert not hasattr(bench.entry, "runtime_data")
+
+    # Nothing is kept any more: the following setup proceeds and releases
+    # nothing of the earlier one a second time.
+    bench.failing = set()
+    assert bench.setup() is True
+    assert bench.reached[reached:] == list(PHASE_NAMES)
+    assert bench.released == [*refused, "unload-platforms", *kept]

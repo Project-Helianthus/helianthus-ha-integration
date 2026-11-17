@@ -441,9 +441,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
     newest first, withdraws the runtime this setup published and propagates
     the primary error; a release failure is logged and does not replace it. A
     gateway connection failure is raised as ``ConfigEntryNotReady``. When the
-    rollback cannot unload the forwarded platforms, the platforms, the older
-    resources and the published runtime are kept; the next setup releases
-    them first and raises ``ConfigEntryNotReady`` while they stay loaded.
+    rollback cannot confirm the forwarded platforms unloaded, the platforms,
+    the older resources and the published runtime are kept; the next setup
+    releases them first, raises ``ConfigEntryNotReady`` while they stay loaded
+    and raises the first release failure instead of setting up again.
     """
     await _async_release_retained_setup(entry)
     resources = EntryResources(entry.entry_id)
@@ -463,23 +464,28 @@ async def _async_release_retained_setup(entry: object) -> None:
     resources = getattr(getattr(entry, "runtime_data", None), "resources", None)
     if resources is None or not resources.platforms_retained:
         return
-    await _async_roll_back(entry, resources)
+    error = await _async_roll_back(entry, resources)
     if resources.platforms_retained:
         from homeassistant.exceptions import ConfigEntryNotReady
 
         raise ConfigEntryNotReady(
             "Helianthus platforms of an earlier failed setup are still loaded"
         )
+    if error is not None:
+        # A kept resource whose release failed may still be open: acquiring a
+        # replacement now could duplicate it.
+        raise error
 
 
-async def _async_roll_back(entry: object, resources: EntryResources) -> None:
+async def _async_roll_back(entry: object, resources: EntryResources) -> Exception | None:
     """Release what a failed setup acquired, then withdraw the runtime it published.
 
-    A refused platform unload keeps the runtime published, with the platforms
-    and the resources they use, for the next setup to release.
+    Return the first release failure. A platform unload that is not confirmed
+    keeps the runtime published, with the platforms and the resources they
+    use, for the next setup to release.
     """
     try:
-        await resources.async_release()
+        return await resources.async_release()
     finally:
         if resources.platforms_retained:
             _LOGGER.warning(
