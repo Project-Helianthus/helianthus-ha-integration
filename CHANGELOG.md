@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The status update and the zones update choose one query from the paths
+  discovery recorded for the connection. When every status path is present,
+  the status update sends the full status query once and reads admission
+  from the payload. When a status path is absent, it sends the shorter
+  status query once and marks admission untrusted. A rejected status field
+  fails that update. When every zones path is present, the zones update
+  sends its one query. When a zones path is absent, the update returns no
+  zones and no hot water, and one warning names the path. A later poll does
+  not warn again. A rejected zones field fails that update.
+
 - After the gateway connection is up, setup reads the query schema once and
   builds the dotted field paths of the query root. A domain whose query needs
   a path the schema does not offer is unavailable for that connection: setup

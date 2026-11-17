@@ -85,9 +85,9 @@ def test_documents_match_bounded_gateway_contract():
     _document(SEMANTIC_SNAPSHOT_QUERY)
     assert "semantic_snapshot(asset_ids: $asset_ids)" in SEMANTIC_SNAPSHOT_QUERY
     assert "asset_id" in SEMANTIC_SNAPSHOT_QUERY
-    assert "zone_room_temperature" in coordinator.QUERY_SEMANTIC
-    assert "zone_room_humidity" in coordinator.QUERY_SEMANTIC
-    assert "target_temp_c" in coordinator.QUERY_SEMANTIC
+    assert "zone_room_temperature" in coordinator.QUERY_SEMANTIC_PROMOTED
+    assert "zone_room_humidity" in coordinator.QUERY_SEMANTIC_PROMOTED
+    assert "target_temp_c" in coordinator.QUERY_SEMANTIC_PROMOTED
 
 
 @pytest.mark.parametrize("old", ["semanticSnapshot", "assetIds", "assetId"])

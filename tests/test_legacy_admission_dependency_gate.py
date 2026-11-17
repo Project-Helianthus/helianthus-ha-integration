@@ -156,12 +156,24 @@ def _write_source_offenders(paths: list[Path]) -> tuple[list[str], list[str]]:
     return checked, offenders
 
 
+def _query_names(path: Path) -> set[str]:
+    names: set[str] = set()
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id.startswith("QUERY_"):
+                names.add(target.id)
+    return names
+
+
 def test_source_selection_schema_no_legacy_admission_fields() -> None:
-    for query_name in ("QUERY_STATUS", "QUERY_STATUS_NO_INITIATOR"):
-        query = _constant_string_assignment(COORDINATOR, query_name)
-        assert "bus_admission" in query
-        assert "source_selection" in query
-        assert all(token not in query for token in LEGACY_ADMISSION_TOKENS)
+    assert _query_names(COORDINATOR) == {"QUERY_STATUS", "QUERY_STATUS_MINIMAL"}
+    query = _constant_string_assignment(COORDINATOR, "QUERY_STATUS")
+    assert "bus_admission" in query
+    assert "source_selection" in query
+    assert all(token not in query for token in LEGACY_ADMISSION_TOKENS)
 
     minimal_query = _constant_string_assignment(COORDINATOR, "QUERY_STATUS_MINIMAL")
     assert "bus_admission" not in minimal_query

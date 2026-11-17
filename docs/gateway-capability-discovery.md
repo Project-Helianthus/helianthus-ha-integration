@@ -37,6 +37,41 @@ Hypothesis: the reload runs setup again, which reads the schema once for the
 new connection. This document does not claim the reloaded schema matches the
 rejection.
 
+## Service status
+
+The status coordinator sends one status query. The paths come from the
+caller, or from the paths discovery recorded for that client. See
+[`coordinator_status.py`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_status.py)
+and
+[`entry_coordinators.py`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/entry_coordinators.py).
+
+Proven: when every path of the full status query is present, or when no
+paths were recorded, that query is sent once and admission is read from the
+payload. When any of those paths is absent, the shorter status query is sent
+once and admission is untrusted, with repair code `schema_incompatible`. A
+rejected field or a transport error fails that update. No second query is
+sent.
+
+Hypothesis: a connection that finished discovery does not take the shorter
+query, because setup refuses a schema that omits a domain path. The tests
+do not run that refusal and the status update as one setup.
+
+## Zones and hot water
+
+The zones coordinator sends one zones query when every path of that query is
+present. See
+[`coordinator_semantic.py`](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_semantic.py).
+
+Proven: a missing path leaves the domain absent. The update returns no zones
+and no hot water, and one warning says the domain is unavailable and names
+the path. A later poll does not warn again and does not send the query. A
+rejected field fails the update. A transport error keeps the last zones for
+the retention window this coordinator already uses.
+
+Hypothesis: an entry that reaches this coordinator has already passed
+discovery, so a current connection offers every path and the one zones query
+is the query sent.
+
 ## Evidence labels
 
 Proven is behavior established by the implementation and its tests. It is not
