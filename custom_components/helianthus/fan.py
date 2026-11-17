@@ -288,7 +288,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
     def is_on(self) -> bool | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        value = state.get("pump_active")
+        value = state.get("circuit_pump_unknown_8")
         if isinstance(value, bool):
             return value
         return None

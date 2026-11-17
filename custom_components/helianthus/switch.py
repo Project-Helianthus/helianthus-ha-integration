@@ -129,7 +129,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     def is_on(self) -> bool | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
-        value = config.get("cooling_enabled")
+        value = config.get("circuit_cooling_enabled")
         if isinstance(value, bool):
             return value
         return None

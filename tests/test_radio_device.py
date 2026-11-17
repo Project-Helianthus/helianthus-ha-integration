@@ -454,7 +454,7 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                     {
                         "id": "zone-1",
                         "name": "Living",
-                        "state": {"current_temp_c": 20.0},
+                        "state": {"zone_room_temperature": 20.0},
                         "config": {
                             "operating_mode": "auto",
                             "room_temperature_zone_mapping": 2,
@@ -464,7 +464,7 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                     {
                         "id": "zone-2",
                         "name": "Etaj",
-                        "state": {"current_temp_c": 19.0},
+                        "state": {"zone_room_temperature": 19.0},
                         "config": {"room_temperature_zone_mapping": 3},
                     },
                 ],
@@ -489,7 +489,7 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
                     "data": {
                         "zone_update": {
                             "id": "zone-1",
-                            "state": {"current_temp_c": 21.5},
+                            "state": {"zone_room_temperature": 21.5},
                         }
                     }
                 },
@@ -503,7 +503,7 @@ def test_subscription_merges_sparse_zone_update_without_losing_config_or_list_en
 
     assert semantic.data["zones"][0] == "legacy-slot"
     merged_zone = semantic.data["zones"][1]
-    assert merged_zone["state"]["current_temp_c"] == 21.5
+    assert merged_zone["state"]["zone_room_temperature"] == 21.5
     assert merged_zone["config"]["room_temperature_zone_mapping"] == 2
     assert merged_zone["config"]["target_temp_c"] == 21.0
     assert semantic.data["zones"][2]["id"] == "zone-2"
@@ -517,12 +517,12 @@ def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:
                 "zones": [],
                 "dhw": {
                     "state": {
-                        "current_temp_c": 47.0,
-                        "special_function": "off",
+                        "dhw_temperature": 47.0,
+                        "dhw_special_function_mode": "off",
                     },
                     "config": {
-                        "operating_mode": "auto",
-                        "target_temp_c": 50.0,
+                        "dhw_operating_mode": "auto",
+                        "dhw_temperature_setpoint": 50.0,
                     },
                 },
             }
@@ -542,7 +542,7 @@ def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:
                 "payload": {
                     "data": {
                         "dhw_update": {
-                            "state": {"current_temp_c": 49.0},
+                            "state": {"dhw_temperature": 49.0},
                         }
                     }
                 },
@@ -554,10 +554,10 @@ def test_subscription_merges_sparse_dhw_update_without_losing_config() -> None:
         )
     )
 
-    assert semantic.data["dhw"]["state"]["current_temp_c"] == 49.0
-    assert semantic.data["dhw"]["state"]["special_function"] == "off"
-    assert semantic.data["dhw"]["config"]["operating_mode"] == "auto"
-    assert semantic.data["dhw"]["config"]["target_temp_c"] == 50.0
+    assert semantic.data["dhw"]["state"]["dhw_temperature"] == 49.0
+    assert semantic.data["dhw"]["state"]["dhw_special_function_mode"] == "off"
+    assert semantic.data["dhw"]["config"]["dhw_operating_mode"] == "auto"
+    assert semantic.data["dhw"]["config"]["dhw_temperature_setpoint"] == 50.0
 
 
 def test_radio_zone_candidates_update_on_reassignment() -> None:

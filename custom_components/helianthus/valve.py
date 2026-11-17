@@ -230,7 +230,7 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     def current_valve_position(self) -> int | None:
         circuit = self._circuit()
         state = circuit.get("state") if isinstance(circuit.get("state"), dict) else {}
-        return _coerce_position(state.get("mixer_position_pct"))
+        return _coerce_position(state.get("circuit_mixer_position"))
 
 
 class HelianthusZoneValve(HelianthusReadOnlyValve):
@@ -288,4 +288,4 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
     def current_valve_position(self) -> int | None:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        return _coerce_position(state.get("valve_position_pct"))
+        return _coerce_position(state.get("zone_valve_position"))

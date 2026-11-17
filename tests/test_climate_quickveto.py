@@ -236,9 +236,9 @@ def _make_entity(
         "quick_veto": qv_active,
     }
     if qv_setpoint is not None:
-        config["quick_veto_setpoint"] = qv_setpoint
+        config["zone_room_temperature_setpoint_at_quick_veto"] = qv_setpoint
     if qv_duration is not None:
-        config["quick_veto_duration"] = qv_duration
+        config["zone_quick_veto_time"] = qv_duration
     zone_data = {
         "zones": [
             {
@@ -516,6 +516,89 @@ def test_extra_state_attributes_omit_quick_veto_when_absent() -> None:
 
     assert "quick_veto_setpoint_c" not in attrs
     assert "quick_veto_duration_h" not in attrs
+
+
+# Attribute -> (bucket, published field, previous published name, value).
+ZONE_ATTRIBUTE_READS = {
+    "special_function": ("state", "zone_special_function_mode", "special_function", "veto"),
+    "valve_position_pct": ("state", "zone_valve_position", "valve_position_pct", 42.0),
+    "quick_veto_setpoint_c": (
+        "config", "zone_room_temperature_setpoint_at_quick_veto", "quick_veto_setpoint", 22.5
+    ),
+    "quick_veto_duration_h": ("config", "zone_quick_veto_time", "quick_veto_duration", 2.5),
+    "holiday_start_date": ("config", "zone_holiday_start_date", "holiday_start_date", "2026-12-20"),
+    "holiday_end_date": ("config", "zone_holiday_end_date", "holiday_end_date", "2026-12-27"),
+    "holiday_setpoint_c": (
+        "config", "zone_room_temperature_setpoint_at_holiday", "holiday_setpoint", 12.0
+    ),
+    "holiday_start_time": ("config", "zone_holiday_start_clock_time", "holiday_start_time", "08:30"),
+    "holiday_end_time": ("config", "zone_holiday_end_clock_time", "holiday_end_time", "18:45"),
+}
+
+
+@pytest.mark.parametrize("attribute", sorted(ZONE_ATTRIBUTE_READS))
+def test_zone_attribute_reads_the_published_field_of_its_zone_and_bucket(attribute: str) -> None:
+    bucket, published, previous, value = ZONE_ATTRIBUTE_READS[attribute]
+    other = "config" if bucket == "state" else "state"
+
+    def attributes(zone_bucket: str, field: str, zone_id: str = "zone-1") -> dict:
+        entity, _client, coordinator = _make_entity(qv_setpoint=None, qv_duration=None)
+        zone = coordinator.data["zones"][0]
+        if zone_id != "zone-1":
+            zone = {"id": zone_id, "name": "Office", "state": {}, "config": {}}
+            coordinator.data["zones"].append(zone)
+        zone[zone_bucket][field] = value
+        return entity.extra_state_attributes
+
+    assert attributes(bucket, published)[attribute] == value
+    # The previous name, the other bucket and another zone leave the attribute out.
+    assert attribute not in attributes(bucket, previous)
+    assert attribute not in attributes(other, published)
+    assert attribute not in attributes(bucket, published, zone_id="zone-2")
+
+
+def _write_payload(client: _FakeClient, addr: int) -> list[int]:
+    writes = [_extract_data(call) for call in client.calls if _extract_addr(call) == addr]
+    assert len(writes) == 1, addr
+    return writes[0]
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [("zone_room_temperature_setpoint_at_holiday", 12.0), ("holiday_setpoint", 10.0)],
+)
+def test_away_preset_writes_the_published_holiday_setpoint(field: str, expected: float) -> None:
+    entity, client, coordinator = _make_entity()
+    coordinator.data["zones"][0]["config"][field] = 12.0
+
+    asyncio.run(entity.async_set_preset_mode("away"))
+
+    holiday_setpoint_addr = sys.modules[type(entity).__module__]._ZONE_HOLIDAY_SETPOINT_ADDR
+    assert _write_payload(client, holiday_setpoint_addr) == list(struct.pack("<f", expected))
+
+
+@pytest.mark.parametrize(
+    ("field", "cancels"),
+    [
+        ("zone_holiday_start_date", True),
+        ("zone_holiday_end_date", True),
+        ("holiday_start_date", False),
+        ("holiday_end_date", False),
+    ],
+)
+def test_schedule_preset_cancels_a_holiday_named_by_the_published_dates(field: str, cancels: bool) -> None:
+    entity, client, coordinator = _make_entity()
+    coordinator.data["zones"][0]["config"][field] = "2026-12-20"
+
+    asyncio.run(entity.async_set_preset_mode("schedule"))
+
+    climate_module = sys.modules[type(entity).__module__]
+    holiday_addrs = {
+        climate_module._ZONE_HOLIDAY_START_DATE_ADDR,
+        climate_module._ZONE_HOLIDAY_END_DATE_ADDR,
+    }
+    written = {_extract_addr(call) for call in client.calls}
+    assert (holiday_addrs <= written) is cancels
 
 
 def test_u09_real_write_fences_survive_import_scope_teardown() -> None:

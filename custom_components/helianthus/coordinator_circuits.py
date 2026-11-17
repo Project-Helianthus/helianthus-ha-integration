@@ -24,24 +24,24 @@ query Circuits {
       address
     }
     state {
-      pump_active
-      mixer_position_pct
-      flow_temperature_c
-      flow_setpoint_c
+      circuit_pump_unknown_8
+      circuit_mixer_position
+      circuit_flow_temperature
+      circuit_flow_temperature_setpoint
       calc_flow_temp_c
       circuit_state
-      humidity
-      dew_point
-      pump_hours
-      pump_starts
+      circuit_room_humidity
+      circuit_dew_point_temperature
+      circuit_pump_operating_time_total
+      circuit_pump_start_count_total
     }
     config {
-      heating_curve
-      flow_temp_max_c
-      flow_temp_min_c
-      summer_limit_c
-      room_temp_control
-      cooling_enabled
+      circuit_heating_curve_factor
+      heating_circuit_flow_temperature_setpoint_maximum
+      circuit_flow_temperature_setpoint_minimum
+      heating_circuit_outdoor_temperature_limit_maximum
+      circuit_room_temperature_influence_mode
+      circuit_cooling_enabled
     }
   }
 }
@@ -73,22 +73,22 @@ class HelianthusCircuitCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "has_mixer",
                     "state",
                     "config",
-                    "pump_active",
-                    "mixer_position_pct",
-                    "flow_temperature_c",
-                    "flow_setpoint_c",
+                    "circuit_pump_unknown_8",
+                    "circuit_mixer_position",
+                    "circuit_flow_temperature",
+                    "circuit_flow_temperature_setpoint",
                     "calc_flow_temp_c",
                     "circuit_state",
-                    "humidity",
-                    "dew_point",
-                    "pump_hours",
-                    "pump_starts",
-                    "heating_curve",
-                    "flow_temp_max_c",
-                    "flow_temp_min_c",
-                    "summer_limit_c",
-                    "room_temp_control",
-                    "cooling_enabled",
+                    "circuit_room_humidity",
+                    "circuit_dew_point_temperature",
+                    "circuit_pump_operating_time_total",
+                    "circuit_pump_start_count_total",
+                    "circuit_heating_curve_factor",
+                    "heating_circuit_flow_temperature_setpoint_maximum",
+                    "circuit_flow_temperature_setpoint_minimum",
+                    "heating_circuit_outdoor_temperature_limit_maximum",
+                    "circuit_room_temperature_influence_mode",
+                    "circuit_cooling_enabled",
                 ],
             ):
                 return {"circuits": []}

@@ -108,14 +108,14 @@ def _payload(*, boiler_device_id: tuple[str, str] | None, position: float | None
                     {
                         "index": 0,
                         "has_mixer": True,
-                        "state": {"mixer_position_pct": 42.0},
+                        "state": {"circuit_mixer_position": 42.0},
                         "config": {},
                     }
                 ]
             }
         ),
         "semantic_coordinator": _FakeCoordinator(
-            {"zones": [{"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 73.4}}], "dhw": None}
+            {"zones": [{"id": "zone-1", "name": "Living", "state": {"zone_valve_position": 73.4}}], "dhw": None}
         ),
         "boiler_coordinator": _FakeCoordinator(
             {"boiler_status": {"state": {"diverter_valve_position": position}}}
@@ -146,3 +146,20 @@ def test_async_setup_entry_keeps_valve_platform_empty_without_physical_bai00() -
     asyncio.run(valve_platform.async_setup_entry(hass, entry, entities.extend))
 
     assert entities == []
+
+
+def test_zone_valve_reads_the_published_position_of_its_zone() -> None:
+    def position(zone_id: str, state: dict) -> int | None:
+        coordinator = _FakeCoordinator({"zones": [{"id": zone_id, "state": state}], "dhw": None})
+        valve = valve_platform.HelianthusZoneValve(
+            coordinator=coordinator,
+            entry_id="entry-1",
+            manufacturer="Vaillant",
+            zone_id="zone-1",
+            initial_name="Living",
+        )
+        return valve.current_valve_position
+
+    assert position("zone-1", {"zone_valve_position": 73.4}) == 73
+    assert position("zone-1", {"valve_position_pct": 73.4}) is None
+    assert position("zone-2", {"zone_valve_position": 73.4}) is None

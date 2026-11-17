@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+- Read the heating circuit, zone and hot-water state and configuration fields
+  under the names the gateway publishes, the docs-ebus register names, with no
+  alias, no fallback query of a former name and no unique-ID migration. Units
+  leave the field names and stay on the entities. The circuit query and its
+  missing-field list, the zone and hot-water queries, their step-down field
+  lists and subscriptions, the circuit sensor descriptors and the read keys of
+  the circuit numbers, the room temperature control select, the mixing valve,
+  the circuit pump binary sensor, the circuit pump fan, the cooling switch, the
+  zone climate, the zone valve sensors and valve, the hot-water heater and the
+  hot-water status sensor use the published names; the integration's copies of
+  the gateway's register-derived name table, its GraphQL schema and its
+  circuit snapshot equal the gateway's files. Nine entities whose unique ID
+  carried a renamed field are recreated under their new unique IDs; their
+  display names, state attribute names, devices, categories, units, bounds and
+  icons are unchanged. The numbers, the select and the cooling switch keep the
+  unique ID of their write key, and the write keys are unchanged.
+  `calc_flow_temp_c`, `circuit_state` and the derived zone and hot-water fields
+  (among them the zone `operating_mode`, `preset` and `target_temp_c`) keep
+  their names.
+
+  | Former field | Field read |
+  |---|---|
+  | `circuits.state.pump_active` | `circuits.state.circuit_pump_unknown_8` |
+  | `circuits.state.mixer_position_pct` | `circuits.state.circuit_mixer_position` |
+  | `circuits.state.flow_temperature_c` | `circuits.state.circuit_flow_temperature` |
+  | `circuits.state.flow_setpoint_c` | `circuits.state.circuit_flow_temperature_setpoint` |
+  | `circuits.state.humidity` | `circuits.state.circuit_room_humidity` |
+  | `circuits.state.dew_point` | `circuits.state.circuit_dew_point_temperature` |
+  | `circuits.state.pump_hours` | `circuits.state.circuit_pump_operating_time_total` |
+  | `circuits.state.pump_starts` | `circuits.state.circuit_pump_start_count_total` |
+  | `circuits.config.heating_curve` | `circuits.config.circuit_heating_curve_factor` |
+  | `circuits.config.flow_temp_max_c` | `circuits.config.heating_circuit_flow_temperature_setpoint_maximum` |
+  | `circuits.config.flow_temp_min_c` | `circuits.config.circuit_flow_temperature_setpoint_minimum` |
+  | `circuits.config.summer_limit_c` | `circuits.config.heating_circuit_outdoor_temperature_limit_maximum` |
+  | `circuits.config.room_temp_control` | `circuits.config.circuit_room_temperature_influence_mode` |
+  | `circuits.config.cooling_enabled` | `circuits.config.circuit_cooling_enabled` |
+  | `zones.state.special_function` | `zones.state.zone_special_function_mode` |
+  | `zones.state.valve_position_pct` | `zones.state.zone_valve_position` |
+  | `zones.config.quick_veto_setpoint` | `zones.config.zone_room_temperature_setpoint_at_quick_veto` |
+  | `zones.config.quick_veto_duration` | `zones.config.zone_quick_veto_time` |
+  | `zones.config.holiday_start_date` | `zones.config.zone_holiday_start_date` |
+  | `zones.config.holiday_end_date` | `zones.config.zone_holiday_end_date` |
+  | `zones.config.holiday_setpoint` | `zones.config.zone_room_temperature_setpoint_at_holiday` |
+  | `zones.config.holiday_start_time` | `zones.config.zone_holiday_start_clock_time` |
+  | `zones.config.holiday_end_time` | `zones.config.zone_holiday_end_clock_time` |
+  | `dhw.state.current_temp_c` | `dhw.state.dhw_temperature` |
+  | `dhw.state.special_function` | `dhw.state.dhw_special_function_mode` |
+  | `dhw.config.operating_mode` | `dhw.config.dhw_operating_mode` |
+  | `dhw.config.target_temp_c` | `dhw.config.dhw_temperature_setpoint` |
+  | `dhw.config.holiday_start_date` | `dhw.config.dhw_holiday_start_date` |
+  | `dhw.config.holiday_end_date` | `dhw.config.dhw_holiday_end_date` |
+
+  | Former unique ID (after `<entry_id>-`) | New unique ID |
+  |---|---|
+  | `circuit-<index>-binary-pump_active` | `circuit-<index>-binary-circuit_pump_unknown_8` |
+  | `circuit-<index>-sensor-flow_temperature_c` | `circuit-<index>-sensor-circuit_flow_temperature` |
+  | `circuit-<index>-sensor-flow_setpoint_c` | `circuit-<index>-sensor-circuit_flow_temperature_setpoint` |
+  | `circuit-<index>-sensor-mixer_position_pct` | `circuit-<index>-sensor-circuit_mixer_position` |
+  | `circuit-<index>-sensor-humidity` | `circuit-<index>-sensor-circuit_room_humidity` |
+  | `circuit-<index>-sensor-dew_point` | `circuit-<index>-sensor-circuit_dew_point_temperature` |
+  | `circuit-<index>-sensor-pump_hours` | `circuit-<index>-sensor-circuit_pump_operating_time_total` |
+  | `circuit-<index>-sensor-pump_starts` | `circuit-<index>-sensor-circuit_pump_start_count_total` |
+  | `zone-<zone_id>-sensor-valve_position_pct` | `zone-<zone_id>-sensor-zone_valve_position` |
+
+  The integration does not rewrite registry entries; an existing installation
+  keeps the former unique IDs as orphaned registry entries until they are
+  moved outside the integration.
 - Read the remaining system fields and the boiler state, configuration and
   diagnostics fields under the names the gateway publishes, the docs-ebus
   register names, with no alias, no fallback query of a former name and no

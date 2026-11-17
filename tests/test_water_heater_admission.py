@@ -89,7 +89,7 @@ class _FakeCoordinator:
         self.data = {
             "dhw": {
                 "state": {},
-                "config": {"target_temp_c": 50.0, "operating_mode": "auto"},
+                "config": {"dhw_temperature_setpoint": 50.0, "dhw_operating_mode": "auto"},
             }
         }
         self.dhw_is_stale = False
@@ -157,8 +157,8 @@ def test_water_heater_write_omits_source_parameter() -> None:
 def test_water_heater_promoted_metadata_preserves_false_zero_and_nil() -> None:
     entity, _client = _make_entity()
     entity.coordinator.data["dhw"] = {
-        "state": {"current_temp_c": 0.0, "overrun_active": False},
-        "config": {"target_temp_c": 0.0, "operation_mode_changeable": False},
+        "state": {"dhw_temperature": 0.0, "overrun_active": False},
+        "config": {"dhw_temperature_setpoint": 0.0, "operation_mode_changeable": False},
     }
 
     assert entity.current_temperature == 0.0
@@ -265,3 +265,35 @@ def test_water_heater_setup_refreshes_state_on_admission_updates(monkeypatch: py
     assert writes == ["entry-1-dhw"]
     assert len(status.listeners) == 1
     assert len(payload["unsub_listeners"]) == 1
+
+
+# Reader -> (bucket, published field, previous published name, value, value read).
+DHW_READS = {
+    "current_temperature": ("state", "dhw_temperature", "current_temp_c", 47.5, 47.5),
+    "target_temperature": ("config", "dhw_temperature_setpoint", "target_temp_c", 52.0, 52.0),
+    "current_operation": ("config", "dhw_operating_mode", "operating_mode", "manual", "manual"),
+    "special_function": ("state", "dhw_special_function_mode", "special_function", "charging", "charging"),
+}
+
+
+def _dhw_read(entity: HelianthusDhwWaterHeater, reader: str):  # noqa: ANN202
+    if reader == "special_function":
+        return entity.extra_state_attributes.get("special_function")
+    return getattr(entity, reader)
+
+
+@pytest.mark.parametrize("reader", sorted(DHW_READS))
+def test_water_heater_reads_the_published_field_of_its_bucket(reader: str) -> None:
+    bucket, published, previous, value, expected = DHW_READS[reader]
+    other = "config" if bucket == "state" else "state"
+
+    def read(dhw_bucket: str, field: str):  # noqa: ANN202
+        entity, _client = _make_entity()
+        entity.coordinator.data["dhw"] = {"state": {}, "config": {}}
+        entity.coordinator.data["dhw"][dhw_bucket][field] = value
+        return _dhw_read(entity, reader)
+
+    assert read(bucket, published) == expected
+    # The previous name and the other bucket leave the entity without a value.
+    assert read(bucket, previous) is None
+    assert read(other, published) is None

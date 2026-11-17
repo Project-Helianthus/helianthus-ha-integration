@@ -289,9 +289,9 @@ def _expected_initial_entities() -> list[tuple[str, str]]:
         ]
     expected += [
         ("HelianthusDemandSensor", "entry-1-zone-zone-1-heating-demand"),
-        ("HelianthusZoneValvePositionSensor", "entry-1-zone-zone-1-sensor-valve_position_pct"),
+        ("HelianthusZoneValvePositionSensor", "entry-1-zone-zone-1-sensor-zone_valve_position"),
         ("HelianthusDemandSensor", "entry-1-zone-zone-3-heating-demand"),
-        ("HelianthusZoneValvePositionSensor", "entry-1-zone-zone-3-sensor-valve_position_pct"),
+        ("HelianthusZoneValvePositionSensor", "entry-1-zone-zone-3-sensor-zone_valve_position"),
         ("HelianthusDemandSensor", "entry-1-dhw-dhw-heating-demand"),
         ("HelianthusDHWStatusSensor", "entry-1-dhw-hwc-status"),
     ]

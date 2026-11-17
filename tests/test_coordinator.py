@@ -721,8 +721,8 @@ def test_circuit_query_returns_circuit_payload() -> None:
                     "device_id": "VR_71",
                     "address": 0x26,
                 },
-                "state": {"pump_active": True},
-                "config": {"cooling_enabled": False},
+                "state": {"circuit_pump_unknown_8": True},
+                "config": {"circuit_cooling_enabled": False},
             }
         ]
     }
@@ -1083,7 +1083,7 @@ def _semantic_payload(**config_overrides: object) -> dict:
             {
                 "id": "zone-1",
                 "name": "Living Room",
-                "state": {"current_temp_c": 20.0},
+                "state": {"zone_room_temperature": 20.0},
                 "config": config,
             }
         ],
@@ -1093,7 +1093,9 @@ def _semantic_payload(**config_overrides: object) -> dict:
 
 def test_semantic_full_query_succeeds() -> None:
     payload = _semantic_payload(
-        quick_veto=False, quick_veto_setpoint=16.0, quick_veto_duration=3.0
+        quick_veto=False,
+        zone_room_temperature_setpoint_at_quick_veto=16.0,
+        zone_quick_veto_time=3.0,
     )
     client = _ScriptedClient([payload])
     coordinator = _build_semantic_coordinator(client)
@@ -1114,7 +1116,7 @@ def test_semantic_falls_back_to_no_holiday() -> None:
             GraphQLResponseError(
                 [
                     {
-                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
                     }
                 ]
             ),
@@ -1142,7 +1144,7 @@ def test_semantic_falls_back_to_no_qv() -> None:
             GraphQLResponseError(
                 [
                     {
-                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
                     }
                 ]
             ),
@@ -1174,7 +1176,7 @@ def test_semantic_falls_back_to_legacy() -> None:
             GraphQLResponseError(
                 [
                     {
-                        "message": 'Cannot query field "holiday_start_date" on type "ZoneConfig".'
+                        "message": 'Cannot query field "zone_holiday_start_date" on type "ZoneConfig".'
                     }
                 ]
             ),
@@ -1223,8 +1225,8 @@ def test_semantic_returns_empty_on_zones_missing() -> None:
 def test_semantic_retains_last_known_good_for_two_transient_empty_payloads() -> None:
     payload = _semantic_payload()
     payload["dhw"] = {
-        "state": {"current_temp_c": 47.0},
-        "config": {"target_temp_c": 50.0},
+        "state": {"dhw_temperature": 47.0},
+        "config": {"dhw_temperature_setpoint": 50.0},
     }
     coordinator = _build_semantic_coordinator(_ScriptedClient([payload, {}, {}, {}]))
 
@@ -1244,8 +1246,8 @@ def test_semantic_retains_last_known_good_for_two_transient_empty_payloads() -> 
 def test_semantic_empty_values_use_bounded_grace_without_claiming_removal() -> None:
     payload = _semantic_payload()
     payload["dhw"] = {
-        "state": {"current_temp_c": 47.0},
-        "config": {"target_temp_c": 50.0},
+        "state": {"dhw_temperature": 47.0},
+        "config": {"dhw_temperature_setpoint": 50.0},
     }
     coordinator = _build_semantic_coordinator(
         _ScriptedClient(
@@ -1310,8 +1312,8 @@ def test_semantic_retains_readings_for_two_transport_failures_then_fails() -> No
 def test_semantic_transport_gap_expires_zones_without_discarding_dhw_grace() -> None:
     payload = _semantic_payload()
     payload["dhw"] = {
-        "state": {"current_temp_c": 47.0},
-        "config": {"target_temp_c": 50.0},
+        "state": {"dhw_temperature": 47.0},
+        "config": {"dhw_temperature_setpoint": 50.0},
     }
     dhw_only = {"zones": [], "dhw": payload["dhw"]}
     coordinator = _build_semantic_coordinator(
@@ -1347,8 +1349,8 @@ def test_semantic_subscription_updates_reset_only_the_updated_domain() -> None:
     coordinator.data = _semantic_payload()
     coordinator._last_zones = coordinator.data["zones"]
     coordinator._last_dhw = {
-        "state": {"current_temp_c": 47.0},
-        "config": {"target_temp_c": 50.0},
+        "state": {"dhw_temperature": 47.0},
+        "config": {"dhw_temperature_setpoint": 50.0},
     }
     coordinator.data["dhw"] = coordinator._last_dhw
     coordinator.zones_is_stale = True
@@ -1364,7 +1366,7 @@ def test_semantic_subscription_updates_reset_only_the_updated_domain() -> None:
     assert coordinator.dhw_is_stale is True
     assert coordinator._zone_gap_cycles == {"zone-1": 0}
     assert coordinator._dhw_gap_cycles == 1
-    assert coordinator.data["dhw"]["state"]["current_temp_c"] == 47.0
+    assert coordinator.data["dhw"]["state"]["dhw_temperature"] == 47.0
 
     coordinator.zones_is_stale = True
     coordinator._stale_zone_ids = {"zone-1"}
@@ -1379,7 +1381,7 @@ def test_semantic_subscription_updates_reset_only_the_updated_domain() -> None:
     coordinator.apply_dhw_subscription(None)
 
     assert coordinator.dhw_is_stale is True
-    assert coordinator.data["dhw"]["state"]["current_temp_c"] == 47.0
+    assert coordinator.data["dhw"]["state"]["dhw_temperature"] == 47.0
 
     coordinator.apply_dhw_subscription(None)
     coordinator.apply_dhw_subscription(None)
@@ -1394,7 +1396,7 @@ def test_semantic_partial_zone_subscription_keeps_other_zone_stale() -> None:
         {
             "id": "zone-2",
             "name": "Office",
-            "state": {"current_temp_c": 19.0},
+            "state": {"zone_room_temperature": 19.0},
             "config": {"operating_mode": "auto"},
         }
     )
@@ -1404,7 +1406,7 @@ def test_semantic_partial_zone_subscription_keeps_other_zone_stale() -> None:
     coordinator.data = asyncio.run(coordinator._async_update_data())
     coordinator.data = asyncio.run(coordinator._async_update_data())
     updated_zones = [dict(zone) for zone in coordinator.data["zones"]]
-    updated_zones[0]["state"] = {"current_temp_c": 21.0}
+    updated_zones[0]["state"] = {"zone_room_temperature": 21.0}
 
     coordinator.apply_zone_subscription(updated_zones, "zone-1")
 
@@ -1418,7 +1420,7 @@ def test_semantic_partial_positive_poll_gives_missing_zone_its_own_grace() -> No
     zone_two = {
         "id": "zone-2",
         "name": "Office",
-        "state": {"current_temp_c": 19.0},
+        "state": {"zone_room_temperature": 19.0},
         "config": {"operating_mode": "auto"},
     }
     payload["zones"].append(zone_two)
@@ -1445,7 +1447,7 @@ def test_semantic_frequent_zone_subscriptions_preserve_full_poll_deadline_and_ex
         {
             "id": "zone-2",
             "name": "Office",
-            "state": {"current_temp_c": 19.0},
+            "state": {"zone_room_temperature": 19.0},
             "config": {"operating_mode": "auto"},
         }
     )
@@ -1475,7 +1477,7 @@ def test_semantic_frequent_zone_subscriptions_preserve_full_poll_deadline_and_ex
 
     for temperature in range(20):
         zones = [dict(zone) for zone in coordinator.data["zones"]]
-        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        zones[0]["state"] = {"zone_room_temperature": float(temperature)}
         coordinator.apply_zone_subscription(zones, "zone-1")
 
     assert coordinator.pending_poll_deadline is pending_poll_deadline
@@ -1486,7 +1488,7 @@ def test_semantic_frequent_zone_subscriptions_preserve_full_poll_deadline_and_ex
 
     for temperature in range(20, 40):
         zones = [dict(zone) for zone in coordinator.data["zones"]]
-        zones[0]["state"] = {"current_temp_c": float(temperature)}
+        zones[0]["state"] = {"zone_room_temperature": float(temperature)}
         coordinator.apply_zone_subscription(zones, "zone-1")
 
     coordinator.data = asyncio.run(coordinator._async_update_data())
@@ -1514,8 +1516,8 @@ def test_semantic_missing_promoted_fields_preserves_existing_zone_and_dhw_payloa
 ):
     payload = _semantic_payload()
     payload["dhw"] = {
-        "state": {"current_temp_c": 0.0},
-        "config": {"target_temp_c": 0.0},
+        "state": {"dhw_temperature": 0.0},
+        "config": {"dhw_temperature_setpoint": 0.0},
     }
     client = _ScriptedClient(
         [
@@ -1538,23 +1540,23 @@ def test_promoted_semantic_queries_cover_all_public_leaves_without_protocol_leak
 ):
     """Keep the 18-leaf MSP-09C contract at existing public query roots only."""
     semantic_paths = {
-        "/dhw/operating_mode": "operating_mode",
+        "/dhw/operating_mode": "dhw_operating_mode",
         "/dhw/operation_mode_changeable": "operation_mode_changeable",
         "/dhw/overrun_active": "overrun_active",
-        "/dhw/target_temperature_c": "target_temp_c",
-        "/dhw/temperature_c": "current_temp_c",
+        "/dhw/target_temperature_c": "dhw_temperature_setpoint",
+        "/dhw/temperature_c": "dhw_temperature",
         "/system/gateway_brand": "gateway_brand",
         "/system/gateway_vendor": "gateway_vendor",
         "/system/outside_air_temperature_c": "outdoor_temperature",
         "/zones/zone_1/name": "source_label",
         "/zones/zone_1/operating_mode": "operating_mode",
         "/zones/zone_1/operation_mode_changeable": "operation_mode_changeable",
-        "/zones/zone_1/room_temperature_c": "current_temp_c",
+        "/zones/zone_1/room_temperature_c": "zone_room_temperature",
         "/zones/zone_1/target_temperature_c": "target_temp_c",
         "/zones/zone_2/name": "source_label",
         "/zones/zone_2/operating_mode": "operating_mode",
         "/zones/zone_2/operation_mode_changeable": "operation_mode_changeable",
-        "/zones/zone_2/room_temperature_c": "current_temp_c",
+        "/zones/zone_2/room_temperature_c": "zone_room_temperature",
         "/zones/zone_2/target_temperature_c": "target_temp_c",
     }
 

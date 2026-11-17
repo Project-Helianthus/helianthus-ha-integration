@@ -921,7 +921,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._target_device_id = target_device_id
         self._attr_name = "Valve Position"
-        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-valve_position_pct"
+        self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-zone_valve_position"
         self._attr_entity_registry_enabled_default = self.native_value is not None
 
     def _zone(self) -> dict[str, Any]:
@@ -955,7 +955,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> Any:
         zone = self._zone()
         state = zone.get("state") if isinstance(zone.get("state"), dict) else {}
-        value = state.get("valve_position_pct") if isinstance(state, dict) else None
+        value = state.get("zone_valve_position") if isinstance(state, dict) else None
         if value is None:
             return None
         try:
@@ -1096,7 +1096,7 @@ class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
         payload = self.coordinator.data or {}
         dhw = payload.get("dhw") or {}
         state = dhw.get("state") if isinstance(dhw.get("state"), dict) else {}
-        value = state.get("special_function")
+        value = state.get("dhw_special_function_mode")
         if value is None:
             return None
         if isinstance(value, (bool, int, float, str)):

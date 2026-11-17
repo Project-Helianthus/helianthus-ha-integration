@@ -15,8 +15,8 @@ from custom_components.helianthus.semantic_freshness import (
 def test_dhw_retained_missing_and_recovered_leave_fresh_zone_unchanged() -> None:
     coordinator = SimpleNamespace(
         data={
-            "zones": [{"id": "zone-1", "state": {"current_temp_c": 20.0}}],
-            "dhw": {"state": {"current_temp_c": 45.0}},
+            "zones": [{"id": "zone-1", "state": {"zone_room_temperature": 20.0}}],
+            "dhw": {"state": {"dhw_temperature": 45.0}},
         },
         last_update_success=True,
         zones_is_stale=False,
@@ -29,7 +29,7 @@ def test_dhw_retained_missing_and_recovered_leave_fresh_zone_unchanged() -> None
         assert semantic_target_is_stale(coordinator, "dhw") is stale
         assert semantic_freshness_attributes(coordinator, "dhw") == {"is_stale": stale}
         assert semantic_target_payload(coordinator, "zone", "zone-1") == {
-            "id": "zone-1", "state": {"current_temp_c": 20.0}
+            "id": "zone-1", "state": {"zone_room_temperature": 20.0}
         }
         assert semantic_target_available(coordinator, "zone", "zone-1") is True
         assert semantic_target_is_stale(coordinator, "zone", "zone-1") is False
@@ -37,30 +37,30 @@ def test_dhw_retained_missing_and_recovered_leave_fresh_zone_unchanged() -> None
             "is_stale": False
         }
 
-    assert_dhw_and_zone({"state": {"current_temp_c": 45.0}}, True, False)
+    assert_dhw_and_zone({"state": {"dhw_temperature": 45.0}}, True, False)
 
     # Only the DHW stale flag changes; retained data remains available.
     coordinator.dhw_is_stale = True
-    assert_dhw_and_zone({"state": {"current_temp_c": 45.0}}, True, True)
+    assert_dhw_and_zone({"state": {"dhw_temperature": 45.0}}, True, True)
 
     del coordinator.data["dhw"]
     assert_dhw_and_zone({}, False, True)
 
     # Availability recovers independently, before the stale flag clears.
-    coordinator.data["dhw"] = {"state": {"current_temp_c": 47.0}}
-    assert_dhw_and_zone({"state": {"current_temp_c": 47.0}}, True, True)
+    coordinator.data["dhw"] = {"state": {"dhw_temperature": 47.0}}
+    assert_dhw_and_zone({"state": {"dhw_temperature": 47.0}}, True, True)
     coordinator.dhw_is_stale = False
-    assert_dhw_and_zone({"state": {"current_temp_c": 47.0}}, True, False)
+    assert_dhw_and_zone({"state": {"dhw_temperature": 47.0}}, True, False)
 
 
 @pytest.mark.parametrize(
     ("lookup_id", "expected_payload", "expected_stale"),
     [
-        (0, {"id": "0", "state": {"current_temp_c": 16.0}}, False),
-        ("0", {"id": "0", "state": {"current_temp_c": 16.0}}, False),
-        ("zone-0", {"id": "zone-0", "state": {"current_temp_c": 18.0}}, True),
-        ("001", {"id": "001", "state": {"current_temp_c": 20.0}}, True),
-        ("zone-1", {"id": "001", "state": {"current_temp_c": 20.0}}, False),
+        (0, {"id": "0", "state": {"zone_room_temperature": 16.0}}, False),
+        ("0", {"id": "0", "state": {"zone_room_temperature": 16.0}}, False),
+        ("zone-0", {"id": "zone-0", "state": {"zone_room_temperature": 18.0}}, True),
+        ("001", {"id": "001", "state": {"zone_room_temperature": 20.0}}, True),
+        ("zone-1", {"id": "001", "state": {"zone_room_temperature": 20.0}}, False),
     ],
     ids=["integer-zero", "bare-zero", "prefixed-zero", "positive-token", "positive-alias"],
 )
@@ -71,9 +71,9 @@ def test_zero_identity_and_positive_alias_preserve_stale_lookup_tokens(
     coordinator = SimpleNamespace(
         data={
             "zones": [
-                {"id": "0", "state": {"current_temp_c": 16.0}},
-                {"id": "zone-0", "state": {"current_temp_c": 18.0}},
-                {"id": "001", "state": {"current_temp_c": 20.0}},
+                {"id": "0", "state": {"zone_room_temperature": 16.0}},
+                {"id": "zone-0", "state": {"zone_room_temperature": 18.0}},
+                {"id": "001", "state": {"zone_room_temperature": 20.0}},
             ]
         },
         last_update_success=True,

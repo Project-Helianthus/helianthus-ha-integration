@@ -32,7 +32,7 @@ class _FakeSemanticCoordinator:
     def __init__(self) -> None:
         self.data = {
             "zones": [{"id": "zone-1", "config": {"operating_mode": "auto"}}],
-            "dhw": {"config": {"operating_mode": "auto"}},
+            "dhw": {"config": {"dhw_operating_mode": "auto"}},
         }
         self.last_update_success = True
         self.stale_zone_ids: set[str] = set()

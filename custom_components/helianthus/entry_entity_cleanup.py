@@ -40,6 +40,20 @@ SPARSE_SYSTEM_TEXT_READ_KEYS: dict[str, str] = {
     "installer_name": "installer_name",
     "installer_phone_number": "installer_phone_number",
 }
+# Suffixes of the circuit sensors the integration creates. Trusted cleanup
+# matches only these, so a circuit-sensor registry row with any other suffix
+# stays as it is.
+CIRCUIT_SENSOR_SPARSE_KEYS = (
+    "circuit_flow_temperature",
+    "circuit_flow_temperature_setpoint",
+    "calc_flow_temp_c",
+    "circuit_mixer_position",
+    "circuit_state",
+    "circuit_room_humidity",
+    "circuit_dew_point_temperature",
+    "circuit_pump_operating_time_total",
+    "circuit_pump_start_count_total",
+)
 
 
 def _cylinder_count_is_published(setup_fm5_mode: str, current_fm5_mode: str) -> bool:
@@ -220,8 +234,13 @@ class EntryEntityReconciler:
         self.boiler_text_unique_id_re = re.compile(
             rf"^{escaped_entry_id}-boiler-text-(?P<key>installer_phone_number)$"
         )
+        sensor_keys = "|".join(
+            re.escape(key)
+            for key in sorted(CIRCUIT_SENSOR_SPARSE_KEYS, key=len, reverse=True)
+        )
         self.circuit_sensor_unique_id_re = re.compile(
-            rf"^{escaped_entry_id}-circuit-(?P<index>\d+)-sensor-(?P<key>.+)$"
+            rf"^{escaped_entry_id}-circuit-(?P<index>\d+)-sensor-"
+            rf"(?P<key>{sensor_keys})$"
         )
         self.circuit_number_unique_id_re = re.compile(
             rf"^{escaped_entry_id}-circuit-(?P<index>\d+)-number-(?P<key>.+)$"
@@ -233,7 +252,7 @@ class EntryEntityReconciler:
             rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-heating-demand$"
         )
         self.zone_valve_unique_id_re = re.compile(
-            rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-sensor-valve_position_pct$"
+            rf"^{escaped_entry_id}-zone-(?P<zone_id>.+)-sensor-zone_valve_position$"
         )
         self.dhw_demand_unique_id = f"{self._entry_id}-dhw-dhw-heating-demand"
         self.system_text_unique_id_re = re.compile(
@@ -432,7 +451,7 @@ class EntryEntityReconciler:
 
         zone_valve_match = self.zone_valve_unique_id_re.match(unique_id)
         if zone_valve_match:
-            return "valve_position_pct" in self._current_zone_state_live_keys(zone_valve_match.group("zone_id"))
+            return "zone_valve_position" in self._current_zone_state_live_keys(zone_valve_match.group("zone_id"))
 
         system_text_match = self.system_text_unique_id_re.match(unique_id)
         if system_text_match:

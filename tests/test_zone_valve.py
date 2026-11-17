@@ -226,7 +226,7 @@ def test_climate_attributes_include_radio_and_room_mapping_metadata() -> None:
                 {
                     "id": "zone-1",
                     "name": "Living",
-                    "state": {"valve_position_pct": 45.0},
+                    "state": {"zone_valve_position": 45.0},
                     "config": {
                         "operating_mode": "auto",
                         "preset": "schedule",
@@ -357,8 +357,8 @@ def test_zone_valve_position_sensors_are_created_per_zone() -> None:
         "semantic_coordinator": _FakeCoordinator(
             {
                 "zones": [
-                    {"id": "zone-1", "name": "Living", "state": {"valve_position_pct": 100}},
-                    {"id": "zone-2", "name": "Bedroom", "state": {"valve_position_pct": 0}},
+                    {"id": "zone-1", "name": "Living", "state": {"zone_valve_position": 100}},
+                    {"id": "zone-2", "name": "Bedroom", "state": {"zone_valve_position": 0}},
                 ],
                 "dhw": None,
             }
@@ -389,10 +389,17 @@ def test_zone_valve_position_sensors_are_created_per_zone() -> None:
     ]
     assert len(valve_entities) == 2
     assert {entity._attr_unique_id for entity in valve_entities} == {
-        "entry-1-zone-zone-1-sensor-valve_position_pct",
-        "entry-1-zone-zone-2-sensor-valve_position_pct",
+        "entry-1-zone-zone-1-sensor-zone_valve_position",
+        "entry-1-zone-zone-2-sensor-zone_valve_position",
     }
     assert {entity.native_value for entity in valve_entities} == {0.0, 100.0}
+
+    # The previous published name never feeds the sensor, and each sensor reads its own zone.
+    zones = payload["semantic_coordinator"].data["zones"]
+    zones[0]["state"] = {"valve_position_pct": 100}
+    zones[1]["state"] = {}
+    by_zone = {entity._zone_id: entity.native_value for entity in valve_entities}
+    assert by_zone == {"zone-1": None, "zone-2": None}
     assert all(
         entity.device_info["identifiers"] == {("helianthus", "entry-1-bus-BASV-15")}
         for entity in valve_entities

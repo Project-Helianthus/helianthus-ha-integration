@@ -594,11 +594,11 @@ def test_all_semantic_sensors_expose_retained_freshness_and_expire_unavailable()
                 {
                     "id": "zone-1",
                     "name": "Living",
-                    "state": {"heating_demand_pct": 35.0, "valve_position_pct": 42.0},
+                    "state": {"heating_demand_pct": 35.0, "zone_valve_position": 42.0},
                 }
             ],
             "dhw": {
-                "state": {"heating_demand_pct": 18.0, "special_function": "charging"}
+                "state": {"heating_demand_pct": 18.0, "dhw_special_function_mode": "charging"}
             },
         }
     )
@@ -953,15 +953,15 @@ def test_static_sensor_descriptor_inventory_and_order_are_stable() -> None:
         "dhw_storage_temperature_c",
     ]
     assert [field.key for field in sensor_platform.CIRCUIT_SENSOR_FIELDS] == [
-        "flow_temperature_c",
-        "flow_setpoint_c",
+        "circuit_flow_temperature",
+        "circuit_flow_temperature_setpoint",
         "calc_flow_temp_c",
-        "mixer_position_pct",
+        "circuit_mixer_position",
         "circuit_state",
-        "humidity",
-        "dew_point",
-        "pump_hours",
-        "pump_starts",
+        "circuit_room_humidity",
+        "circuit_dew_point_temperature",
+        "circuit_pump_operating_time_total",
+        "circuit_pump_start_count_total",
     ]
     assert sensor_platform.CIRCUIT_SENSOR_FIELDS[0].device_class == sensor_platform.SensorDeviceClass.TEMPERATURE
     assert sensor_platform.CIRCUIT_SENSOR_FIELDS[0].native_unit == sensor_platform.UnitOfTemperature.CELSIUS

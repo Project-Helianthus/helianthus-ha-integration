@@ -41,10 +41,10 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
         def __init__(self) -> None:
             self.data = {
                 "zones": [
-                    {"id": stored_id, "state": {"current_temp_c": 20.0}},
-                    {"id": "zone-2", "state": {"current_temp_c": 18.0}},
+                    {"id": stored_id, "state": {"zone_room_temperature": 20.0}},
+                    {"id": "zone-2", "state": {"zone_room_temperature": 18.0}},
                 ],
-                "dhw": {"state": {"current_temp_c": 45.0}},
+                "dhw": {"state": {"dhw_temperature": 45.0}},
             }
             self.last_update_success = True
             self.zones_is_stale = False
@@ -69,9 +69,9 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
 
     # Both zones and DHW start present and fresh.
     assert observed_targets() == (
-        ({"id": stored_id, "state": {"current_temp_c": 20.0}}, True, {"is_stale": False}),
-        ({"id": "zone-2", "state": {"current_temp_c": 18.0}}, True, {"is_stale": False}),
-        ({"state": {"current_temp_c": 45.0}}, True, {"is_stale": False}),
+        ({"id": stored_id, "state": {"zone_room_temperature": 20.0}}, True, {"is_stale": False}),
+        ({"id": "zone-2", "state": {"zone_room_temperature": 18.0}}, True, {"is_stale": False}),
+        ({"state": {"dhw_temperature": 45.0}}, True, {"is_stale": False}),
     )
 
     # Zone 1 retains its last-known-good payload; siblings advance independently.
@@ -79,49 +79,49 @@ def test_target_local_freshness_through_removal_failure_and_recovery(
     # Payload aliases still match, but numeric/prefix aliases do not share stale keys.
     coordinator.stale_zone_ids = {stored_id.strip().lower()}
     coordinator.zones_is_stale = True
-    coordinator.data["zones"][1] = {"id": "zone-2", "state": {"current_temp_c": 19.0}}
-    coordinator.data["dhw"] = {"state": {"current_temp_c": 46.0}}
+    coordinator.data["zones"][1] = {"id": "zone-2", "state": {"zone_room_temperature": 19.0}}
+    coordinator.data["dhw"] = {"state": {"dhw_temperature": 46.0}}
     assert observed_targets() == (
         (
-            {"id": stored_id, "state": {"current_temp_c": 20.0}},
+            {"id": stored_id, "state": {"zone_room_temperature": 20.0}},
             True,
             {"is_stale": expected_target_stale},
         ),
-        ({"id": "zone-2", "state": {"current_temp_c": 19.0}}, True, {"is_stale": False}),
-        ({"state": {"current_temp_c": 46.0}}, True, {"is_stale": False}),
+        ({"id": "zone-2", "state": {"zone_room_temperature": 19.0}}, True, {"is_stale": False}),
+        ({"state": {"dhw_temperature": 46.0}}, True, {"is_stale": False}),
     )
 
     # Expiry removes only zone 1; its stale marker alone cannot grant availability.
     coordinator.data["zones"] = [
-        {"id": "zone-2", "state": {"current_temp_c": 19.0}}
+        {"id": "zone-2", "state": {"zone_room_temperature": 19.0}}
     ]
     assert observed_targets() == (
         ({}, False, {"is_stale": expected_target_stale}),
-        ({"id": "zone-2", "state": {"current_temp_c": 19.0}}, True, {"is_stale": False}),
-        ({"state": {"current_temp_c": 46.0}}, True, {"is_stale": False}),
+        ({"id": "zone-2", "state": {"zone_room_temperature": 19.0}}, True, {"is_stale": False}),
+        ({"state": {"dhw_temperature": 46.0}}, True, {"is_stale": False}),
     )
 
     # A failed full refresh overrides availability and freshness, retaining data.
     coordinator.last_update_success = False
     assert observed_targets() == (
         ({}, False, {"is_stale": True}),
-        ({"id": "zone-2", "state": {"current_temp_c": 19.0}}, False, {"is_stale": True}),
-        ({"state": {"current_temp_c": 46.0}}, False, {"is_stale": True}),
+        ({"id": "zone-2", "state": {"zone_room_temperature": 19.0}}, False, {"is_stale": True}),
+        ({"state": {"dhw_temperature": 46.0}}, False, {"is_stale": True}),
     )
 
     # Recovery restores the removed target with a new payload and clears staleness.
     coordinator.data = {
         "zones": [
-            {"id": stored_id, "state": {"current_temp_c": 21.0}},
-            {"id": "zone-2", "state": {"current_temp_c": 20.0}},
+            {"id": stored_id, "state": {"zone_room_temperature": 21.0}},
+            {"id": "zone-2", "state": {"zone_room_temperature": 20.0}},
         ],
-        "dhw": {"state": {"current_temp_c": 47.0}},
+        "dhw": {"state": {"dhw_temperature": 47.0}},
     }
     coordinator.stale_zone_ids = set()
     coordinator.zones_is_stale = False
     coordinator.last_update_success = True
     assert observed_targets() == (
-        ({"id": stored_id, "state": {"current_temp_c": 21.0}}, True, {"is_stale": False}),
-        ({"id": "zone-2", "state": {"current_temp_c": 20.0}}, True, {"is_stale": False}),
-        ({"state": {"current_temp_c": 47.0}}, True, {"is_stale": False}),
+        ({"id": stored_id, "state": {"zone_room_temperature": 21.0}}, True, {"is_stale": False}),
+        ({"id": "zone-2", "state": {"zone_room_temperature": 20.0}}, True, {"is_stale": False}),
+        ({"state": {"dhw_temperature": 47.0}}, True, {"is_stale": False}),
     )

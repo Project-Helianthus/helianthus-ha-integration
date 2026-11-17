@@ -134,14 +134,14 @@ def test_sensor_platform_adds_dhw_status_sensor() -> None:
                 "zones": [],
                 "dhw": {
                     "state": {
-                        "current_temp_c": 48.1,
-                        "special_function": "charging",
+                        "dhw_temperature": 48.1,
+                        "dhw_special_function_mode": "charging",
                         "heating_demand_pct": 67,
                     },
                     "config": {
-                        "operating_mode": "auto",
+                        "dhw_operating_mode": "auto",
                         "preset": "schedule",
-                        "target_temp_c": 50.0,
+                        "dhw_temperature_setpoint": 50.0,
                     },
                 },
             }
@@ -171,3 +171,6 @@ def test_sensor_platform_adds_dhw_status_sensor() -> None:
     assert len(dhw_status) == 1
     assert dhw_status[0]._attr_unique_id == "entry-1-dhw-hwc-status"
     assert dhw_status[0].native_value == "charging"
+
+    payload["semantic_coordinator"].data["dhw"]["state"] = {"special_function": "charging"}
+    assert dhw_status[0].native_value is None

@@ -224,7 +224,7 @@ def _circuit_rows() -> list[tuple]:
     return [
         (
             "HelianthusCircuitPumpBinarySensor",
-            f"{ENTRY_ID}-circuit-{index}-binary-pump_active",
+            f"{ENTRY_ID}-circuit-{index}-binary-circuit_pump_unknown_8",
             "Pump Active",
             frozenset({circuit_identifier(ENTRY_ID, index)}),
             "circuit",

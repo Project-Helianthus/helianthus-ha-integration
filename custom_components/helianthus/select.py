@@ -160,7 +160,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
     def current_option(self) -> str | None:
         circuit = self._circuit()
         config = circuit.get("config") if isinstance(circuit.get("config"), dict) else {}
-        token = str(config.get("room_temp_control") or "").strip().lower()
+        token = str(config.get("circuit_room_temperature_influence_mode") or "").strip().lower()
         if token in _OPTIONS:
             return token
         return None
@@ -168,7 +168,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         token = str(option or "").strip().lower()
         if token not in _OPTIONS:
-            raise HomeAssistantError(f"Unsupported room_temp_control option: {option}")
+            raise HomeAssistantError(f"Unsupported circuit_room_temperature_influence_mode option: {option}")
         if self._client is None:
             raise HomeAssistantError("GraphQL client is unavailable")
         _assert_admission_trusted(self._status_coordinator)

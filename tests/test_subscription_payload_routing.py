@@ -53,9 +53,9 @@ def _consumers(hook=False):
     return (
         semantic_type(
             {
-                "zones": [{"id": "zone-a", "state": {"current_temp_c": 20.0}}],
+                "zones": [{"id": "zone-a", "state": {"zone_room_temperature": 20.0}}],
                 "dhw": {
-                    "state": {"current_temp_c": 45.0, "special_function": "off"},
+                    "state": {"dhw_temperature": 45.0, "dhw_special_function_mode": "off"},
                     "config": {"operating_mode": "auto", "target_temp_c": 50.0},
                 },
             }
@@ -77,7 +77,7 @@ def _frame():
         "type": "next",
         "payload": {
             "data": {
-                "dhw_update": {"state": {"current_temp_c": 48.0}},
+                "dhw_update": {"state": {"dhw_temperature": 48.0}},
                 "energy_update": {"electric": {"climate": {"today": 3.5, "yearly": 80.0}}},
                 "boiler_status_update": {"state": {"flow_temperature": 62.0}},
             }
@@ -89,9 +89,9 @@ def _expected():
     """Independent complete expectations, including retained and replaced data."""
     return (
         {
-            "zones": [{"id": "zone-a", "state": {"current_temp_c": 20.0}}],
+            "zones": [{"id": "zone-a", "state": {"zone_room_temperature": 20.0}}],
             "dhw": {
-                "state": {"current_temp_c": 48.0, "special_function": "off"},
+                "state": {"dhw_temperature": 48.0, "dhw_special_function_mode": "off"},
                 "config": {"operating_mode": "auto", "target_temp_c": 50.0},
             },
         },
@@ -212,7 +212,7 @@ def test_explicit_dhw_null_routes_to_hook_or_clears_fallback_dhw(handler, hook):
         assert semantic.dhw_updates == [None]
         assert semantic.updates == []
     else:
-        expected = {"zones": [{"id": "zone-a", "state": {"current_temp_c": 20.0}}], "dhw": None}
+        expected = {"zones": [{"id": "zone-a", "state": {"zone_room_temperature": 20.0}}], "dhw": None}
         assert semantic.data == expected
         assert semantic.updates == [expected]
     assert energy.updates == []
@@ -228,7 +228,7 @@ def test_nested_null_preserves_last_known_dhw_and_boiler_values(handler, hook):
     _send(
         handler,
         {"type": "next", "payload": {"data": {
-            "dhw_update": {"state": {"current_temp_c": None}, "config": None},
+            "dhw_update": {"state": {"dhw_temperature": None}, "config": None},
             "energy_update": None,
             "boiler_status_update": {"state": {"flow_temperature": None}, "diagnostics": None},
         }}},

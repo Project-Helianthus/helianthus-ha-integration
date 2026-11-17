@@ -146,12 +146,12 @@ query SmokeSemantic {
     id
     name
     state {
-      current_temp_c
-      current_humidity_pct
+      zone_room_temperature
+      zone_room_humidity
       hvac_action
-      special_function
+      zone_special_function_mode
       heating_demand_pct
-      valve_position_pct
+      zone_valve_position
     }
     config {
       operating_mode
@@ -164,14 +164,14 @@ query SmokeSemantic {
   }
   dhw {
     state {
-      current_temp_c
-      special_function
+      dhw_temperature
+      dhw_special_function_mode
       heating_demand_pct
     }
     config {
-      operating_mode
+      dhw_operating_mode
       preset
-      target_temp_c
+      dhw_temperature_setpoint
     }
   }
 }

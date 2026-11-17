@@ -256,23 +256,23 @@ def _circuits() -> list[dict]:
             "circuit_type": "heating",
             "has_mixer": True,
             "state": {
-                "pump_active": True,
-                "mixer_position_pct": 37.8,
-                "flow_temperature_c": 42.5,
-                "flow_setpoint_c": 45.0,
+                "circuit_pump_unknown_8": True,
+                "circuit_mixer_position": 37.8,
+                "circuit_flow_temperature": 42.5,
+                "circuit_flow_temperature_setpoint": 45.0,
                 "calc_flow_temp_c": 44.0,
                 "circuit_state": "heating",
-                "humidity": 49.2,
-                "dew_point": 11.1,
-                "pump_hours": 120.0,
-                "pump_starts": 55,
+                "circuit_room_humidity": 49.2,
+                "circuit_dew_point_temperature": 11.1,
+                "circuit_pump_operating_time_total": 120.0,
+                "circuit_pump_start_count_total": 55,
             },
             "config": {
-                "heating_curve": 1.3,
-                "flow_temp_max_c": 70.0,
-                "flow_temp_min_c": 20.0,
-                "summer_limit_c": 22.0,
-                "room_temp_control": "modulating",
+                "circuit_heating_curve_factor": 1.3,
+                "heating_circuit_flow_temperature_setpoint_maximum": 70.0,
+                "circuit_flow_temperature_setpoint_minimum": 20.0,
+                "heating_circuit_outdoor_temperature_limit_maximum": 22.0,
+                "circuit_room_temperature_influence_mode": "modulating",
             },
         },
         {
@@ -280,23 +280,23 @@ def _circuits() -> list[dict]:
             "circuit_type": "fixed_value",
             "has_mixer": False,
             "state": {
-                "pump_active": False,
-                "mixer_position_pct": None,
-                "flow_temperature_c": 31.0,
-                "flow_setpoint_c": 33.0,
+                "circuit_pump_unknown_8": False,
+                "circuit_mixer_position": None,
+                "circuit_flow_temperature": 31.0,
+                "circuit_flow_temperature_setpoint": 33.0,
                 "calc_flow_temp_c": 32.5,
                 "circuit_state": "standby",
-                "humidity": None,
-                "dew_point": None,
-                "pump_hours": 10.0,
-                "pump_starts": 3,
+                "circuit_room_humidity": None,
+                "circuit_dew_point_temperature": None,
+                "circuit_pump_operating_time_total": 10.0,
+                "circuit_pump_start_count_total": 3,
             },
             "config": {
-                "heating_curve": 1.0,
-                "flow_temp_max_c": 55.0,
-                "flow_temp_min_c": 15.0,
-                "summer_limit_c": 24.0,
-                "room_temp_control": "off",
+                "circuit_heating_curve_factor": 1.0,
+                "heating_circuit_flow_temperature_setpoint_maximum": 55.0,
+                "circuit_flow_temperature_setpoint_minimum": 15.0,
+                "heating_circuit_outdoor_temperature_limit_maximum": 24.0,
+                "circuit_room_temperature_influence_mode": "off",
             },
         },
     ]
@@ -358,11 +358,11 @@ def test_circuit_binary_sensor_platform_adds_one_pump_per_circuit() -> None:
     ]
     assert len(pump_entities) == 2
     assert {entity._attr_unique_id for entity in pump_entities} == {
-        "entry-1-circuit-0-binary-pump_active",
-        "entry-1-circuit-1-binary-pump_active",
+        "entry-1-circuit-0-binary-circuit_pump_unknown_8",
+        "entry-1-circuit-1-binary-circuit_pump_unknown_8",
     }
-    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("0-binary-pump_active"))
-    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("1-binary-pump_active"))
+    first = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("0-binary-circuit_pump_unknown_8"))
+    second = next(entity for entity in pump_entities if entity._attr_unique_id.endswith("1-binary-circuit_pump_unknown_8"))
     assert first.is_on is True
     assert second.is_on is False
 

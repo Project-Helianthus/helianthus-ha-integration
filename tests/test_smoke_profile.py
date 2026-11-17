@@ -93,7 +93,7 @@ def _success_responses() -> dict[str, dict]:
         "SmokeSemantic": {
             "data": {
                 "zones": [{"id": "z1", "name": "Living", "state": {}, "config": {}}],
-                "dhw": {"state": {}, "config": {"operating_mode": "auto"}},
+                "dhw": {"state": {}, "config": {"dhw_operating_mode": "auto"}},
             }
         },
         "SmokeEnergy": {
