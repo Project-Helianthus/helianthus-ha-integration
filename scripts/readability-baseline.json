@@ -56,12 +56,6 @@
       "count": 17
     },
     {
-      "path": "custom_components/helianthus/coordinator_fetch.py",
-      "symbol": "fetch_device_inventory",
-      "rule": "C901",
-      "count": 22
-    },
-    {
       "path": "custom_components/helianthus/coordinator_fm5.py",
       "symbol": "HelianthusFM5Coordinator._async_update_data",
       "rule": "C901",

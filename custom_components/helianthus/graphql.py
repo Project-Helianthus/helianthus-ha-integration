@@ -39,10 +39,50 @@ class GraphQLResponseError(GraphQLClientError):
         self.errors = errors
 
 
-_SCHEMA_INTROSPECTION_QUERY = """
-query HelianthusSchema {
+SCHEMA_INTROSPECTION_QUERY = """query QuerySchemaIntrospection {
   __schema {
     queryType { name }
+    types {
+      kind
+      name
+      fields(includeDeprecated: true) {
+        name
+        args { name type { ...TypeRef } }
+        type { ...TypeRef }
+      }
+      inputFields { name type { ...TypeRef } }
+      enumValues(includeDeprecated: true) { name }
+    }
+  }
+}
+
+fragment TypeRef on __Type {
+  kind
+  name
+  ofType {
+    kind
+    name
+    ofType {
+      kind
+      name
+      ofType {
+        kind
+        name
+        ofType {
+          kind
+          name
+          ofType {
+            kind
+            name
+            ofType {
+              kind
+              name
+              ofType { kind name }
+            }
+          }
+        }
+      }
+    }
   }
 }
 """
@@ -99,7 +139,7 @@ class GraphQLClient:
         return await self.execute(query, variables)
 
     async def fetch_schema_introspection(self) -> Any:
-        return await self.execute(_SCHEMA_INTROSPECTION_QUERY)
+        return await self.execute(SCHEMA_INTROSPECTION_QUERY)
 
     async def fetch_schema_snapshot(
         self,

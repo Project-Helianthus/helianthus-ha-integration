@@ -228,6 +228,7 @@ class SetupTail:
             "async_connect_gateway": GatewayConnection(
                 session=object(), graphql_url="https://gateway.example.test/graphql",
                 client=values["graphql_client"], instance_guid="guid-synthetic"),
+            "async_discover_gateway_capabilities": object(),
             "register_gateway_devices": SimpleNamespace(
                 daemon_device_id=object(), adapter_device_id=ADAPTER),
             "async_create_domain_coordinators": SimpleNamespace(

@@ -522,6 +522,7 @@ python3 scripts/ha_inventory_verifier.py \
 - [dhw bound reprobe](docs/dhw-bound-reprobe.md)
 - [entry runtime mapping and lifecycle](docs/entry-runtime-lifecycle.md)
 - [freshness availability contract](docs/freshness-availability-contract.md)
+- [gateway capability discovery](docs/gateway-capability-discovery.md)
 - [legacy sensor shared migration](docs/legacy-sensor-shared-migration.md)
 - [offline consumer acceptance boundary](docs/offline-consumer-acceptance-boundary.md)
 - [parity artifact metadata](docs/parity-artifact-metadata.md)

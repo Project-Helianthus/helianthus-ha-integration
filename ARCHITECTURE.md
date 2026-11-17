@@ -58,6 +58,11 @@ and `entry_coordinators.py` creates the coordinators and runs their first refres
 `scripts/split_coordinator_domains.py` is the offline script that produced this split from the single coordinator
 module.
 
+After the gateway connection is up, setup reads the query schema once and builds the dotted field paths of the
+query root. A domain whose query needs a path the schema does not offer is unavailable for that connection: setup
+logs one warning and raises so the entry is retried. The device inventory sends its one device query. If a later
+read is rejected for a path the discovery offered, that update fails and the entry is reloaded once.
+
 ### Offline adversarial evidence boundary
 
 `scripts/ha_adversarial_harness.py` is a replaceable southbound evidence adapter,

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- After the gateway connection is up, setup reads the query schema once and
+  builds the dotted field paths of the query root. A domain whose query needs
+  a path the schema does not offer is unavailable for that connection: setup
+  logs one warning and raises `ConfigEntryNotReady` naming the path. The
+  device inventory sends one device query. A later rejection of a path that
+  discovery offered fails that update and reloads the entry once. A connection
+  failure whose resource release fails, with the platforms confirmed unloaded,
+  raises that release failure. While the platforms of a failed setup stay
+  loaded, the entry stays retryable and keeps them.
+
 - Read the heating circuit, zone and hot-water state and configuration fields
   under the names the gateway publishes, the docs-ebus register names, with no
   alias, no fallback query of a former name and no unique-ID migration. Units

@@ -565,6 +565,25 @@ _COORDINATOR_DOMAIN_MODULES = (
 )
 
 
+_OFFLINE_INTROSPECTION = json.loads(
+    (
+        REPOSITORY_ROOT
+        / "tests"
+        / "fixtures"
+        / "gateway_query_schema_introspection.json"
+    ).read_text(encoding="utf-8")
+)["response"]
+
+
+class _OfflineSchemaClient:
+    """Answers the one schema read of an offline entry setup."""
+
+    async def execute(self, query: str, variables: dict | None = None) -> dict:
+        if isinstance(query, str) and "__schema" in query:
+            return _OFFLINE_INTROSPECTION
+        return {}
+
+
 def _replay_actual_delayed_inventory_listener() -> None:
     """Drive the real semantic listener of entry setup and its one-shot scheduler.
 
@@ -645,7 +664,7 @@ def _replay_actual_delayed_inventory_listener() -> None:
     replace("homeassistant.core", core)
 
     graphql = types.ModuleType("custom_components.helianthus.graphql")
-    graphql.GraphQLClient = lambda **_kwargs: object()
+    graphql.GraphQLClient = lambda **_kwargs: _OfflineSchemaClient()
     graphql.build_graphql_url = lambda *_args, **_kwargs: "http://offline/graphql"
     replace("custom_components.helianthus.graphql", graphql)
     identity = types.ModuleType("custom_components.helianthus.identity")
