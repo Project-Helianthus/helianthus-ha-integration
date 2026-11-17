@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -50,6 +52,12 @@ def unavailable(*ids):
     ]}}
 
 
+_INTROSPECTION_RESPONSE = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "gateway_query_schema_introspection.json")
+    .read_text(encoding="utf-8")
+)["response"]
+
+
 class Client:
     def __init__(self, payload):
         self.payload = payload
@@ -59,11 +67,13 @@ class Client:
         self.release.set()
         self.finished = asyncio.Event()
 
-    async def execute(self, query, variables):
+    async def execute(self, query, variables=None):
         self.calls.append((query, variables))
         self.entered.set()
         try:
             await self.release.wait()
+            if isinstance(query, str) and "__schema" in query:
+                return _INTROSPECTION_RESPONSE
             if isinstance(self.payload, Exception):
                 raise self.payload
             return self.payload
@@ -469,7 +479,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         assert await entry_setup.async_setup_entry(ha, configured)
         first = configured.runtime_data.semantic_snapshot_coordinator
         assert first.client is client and first.supported is readable_snapshot
-        assert first.update_interval == 17 and len(client.calls) == 1
+        assert first.update_interval == 17 and len(client.calls) == 2
         assert configured.runtime_data.semantic_snapshot_sensors_setup is None
         if readable_snapshot:
             sensor, = shared(entities)
@@ -490,7 +500,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         assert await entry_setup.async_setup_entry(ha, configured)
         second = configured.runtime_data.semantic_snapshot_coordinator
         assert second is not first and second.supported is True
-        assert len(client.calls) == (3 if readable_snapshot else 2) and len(forwarded) == 2
+        assert len(client.calls) == (5 if readable_snapshot else 4) and len(forwarded) == 2
         # HA waits only for tracked finite work; the poll must not be in this set.
         await asyncio.gather(*tracked)
         assert second._poll_task not in tracked and not second._poll_task.done()

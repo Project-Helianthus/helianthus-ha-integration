@@ -16,7 +16,9 @@ runtime of the entry that ``run`` last set up under that id.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -168,6 +170,23 @@ def install_home_assistant(monkeypatch, devices, entities):
                    CONF_SCAN_INTERVAL="scan_interval")
 
 
+_INTROSPECTION_RESPONSE = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "gateway_query_schema_introspection.json")
+    .read_text(encoding="utf-8")
+)["response"]
+
+
+class _SchemaClient:
+    async def execute(self, query, variables=None):
+        if isinstance(query, str) and "__schema" in query:
+            return _INTROSPECTION_RESPONSE
+        return {}
+
+
+def _schema_client(**kwargs):
+    return _SchemaClient()
+
+
 def install_independent_owners(monkeypatch, coordinator_data):
     for module_name, name in COORDINATORS:
         install_module(monkeypatch, f"custom_components.helianthus.{module_name}",
@@ -185,7 +204,7 @@ def install_independent_owners(monkeypatch, coordinator_data):
                        return_value=(admin, None, False)))
     monkeypatch.setattr(entry_ownership, "async_sanitize_legacy_eebus_admin_entry", AsyncMock())
     monkeypatch.setattr(entry_setup, "async_setup_semantic_snapshot", AsyncMock(return_value=None))
-    monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: object())
+    monkeypatch.setattr(graphql, "GraphQLClient", _schema_client)
     monkeypatch.setattr(identity, "verify_gateway_identity", AsyncMock(side_effect=ValueError()))
 
 

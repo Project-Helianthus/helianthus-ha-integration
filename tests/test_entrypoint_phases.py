@@ -356,13 +356,14 @@ def test_admission_count_survives_a_failed_setup_and_admits_the_retried_one(
 # ---------------------------------------------------------------------------
 
 SETUP_PHASES = (
-    "prepare", "connect", "gateway-devices", "coordinators", "admin", "inventory-devices",
-    "reload-request", "reconcile", "listeners", "m2m-boundaries", "service-boundaries",
-    "publish", "option-listener", "forward", "snapshot",
+    "prepare", "connect", "discover", "gateway-devices", "coordinators", "admin",
+    "inventory-devices", "reload-request", "reconcile", "listeners", "m2m-boundaries",
+    "service-boundaries", "publish", "option-listener", "forward", "snapshot",
 )
 PHASE_FUNCTIONS = {
     "async_prepare_entry": "prepare",
     "async_connect_gateway": "connect",
+    "async_discover_gateway_capabilities": "discover",
     "register_gateway_devices": "gateway-devices",
     "async_create_domain_coordinators": "coordinators",
     "register_inventory_devices": "inventory-devices",
@@ -377,7 +378,7 @@ PHASE_FUNCTIONS = {
     "async_attach_semantic_snapshot": "snapshot",
     "refuse_duplicate_setup": "refuse",
 }
-ASYNC_PHASES = {"prepare", "connect", "coordinators", "admin", "listeners",
+ASYNC_PHASES = {"prepare", "connect", "discover", "coordinators", "admin", "listeners",
                 "m2m-boundaries", "forward", "snapshot"}
 
 
@@ -471,6 +472,7 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
     assert bench.calls == {
         "prepare": ((hass, entry), {}),
         "connect": ((hass, entry), {}),
+        "discover": ((connection.client,), {}),
         "existing-devices": ((prepared.device_registry, "synthetic-entry"), {}),
         "gateway-devices": ((prepared.device_registry, "synthetic-entry", tuple(bench.existing)), {}),
         "coordinators": ((hass, connection.client, interval), {}),

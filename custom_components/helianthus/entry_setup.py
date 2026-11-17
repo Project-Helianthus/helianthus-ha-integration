@@ -1,18 +1,20 @@
 """Config-entry setup orchestration for the Helianthus integration.
 
 ``async_setup_entry`` runs the setup phases in order: prepare, connect,
-register the gateway devices, create the coordinators, set up the optional
-admin boundary, register the inventory devices, reconcile entities, start
-listeners and subscriptions, set up the consumer boundaries, publish the
-entry's runtime to ``entry.runtime_data``, add the option-change listener,
-register the platforms with the post-platform clean-up, then attach the
-semantic snapshot.
+discover capabilities, register the gateway devices, create the coordinators,
+set up the optional admin boundary, register the inventory devices, reconcile
+entities, start listeners and subscriptions, set up the consumer boundaries,
+publish the entry's runtime to ``entry.runtime_data``, add the option-change
+listener, register the platforms with the post-platform clean-up, then attach
+the semantic snapshot.
 
 Every phase that acquires a resource registers its release with the entry's
 one ``EntryResources``. A setup that fails or is cancelled releases everything
-registered so far, newest first, withdraws the runtime it published and
-propagates the primary error; a gateway connection failure is raised as
-``ConfigEntryNotReady`` so Home Assistant retries the setup.
+registered so far, newest first, and withdraws the runtime it published. A
+gateway connection failure whose releases succeeded, and a connection failure
+whose platforms stayed loaded, are raised as ``ConfigEntryNotReady``. A
+connection failure whose release failed, with the platforms confirmed
+unloaded, raises that release failure.
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ from .entry_services import (
     register_option_reload_listener,
     service_boundaries,
 )
+from .gateway_capabilities import async_discover_gateway_capabilities
 from .graphql import GraphQLRequestError, GraphQLTimeoutError
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
 from .zone_parent import ZoneParentBindings, normalize_zone_id
@@ -438,25 +441,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
     """Set up Helianthus from a config entry; a failed setup releases what it acquired.
 
     A failure or a cancellation releases every resource the phases registered,
-    newest first, withdraws the runtime this setup published and propagates
-    the primary error; a release failure is logged and does not replace it. A
-    gateway connection failure is raised as ``ConfigEntryNotReady``. When the
-    rollback cannot confirm the forwarded platforms unloaded, the platforms,
-    the older resources and the published runtime are kept; the next setup
-    releases them first, raises ``ConfigEntryNotReady`` while they stay loaded
-    and raises the first release failure instead of setting up again.
+    newest first, and withdraws the runtime this setup published. A gateway
+    connection failure whose releases succeeded, and a connection failure whose
+    platforms stayed loaded, are raised as ``ConfigEntryNotReady``. A
+    connection failure whose release failed, with the platforms confirmed
+    unloaded, raises that release failure. When the rollback cannot confirm
+    the forwarded platforms unloaded, the platforms, the older resources and
+    the published runtime are kept; the next setup releases them first, raises
+    ``ConfigEntryNotReady`` while they stay loaded and raises the first release
+    failure instead of setting up again.
     """
     await _async_release_retained_setup(entry)
     resources = EntryResources(entry.entry_id)
     try:
         return await _async_run_setup_phases(hass, entry, resources)
     except BaseException as err:
-        await _async_roll_back(entry, resources)
+        release_error = await _async_roll_back(entry, resources)
         if isinstance(err, _CONNECTION_FAILURES):
-            from homeassistant.exceptions import ConfigEntryNotReady
-
-            raise ConfigEntryNotReady(f"Helianthus gateway connection failed: {err}") from err
+            _raise_rolled_back_connection_failure(err, resources, release_error)
         raise
+
+
+def _raise_rolled_back_connection_failure(
+    err: BaseException, resources: EntryResources, release_error: Exception | None
+) -> None:
+    """Raise a connection failure after its rollback.
+
+    A release that failed while the platforms were confirmed unloaded
+    propagates, so a later setup does not run beside a resource that may still
+    be open. A connection failure whose releases succeeded, and one whose
+    platforms stayed loaded, is ``ConfigEntryNotReady``.
+    """
+    from homeassistant.exceptions import ConfigEntryNotReady
+
+    if release_error is not None and not resources.platforms_retained:
+        raise release_error
+    raise ConfigEntryNotReady(f"Helianthus gateway connection failed: {err}") from err
 
 
 async def _async_release_retained_setup(entry: object) -> None:
@@ -496,6 +516,17 @@ async def _async_roll_back(entry: object, resources: EntryResources) -> Exceptio
             object.__delattr__(entry, "runtime_data")
 
 
+def _bind_device_schema_drift(
+    coordinators: object, capabilities: object, request_reload: object
+) -> None:
+    """Give the device inventory the paths discovery offered and one reload."""
+    coordinator = getattr(coordinators, "device_coordinator", None)
+    bind = getattr(coordinator, "bind_schema_drift", None)
+    if bind is None:
+        return
+    bind(capabilities, request_reload)
+
+
 async def _async_run_setup_phases(
     hass: HomeAssistant, entry: HelianthusConfigEntry, resources: EntryResources
 ) -> bool:
@@ -511,6 +542,8 @@ async def _async_run_setup_phases(
         return True
     if isinstance(connection, DuplicateOwnerRefusal):
         return refuse_duplicate_setup(hass, entry, prepared, connection)
+
+    capabilities = await async_discover_gateway_capabilities(connection.client)
 
     device_registry = prepared.device_registry
     existing_entry_devices = tuple(dr.async_entries_for_config_entry(device_registry, entry.entry_id))
@@ -531,6 +564,7 @@ async def _async_run_setup_phases(
     identities = register_inventory_devices(device_registry, entry.entry_id, gateway_devices, coordinators)
 
     schedule_reload = entry_reload_scheduler(hass, entry.entry_id)
+    _bind_device_schema_drift(coordinators, capabilities, schedule_reload)
     reconciliation = reconcile_entities(hass, entry, prepared, coordinators, identities, schedule_reload)
     listeners = await async_start_listeners(
         hass, entry, prepared=prepared, connection=connection, coordinators=coordinators,

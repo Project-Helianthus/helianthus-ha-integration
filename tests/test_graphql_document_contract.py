@@ -18,9 +18,9 @@ __schema and __type meta fields, are added to the recorded type map, so the
 capability probe is validated like every other document.
 
 The subset of GraphQL the integration uses is parsed: operations, variable
-definitions, selection sets, arguments with variables and scalar literals.
-Fragments, aliases and directives are refused, so a document that starts using
-them fails here until the guard learns them.
+definitions, selection sets, arguments with variables and scalar literals, and
+named fragment definitions with their spreads. A spread is checked against the
+parent type. Inline fragments, aliases and directives are refused.
 
 The three M2M documents target the separate M2M listener, whose schema is not
 the /graphql schema: they are compared byte for byte with the recorded fixed
@@ -68,6 +68,14 @@ class Selection:
     name: str
     arguments: dict[str, tuple[str, str]] = field(default_factory=dict)  # arg -> (kind, text)
     selections: list["Selection"] | None = None
+    spread: bool = False
+
+
+@dataclass
+class Fragment:
+    name: str
+    type_condition: str
+    selections: list[Selection]
 
 
 @dataclass
@@ -76,6 +84,7 @@ class Operation:
     name: str
     variables: dict[str, str]
     selections: list[Selection]
+    fragments: dict[str, Fragment] = field(default_factory=dict)
 
 
 def _tokens(text: str) -> list[tuple[str, str]]:
@@ -137,9 +146,30 @@ class _Parser:
                     raise DocumentError("variable default values are outside the parsed subset")
             self._take()
         selections = self._selection_set()
+        fragments = self._fragment_definitions()
         if self._peek()[0] != "end":
             raise DocumentError("more than one operation or trailing text in one document")
-        return Operation(kind, name, variables, selections)
+        return Operation(kind, name, variables, selections, fragments)
+
+    def _fragment_definitions(self) -> dict[str, Fragment]:
+        fragments: dict[str, Fragment] = {}
+        while self._peek() == ("name", "fragment"):
+            fragment = self._fragment()
+            if fragment.name in fragments:
+                raise DocumentError(f"duplicate fragment {fragment.name}")
+            fragments[fragment.name] = fragment
+        return fragments
+
+    def _fragment(self) -> Fragment:
+        self._take("name", "fragment")
+        name = self._take("name")
+        if name == "on":
+            raise DocumentError("inline fragments are outside the parsed subset")
+        self._take("name", "on")
+        type_name = self._take("name")
+        if self._peek() == ("punct", "@"):
+            raise DocumentError("directives are outside the parsed subset")
+        return Fragment(name, type_name, self._selection_set())
 
     def _type(self) -> str:
         if self._peek() == ("punct", "["):
@@ -159,7 +189,8 @@ class _Parser:
         selections: list[Selection] = []
         while self._peek() != ("punct", "}"):
             if self._peek() == ("punct", "..."):
-                raise DocumentError("fragments are outside the parsed subset")
+                selections.append(self._spread())
+                continue
             name = self._take("name")
             if self._peek() == ("punct", ":"):
                 raise DocumentError(f"alias on {name} is outside the parsed subset")
@@ -175,6 +206,15 @@ class _Parser:
         if not selections:
             raise DocumentError("empty selection set")
         return selections
+
+    def _spread(self) -> Selection:
+        self._take("punct", "...")
+        if self._peek() == ("name", "on"):
+            raise DocumentError("inline fragments are outside the parsed subset")
+        name = self._take("name")
+        if self._peek() == ("punct", "@"):
+            raise DocumentError("directives are outside the parsed subset")
+        return Selection(name, spread=True)
 
     def _arguments(self, selection: Selection) -> None:
         self._take("punct", "(")
@@ -255,8 +295,8 @@ def _literal_problem(types: dict, kind: str, value: str, argument_type: str) -> 
 def _merge_conflicts(selections: list[Selection], where: str) -> list[str]:
     """Selections of one response name must merge: same arguments, merged sub-selections.
 
-    Without aliases and fragments the response name is the field name and both
-    selections sit on the same parent type, so the check is syntactic.
+    Named fragment spreads are expanded first. Without aliases the response
+    name is the field name, so the check stays syntactic.
     """
     problems: list[str] = []
     groups: dict[str, list[Selection]] = {}
@@ -279,6 +319,15 @@ class _Validator:
         self.problems: list[str] = []
         self.used: set[str] = set()
 
+    def fragments(self) -> None:
+        for fragment in self._operation.fragments.values():
+            if fragment.type_condition not in self._types:
+                self.problems.append(
+                    f"fragment {fragment.name} on unknown type {fragment.type_condition}"
+                )
+                continue
+            self.selections(fragment.type_condition, fragment.selections, fragment.name)
+
     def variables(self) -> None:
         for variable, declared in self._operation.variables.items():
             named = self._types.get(_named(declared))
@@ -288,6 +337,9 @@ class _Validator:
     def selections(self, parent: str, selections: list[Selection], path: str) -> None:
         fields = self._types[parent].get("fields", {})
         for selection in selections:
+            if selection.spread:
+                self._spread(selection, parent, path)
+                continue
             where = f"{path}.{selection.name}"
             recorded = fields.get(selection.name)
             if recorded is None:
@@ -295,6 +347,17 @@ class _Validator:
                 continue
             self._arguments(selection, recorded.get("args", {}), where)
             self._shape(selection, recorded["type"], where)
+
+    def _spread(self, selection: Selection, parent: str, path: str) -> None:
+        fragment = self._operation.fragments.get(selection.name)
+        where = f"{path}.{selection.name}"
+        if fragment is None:
+            self.problems.append(f"{where}: unknown fragment {selection.name}")
+            return
+        if fragment.type_condition != parent:
+            self.problems.append(
+                f"{where}: fragment type {fragment.type_condition} does not match {parent}"
+            )
 
     def _arguments(self, selection: Selection, arguments: dict[str, str], where: str) -> None:
         for argument, (kind, value) in selection.arguments.items():
@@ -445,6 +508,49 @@ def _with_introspection(schema: dict) -> dict:
     return {**schema, "types": types}
 
 
+def _expanded(selections: list[Selection], fragments: dict[str, Fragment], seen: frozenset[str]) -> list[Selection]:
+    expanded: list[Selection] = []
+    for selection in selections:
+        if selection.spread:
+            if selection.name in seen or selection.name not in fragments:
+                continue
+            body = fragments[selection.name].selections
+            expanded.extend(_expanded(body, fragments, seen | {selection.name}))
+            continue
+        children = selection.selections
+        if children is not None:
+            children = _expanded(children, fragments, seen)
+        expanded.append(Selection(selection.name, dict(selection.arguments), children))
+    return expanded
+
+
+def _reached_fragments(operation: Operation) -> set[str]:
+    reached: set[str] = set()
+
+    def walk(selections: list[Selection]) -> None:
+        for selection in selections:
+            if not selection.spread:
+                if selection.selections:
+                    walk(selection.selections)
+                continue
+            if selection.name in reached or selection.name not in operation.fragments:
+                continue
+            reached.add(selection.name)
+            walk(operation.fragments[selection.name].selections)
+
+    walk(operation.selections)
+    return reached
+
+
+def _unused_fragments(operation: Operation) -> list[str]:
+    reached = _reached_fragments(operation)
+    return [
+        f"fragment {name} is never used"
+        for name in operation.fragments
+        if name not in reached
+    ]
+
+
 def validate(operation: Operation, schema: dict) -> list[str]:
     root = schema.get(operation.kind)
     if not root or root not in schema["types"]:
@@ -455,8 +561,12 @@ def validate(operation: Operation, schema: dict) -> list[str]:
     if operation.kind == "subscription" and len({s.name for s in operation.selections}) != 1:
         validator.problems.append("a subscription selects exactly one root field")
     validator.variables()
+    validator.fragments()
     validator.selections(root, operation.selections, operation.kind)
-    validator.problems.extend(_merge_conflicts(operation.selections, operation.kind))
+    validator.problems.extend(
+        _merge_conflicts(_expanded(operation.selections, operation.fragments, frozenset()), operation.kind)
+    )
+    validator.problems.extend(_unused_fragments(operation))
     for variable in operation.variables:
         if variable not in validator.used:
             validator.problems.append(f"${variable}: declared variable is never used")
@@ -572,7 +682,13 @@ def test_m2m_documents_equal_the_recorded_fixed_documents() -> None:
         ("query Q($a: Int!) { device(address: $b) { address } }", "undeclared variable"),
         ("mutation M($p: JSON!) { invoke(address: 1, plane: \"p\", method: \"m\", params: $p) { ok } }", "not an input type"),
         ("query { devices { address } unknown_arg: devices { address } }", "alias"),
-        ("query { ...F }", "fragments"),
+        ("query { ...F }", "unknown fragment"),
+        ("query { devices { ... on device { address } } }", "inline fragments"),
+        (
+            "query { devices { ...StatusBits } } fragment StatusBits on service_status { status }",
+            "does not match",
+        ),
+        ("query { devices { address } } fragment Spare on device { address }", "never used"),
         ("query { device(address: \"not-an-int\") { address } }", "does not match"),
         ("query { device(address: 1.5) { address } }", "does not match"),
         ("query { device(address: null) { address } }", "null for non-null"),
@@ -613,6 +729,7 @@ def test_the_guard_rejects_each_kind_of_defect(text: str, expected: str) -> None
         "subscription { zone_update { id } }",
         "subscription { zone_update { id } zone_update { id } }",
         "query { __schema { queryType { name } } }",
+        "query { devices { ...DeviceAddress } } fragment DeviceAddress on device { address }",
         'query { __type(name: "zone") { name kind fields(includeDeprecated: true) { name } } }',
         'mutation { invoke(address: 1, plane: "\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9\tx", method: "m") { ok } }',
     ],

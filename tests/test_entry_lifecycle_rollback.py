@@ -37,6 +37,7 @@ M2M = ("close-evse", "close-storage", "close-pv")
 PHASES = (
     ("prepare", "entry_setup", "async_prepare_entry", ()),
     ("connect", "entry_setup", "async_connect_gateway", ()),
+    ("discover", "entry_setup", "async_discover_gateway_capabilities", ()),
     ("gateway-devices", "entry_setup", "register_gateway_devices", ()),
     ("coordinators", "entry_setup", "async_create_domain_coordinators", ()),
     ("admin", "entry_services", "async_setup_optional_eebus_admin_service", ADMIN),
@@ -284,6 +285,7 @@ class Bench:
             "async_connect_gateway": GatewayConnection(
                 session=object(), graphql_url="https://gateway.example.test/graphql",
                 client=object(), instance_guid="guid-synthetic"),
+            "async_discover_gateway_capabilities": object(),
             "register_gateway_devices": SimpleNamespace(
                 daemon_device_id=("helianthus", "synthetic-daemon"),
                 adapter_device_id=("helianthus", "synthetic-adapter")),
@@ -395,6 +397,45 @@ def test_connection_failure_rolls_back_and_raises_not_ready(monkeypatch, after, 
     assert caught.value.__cause__ is primary
     assert bench.released == expected_releases(after)
     assert not hasattr(bench.entry, "runtime_data")
+
+
+@pytest.mark.parametrize("failing", CLOSES)
+@pytest.mark.parametrize("make_error", (
+    lambda: OSError("synthetic unreachable"),
+    lambda: TimeoutError("synthetic timeout"),
+    lambda: GraphQLRequestError("synthetic transport failure"),
+    lambda: GraphQLTimeoutError("synthetic request timeout"),
+), ids=("os", "timeout", "graphql-request", "graphql-timeout"))
+def test_connection_failure_with_a_failed_release_raises_that_release(
+    monkeypatch, failing, make_error
+):
+    """Fields varied: the release and the connection failure.
+
+    The release is one of close-snapshot, remove-option-listener, close-evse,
+    close-storage, close-pv, cancel-subscription, clear-admin-lifecycle,
+    unregister-admin-services and close-admin-session. The connection failure
+    is one of OSError, TimeoutError, GraphQLRequestError and
+    GraphQLTimeoutError. Leaving one of those classes on the retry path, or
+    discarding the release error, fails the identity of the raised error.
+    """
+    primary = make_error()
+    bench = Bench(monkeypatch, after="snapshot", primary=primary, failing=(failing,))
+    with pytest.raises(RuntimeError) as caught:
+        bench.setup()
+    assert caught.value is bench.release_errors[failing]
+    assert bench.released == expected_releases("snapshot")
+    assert not hasattr(bench.entry, "runtime_data")
+
+
+def test_connection_failure_keeps_platforms_that_stay_loaded(monkeypatch):
+    """A connection failure whose platforms stay loaded remains retryable."""
+    primary = OSError("synthetic unreachable")
+    bench = Bench(monkeypatch, after="snapshot", primary=primary)
+    bench.unload_result = False
+    with pytest.raises(NotReadyError) as caught:
+        bench.setup()
+    assert caught.value.__cause__ is primary
+    assert bench.entry.runtime_data.resources.platforms_retained
 
 
 @pytest.mark.parametrize("make_error", (

@@ -59,11 +59,7 @@ QUERY_BOILER = coordinator_boiler.QUERY_BOILER
 QUERY_CIRCUITS = coordinator_circuits.QUERY_CIRCUITS
 QUERY_ENERGY = coordinator_energy.QUERY_ENERGY
 QUERY_ENERGY_LEGACY = coordinator_energy.QUERY_ENERGY_LEGACY
-QUERY_EXTENDED_V2 = coordinator_devices.QUERY_EXTENDED_V2
-QUERY_EXTENDED_V2_NO_ADDRESSES = coordinator_devices.QUERY_EXTENDED_V2_NO_ADDRESSES
 QUERY_EXTENDED_V3 = coordinator_devices.QUERY_EXTENDED_V3
-QUERY_EXTENDED_V3_NO_ADDRESSES = coordinator_devices.QUERY_EXTENDED_V3_NO_ADDRESSES
-QUERY_EXTENDED_V3_NO_PART = coordinator_devices.QUERY_EXTENDED_V3_NO_PART
 QUERY_FM5 = coordinator_fm5.QUERY_FM5
 QUERY_RADIO_DEVICES = coordinator_radio.QUERY_RADIO_DEVICES
 QUERY_SEMANTIC = coordinator_semantic.QUERY_SEMANTIC
@@ -201,112 +197,65 @@ def _energy_totals_payload(today: float = 3.5) -> dict[str, dict]:
     }
 
 
-def test_v3_falls_back_to_v3_without_part_number() -> None:
+def test_device_inventory_returns_devices_from_one_query() -> None:
     client = _ScriptedClient(
         [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "part_number" on type "Device".'}]
-            ),
             {
                 "devices": [
                     {
                         "address": 8,
-                        "manufacturer": "Vaillant",
-                        "display_name": "sensoCOMFORT",
-                        "product_family": "sensoCOMFORT",
-                        "product_model": "VRC 720f/2",
+                        "device_id": "synthetic",
+                        "display_name": "synthetic-display",
                     }
                 ]
-            },
+            }
         ]
     )
     coordinator = _build_coordinator(client)
 
     data = asyncio.run(coordinator._async_update_data())
 
-    assert len(data) == 1
-    assert data[0]["display_name"] == "sensoCOMFORT"
-    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_PART]
-
-
-def test_v3_falls_back_when_addresses_field_missing() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "addresses" on type "Device".'}]
-            ),
-            {
-                "devices": [
-                    {
-                        "address": 8,
-                        "manufacturer": "Vaillant",
-                        "device_id": "BASV2",
-                    }
-                ]
-            },
-        ]
-    )
-    coordinator = _build_coordinator(client)
-
-    data = asyncio.run(coordinator._async_update_data())
-
-    assert len(data) == 1
-    assert data[0]["address"] == 8
-    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V3_NO_ADDRESSES]
-
-
-def test_v2_fallback_wraps_transport_error_as_update_failed() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "display_name" on type "Device".'}]
-            ),
-            GraphQLClientError("timeout while reading response"),
-        ]
-    )
-    coordinator = _build_coordinator(client)
-
-    try:
-        asyncio.run(coordinator._async_update_data())
-    except UpdateFailed:
-        pass
-    else:
-        raise AssertionError("expected UpdateFailed")
-
-    assert client.calls == [QUERY_EXTENDED_V3, QUERY_EXTENDED_V2]
-
-
-def test_v2_fallback_drops_addresses_when_missing() -> None:
-    client = _ScriptedClient(
-        [
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "display_name" on type "Device".'}]
-            ),
-            GraphQLResponseError(
-                [{"message": 'Cannot query field "addresses" on type "Device".'}]
-            ),
-            {
-                "devices": [
-                    {
-                        "address": 21,
-                        "manufacturer": "Vaillant",
-                        "device_id": "BASV2",
-                    }
-                ]
-            },
-        ]
-    )
-    coordinator = _build_coordinator(client)
-
-    data = asyncio.run(coordinator._async_update_data())
-
-    assert len(data) == 1
-    assert data[0]["address"] == 21
-    assert client.calls == [
-        QUERY_EXTENDED_V3,
-        QUERY_EXTENDED_V2,
-        QUERY_EXTENDED_V2_NO_ADDRESSES,
+    assert data == [
+        {
+            "address": 8,
+            "device_id": "synthetic",
+            "display_name": "synthetic-display",
+        }
     ]
+    assert client.calls == [QUERY_EXTENDED_V3]
+
+
+@pytest.mark.parametrize(
+    "field", ("part_number", "addresses", "display_name", "serial_number")
+)
+def test_a_rejected_device_field_fails_the_inventory_update(field: str) -> None:
+    """Fields varied: part_number, addresses, display_name, serial_number.
+
+    A second device query after the rejection fails the calls assertion.
+    """
+    client = _ScriptedClient(
+        [
+            GraphQLResponseError(
+                [{"message": f'Cannot query field "{field}" on type "device".'}]
+            )
+        ]
+    )
+    coordinator = _build_coordinator(client)
+
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
+
+    assert client.calls == [QUERY_EXTENDED_V3]
+
+
+def test_device_inventory_transport_error_fails_the_update() -> None:
+    client = _ScriptedClient([GraphQLClientError("timeout while reading response")])
+    coordinator = _build_coordinator(client)
+
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
+
+    assert client.calls == [QUERY_EXTENDED_V3]
 
 
 def test_status_query_uses_initiator_field_when_available() -> None:
