@@ -7,6 +7,12 @@ listeners and subscriptions, set up the consumer boundaries, publish the
 entry's runtime to ``entry.runtime_data``, add the option-change listener,
 register the platforms with the post-platform clean-up, then attach the
 semantic snapshot.
+
+Every phase that acquires a resource registers its release with the entry's
+one ``EntryResources``. A setup that fails or is cancelled releases everything
+registered so far, newest first, withdraws the runtime it published and
+propagates the primary error; a gateway connection failure is raised as
+``ConfigEntryNotReady`` so Home Assistant retries the setup.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from .device_ids import (
     resolve_boiler_via_device_id,
 )
 from .entry_connection import ConnectionSkipped, GatewayConnection, async_connect_gateway
+from .entry_cleanup import EntryResources
 from .entry_coordinators import DomainCoordinators, async_create_domain_coordinators
 from .entry_devices import (
     DeviceIdentities,
@@ -54,6 +61,7 @@ from .entry_services import (
     register_option_reload_listener,
     service_boundaries,
 )
+from .graphql import GraphQLRequestError, GraphQLTimeoutError
 from .semantic_snapshot_coordinator import async_setup_semantic_snapshot
 from .zone_parent import ZoneParentBindings, normalize_zone_id
 
@@ -63,6 +71,9 @@ if TYPE_CHECKING:
     from .entry_runtime import HelianthusConfigEntry
 
 _LOGGER = logging.getLogger(__package__)
+
+# Failures to reach the gateway; setup raises them as ``ConfigEntryNotReady``.
+_CONNECTION_FAILURES = (GraphQLRequestError, GraphQLTimeoutError, OSError)
 
 
 def _parse_identifier_index(token: str, prefix: str) -> int | None:
@@ -84,9 +95,11 @@ async def _async_forward_platforms_and_finalize(
     *,
     reconciler: EntryEntityReconciler,
     nonexportable_radio_keys: set[str],
+    resources: EntryResources,
 ) -> None:
-    """Forward platforms before the two established post-setup cleanup passes."""
+    """Forward platforms, own their unload, then run the two post-setup cleanup passes."""
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
+    resources.own_platforms(hass, entry, platforms)
     reconciler.cleanup_nonexportable_radio_registry_entries(
         nonexportable_radio_keys,
         "post-platform setup",
@@ -306,8 +319,14 @@ async def async_start_listeners(
     identities: DeviceIdentities,
     reconciliation: EntityReconciliation,
     schedule_reload: Callable[[str], None],
+    resources: EntryResources,
 ) -> StartedListeners:
-    """Bind the zone parents, add the listeners and helpers, then start subscriptions."""
+    """Bind the zone parents, add the listeners and helpers, then start subscriptions.
+
+    The listener callbacks and the subscription task are owned by ``resources``
+    as soon as they exist; the callback list is read when it is released, so
+    the callbacks the platforms add later are released with it.
+    """
     zone_parents, zone_parent_device_ids, unresolved_zone_ids = _bind_zone_parents(
         hass, entry, prepared, coordinators, identities
     )
@@ -327,6 +346,7 @@ async def async_start_listeners(
         schedule_reload=schedule_reload,
     )
     unsub_listeners: list[Callable[[], None]] = listeners.register()
+    resources.own_unsubscribes("listener callbacks", unsub_listeners)
     unsub_listeners.extend(
         register_schedule_helper_listeners(
             hass,
@@ -338,6 +358,8 @@ async def async_start_listeners(
         )
     )
     subscription_task = await _async_start_subscriptions(entry, connection, coordinators)
+    if subscription_task is not None:
+        resources.own("subscription task", subscription_task.cancel)
     return StartedListeners(
         listeners=listeners,
         unsub_listeners=unsub_listeners,
@@ -358,6 +380,7 @@ def publish_entry_runtime(
     reconciliation: EntityReconciliation,
     listeners: StartedListeners,
     services: ServiceBoundaries,
+    resources: EntryResources,
 ) -> None:
     """Publish the entry's complete runtime to ``entry.runtime_data`` in one assignment."""
     boiler_device = identities.boiler_device_id
@@ -369,6 +392,7 @@ def publish_entry_runtime(
         identities=identities,
         services=services,
         listeners=listeners,
+        resources=resources,
         admission_repair_code=admission.get("repair_code"),
         source_selection=admission.get("source_selection"),
         boiler_physical_device_id=resolve_boiler_physical_device_id(boiler_device, regulator_device),
@@ -382,13 +406,15 @@ def publish_entry_runtime(
 
 
 async def async_attach_semantic_snapshot(
-    hass: object, entry: object, client: object, scan_interval: object
+    hass: object, entry: object, client: object, scan_interval: object,
+    *, resources: EntryResources,
 ) -> None:
-    """Attach the semantic snapshot coordinator, then run the deferred sensor setup."""
+    """Attach the semantic snapshot coordinator and own its close, then run the deferred sensor setup."""
     runtime: HelianthusRuntime = entry.runtime_data
-    runtime.semantic_snapshot_coordinator = await async_setup_semantic_snapshot(
-        hass, entry, client, scan_interval
-    )
+    coordinator = await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
+    if coordinator is not None:
+        resources.own("semantic snapshot coordinator", coordinator.async_close)
+    runtime.semantic_snapshot_coordinator = coordinator
     runtime.semantic_snapshot_attached = True
     setup_snapshot_sensors = runtime.semantic_snapshot_sensors_setup
     runtime.semantic_snapshot_sensors_setup = None
@@ -402,7 +428,38 @@ def _admin_origin(graphql_url: str) -> str:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -> bool:
-    """Set up Helianthus from a config entry through its ordered phases."""
+    """Set up Helianthus from a config entry; a failed setup releases what it acquired.
+
+    A failure or a cancellation releases every resource the phases registered,
+    newest first, withdraws the runtime this setup published and propagates
+    the primary error; a release failure is logged and does not replace it. A
+    gateway connection failure is raised as ``ConfigEntryNotReady``.
+    """
+    resources = EntryResources(entry.entry_id)
+    try:
+        return await _async_run_setup_phases(hass, entry, resources)
+    except BaseException as err:
+        await _async_roll_back(entry, resources)
+        if isinstance(err, _CONNECTION_FAILURES):
+            from homeassistant.exceptions import ConfigEntryNotReady
+
+            raise ConfigEntryNotReady(f"Helianthus gateway connection failed: {err}") from err
+        raise
+
+
+async def _async_roll_back(entry: object, resources: EntryResources) -> None:
+    """Release what a failed setup acquired, then withdraw the runtime it published."""
+    try:
+        await resources.async_release()
+    finally:
+        if getattr(getattr(entry, "runtime_data", None), "resources", None) is resources:
+            object.__delattr__(entry, "runtime_data")
+
+
+async def _async_run_setup_phases(
+    hass: HomeAssistant, entry: HelianthusConfigEntry, resources: EntryResources
+) -> bool:
+    """Run the ordered setup phases; each acquiring phase registers with ``resources``."""
     from homeassistant.const import CONF_SCAN_INTERVAL
     from homeassistant.helpers import device_registry as dr
 
@@ -429,6 +486,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
         origin=_admin_origin(connection.graphql_url),
         instance_guid=connection.instance_guid or entry.entry_id,
         scan_interval=scan_interval,
+        resources=resources,
     )
     identities = register_inventory_devices(device_registry, entry.entry_id, gateway_devices, coordinators)
 
@@ -437,9 +495,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
     listeners = await async_start_listeners(
         hass, entry, prepared=prepared, connection=connection, coordinators=coordinators,
         identities=identities, reconciliation=reconciliation, schedule_reload=schedule_reload,
+        resources=resources,
     )
 
-    boundaries = await async_setup_m2m_boundaries(hass, entry, scan_interval)
+    boundaries = await async_setup_m2m_boundaries(hass, entry, scan_interval, resources=resources)
     publish_entry_runtime(
         entry,
         connection=connection,
@@ -449,6 +508,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
         reconciliation=reconciliation,
         listeners=listeners,
         services=service_boundaries(entry, admin, boundaries),
+        resources=resources,
     )
     register_option_reload_listener(entry)
 
@@ -460,6 +520,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HelianthusConfigEntry) -
         PLATFORMS,
         reconciler=reconciliation.reconciler,
         nonexportable_radio_keys=listeners.listeners.nonexportable_radio_keys,
+        resources=resources,
     )
-    await async_attach_semantic_snapshot(hass, entry, connection.client, scan_interval)
+    await async_attach_semantic_snapshot(
+        hass, entry, connection.client, scan_interval, resources=resources
+    )
     return True

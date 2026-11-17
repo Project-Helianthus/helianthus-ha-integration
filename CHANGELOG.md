@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Roll back a failed config-entry setup and release every resource on unload.
+  Each setup phase registers what it acquires (the eeBUS admin session,
+  services and lifecycle, the coordinator and helper listeners, the
+  subscription task, the PV, storage and EVSE boundaries, the forwarded
+  platforms and the semantic snapshot coordinator) with one release stack of
+  the entry. A setup that fails or is cancelled releases what it acquired,
+  newest first, withdraws the runtime it published and keeps the original
+  error; a gateway connection failure is raised as `ConfigEntryNotReady` so
+  Home Assistant retries. Unload unloads the platforms first and releases
+  nothing when that is refused; otherwise every resource is released once,
+  a failing release no longer skips the later ones, and the first failure is
+  raised. No entity or unique ID changes.
 - Add the config-entry diagnostics download: one on-demand GraphQL read of
   `bus_summary`, `watch_summary`, `fm5_interpretation`,
   `vaillant_regulator_capability`, `daemon_status` and `adapter_status`, plus

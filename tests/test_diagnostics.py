@@ -75,6 +75,7 @@ def _ensure_diagnostics_stub() -> None:
 _ensure_diagnostics_stub()
 
 from custom_components.helianthus import diagnostics, entry_services, entry_setup  # noqa: E402
+from custom_components.helianthus.entry_cleanup import EntryResources  # noqa: E402
 from custom_components.helianthus.entry_connection import GatewayConnection  # noqa: E402
 from custom_components.helianthus.entry_coordinators import DomainCoordinators  # noqa: E402
 from custom_components.helianthus.entry_devices import DeviceIdentities  # noqa: E402
@@ -144,6 +145,7 @@ def _publish(entry: SimpleNamespace, client: _FakeClient, *, pv_coordinator=None
             zone_parent_device_ids={}, unresolved_zone_ids=(), radio_device_zone_names={}),
         services=entry_services.service_boundaries(
             entry, (admin, None, False), entry_services.M2MBoundaries(pv=pv, storage=None, evse=None)),
+        resources=EntryResources(entry.entry_id),
     )
 
 

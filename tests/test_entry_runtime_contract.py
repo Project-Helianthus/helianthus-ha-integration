@@ -166,19 +166,33 @@ class SetupTail:
         self.entry.async_on_unload = lambda unsub: self.record("own-update-listener")
         self.values = {key: object() for key in RUNTIME_KEYS}
         self.values["boiler_device_id"], self.values["regulator_device_id"] = BOILER_CASES[parents]
-        self.values.update(adapter_device_id=ADAPTER, snapshot=None if optional else object(),
-                           semantic_asset_selection_signature=("asset:synthetic",))
+        self.values.update(adapter_device_id=ADAPTER, semantic_asset_selection_signature=("asset:synthetic",),
+                           snapshot=None if optional else SimpleNamespace(
+                               async_close=self._closer("close-snapshot")))
         self.values["eebus_admin_coordinator"] = SimpleNamespace(
             lifecycle=SimpleNamespace(action_broker=self.values["eebus_admin_action_broker"]))
         self.hass = SimpleNamespace(data={}, config_entries=SimpleNamespace(
-            async_forward_entry_setups=self.forward))
+            async_forward_entry_setups=self.forward, async_unload_platforms=self.unload_platforms))
         self._install(monkeypatch)
 
+    def _closer(self, name):
+        async def close():
+            self.record(name)
+        return close
+
+    async def unload_platforms(self, actual_entry, platforms):
+        assert actual_entry is self.entry and platforms == ["sensor", "climate"]
+        self.record("unload-platforms")
+        return True
+
     def _published(self, runtime):
+        from custom_components.helianthus.entry_cleanup import EntryResources
         from custom_components.helianthus.entry_runtime import HelianthusRuntime
 
         self.record("publish")
         assert type(runtime) is HelianthusRuntime
+        assert type(runtime.resources) is EntryResources
+        assert runtime.resources.entry_id == "synthetic-entry"
         assert flat_view(runtime) == self.expected()
         assert runtime.semantic_snapshot_attached is False
         assert runtime.semantic_snapshot_coordinator is None
@@ -258,7 +272,8 @@ class SetupTail:
                 return None
             return self.values[family + "_m2m_boundary"]
         self.values[family + "_m2m_boundary"] = SimpleNamespace(
-            coordinator=self.values[family + "_m2m_coordinator"])
+            coordinator=self.values[family + "_m2m_coordinator"],
+            async_close=self._closer("close-" + family))
         return create
 
     async def forward(self, actual_entry, platforms):
@@ -310,39 +325,58 @@ def test_optional_boundary_configuration_failure_preserves_publication(monkeypat
     assert bench.published[0][family + "_m2m_coordinator"] is None
 
 
-@pytest.mark.parametrize("phase", ("create-pv", "create-storage", "create-evse", "forward", "snapshot", "sensors"))
+# What a failure inside each phase leaves to release, newest acquisition first.
+ROLLBACK = {
+    "create-pv": [],
+    "create-storage": ["close-pv"],
+    "create-evse": ["close-storage", "close-pv"],
+    "forward": ["close-evse", "close-storage", "close-pv"],
+    "snapshot": ["unload-platforms", "close-evse", "close-storage", "close-pv"],
+    "sensors": ["close-snapshot", "unload-platforms", "close-evse", "close-storage", "close-pv"],
+}
+
+
+@pytest.mark.parametrize("phase", tuple(ROLLBACK))
 @pytest.mark.parametrize("cancel", (False, True))
-def test_partial_setup_keeps_current_publication_and_propagates(monkeypatch, phase, cancel):
+def test_partial_setup_rolls_back_and_withdraws_the_runtime(monkeypatch, phase, cancel):
+    """A failure or cancellation inside each phase releases what came before it, then propagates."""
     bench = SetupTail(monkeypatch, failure=("cancel-" if cancel else "") + phase)
     with pytest.raises(asyncio.CancelledError if cancel else RuntimeError) as caught:
         bench.run()
     if not cancel:
         assert caught.value is bench.error
     expected = PHASES + ["sensors"]
-    assert bench.events == expected[:expected.index(phase) + 1]
-    if phase.startswith("create-"):
-        assert not hasattr(bench.entry, "runtime_data") and bench.published == []
-        return
-    runtime = bench.entry.runtime_data
-    assert (runtime.semantic_snapshot_sensors_setup is not None) is (phase == "snapshot")
-    assert runtime.semantic_snapshot_attached is (phase == "sensors")
-    assert runtime.semantic_snapshot_coordinator is (bench.values["snapshot"] if phase == "sensors" else None)
+    ran = expected[:expected.index(phase) + 1]
+    assert bench.events == ran + ROLLBACK[phase]
+    assert not hasattr(bench.entry, "runtime_data")
+    assert len(bench.published) == (0 if phase.startswith("create-") else 1)
+
+
+FULL_UNLOAD = ["platforms", "snapshot", "evse", "storage", "pv", "cancel", "listener-first",
+               "listener-error", "listener-last", "clear", "unregister", "admin"]
+RELEASES = ("snapshot", "evse", "storage", "pv", "cancel", "clear", "unregister", "admin")
 
 
 def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, optional=False):
-    from custom_components.helianthus import eebus_admin_coordinator, entry_cleanup
+    """One published entry whose resources own each release, registered in setup order."""
+    from custom_components.helianthus import entry_cleanup
+    from custom_components.helianthus.entry_cleanup import EntryResources
 
     events = []
     primary = RuntimeError("synthetic primary failure")
     secondary = ValueError("synthetic snapshot close failure")
     entry = SimpleNamespace(entry_id="synthetic-entry")
-
     record = phase_recorder(events, failure, primary, secondary)
 
-    def boundary(name):
-        async def close():
+    def release(name):
+        def run():
             assert entry.entry_id not in counts
             record(name)
+        return run
+
+    def closer(name):
+        async def close():
+            release(name)()
         return SimpleNamespace(async_close=close)
 
     def listener_failure():
@@ -350,16 +384,27 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
         raise RuntimeError("synthetic listener error")
 
     fields = {} if optional else {
-        "subscription_task": SimpleNamespace(cancel=lambda: record("cancel")),
-        "unsub_listeners": [lambda: record("listener-first"), listener_failure,
-                            lambda: record("listener-last")],
-        "eebus_admin_coordinator": SimpleNamespace(lifecycle=SimpleNamespace(clear=lambda: record("clear"))),
-        "eebus_admin_session": object(), "eebus_admin_services_registered": registered,
-        "semantic_snapshot_coordinator": boundary("snapshot"),
-        "pv_m2m_boundary": boundary("pv"), "storage_m2m_boundary": boundary("storage"),
-        "evse_m2m_boundary": boundary("evse"),
+        "subscription_task": SimpleNamespace(cancel=release("cancel")),
+        "unsub_listeners": [release("listener-first"), listener_failure, release("listener-last")],
+        "eebus_admin_coordinator": SimpleNamespace(lifecycle=SimpleNamespace(clear=release("clear"))),
+        "eebus_admin_session": closer("admin"), "eebus_admin_services_registered": registered,
+        "semantic_snapshot_coordinator": closer("snapshot"),
+        "pv_m2m_boundary": closer("pv"), "storage_m2m_boundary": closer("storage"),
+        "evse_m2m_boundary": closer("evse"),
     }
     runtime = attach_runtime(entry, fields)
+    runtime.resources = EntryResources(entry.entry_id)
+    if not optional:
+        own = runtime.resources.own
+        own("eeBUS admin session", fields["eebus_admin_session"].async_close)
+        if registered:
+            own("eeBUS admin services", release("unregister"))
+        own("eeBUS admin lifecycle", fields["eebus_admin_coordinator"].lifecycle.clear)
+        runtime.resources.own_unsubscribes("listener callbacks", fields["unsub_listeners"])
+        own("subscription task", fields["subscription_task"].cancel)
+        for name in ("pv_m2m_boundary", "storage_m2m_boundary", "evse_m2m_boundary",
+                     "semantic_snapshot_coordinator"):
+            own(name, fields[name].async_close)
     counts = {entry.entry_id: 2, "synthetic-other": 3}
     other = attach_runtime(SimpleNamespace(entry_id="synthetic-other"), {
         "subscription_task": SimpleNamespace(cancel=lambda: record("other-cancel"))})
@@ -368,21 +413,11 @@ def cleanup_case(monkeypatch, *, result=True, failure=None, registered=True, opt
     async def unload(actual_entry, platforms):
         assert actual_entry is entry and platforms == ["sensor", "climate"]
         record("platforms")
-        return result
+        return hass.unload_result
 
-    async def close_admin(session):
-        assert session is fields["eebus_admin_session"]
-        record("admin")
-
-    async def unregister(actual_hass, *, entry_id, session):
-        assert actual_hass is hass and entry_id == entry.entry_id
-        record("unregister")
-        await close_admin(session)
-
-    hass = SimpleNamespace(data={DOMAIN: domain_data}, config_entries=SimpleNamespace(async_unload_platforms=unload))
-    monkeypatch.setattr(eebus_admin_coordinator, "close_admin_session", close_admin)
+    hass = SimpleNamespace(data={DOMAIN: domain_data}, unload_result=result,
+                           config_entries=SimpleNamespace(async_unload_platforms=unload))
     monkeypatch.setattr(entry_cleanup, "PLATFORMS", ["sensor", "climate"])
-    monkeypatch.setattr(entry_cleanup, "async_unload_eebus_admin_boundary", unregister)
     return entry_cleanup.async_unload_entry, hass, entry, events, runtime, counts, other, primary, secondary
 
 
@@ -393,23 +428,24 @@ def run_cleanup(case):
 
 @pytest.mark.parametrize("registered", (False, True))
 def test_unload_false_retains_state_and_success_clears_only_owned_state(monkeypatch, registered):
+    full = [event for event in FULL_UNLOAD if registered or event != "unregister"]
     case = cleanup_case(monkeypatch, result=False, registered=registered)
     assert run_cleanup(case) is False
     _, hass, entry, events, runtime, counts, other, *_ = case
     assert events == ["platforms"]
     assert entry.runtime_data is runtime
     assert counts == {entry.entry_id: 2, "synthetic-other": 3}
-    case = cleanup_case(monkeypatch, registered=registered)
+    hass.unload_result = True
     assert run_cleanup(case) is True
-    _, hass, entry, events, runtime, counts, other, *_ = case
-    assert events == ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear"] + (["unregister"] if registered else []) + ["admin", "snapshot", "pv", "storage", "evse"]
+    assert events == ["platforms"] + full
     assert counts == {"synthetic-other": 3}
     assert hass.data[DOMAIN] == {"_admission_cleanup_counts": counts}
-    # Home Assistant discards the runtime after a successful unload; a later
-    # unload then finds none and closes nothing twice.
+    # The same runtime unloaded again releases nothing twice; nor does an
+    # unload after Home Assistant has discarded the runtime.
+    assert run_cleanup(case) is True
     del entry.runtime_data
     assert run_cleanup(case) is True
-    assert events[-1] == "platforms" and events.count("cancel") == 1
+    assert events == ["platforms"] + full + ["platforms", "platforms"]
 
 
 @pytest.mark.parametrize("state", ("missing-domain", "missing-entry", "empty", "none"))
@@ -428,37 +464,49 @@ def test_optional_or_missing_resources(monkeypatch, state):
     assert case[3] == ["platforms"]
 
 
-@pytest.mark.parametrize("phase,expected", (
-    ("platforms", ["platforms"]),
-    ("cancel-platforms", ["platforms"]),
-    ("cancel-cancel", ["platforms", "cancel", "snapshot"]),
-    ("cancel-listener-first", ["platforms", "cancel", "listener-first", "snapshot"]),
-    ("clear", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "snapshot"]),
-    ("admin", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot"]),
-    ("cancel-admin", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot"]),
-    ("snapshot", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot"]),
-    ("cancel-snapshot", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot"]),
-    ("pv", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot", "pv"]),
-    ("storage", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot", "pv", "storage"]),
-    ("evse", ["platforms", "cancel", "listener-first", "listener-error", "listener-last", "clear", "unregister", "admin", "snapshot", "pv", "storage", "evse"]),
-))
-def test_cleanup_finally_and_error_propagation(monkeypatch, phase, expected):
-    case = cleanup_case(monkeypatch, failure=phase)
-    with pytest.raises(asyncio.CancelledError if phase.startswith("cancel-") else RuntimeError) as caught:
+@pytest.mark.parametrize("cancel", (False, True))
+def test_a_failing_platform_unload_releases_nothing(monkeypatch, cancel):
+    case = cleanup_case(monkeypatch, failure=("cancel-" if cancel else "") + "platforms")
+    with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
         run_cleanup(case)
-    if not phase.startswith("cancel-"):
+    assert case[3] == ["platforms"]
+    assert case[2].runtime_data is case[4]
+    assert case[2].entry_id in case[5]
+
+
+@pytest.mark.parametrize("phase", RELEASES)
+@pytest.mark.parametrize("cancel", (False, True))
+def test_a_failing_release_does_not_stop_the_later_ones(monkeypatch, phase, cancel):
+    """Each release failing or cancelled: every other release runs once, then it propagates."""
+    case = cleanup_case(monkeypatch, failure=("cancel-" if cancel else "") + phase)
+    with pytest.raises(asyncio.CancelledError if cancel else RuntimeError) as caught:
+        run_cleanup(case)
+    if not cancel:
         assert caught.value is case[-2]
-    assert case[3] == expected
-    assert (case[2].entry_id in case[5]) is phase.endswith("platforms")
+    assert case[3] == FULL_UNLOAD
+    assert case[2].entry_id not in case[5]
 
 
-def test_snapshot_finally_error_replaces_admin_error(monkeypatch):
+@pytest.mark.parametrize("phase", ("listener-first", "listener-last"))
+def test_a_failing_unsubscribe_is_suppressed(monkeypatch, phase):
+    case = cleanup_case(monkeypatch, failure=phase)
+    assert run_cleanup(case) is True
+    assert case[3] == FULL_UNLOAD
+
+
+def test_a_cancelled_unsubscribe_skips_only_the_rest_of_its_list(monkeypatch):
+    case = cleanup_case(monkeypatch, failure="cancel-listener-first")
+    with pytest.raises(asyncio.CancelledError):
+        run_cleanup(case)
+    assert case[3] == [event for event in FULL_UNLOAD if event not in ("listener-error", "listener-last")]
+
+
+def test_the_first_failing_release_is_the_primary_error(monkeypatch):
     case = cleanup_case(monkeypatch, failure="admin-and-snapshot")
     with pytest.raises(ValueError) as caught:
         run_cleanup(case)
     assert caught.value is case[-1]
-    assert caught.value.__context__ is case[-2]
-    assert case[3][-2:] == ["admin", "snapshot"]
+    assert case[3] == FULL_UNLOAD
 
 
 def test_publication_order_negative_control(monkeypatch):
@@ -514,7 +562,7 @@ def test_each_published_field_has_exactly_one_writer():
         start, end = function_span(sources[owner], writer)
         counts[field] = sources[owner][start:end].count(prefix)
     assert set(counts.values()) == {1}, counts
-    assert len(counts) == 24
+    assert len(counts) == 25
 
 
 def test_runtime_type_matches_publication_and_conditional_fields():

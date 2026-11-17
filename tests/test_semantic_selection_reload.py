@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from custom_components.helianthus import const, entry_services, entry_setup
+from custom_components.helianthus.entry_cleanup import EntryResources
 
 KEY = "semantic_asset_ids"
 COMPONENT = Path(entry_setup.__file__).parent
@@ -68,6 +69,7 @@ def install(hass, configured):
         identities=unset, reconciliation=SimpleNamespace(admission={}), listeners=unset,
         services=entry_services.service_boundaries(
             configured, admin, entry_services.M2MBoundaries(pv=None, storage=None, evse=None)),
+        resources=EntryResources(configured.entry_id),
     )
     entry_services.register_option_reload_listener(configured)
     assert len(configured.listeners) == len(configured.removers) == 1
