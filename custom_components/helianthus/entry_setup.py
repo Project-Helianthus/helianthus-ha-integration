@@ -97,9 +97,13 @@ async def _async_forward_platforms_and_finalize(
     nonexportable_radio_keys: set[str],
     resources: EntryResources,
 ) -> None:
-    """Forward platforms, own their unload, then run the two post-setup cleanup passes."""
-    await hass.config_entries.async_forward_entry_setups(entry, platforms)
+    """Own the platform unload, forward the platforms, then run the two post-setup cleanup passes.
+
+    The unload is registered before forwarding starts, so a failure or a
+    cancellation that arrives after some platforms were set up unloads them.
+    """
     resources.own_platforms(hass, entry, platforms)
+    await hass.config_entries.async_forward_entry_setups(entry, platforms)
     reconciler.cleanup_nonexportable_radio_registry_entries(
         nonexportable_radio_keys,
         "post-platform setup",

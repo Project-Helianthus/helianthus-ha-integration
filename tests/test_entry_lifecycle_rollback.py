@@ -377,19 +377,26 @@ def test_other_failures_roll_back_and_propagate_unchanged(monkeypatch, make_erro
     assert bench.released == expected_releases("listeners")
 
 
-def test_failing_forwarding_releases_everything_acquired_before_it(monkeypatch):
-    """Forwarding that raises set up no platforms the rollback could unload."""
+@pytest.mark.parametrize("make_error", (
+    lambda: RuntimeError("synthetic forwarding failure"),
+    lambda: asyncio.CancelledError("synthetic forwarding cancellation"),
+), ids=("error", "cancelled"))
+def test_failing_forwarding_unloads_the_platforms_already_set_up(monkeypatch, make_error):
+    """Forwarding that stops midway: the platforms set up so far are unloaded."""
     bench = Bench(monkeypatch)
-    error = RuntimeError("synthetic forwarding failure")
+    error = make_error()
 
     async def forward(entry, platforms):
+        entry.runtime_data.listeners.unsub_listeners.append(
+            bench.releaser("unsub-platform-listener"))
         raise error
 
     bench.hass.config_entries.async_forward_entry_setups = forward
-    with pytest.raises(RuntimeError) as caught:
+    with pytest.raises(type(error)) as caught:
         bench.setup()
     assert caught.value is error
-    assert bench.released == expected_releases("option-listener")
+    assert bench.released == expected_releases("option-listener")[:0] + [
+        "unload-platforms", *expected_releases("forward")[1:]]
     assert not hasattr(bench.entry, "runtime_data")
 
 

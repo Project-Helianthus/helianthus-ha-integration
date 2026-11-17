@@ -183,8 +183,9 @@ delegate to setup and teardown, and the platform list lives in
     `entry.runtime_data` (`publish_entry_runtime`), then register the
     option-update listener of entry services through the entry's unload hook
     when those entry methods exist.
-11. Register the platforms: await platform forwarding, register the forwarded
-    platforms with the entry's resources, then run the reconciler's
+11. Register the platforms: register the platform unload with the entry's
+    resources, then await platform forwarding, so a failure or cancellation
+    during forwarding unloads the platforms already set up; then run the reconciler's
     radio-registry cleanup for the non-exportable radio slots of the latest
     radio update, then its trusted-admission cleanup.
 12. Attach the semantic snapshot (`async_attach_semantic_snapshot`): await
@@ -332,7 +333,7 @@ resource as soon as it has acquired it:
 | Listeners (8) | The `unsub_listeners` list: the coordinator listeners, the schedule helpers and the callbacks the platforms append later | Call each callback in list order. The list is read when it is released. |
 | Listeners (8) | The subscription task, when subscriptions are enabled | Request its cancellation; the task is not awaited. |
 | Register services (9) | The PV, storage and EVSE boundaries that were created, in that order | Close the boundary. |
-| Register platforms (11) | The forwarded platforms | Unload them, during a rollback only; unload unloads them itself first. |
+| Register platforms (11) | The forwarded platforms | Unload them, registered before forwarding starts so a partial forwarding is unloaded too; during a rollback only, because unload unloads them itself first. |
 | Semantic snapshot (12) | The snapshot coordinator, when it is not `None` | Close the coordinator. |
 
 Releases run newest first: the snapshot coordinator, the platforms, the EVSE,
@@ -373,9 +374,7 @@ records the failed unload; a repeated unload of that runtime finds its stack
 empty and closes nothing twice.
 
 Limitations: the subscription task's cancellation is requested, not awaited.
-Platforms that a failing forwarding call had already set up are not unloaded
-by the rollback, because forwarding did not complete and they were never
-registered. A cancellation inside an unsubscribe callback skips the remaining
+A cancellation inside an unsubscribe callback skips the remaining
 callbacks of that list; the other releases still run.
 
 ## Evidence and scope

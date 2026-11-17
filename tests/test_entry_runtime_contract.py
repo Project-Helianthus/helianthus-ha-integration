@@ -330,7 +330,7 @@ ROLLBACK = {
     "create-pv": [],
     "create-storage": ["close-pv"],
     "create-evse": ["close-storage", "close-pv"],
-    "forward": ["close-evse", "close-storage", "close-pv"],
+    "forward": ["unload-platforms", "close-evse", "close-storage", "close-pv"],
     "snapshot": ["unload-platforms", "close-evse", "close-storage", "close-pv"],
     "sensors": ["close-snapshot", "unload-platforms", "close-evse", "close-storage", "close-pv"],
 }
