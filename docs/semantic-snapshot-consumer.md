@@ -31,10 +31,11 @@ safeguards continue to apply independently of user authorization.
 
 The entry-owned coordinator uses the entry's `scan_interval` option (default
 60 seconds, minimum one second). Its public `supported` state is `None` before
-support is established, `True` after a valid response, and `False` when the root
-is missing. An unsupported root stops polling and explicit refresh requests;
-unload and setup create a new coordinator and probe again. Refresh failures retain
-the original exception for diagnostics and log once per support/health transition.
+support is established, `True` after a valid response, and `False` when the
+recorded schema omits the snapshot root. An unsupported root stops polling and
+explicit refresh requests. A new setup reads the schema again. Refresh failures
+retain the original exception for diagnostics and log once per support/health
+transition.
 
 ## One detached update
 
@@ -114,8 +115,9 @@ the original exception for diagnostics and log once per support/health transitio
    supported, a mixed identity/vector, malformed scalar, unresolved reference,
    GraphQL `errors` (including a missing sub-field), null root, transport
    failure, `CONFLICT`, `RESOURCE_EXHAUSTED` or `UNAVAILABLE` rejects the whole
-   attempt. A missing `semanticSnapshot` root itself is the separate
-   unsupported-gateway case below.
+   attempt. A recorded schema that omits the snapshot root is the separate
+   unsupported case below. A rejected field on an offered root fails that read
+   and polling continues.
    Keep the previous accepted detached state for diagnostics and recovery, mark
    affected live sensors unavailable, and never synthesize zero. Do not present
    a cache from a failed request as a new successful read.
@@ -127,20 +129,20 @@ the original exception for diagnostics and log once per support/health transitio
 Malformed successful responses raise `SemanticSnapshotError`. The client never
 retries with a reduced selection or another root.
 
-The integration's existing optional-query rule (`next_optional_query_state` and
-`_is_missing_field_error`) applies to the shared path:
+The consumer reads the snapshot root when the recorded schema offers it, and
+when no schema was recorded. A recorded schema that omits `semantic_snapshot`
+leaves the consumer unsupported for this connection:
 
-- A recognised GraphQL error that the `semanticSnapshot` field is missing sets a
-  "shared path unsupported" state. No shared-path entities are created.
-- That state is not retried on every poll and does not touch the existing PV,
-  Storage and EVSE owners.
-- Transient errors (transport failure, other GraphQL errors) keep the current
-  state; the first valid response advances an unknown state to supported.
-- A missing sub-field never triggers a reduced or legacy selection retry: a
-  selection lacking quality is insufficient, so there is no thinner query to
-  fall back to.
+- The update does not send the snapshot query. One warning names the path. A
+  later poll does not warn again and does not send the query.
+- No shared-path entities are created. Polling stays stopped until a new setup.
+  That state does not touch the existing PV, Storage and EVSE owners.
+- A rejected field, including a missing sub-field on a root the recorded schema
+  offers, fails that read. Polling continues. The first successful read marks
+  an unknown consumer supported. A transport error keeps the current support
+  state. There is no thinner query.
 - A missing sub-field on a root already known to be supported is a whole-attempt
-  failure under rule 6, not an unsupported-gateway verdict.
+  failure under rule 6, not an unsupported verdict.
 
 A successful response may explicitly mark one asset unavailable while preserving
 readable siblings. Commit that result: retain the failed asset's descriptors and

@@ -501,7 +501,8 @@ def test_setup_runs_its_phases_in_order_and_hands_each_result_on(
         "forward": ((hass, entry, PLATFORMS), {
             "reconciler": result["reconcile"].reconciler,
             "nonexportable_radio_keys": {"radio"}, "resources": resources}),
-        "snapshot": ((hass, entry, connection.client, interval), {"resources": resources}),
+        "snapshot": ((hass, entry, connection.client, interval), {
+            "resources": resources, "capabilities": result["discover"]}),
     }
 
 

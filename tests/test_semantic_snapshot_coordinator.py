@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -66,6 +67,7 @@ class Client:
         self.release = asyncio.Event()
         self.release.set()
         self.finished = asyncio.Event()
+        self.schema = _INTROSPECTION_RESPONSE
 
     async def execute(self, query, variables=None):
         self.calls.append((query, variables))
@@ -73,7 +75,7 @@ class Client:
         try:
             await self.release.wait()
             if isinstance(query, str) and "__schema" in query:
-                return _INTROSPECTION_RESPONSE
+                return self.schema
             if isinstance(self.payload, Exception):
                 raise self.payload
             return self.payload
@@ -330,7 +332,7 @@ def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial
             updated.clear()
             tick.set()
             await updated.wait()
-        expected = False if missing == "semantic_snapshot" else (True if initial_success else None)
+        expected = True if initial_success else None
         assert coordinator.supported is expected
         assert not coordinator.last_update_success
         assert coordinator.last_exception is error
@@ -358,6 +360,52 @@ def test_graphql_support_state_and_poll_suppression(monkeypatch, caplog, initial
         warnings = [r for r in caplog.records if r.levelname == "WARNING"]
         assert len(warnings) == 1
         await coordinator.async_close()
+    asyncio.run(asyncio.wait_for(exercise(), timeout=5))
+
+
+def test_a_missing_snapshot_root_does_not_read(caplog):
+    """The snapshot root, removed alone, leaves the consumer unsupported.
+
+    Sending a read, logging more than one warning, or omitting the path from
+    that warning fails this test. A later refresh does not read or warn again.
+    """
+    from test_coordinator_status import without_path
+    from custom_components.helianthus.gateway_capabilities import capabilities_from_introspection
+
+    capabilities = capabilities_from_introspection(
+        without_path(_INTROSPECTION_RESPONSE, "semantic_snapshot")
+    )
+    assert "semantic_snapshot" not in capabilities.paths
+
+    async def exercise():
+        client = Client(unavailable("a"))
+        coordinator = SemanticSnapshotCoordinator(hass(), client, ("a",))
+        coordinator._capabilities = capabilities
+        caplog.set_level(
+            logging.WARNING,
+            logger="custom_components.helianthus.semantic_snapshot_coordinator",
+        )
+        await coordinator.async_request_refresh()
+        await coordinator.async_request_refresh()
+        assert client.calls == []
+        assert coordinator.supported is False
+        assert coordinator.data is None
+        assert coordinator.last_exception is None
+        assert not coordinator.last_update_success
+        records = [
+            record for record in caplog.records
+            if record.name == "custom_components.helianthus.semantic_snapshot_coordinator"
+        ]
+        assert len(records) == 1
+        message = records[0].getMessage()
+        prefix = (
+            "Helianthus semantic snapshot domain is unavailable for this connection; "
+            "unsupported path "
+        )
+        assert message.startswith(prefix)
+        assert message.removeprefix(prefix) == "semantic_snapshot"
+        await coordinator.async_close()
+
     asyncio.run(asyncio.wait_for(exercise(), timeout=5))
 
 
@@ -389,6 +437,19 @@ def sensor_setup_loaded():
     return importlib.import_module("custom_components.helianthus.sensor_setup")
 
 
+def _snapshot_publication_client(readable_snapshot, readable):
+    """Build the publication client: a readable snapshot, or a schema without the root."""
+    from test_coordinator_status import without_path
+    from test_semantic_snapshot_sensors import ROWS
+
+    client = Client(unavailable("a"))
+    if readable_snapshot:
+        client.payload = {"semantic_snapshot": {"assets": [readable(*ROWS[0])]}}
+    else:
+        client.schema = without_path(_INTROSPECTION_RESPONSE, "semantic_snapshot")
+    return client
+
+
 @pytest.mark.parametrize("readable_snapshot", [False, True])
 @pytest.mark.usefixtures("sensor_setup_loaded")
 def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_snapshot):
@@ -397,7 +458,6 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
     from types import ModuleType
     from unittest.mock import AsyncMock
     from custom_components.helianthus import entry_ownership, entry_setup
-    from custom_components.helianthus.graphql import GraphQLResponseError
     from custom_components.helianthus import graphql, identity
     from test_semantic_snapshot_sensors import ROWS, readable, shared, sensor_platform
     from decimal import Decimal
@@ -451,10 +511,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
                                  CONF_SEMANTIC_ASSET_IDS: ["asset:pv" if readable_snapshot else "a"]},
                            options={"use_subscriptions": False, "scan_interval": 17})
         configured.unique_id = None
-        client = Client(GraphQLResponseError([
-            {"message": 'Cannot query field "semantic_snapshot" on type "Query".'}]))
-        if readable_snapshot:
-            client.payload = {"semantic_snapshot": {"assets": [readable(*ROWS[0])]}}
+        client = _snapshot_publication_client(readable_snapshot, readable)
         monkeypatch.setattr(graphql, "GraphQLClient", lambda **kw: client)
         tracked = []
         def create_task(coro):
@@ -479,7 +536,7 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         assert await entry_setup.async_setup_entry(ha, configured)
         first = configured.runtime_data.semantic_snapshot_coordinator
         assert first.client is client and first.supported is readable_snapshot
-        assert first.update_interval == 17 and len(client.calls) == 2
+        assert first.update_interval == 17 and len(client.calls) == (2 if readable_snapshot else 1)
         assert configured.runtime_data.semantic_snapshot_sensors_setup is None
         if readable_snapshot:
             sensor, = shared(entities)
@@ -497,10 +554,11 @@ def test_entry_setup_publication_unload_and_fresh_setup(monkeypatch, readable_sn
         assert first._closed and first._refresh_task is first._poll_task is None
         entities.clear()
         client.payload = unavailable("asset:pv" if readable_snapshot else "a")
+        client.schema = _INTROSPECTION_RESPONSE
         assert await entry_setup.async_setup_entry(ha, configured)
         second = configured.runtime_data.semantic_snapshot_coordinator
         assert second is not first and second.supported is True
-        assert len(client.calls) == (5 if readable_snapshot else 4) and len(forwarded) == 2
+        assert len(client.calls) == (5 if readable_snapshot else 3) and len(forwarded) == 2
         # HA waits only for tracked finite work; the poll must not be in this set.
         await asyncio.gather(*tracked)
         assert second._poll_task not in tracked and not second._poll_task.done()

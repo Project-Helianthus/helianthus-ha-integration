@@ -54,7 +54,6 @@ from custom_components.helianthus.graphql import (
 )
 
 QUERY_ADAPTER_HARDWARE_INFO = coordinator_adapter_info.QUERY_ADAPTER_HARDWARE_INFO
-QUERY_ADAPTER_HARDWARE_INFO_MINIMAL = coordinator_adapter_info.QUERY_ADAPTER_HARDWARE_INFO_MINIMAL
 QUERY_BOILER = coordinator_boiler.QUERY_BOILER
 QUERY_CIRCUITS = coordinator_circuits.QUERY_CIRCUITS
 QUERY_ENERGY = coordinator_energy.QUERY_ENERGY
@@ -114,9 +113,6 @@ def _build_adapter_info_coordinator(
 ) -> HelianthusAdapterInfoCoordinator:
     coordinator = object.__new__(HelianthusAdapterInfoCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
-    coordinator._hardware_info_supported = None  # type: ignore[attr-defined]
-    coordinator._hardware_info_reprobe_at = None  # type: ignore[attr-defined]
-    coordinator._hardware_info_reprobe_delay_s = 300.0  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -369,18 +365,9 @@ def test_status_query_marks_degraded_admission_untrusted() -> None:
     assert client.calls == [QUERY_STATUS]
 
 
-def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_adapter_info_query_missing_root_field_fails_that_update() -> None:
     client = _ScriptedClient(
         [
-            GraphQLResponseError(
-                [
-                    {
-                        "message": 'Cannot query field "adapter_hardware_info" on type "Query".'
-                    }
-                ]
-            ),
             GraphQLResponseError(
                 [
                     {
@@ -391,65 +378,28 @@ def test_adapter_info_query_missing_root_field_reprobes_after_backoff(
         ]
     )
     coordinator = _build_adapter_info_coordinator(client)
-    current_time = 1_000.0
-    monkeypatch.setattr(coordinator_adapter_info.time, "monotonic", lambda: current_time)
 
-    first = asyncio.run(coordinator._async_update_data())
-    current_time += 60.0
-    second = asyncio.run(coordinator._async_update_data())
-    current_time += 300.0
-    third = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert first is None
-    assert second is None
-    assert third is None
-    assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
-    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO, QUERY_ADAPTER_HARDWARE_INFO]
+    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO]
 
 
-def test_adapter_info_query_unrelated_error_does_not_stick_to_minimal() -> None:
+def test_adapter_info_query_unrelated_error_fails_that_update() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError([{"message": 'boom on "adapter_status"'}]),
-            {
-                "adapter_hardware_info": {
-                    "firmware_version": "2.0.0",
-                    "info_supported": True,
-                    "is_wifi": True,
-                    "is_ethernet": False,
-                    "version_response_len": 8,
-                }
-            },
-            {
-                "adapter_hardware_info": {
-                    "firmware_version": "2.0.1",
-                    "info_supported": True,
-                    "is_wifi": True,
-                    "is_ethernet": False,
-                    "version_response_len": 8,
-                    "temperature_c": 31.5,
-                }
-            },
         ]
     )
     coordinator = _build_adapter_info_coordinator(client)
 
-    first = asyncio.run(coordinator._async_update_data())
-    second = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert first["firmware_version"] == "2.0.0"
-    assert first["is_wifi"] is True
-    assert second["firmware_version"] == "2.0.1"
-    assert second["temperature_c"] == 31.5
-    assert coordinator._hardware_info_supported is None  # type: ignore[attr-defined]
-    assert client.calls == [
-        QUERY_ADAPTER_HARDWARE_INFO,
-        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
-        QUERY_ADAPTER_HARDWARE_INFO,
-    ]
+    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO]
 
 
-def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() -> None:
+def test_adapter_info_query_subfield_rejection_fails_that_update() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
@@ -459,42 +409,14 @@ def test_adapter_info_query_subfield_incompatibility_sticks_to_minimal_mode() ->
                     }
                 ]
             ),
-            {
-                "adapter_hardware_info": {
-                    "firmware_version": "2.0.0",
-                    "info_supported": True,
-                    "is_wifi": True,
-                    "is_ethernet": False,
-                    "version_response_len": 8,
-                }
-            },
-            {
-                "adapter_hardware_info": {
-                    "firmware_version": "2.0.1",
-                    "info_supported": True,
-                    "is_wifi": True,
-                    "is_ethernet": False,
-                    "version_response_len": 8,
-                    "temperature_c": 31.5,
-                }
-            },
         ]
     )
     coordinator = _build_adapter_info_coordinator(client)
 
-    first = asyncio.run(coordinator._async_update_data())
-    second = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert first["firmware_version"] == "2.0.0"
-    assert first["is_wifi"] is True
-    assert second["firmware_version"] == "2.0.1"
-    assert second["temperature_c"] == 31.5
-    assert coordinator._hardware_info_supported is False  # type: ignore[attr-defined]
-    assert client.calls == [
-        QUERY_ADAPTER_HARDWARE_INFO,
-        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
-        QUERY_ADAPTER_HARDWARE_INFO_MINIMAL,
-    ]
+    assert client.calls == [QUERY_ADAPTER_HARDWARE_INFO]
 
 
 def test_boiler_query_returns_status_payload() -> None:
@@ -583,7 +505,7 @@ def test_circuit_query_returns_circuit_payload() -> None:
     assert client.calls == [QUERY_CIRCUITS]
 
 
-def test_circuit_query_missing_field_falls_back_to_empty_payload() -> None:
+def test_circuit_query_missing_field_fails_that_update() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
@@ -593,9 +515,9 @@ def test_circuit_query_missing_field_falls_back_to_empty_payload() -> None:
     )
     coordinator = _build_circuit_coordinator(client)
 
-    data = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert data == {"circuits": []}
     assert client.calls == [QUERY_CIRCUITS]
 
 
@@ -839,7 +761,6 @@ def _build_schedule_coordinator(
 ) -> HelianthusScheduleCoordinator:
     coordinator = object.__new__(HelianthusScheduleCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
-    coordinator.schedule_supported = True  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -872,7 +793,7 @@ def test_schedule_coordinator_returns_programs() -> None:
     assert client.calls == [QUERY_SCHEDULES]
 
 
-def test_schedule_coordinator_returns_empty_on_missing_field() -> None:
+def test_schedule_coordinator_missing_field_fails_that_update() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
@@ -882,10 +803,10 @@ def test_schedule_coordinator_returns_empty_on_missing_field() -> None:
     )
     coordinator = _build_schedule_coordinator(client)
 
-    result = asyncio.run(coordinator._async_update_data())
+    with pytest.raises(UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
 
-    assert result == {"programs": []}
-    assert coordinator.schedule_supported is False
+    assert client.calls == [QUERY_SCHEDULES]
 
 
 def test_schedule_coordinator_returns_empty_on_null_schedules() -> None:

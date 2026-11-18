@@ -95,6 +95,45 @@ def test_every_coordinator_is_created_then_refreshed_in_order(monkeypatch):
     assert len({id(c) for c in coordinators.in_order()}) == len(ORDER)
 
 
+# Fields that read the recorded paths. The device inventory does not.
+_CAPABILITY_FIELDS = frozenset({
+    "status_coordinator",
+    "semantic_coordinator",
+    "energy_coordinator",
+    "circuit_coordinator",
+    "radio_coordinator",
+    "fm5_coordinator",
+    "system_coordinator",
+    "boiler_coordinator",
+    "schedule_coordinator",
+    "adapter_info_coordinator",
+})
+
+
+def test_recorded_paths_reach_every_domain_that_reads_them(monkeypatch):
+    """Each domain that reads paths receives them; the device inventory does not.
+
+    Dropping the paths from one constructor, or handing them to the device
+    inventory, fails that field.
+    """
+    events: list[tuple[str, str]] = []
+    _install_coordinators(monkeypatch, events)
+    capabilities = object()
+    hass, client, interval = object(), object(), 47
+
+    coordinators = asyncio.run(
+        async_create_domain_coordinators(hass, client, interval, capabilities)
+    )
+
+    for field_name, _class_name in ORDER:
+        coordinator = getattr(coordinators, field_name)
+        if field_name in _CAPABILITY_FIELDS:
+            assert coordinator.args == (hass, client, interval, capabilities)
+        else:
+            assert coordinator.args == (hass, client, interval)
+            assert field_name == "device_coordinator"
+
+
 @pytest.mark.parametrize("position", range(len(ORDER)))
 def test_failing_refresh_stops_later_refreshes(monkeypatch, position):
     events: list[tuple[str, str]] = []

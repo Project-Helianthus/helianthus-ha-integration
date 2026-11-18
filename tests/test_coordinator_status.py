@@ -356,11 +356,11 @@ class _SchemaClient:
 def test_recorded_discovery_is_what_the_domain_coordinators_are_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Discovery's object is the capabilities argument of the domain coordinators.
+    """Discovery's object reaches every domain coordinator except devices.
 
-    Status, zones, energy, system, and boiler receive it. Passing it to another
-    coordinator, or dropping it from one of those five, fails this test. An
-    explicit object replaces the recorded one for each of them.
+    Dropping it from one of those coordinators, or passing it to the device
+    inventory, fails this test. An explicit object replaces the recorded one
+    for each of them.
     """
     from custom_components.helianthus import gateway_capabilities
     from custom_components.helianthus.entry_coordinators import async_create_domain_coordinators
@@ -382,8 +382,13 @@ def test_recorded_discovery_is_what_the_domain_coordinators_are_given(
         "HelianthusStatusCoordinator",
         "HelianthusSemanticCoordinator",
         "HelianthusEnergyCoordinator",
+        "HelianthusCircuitCoordinator",
+        "HelianthusRadioDeviceCoordinator",
+        "HelianthusFM5Coordinator",
         "HelianthusSystemCoordinator",
         "HelianthusBoilerCoordinator",
+        "HelianthusScheduleCoordinator",
+        "HelianthusAdapterInfoCoordinator",
     }
     assert set(recorded) == {class_name for _, class_name in DOMAIN_MODULES}
     for class_name, args in recorded.items():

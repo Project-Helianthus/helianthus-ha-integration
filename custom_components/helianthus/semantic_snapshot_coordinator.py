@@ -7,8 +7,7 @@ from collections.abc import Callable
 import logging
 
 from .const import DEFAULT_SCAN_INTERVAL
-from .coordinator_availability import _is_missing_field_error, next_optional_query_state
-from .graphql import GraphQLResponseError
+from .coordinator_availability import recorded_paths_absent
 from .semantic_snapshot import fetch_semantic_snapshot
 
 CONF_SEMANTIC_ASSET_IDS = "semantic_asset_ids"
@@ -40,12 +39,20 @@ def semantic_asset_ids(entry: object) -> tuple[str, ...]:
 class SemanticSnapshotCoordinator:
     """Retain immutable whole reads; transport health grants no entity admission."""
 
-    def __init__(self, hass: object, client: object, asset_ids: tuple[str, ...],
-                 scan_interval: int = DEFAULT_SCAN_INTERVAL) -> None:
+    def __init__(
+        self,
+        hass: object,
+        client: object,
+        asset_ids: tuple[str, ...],
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
+        capabilities: object = None,
+    ) -> None:
         self.hass = hass
         self.client = client
         self.asset_ids = asset_ids
         self.update_interval = max(1, int(scan_interval))
+        self._capabilities = capabilities
+        self._absence_warned = False
         self.data = None
         self.last_update_success = False
         self.last_exception = None
@@ -74,38 +81,48 @@ class SemanticSnapshotCoordinator:
                 _LOGGER.exception("Semantic snapshot consumer notification failed")
 
     async def _refresh(self) -> None:
+        if self._closed:
+            return
+        if recorded_paths_absent(self, "semantic snapshot", ("semantic_snapshot",)):
+            self.supported = False
+            self.last_update_success = False
+            self.last_exception = None
+        elif not await self._read_snapshot():
+            return
+        self._report_refresh()
+        self._notify()
+
+    async def _read_snapshot(self) -> bool:
+        """Apply one read. Return false when the consumer closed during the read."""
         try:
             value = await fetch_semantic_snapshot(self.client, self.asset_ids)
         except Exception as exc:
             if self._closed:
-                return
+                return False
             self.last_update_success = False
             self.last_exception = exc
-            self.supported = next_optional_query_state(
-                self.supported,
-                schema_field_missing=isinstance(exc, GraphQLResponseError)
-                and _is_missing_field_error(exc.errors, ["semantic_snapshot"]),
-            )
-        else:
-            if self._closed:
-                return
-            self.supported = next_optional_query_state(
-                self.supported, response_received=True
-            )
-            self.data = value
-            self.last_update_success = True
-            self.last_exception = None
+            return True
+        if self._closed:
+            return False
+        if self.supported is None:
+            self.supported = True
+        self.data = value
+        self.last_update_success = True
+        self.last_exception = None
+        return True
+
+    def _report_refresh(self) -> None:
         state = (self.supported, self.last_update_success)
-        if state != self._reported_state:
-            self._reported_state = state
-            if self.supported is False:
-                _LOGGER.warning("Semantic snapshot root unsupported; reload entry to retry")
-            elif not self.last_update_success:
-                _LOGGER.warning("Semantic snapshot refresh failed (%s)",
-                                type(self.last_exception).__name__)
-            else:
-                _LOGGER.info("Semantic snapshot refresh available")
-        self._notify()
+        if state == self._reported_state:
+            return
+        self._reported_state = state
+        if self.supported is not False and not self.last_update_success:
+            _LOGGER.warning(
+                "Semantic snapshot refresh failed (%s)",
+                type(self.last_exception).__name__,
+            )
+        elif self.last_update_success:
+            _LOGGER.info("Semantic snapshot refresh available")
 
     async def async_request_refresh(self) -> None:
         """Coalesce overlapping requests into one read and one notification."""
@@ -154,17 +171,26 @@ class SemanticSnapshotCoordinator:
             await self._close()
 
 
-async def async_setup_semantic_snapshot(hass: object, entry: object, client: object,
-                                        scan_interval: int = DEFAULT_SCAN_INTERVAL):
+async def async_setup_semantic_snapshot(
+    hass: object,
+    entry: object,
+    client: object,
+    scan_interval: int = DEFAULT_SCAN_INTERVAL,
+    capabilities: object = None,
+):
     """Create no consumer or task when the optional selection is absent/invalid."""
     try:
         ids = semantic_asset_ids(entry)
     except ValueError:
-        _LOGGER.warning("Semantic snapshot: invalid configured asset selection for entry %s",
-                        entry.entry_id)
+        _LOGGER.warning(
+            "Semantic snapshot: invalid configured asset selection for entry %s",
+            entry.entry_id,
+        )
         return None
     if not ids:
         return None
-    coordinator = SemanticSnapshotCoordinator(hass, client, ids, scan_interval)
+    coordinator = SemanticSnapshotCoordinator(
+        hass, client, ids, scan_interval, capabilities
+    )
     await coordinator.async_start()
     return coordinator
