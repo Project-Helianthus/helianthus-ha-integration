@@ -157,7 +157,7 @@ def _isolated_climate_imports(monkeypatch):
         platform = importlib.import_module("custom_components.helianthus.climate")
         names = (
             "HelianthusZoneClimate", "_ZONE_MODE_ADDR", "_ZONE_QUICK_VETO_DURATION_ADDR",
-            "_ZONE_QUICK_VETO_TEMP_ADDR", "_ZONE_TARGET_TEMP_ADDR",
+            "_ZONE_QUICK_VETO_TEMP_ADDR",
             "_ZONE_TARGET_TEMP_DESIRED_ADDR",
         )
         # Existing cases use these names; keep them local to the fixture lifetime.
@@ -464,15 +464,60 @@ def test_set_temperature_during_quickveto_writes_veto_register() -> None:
     assert coordinator.refresh_requests == 1
 
 
-def test_set_temperature_outside_quickveto_writes_normal_registers() -> None:
-    entity, client, coordinator = _make_entity(preset="schedule")
+_EFFECTIVE_SETPOINT_ADDR = 0x0014
+_MANUAL_SETPOINT_ADDR = 0x0022
+
+
+def _home_assistant_error() -> type[Exception]:
+    return sys.modules["homeassistant.exceptions"].HomeAssistantError
+
+
+@pytest.mark.parametrize("preset", ["schedule", "manual"])
+def test_set_temperature_outside_quickveto_writes_normal_registers(preset: str) -> None:
+    entity, client, coordinator = _make_entity(preset=preset)
 
     asyncio.run(entity.async_set_temperature(temperature=21.0))
 
-    assert len(client.calls) == 2
-    assert _extract_addr(client.calls[0]) == _ZONE_TARGET_TEMP_DESIRED_ADDR
-    assert _extract_addr(client.calls[1]) == _ZONE_TARGET_TEMP_ADDR
+    assert _ZONE_TARGET_TEMP_DESIRED_ADDR == _MANUAL_SETPOINT_ADDR
+    assert [_extract_addr(call) for call in client.calls] == [_MANUAL_SETPOINT_ADDR]
+    assert _extract_data(client.calls[0]) == list(struct.pack("<f", 21.0))
     assert coordinator.refresh_requests == 1
+
+
+def test_effective_setpoint_register_is_not_writable() -> None:
+    entity, client, _coord = _make_entity(preset="manual")
+
+    platform = sys.modules["custom_components.helianthus.climate"]
+    assert _EFFECTIVE_SETPOINT_ADDR not in platform._ZONE_WRITABLE_REGISTERS
+    with pytest.raises(_home_assistant_error(), match="0x0014"):
+        asyncio.run(entity._write_ext_register(_EFFECTIVE_SETPOINT_ADDR, [0, 0, 0, 0]))
+    assert client.calls == []
+
+
+class _RefusingClient(_FakeClient):
+    async def mutation(self, query: str, variables: dict):  # noqa: ANN201
+        self.calls.append({"query": query, "variables": variables})
+        return {
+            "invoke": {
+                "ok": False,
+                "error": {"message": "refused", "code": "NACK", "category": "PROTOCOL"},
+            }
+        }
+
+
+def test_refused_manual_setpoint_write_reports_error_and_target_follows_read_back() -> None:
+    entity, _client, coordinator = _make_entity(preset="manual", target_temp=19.5)
+    refusing = _RefusingClient()
+    entity._client = refusing
+
+    with pytest.raises(_home_assistant_error(), match=r"refused \(NACK, PROTOCOL\)"):
+        asyncio.run(entity.async_set_temperature(temperature=23.0))
+
+    assert [_extract_addr(call) for call in refusing.calls] == [_MANUAL_SETPOINT_ADDR]
+    assert coordinator.refresh_requests == 0
+    assert entity.target_temperature == 19.5
+    coordinator.data["zones"][0]["config"]["target_temp_c"] = 20.5
+    assert entity.target_temperature == 20.5
 
 
 def test_schedule_preset_writes_mode_auto() -> None:
@@ -609,7 +654,7 @@ def test_u09_real_write_fences_survive_import_scope_teardown() -> None:
     original_feature = sys.modules["homeassistant.components.climate.const"].ClimateEntityFeature
     entity, client, coordinator = _make_entity(preset="manual")
     asyncio.run(entity.async_set_temperature(temperature=22.0))
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
     with _isolated_entity_modules():
         _ensure_homeassistant_stubs()
@@ -627,7 +672,7 @@ def test_u09_real_write_fences_survive_import_scope_teardown() -> None:
     entity._status_coordinator.data["admission"]["trusted"] = False
     with pytest.raises(HomeAssistantError, match="source admission is not trusted"):
         asyncio.run(entity.async_set_temperature(temperature=22.0))
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
     entity._status_coordinator.data["admission"]["trusted"] = True
     coordinator.zones_is_stale = True
@@ -635,4 +680,4 @@ def test_u09_real_write_fences_survive_import_scope_teardown() -> None:
     assert entity.current_temperature == 20.0
     with pytest.raises(HomeAssistantError, match="semantic data is stale"):
         asyncio.run(entity.async_set_temperature(temperature=22.0))
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1

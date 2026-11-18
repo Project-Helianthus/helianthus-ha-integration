@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Setting a zone temperature outside quick veto writes only the manual zone
+  setpoint. The action no longer writes the zone's effective setpoint, a value
+  the regulator computes, after it. A refused second write no longer reports an
+  error for a setpoint that had already changed, and the integration does not
+  write the computed value. The shown target temperature still follows what
+  the regulator reports.
+
 - Every valid entity is created enabled, whether or not its value is present
   at creation. A sensor, number, text or binary sensor whose value is absent
   at creation, and every sensitive number or text, is created hidden instead.
