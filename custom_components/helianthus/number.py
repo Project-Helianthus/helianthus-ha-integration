@@ -417,7 +417,7 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
         self._boiler_device_id = boiler_device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-boiler-number-{field.mutation_field}"
-        self._attr_name, self._attr_translation_key = field.label, _number_translation_key(field)
+        self._attr_translation_key = _number_translation_key(field)
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step
@@ -621,7 +621,7 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
         self._regulator_device_id = regulator_device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-system-number-{field.mutation_field}"
-        self._attr_name, self._attr_translation_key = field.label, _number_translation_key(field)
+        self._attr_translation_key = _number_translation_key(field)
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step
@@ -752,7 +752,7 @@ class HelianthusCylinderConfigNumber(CoordinatorEntity, NumberEntity):
         self._cylinder_index = cylinder_index
         self._field = field
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-number-{field.key}"
-        self._attr_name, self._attr_translation_key = field.label, _number_translation_key(field)
+        self._attr_translation_key = _number_translation_key(field)
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step

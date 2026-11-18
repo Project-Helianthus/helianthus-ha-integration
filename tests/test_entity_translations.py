@@ -92,11 +92,24 @@ def _has_entity_name(node: ast.ClassDef) -> bool:
 
 
 def _assigns_translation_key(node: ast.ClassDef) -> bool:
+    return _assigns_attribute(node, "_attr_translation_key")
+
+
+def _assigns_attribute(node: ast.AST, attribute: str) -> bool:
     for child in ast.walk(node):
-        targets = _assignment_targets(child)
-        for target in targets:
-            if _target_name(target) == "_attr_translation_key":
+        for target in _assignment_targets(child):
+            if _mentions_attribute(target, attribute):
                 return True
+    return False
+
+
+def _mentions_attribute(target: ast.AST, attribute: str) -> bool:
+    if isinstance(target, ast.Name):
+        return target.id == attribute
+    if isinstance(target, ast.Attribute):
+        return target.attr == attribute
+    if isinstance(target, ast.Tuple):
+        return any(_mentions_attribute(element, attribute) for element in target.elts)
     return False
 
 
@@ -106,18 +119,6 @@ def _assignment_targets(node: ast.AST) -> list[ast.AST]:
     if isinstance(node, ast.AnnAssign) and node.target is not None:
         return [node.target]
     return []
-
-
-def _target_name(target: ast.AST) -> str | None:
-    if isinstance(target, ast.Name):
-        return target.id
-    if isinstance(target, ast.Attribute):
-        return target.attr
-    if isinstance(target, ast.Tuple):
-        for element in target.elts:
-            if _target_name(element) == "_attr_translation_key":
-                return "_attr_translation_key"
-    return None
 
 
 def _generator():
@@ -142,6 +143,33 @@ def test_adopted_entity_classes_set_translation_keys() -> None:
             if not _assigns_translation_key(node):
                 missing.append(node.name)
     assert missing == []
+
+
+def test_adopted_entities_do_not_store_a_name_beside_the_translation_key() -> None:
+    """A stored name wins over the catalog, so a translation key must stand alone."""
+    paired = []
+    for filename in ADOPTED:
+        module = _module(COMPONENT / filename)
+        for node in module.body:
+            if isinstance(node, ast.ClassDef):
+                if node.name in DEFERRED or not _assigns_attribute(node, "_attr_translation_key"):
+                    continue
+                owner = node.name
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not _assigns_attribute(node, "_attr_translation_key"):
+                    continue
+                owner = node.name
+            else:
+                continue
+            if _assigns_attribute(node, "_attr_name"):
+                paired.append(f"{filename}:{owner}")
+    assert paired == []
+
+
+def catalog_entity_name(platform: str, key: str) -> str:
+    """Return the English name Home Assistant publishes for one translation key."""
+    strings = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
+    return strings["entity"][platform][key]["name"]
 
 
 def test_rekey_entities_keep_current_names_without_translation_keys() -> None:
@@ -411,6 +439,115 @@ def test_entity_names_follow_translations_not_a_fixed_english_property() -> None
         wrapped = f"Wrapped {english}"
         assert _resolved_name(entity, {key: wrapped}) == wrapped
         assert _resolved_name(entity, {key: english}) == english
+
+
+def _install_entity_stub(module_name: str, **attributes: type) -> None:
+    import sys
+    import types
+
+    module = sys.modules.setdefault(module_name, types.ModuleType(module_name))
+    for name, value in attributes.items():
+        if not hasattr(module, name):
+            setattr(module, name, value)
+
+
+def _stored_name_entities() -> tuple:
+    """Entities that used to keep an English name beside the translation key."""
+    from test_entity_icon_gate import _FakeCoordinator
+
+    class _DateEntity:
+        pass
+
+    class _TextEntity:
+        pass
+
+    class _TextMode:
+        TEXT = "text"
+
+    _install_entity_stub("homeassistant.components.date", DateEntity=_DateEntity)
+    _install_entity_stub(
+        "homeassistant.components.text",
+        TextEntity=_TextEntity,
+        TextMode=_TextMode,
+    )
+    from custom_components.helianthus.binary_sensor import HelianthusDhwOverrunBinarySensor
+    from custom_components.helianthus.date import HelianthusMaintenanceDate
+    from custom_components.helianthus.fan import HelianthusBoilerBurnerFan
+    from custom_components.helianthus.number import HelianthusBoilerNumber, _BOILER_NUMBER_FIELDS
+    from custom_components.helianthus.sensor import (
+        HelianthusBusAddressSensor,
+        HelianthusEEBusAdminSensor,
+        HelianthusStatusSensor,
+    )
+    from custom_components.helianthus.sensor_descriptors import STATUS_FIELDS
+    from custom_components.helianthus.text import HelianthusSystemText, _SYSTEM_TEXT_FIELDS
+    from custom_components.helianthus.valve import HelianthusBoilerDiverterValve
+
+    coordinator = _FakeCoordinator({})
+    device = ("helianthus", "device")
+    overrun = HelianthusDhwOverrunBinarySensor(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+    )
+    boiler_number = HelianthusBoilerNumber(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+        client=None,
+        boiler_device_id=device,
+        field=_BOILER_NUMBER_FIELDS[0],
+    )
+    system_text = HelianthusSystemText(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+        client=None,
+        device_id=device,
+        field=_SYSTEM_TEXT_FIELDS[0],
+    )
+    maintenance = HelianthusMaintenanceDate(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+        client=None,
+        device_id=device,
+    )
+    burner = HelianthusBoilerBurnerFan(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+        burner_device_id=device,
+        parent_device_id=None,
+    )
+    diverter = HelianthusBoilerDiverterValve(
+        coordinator=coordinator,
+        entry_id="entry",
+        manufacturer="Vaillant",
+        hydraulics_device_id=device,
+        parent_device_id=None,
+    )
+    return (
+        ("sensor", HelianthusStatusSensor(coordinator, "daemon", {}, device, STATUS_FIELDS[0])),
+        ("sensor", HelianthusBusAddressSensor(coordinator, device, 8)),
+        ("sensor", HelianthusEEBusAdminSensor(coordinator, "entry", "origin")),
+        ("binary_sensor", overrun),
+        ("number", boiler_number),
+        ("text", system_text),
+        ("date", maintenance),
+        ("fan", burner),
+        ("valve", diverter),
+    )
+
+
+def test_a_stored_name_does_not_hide_the_entity_translation() -> None:
+    section = _entity_section()
+    for platform, entity in _stored_name_entities():
+        assert not hasattr(entity, "_attr_name")
+        key = entity._attr_translation_key
+        english = section[platform][key]["name"]
+        assert _resolved_name(entity, {key: f"Local {english}"}) == f"Local {english}"
+        assert catalog_entity_name(platform, key) == english
 
 
 def test_dynamic_names_substitute_entity_placeholders() -> None:

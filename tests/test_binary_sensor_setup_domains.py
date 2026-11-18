@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 
 from test_binary_sensor import _ensure_homeassistant_stubs, _FakeEntry, _FakeHass
+from test_entity_translations import catalog_entity_name
 
 _ensure_homeassistant_stubs()
 
@@ -153,7 +154,7 @@ def _row(entity) -> tuple:  # noqa: ANN001
     return (
         type(entity).__name__,
         entity._attr_unique_id,
-        entity._attr_name,
+        catalog_entity_name("binary_sensor", entity._attr_translation_key),
         frozenset(entity.device_info["identifiers"]),
         entity.coordinator.role,
     )
@@ -298,6 +299,7 @@ def test_full_runtime_adds_every_domain_in_one_ordered_call() -> None:
     calls = _run_setup(runtime)
 
     assert len(calls) == 1
+    assert all(not hasattr(entity, "_attr_name") for entity in calls[0])
     assert [_row(entity) for entity in calls[0]] == [
         *_zone_rows("1", ZONE_PARENT_ID),
         *_zone_rows("3", REGULATOR_ID),
@@ -398,6 +400,7 @@ def test_domain_gates_drop_their_entities_only() -> None:
     calls = _run_setup(runtime)
 
     assert len(calls) == 1
+    assert all(not hasattr(entity, "_attr_name") for entity in calls[0])
     assert [_row(entity) for entity in calls[0]] == [
         *_zone_rows("1", ZONE_PARENT_ID),
         *_dhw_rows(overrun=False),

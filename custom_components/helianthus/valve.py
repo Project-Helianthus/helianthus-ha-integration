@@ -152,7 +152,7 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
         self._manufacturer = manufacturer
         self._hydraulics_device_id = hydraulics_device_id
         self._parent_device_id = parent_device_id
-        self._attr_translation_key, self._attr_name = _VALVE_FIELDS[0]
+        self._attr_translation_key = _VALVE_FIELDS[0][0]
         self._attr_unique_id = f"{entry_id}-boiler-diverter-valve"
 
     @property

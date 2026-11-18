@@ -121,7 +121,7 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
         self._manufacturer = manufacturer
         self._burner_device_id = burner_device_id
         self._parent_device_id = parent_device_id
-        self._attr_translation_key, self._attr_name = _FAN_FIELDS[0]
+        self._attr_translation_key = _FAN_FIELDS[0][0]
         self._attr_unique_id = f"{entry_id}-boiler-burner"
 
     def _state(self) -> dict[str, Any]:
@@ -330,7 +330,7 @@ class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
         self._manufacturer = manufacturer
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
-        self._attr_translation_key, self._attr_name = _FAN_FIELDS[1]
+        self._attr_translation_key = _FAN_FIELDS[1][0]
         self._attr_unique_id = f"{entry_id}-solar-pump"
 
     @property

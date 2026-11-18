@@ -7,6 +7,7 @@ import sys
 import types
 
 from runtime_fixtures import attach_runtime
+from test_entity_translations import catalog_entity_name
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -158,13 +159,17 @@ def test_async_setup_entry_adds_boiler_state_binary_sensors_on_bai00_only() -> N
         "entry-1-boiler-binary-external_pump_active",
         "entry-1-boiler-binary-circulation_pump_active",
     }
-    assert {entity._attr_name for entity in boiler_entities} == {
+    assert {
+        catalog_entity_name("binary_sensor", entity._attr_translation_key)
+        for entity in boiler_entities
+    } == {
         "Burner Flame Active",
         "Burner Gas Valve Active",
         "Hydraulics CH Pump",
         "Hydraulics External Pump",
         "Hydraulics Circulation Pump",
     }
+    assert all(not hasattr(entity, "_attr_name") for entity in boiler_entities)
     for entity in boiler_entities:
         assert entity._attr_device_class == binary_sensor_platform.BinarySensorDeviceClass.RUNNING
         assert entity.device_info["identifiers"] == {boiler_device_id}
@@ -227,7 +232,8 @@ def test_zone_valve_binary_sensor_open_when_position_nonzero() -> None:
     assert len(valve_entities) == 1
     valve = valve_entities[0]
     assert valve._attr_unique_id == "entry-1-zone-zone-1-binary-valve"
-    assert valve._attr_name == "Valve"
+    assert not hasattr(valve, "_attr_name")
+    assert catalog_entity_name("binary_sensor", valve._attr_translation_key) == "Valve"
     assert valve.is_on is True
 
 

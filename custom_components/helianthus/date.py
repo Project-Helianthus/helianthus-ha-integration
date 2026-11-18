@@ -105,7 +105,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
         self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._attr_unique_id = f"{entry_id}-system-date-maintenance_date"
-        self._attr_translation_key, self._attr_name = _DATE_FIELDS[0]
+        self._attr_translation_key = _DATE_FIELDS[0][0]
 
     @property
     def device_info(self) -> DeviceInfo:

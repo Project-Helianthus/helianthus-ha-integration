@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from runtime_fixtures import attach_runtime
+from test_entity_translations import catalog_entity_name
 from custom_components.helianthus.const import DOMAIN
 
 
@@ -186,7 +187,10 @@ def test_no_boiler_installer_menu_code_text_entity_is_created(entry_id: str) -> 
         f"{entry_id}-system-text-installer_access_code",
         f"{entry_id}-boiler-text-installer_phone_number",
     }
-    assert "Boiler Installer Menu Code" not in {entity._attr_name for entity in entities}
+    assert "Boiler Installer Menu Code" not in {
+        catalog_entity_name("text", entity._attr_translation_key) for entity in entities
+    }
+    assert all(not hasattr(entity, "_attr_name") for entity in entities)
     boiler_entities = [
         entity for entity in entities if entity._device_id == data["boiler_device_id"]
     ]

@@ -9,6 +9,7 @@ import types
 import pytest
 
 from runtime_fixtures import attach_runtime
+from test_entity_translations import catalog_entity_name
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -157,12 +158,15 @@ def test_async_setup_entry_adds_boiler_config_numbers_on_bai00() -> None:
         entity for entity in entities if isinstance(entity, number_platform.HelianthusBoilerNumber)
     ]
     assert len(boiler_numbers) == 4
-    assert {entity._attr_name for entity in boiler_numbers} == {
+    assert {
+        catalog_entity_name("number", entity._attr_translation_key) for entity in boiler_numbers
+    } == {
         "CH Max Flow Setpoint",
         "DHW Max Flow Setpoint",
         "CH Partload",
         "DHW Partload",
     }
+    assert all(not hasattr(entity, "_attr_name") for entity in boiler_numbers)
     for entity in boiler_numbers:
         assert entity._attr_entity_category == number_platform.EntityCategory.CONFIG
         assert entity.device_info["identifiers"] == {("helianthus", "entry-1-bus-BAI00-08")}

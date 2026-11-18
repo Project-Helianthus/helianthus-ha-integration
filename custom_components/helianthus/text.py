@@ -188,7 +188,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-system-text-{field.write_key}"
-        self._attr_name, self._attr_translation_key = field.label, _text_translation_key(field)
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
         self._attr_entity_registry_enabled_default = self.native_value is not None
@@ -269,7 +269,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-boiler-text-{field.write_key}"
-        self._attr_name, self._attr_translation_key = field.label, _text_translation_key(field)
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
         self._attr_entity_registry_enabled_default = self.native_value is not None
@@ -357,7 +357,7 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
         self._mutation = mutation
         self._mutation_key = mutation_key
         self._attr_unique_id = f"{entry_id}-{field.source}-text-{field.key}"
-        self._attr_name, self._attr_translation_key = field.label, _text_translation_key(field)
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_icon = field.icon
 
     @property

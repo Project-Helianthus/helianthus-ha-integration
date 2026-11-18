@@ -109,7 +109,7 @@ class HelianthusBusAddressSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._address = address
-        self._attr_name, self._attr_translation_key = _static_pair("ebus_address")
+        self._attr_translation_key = _static_pair("ebus_address")[1]
         self._attr_unique_id = f"{device_id[1]}-ebus-address"
 
     @property
@@ -140,7 +140,7 @@ class HelianthusStatusSensor(CoordinatorEntity, SensorEntity):
         self._fallback_status = status
         self._field = field
         self._identifier = identifier or (DOMAIN, f"unknown-{target_name.lower()}")
-        self._attr_name, self._attr_translation_key = field.name, entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{self._identifier[1]}-{field.key}"
         if field.icon is not None:
             self._attr_icon = field.icon
@@ -164,7 +164,7 @@ class HelianthusEEBusAdminSensor(CoordinatorEntity, SensorEntity):
     """One scalar health diagnostic for the isolated eeBUS AdminV1 boundary."""
 
     _attr_has_entity_name = True
-    _attr_name, _attr_translation_key = _static_pair("eebus_admin_available")
+    _attr_translation_key = _static_pair("eebus_admin_available")[1]
     _attr_icon = "mdi:shield-check-outline"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -265,7 +265,7 @@ class HelianthusBoilerTemperatureSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._boiler_device_id = boiler_device_id
         self._field = field
-        self._attr_name, self._attr_translation_key = field.label, entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{entry_id}-boiler-{field.key}"
         self._attr_entity_registry_enabled_default = self.native_value is not None
 
@@ -302,7 +302,7 @@ class HelianthusBoilerStateSensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
         self._field = field
-        self._attr_name, self._attr_translation_key = str(field["label"]), entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{entry_id}-boiler-sensor-{field['key']}"
         if field.get("native_unit") is not None:
             self._attr_native_unit_of_measurement = field["native_unit"]
@@ -356,7 +356,7 @@ class HelianthusBoilerDiagnosticsSensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
         self._field = field
-        self._attr_name, self._attr_translation_key = field['label'], entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{entry_id}-boiler-diag-{field['key']}"
         if field.get("device_class") is not None:
             self._attr_device_class = field["device_class"]
@@ -505,7 +505,7 @@ class HelianthusSystemSensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._regulator_device_id = regulator_device_id
         self._field = field
-        self._attr_name, self._attr_translation_key = field.label, entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{entry_id}-system-sensor-{field.key}"
         if field.device_class is not None:
             self._attr_device_class = field.device_class
@@ -593,7 +593,7 @@ class HelianthusRadioSensor(CoordinatorEntity, SensorEntity):
         self._instance = instance
         self._key = key
         self._cast_int = cast_int
-        self._attr_name, self._attr_translation_key = label, _named_pair(RADIO_SENSOR_FIELDS, key)[1]
+        self._attr_translation_key = _named_pair(RADIO_SENSOR_FIELDS, key)[1]
         self._attr_unique_id = f"{entry_id}-radio-{group:02x}-{instance:02d}-sensor-{key}"
         if device_class is not None:
             self._attr_device_class = device_class
@@ -692,7 +692,7 @@ class HelianthusFM5ModeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._manufacturer = manufacturer
         self._parent_device_id = parent_device_id
-        self._attr_name, self._attr_translation_key = _static_pair("fm5_semantic_mode")
+        self._attr_translation_key = _static_pair("fm5_semantic_mode")[1]
         self._attr_unique_id = f"{entry_id}-fm5-mode"
 
     @property
@@ -732,7 +732,7 @@ class HelianthusSolarSensor(CoordinatorEntity, SensorEntity):
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
         self._key = key
-        self._attr_name, self._attr_translation_key = label, _named_pair(SOLAR_SENSOR_FIELDS, key)[1]
+        self._attr_translation_key = _named_pair(SOLAR_SENSOR_FIELDS, key)[1]
         self._attr_unique_id = f"{entry_id}-solar-sensor-{key}"
         if device_class is not None:
             self._attr_device_class = device_class
@@ -802,7 +802,7 @@ class HelianthusCylinderSensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._cylinder_index = cylinder_index
         self._parent_device_id = parent_device_id
-        self._attr_name, self._attr_translation_key = _static_pair("cylinder_temperature")
+        self._attr_translation_key = _static_pair("cylinder_temperature")[1]
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-temperature"
         self._attr_entity_registry_enabled_default = self._cylinder().get("temperature_c") is not None
 
@@ -866,7 +866,7 @@ class HelianthusCylinderConfigSensor(CoordinatorEntity, SensorEntity):
         self._cylinder_index = cylinder_index
         self._parent_device_id = parent_device_id
         self._field = field
-        self._attr_name, self._attr_translation_key = field['label'], entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         self._attr_unique_id = f"{entry_id}-cylinder-{cylinder_index}-config-{field['key']}"
         if field.get("native_unit") is not None:
             self._attr_native_unit_of_measurement = field["native_unit"]
@@ -942,7 +942,7 @@ class HelianthusZoneValvePositionSensor(CoordinatorEntity, SensorEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._target_device_id = target_device_id
-        self._attr_name, self._attr_translation_key = _static_pair("zone_valve_position")
+        self._attr_translation_key = _static_pair("zone_valve_position")[1]
         self._attr_unique_id = f"{entry_id}-zone-{zone_id}-sensor-zone_valve_position"
         self._attr_entity_registry_enabled_default = self.native_value is not None
 
@@ -1012,7 +1012,7 @@ class HelianthusDemandSensor(CoordinatorEntity, SensorEntity):
         self._target = target
         self._target_device_id = target_device_id
         self._device_name = label if target[0] == "zone" else "Domestic Hot Water"
-        self._attr_name, self._attr_translation_key = _static_pair("heating_demand")
+        self._attr_translation_key = _static_pair("heating_demand")[1]
         self._attr_unique_id = (
             f"{entry_id}-{target[0]}-{target[1] or 'dhw'}-heating-demand"
         )
@@ -1092,7 +1092,7 @@ class HelianthusDHWStatusSensor(CoordinatorEntity, SensorEntity):
         self._entry_id = entry_id
         self._via_device = via_device
         self._manufacturer = manufacturer
-        self._attr_name, self._attr_translation_key = _static_pair("hwc_status")
+        self._attr_translation_key = _static_pair("hwc_status")[1]
         self._attr_unique_id = f"{entry_id}-dhw-hwc-status"
 
     @property
@@ -1149,7 +1149,7 @@ class HelianthusEnergySensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._source = source
         self._usage = usage
-        self._attr_name, self._attr_translation_key = _energy_pair(source, usage)
+        self._attr_translation_key = _energy_pair(source, usage)[1]
         self._attr_unique_id = f"{entry_id}-energy-{source}-{usage}"
 
     @property
@@ -1474,7 +1474,7 @@ class HelianthusAdapterInfoSensor(CoordinatorEntity, SensorEntity):
         self._adapter_device_id = adapter_device_id
         self._key = key
         self._scale = scale
-        self._attr_name, self._attr_translation_key = label, _named_pair(ADAPTER_INFO_FIELDS, key)[1]
+        self._attr_translation_key = _named_pair(ADAPTER_INFO_FIELDS, key)[1]
         self._attr_unique_id = f"{entry_id}-adapter-hw-{key}"
         if device_class is not None:
             self._attr_device_class = device_class
@@ -1521,7 +1521,7 @@ class HelianthusBoilerHoursTillServiceSensor(CoordinatorEntity, SensorEntity):
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
         self._attr_unique_id = f"{entry_id}-boiler-sensor-service_time_remaining"
-        self._attr_name, self._attr_translation_key = _static_pair("hours_till_service")
+        self._attr_translation_key = _static_pair("hours_till_service")[1]
         self._attr_entity_registry_enabled_default = self.native_value is not None
 
     @property
