@@ -43,7 +43,6 @@ mutation SetExtRegister($address:Int!, $params:json!){
 """
 
 _ZONE_GROUP = 0x03
-_ZONE_TARGET_TEMP_ADDR = 0x0014
 _ZONE_TARGET_TEMP_DESIRED_ADDR = 0x0022
 _ZONE_MODE_ADDR = 0x0006
 _ZONE_QUICK_VETO_TEMP_ADDR = 0x0008
@@ -73,7 +72,6 @@ ALLOWED_ZONE_PRESETS = ["schedule", "manual", "quickveto", "away"]
 _ZONE_WRITABLE_REGISTERS: dict[int, str] = {
     _ZONE_MODE_ADDR: "configuration.heating.operation_mode",
     _ZONE_TARGET_TEMP_DESIRED_ADDR: "configuration.heating.desired_setpoint",
-    _ZONE_TARGET_TEMP_ADDR: "configuration.heating.manual_mode_setpoint",
     _ZONE_QUICK_VETO_TEMP_ADDR: "configuration.heating.quick_veto_temperature",
     _ZONE_QUICK_VETO_DURATION_ADDR: "configuration.heating.quick_veto_duration",
     _ZONE_HOLIDAY_START_DATE_ADDR: "configuration.heating.holiday_start_date",
@@ -470,7 +468,6 @@ class HelianthusZoneClimate(CoordinatorEntity, ClimateEntity):
             await self._write_ext_register(_ZONE_QUICK_VETO_TEMP_ADDR, payload)
         else:
             await self._write_ext_register(_ZONE_TARGET_TEMP_DESIRED_ADDR, payload)
-            await self._write_ext_register(_ZONE_TARGET_TEMP_ADDR, payload)
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
