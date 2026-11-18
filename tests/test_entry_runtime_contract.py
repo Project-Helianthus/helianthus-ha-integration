@@ -258,6 +258,8 @@ class SetupTail:
                 key: lambda options, key=key: values[key],
             })
         for name, result in self._sentinels().items():
+            if name == "async_discover_gateway_capabilities":
+                self.capabilities = result
             monkeypatch.setattr(entry_setup, name, _returning(name, result))
         monkeypatch.setattr(entry_services, "async_setup_optional_eebus_admin_service", _returning(
             "async_admin", (values["eebus_admin_coordinator"], values["eebus_admin_session"],
@@ -287,9 +289,10 @@ class SetupTail:
         if self.callback:
             self.entry.runtime_data.semantic_snapshot_sensors_setup = lambda: self.record("sensors")
 
-    async def snapshot(self, actual_hass, actual_entry, client, interval):
+    async def snapshot(self, actual_hass, actual_entry, client, interval, capabilities):
         assert actual_hass is self.hass and actual_entry is self.entry
         assert client is self.values["graphql_client"] and interval == 60
+        assert capabilities is self.capabilities
         assert self.entry.runtime_data.semantic_snapshot_attached is False
         self.record("snapshot")
         return self.values["snapshot"]

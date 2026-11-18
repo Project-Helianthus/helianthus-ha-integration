@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -56,6 +57,25 @@ def test_repository_baseline_has_no_shipped_undefined_name_row():
     assert not [row for row in rows
                 if row["rule"] == "F821" and row["path"].startswith("custom_components/")]
     guard.load_baseline(ROOT / "scripts/readability-baseline.json")
+
+
+def test_repository_readability_check_passes(monkeypatch):
+    """A resolved complexity row fails the ratchet until it is removed."""
+    if shutil.which("ruff") is None:
+        pytest.skip("readability tool is not installed for this job")
+    monkeypatch.setattr("sys.argv", ["check_readability.py", "--check"])
+    assert guard.main() == 0
+
+
+def test_repository_readability_check_skips_when_the_tool_is_absent(monkeypatch):
+    """A missing readability tool skips the repository case instead of failing it."""
+    monkeypatch.setattr(shutil, "which", lambda command: None)
+    try:
+        test_repository_readability_check_passes(monkeypatch)
+    except pytest.skip.Exception as exc:
+        assert "readability tool is not installed" in str(exc)
+        return
+    raise AssertionError("missing readability tool must skip the repository check")
 
 
 def test_refusal_fails_the_check_closed(tmp_path, monkeypatch, capsys):

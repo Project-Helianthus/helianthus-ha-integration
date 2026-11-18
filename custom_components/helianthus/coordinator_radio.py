@@ -9,14 +9,15 @@ from typing import Any
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import RADIO_STALE_GRACE_CYCLES
-from .coordinator import is_missing_field_error as _is_missing_field_error
+from .coordinator_availability import recorded_document_absent
 from .coordinator_merge import (
     build_radio_zone_candidates as _build_radio_zone_candidates,
     is_active_radio_device as _is_active_radio_device,
     normalize_radio_device as _normalize_radio_device,
     radio_bus_key as _radio_bus_key,
 )
-from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+from .gateway_capabilities import GatewayCapabilities
+from .graphql import GraphQLClient, GraphQLClientError
 
 
 QUERY_RADIO_DEVICES = """
@@ -44,7 +45,13 @@ query RadioDevices {
 class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching remote-slot radio device snapshots."""
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: GatewayCapabilities | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -52,53 +59,34 @@ class HelianthusRadioDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._capabilities = capabilities
+        self._absence_warned = False
         self._last_by_slot: dict[tuple[int, int], dict[str, Any]] = {}
         self._stale_cycles: dict[tuple[int, int], int] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
-        empty = {
-            "radio_devices": [],
-            "radio_zone_candidates": {},
-            "inventory_complete": False,
-        }
-        missing_fields = [
-            "radio_devices",
-            "group",
-            "instance",
-            "slot_mode",
-            "device_connected",
-            "device_class_address",
-            "device_model",
-            "firmware_version",
-            "hardware_identifier",
-            "remote_control_address",
-            "device_paired",
-            "reception_strength",
-            "zone_assignment",
-            "room_temperature_c",
-            "room_humidity_pct",
-        ]
+        if recorded_document_absent(self, "radio", QUERY_RADIO_DEVICES):
+            return self._empty_inventory()
         try:
             payload = await self._client.execute(QUERY_RADIO_DEVICES)
-        except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, missing_fields):
-                self._last_by_slot = {}
-                self._stale_cycles = {}
-                return empty
-            raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
         if not isinstance(payload, dict):
-            self._last_by_slot = {}
-            self._stale_cycles = {}
-            return empty
+            return self._empty_inventory()
         devices = payload.get("radio_devices")
         if not isinstance(devices, list):
-            self._last_by_slot = {}
-            self._stale_cycles = {}
-            return empty
+            return self._empty_inventory()
         return self._materialize_snapshot(devices)
+
+    def _empty_inventory(self) -> dict[str, Any]:
+        self._last_by_slot = {}
+        self._stale_cycles = {}
+        return {
+            "radio_devices": [],
+            "radio_zone_candidates": {},
+            "inventory_complete": False,
+        }
 
     def apply_radio_update(self, devices: Any) -> None:
         if not isinstance(devices, list):

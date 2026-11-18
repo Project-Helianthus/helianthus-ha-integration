@@ -8,8 +8,9 @@ from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .coordinator import is_missing_field_error as _is_missing_field_error
+from .coordinator_availability import recorded_document_absent
 from .coordinator_merge import parse_optional_int as _parse_optional_int
+from .gateway_capabilities import GatewayCapabilities
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
@@ -39,7 +40,13 @@ query FM5Semantic {
 class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching FM5 mode plus interpreted solar/cylinder semantics."""
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: GatewayCapabilities | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -47,6 +54,8 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._capabilities = capabilities
+        self._absence_warned = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         empty = {
@@ -54,28 +63,11 @@ class HelianthusFM5Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             "solar": None,
             "cylinders": [],
         }
-        missing_fields = [
-            "fm5_semantic_mode",
-            "solar",
-            "cylinders",
-            "collector_temperature_c",
-            "return_temperature_c",
-            "pump_active",
-            "current_yield",
-            "pump_hours",
-            "solar_enabled",
-            "function_mode",
-            "index",
-            "temperature_c",
-            "max_setpoint_c",
-            "charge_hysteresis_c",
-            "charge_offset_c",
-        ]
+        if recorded_document_absent(self, "functional module", QUERY_FM5):
+            return empty
         try:
             payload = await self._client.execute(QUERY_FM5)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, missing_fields):
-                return empty
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc

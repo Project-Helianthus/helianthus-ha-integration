@@ -5,10 +5,11 @@ gateway's register-derived name table. Its ``field_registers`` list names every
 published field of the ``circuit_state`` and ``circuit_config`` objects, with
 the single register that feeds it or the registers it is derived from. The
 tests check that the circuit document requests the published names under their
-object and never a previous one, that a missing published name is handled as an
-older gateway and a previous one is not, and that every circuit entity reads
-its value from the published field of its own circuit and bucket, with its
-unique ID keyed on that name where the unique ID carries a field name.
+object and never a previous one, that a rejected published field fails that
+update and a rejected previous name fails that update too, and that every
+circuit entity reads its value from the published field of its own circuit
+and bucket, with its unique ID keyed on that name where the unique ID
+carries a field name.
 """
 from __future__ import annotations
 
@@ -112,14 +113,20 @@ REQUESTED_RENAMED = sorted(name for name in PREVIOUS if name not in UNREAD)
 
 
 @pytest.mark.parametrize("name", REQUESTED_RENAMED)
-def test_missing_published_field_is_an_older_gateway_and_a_previous_one_fails(name) -> None:  # noqa: ANN001
+def test_rejected_published_field_fails_that_update(name: str) -> None:
+    """Each published circuit field, when rejected, fails that update.
+
+    Returning circuits, or sending another query, fails this test. A rejection
+    of that field's previous name also fails that update after one query.
+    """
     client = _ScriptedClient([_missing(name)])
-    assert asyncio.run(_build_circuit_coordinator(client)._async_update_data()) == {"circuits": []}
-    assert client.calls == [QUERY_CIRCUITS]
     with pytest.raises(coordinator_circuits.UpdateFailed):
-        asyncio.run(
-            _build_circuit_coordinator(_ScriptedClient([_missing(PREVIOUS[name])]))._async_update_data()
-        )
+        asyncio.run(_build_circuit_coordinator(client)._async_update_data())
+    assert client.calls == [QUERY_CIRCUITS]
+    previous = _ScriptedClient([_missing(PREVIOUS[name])])
+    with pytest.raises(coordinator_circuits.UpdateFailed):
+        asyncio.run(_build_circuit_coordinator(previous)._async_update_data())
+    assert previous.calls == [QUERY_CIRCUITS]
 
 
 def _circuit(index: int, state: dict | None = None, config: dict | None = None) -> dict:

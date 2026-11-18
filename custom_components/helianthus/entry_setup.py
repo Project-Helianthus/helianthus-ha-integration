@@ -416,12 +416,19 @@ def publish_entry_runtime(
 
 
 async def async_attach_semantic_snapshot(
-    hass: object, entry: object, client: object, scan_interval: object,
-    *, resources: EntryResources,
+    hass: object,
+    entry: object,
+    client: object,
+    scan_interval: object,
+    *,
+    resources: EntryResources,
+    capabilities: object = None,
 ) -> None:
     """Attach the semantic snapshot coordinator and own its close, then run the deferred sensor setup."""
     runtime: HelianthusRuntime = entry.runtime_data
-    coordinator = await async_setup_semantic_snapshot(hass, entry, client, scan_interval)
+    coordinator = await async_setup_semantic_snapshot(
+        hass, entry, client, scan_interval, capabilities
+    )
     if coordinator is not None:
         resources.own("semantic snapshot coordinator", coordinator.async_close)
     runtime.semantic_snapshot_coordinator = coordinator
@@ -597,6 +604,11 @@ async def _async_run_setup_phases(
         resources=resources,
     )
     await async_attach_semantic_snapshot(
-        hass, entry, connection.client, scan_interval, resources=resources
+        hass,
+        entry,
+        connection.client,
+        scan_interval,
+        resources=resources,
+        capabilities=capabilities,
     )
     return True

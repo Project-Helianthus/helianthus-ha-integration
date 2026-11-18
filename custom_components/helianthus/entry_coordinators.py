@@ -5,10 +5,9 @@ entry's scan interval, and each one then runs its first refresh, one after the
 other in the order below. A refresh that raises stops the phase; coordinators
 later in the order are not refreshed. Its result is a ``DomainCoordinators``.
 
-Discovery runs before this phase and does not hand its paths in. The paths it
-returned for this client are recorded here. The status coordinator, the zones
-coordinator, the energy coordinator, the system coordinator, and the boiler
-coordinator use those paths, or paths the caller passes, before the first
+Discovery runs before this phase. The paths it returned for this client are
+recorded here, and the caller may pass the same paths. Every domain
+coordinator except the device inventory uses those paths before the first
 refresh.
 """
 
@@ -159,17 +158,27 @@ async def async_create_domain_coordinators(
         energy_coordinator=_with_capabilities(
             HelianthusEnergyCoordinator, hass, client, scan_interval, capabilities
         ),
-        circuit_coordinator=HelianthusCircuitCoordinator(hass, client, scan_interval),
-        radio_coordinator=HelianthusRadioDeviceCoordinator(hass, client, scan_interval),
-        fm5_coordinator=HelianthusFM5Coordinator(hass, client, scan_interval),
+        circuit_coordinator=_with_capabilities(
+            HelianthusCircuitCoordinator, hass, client, scan_interval, capabilities
+        ),
+        radio_coordinator=_with_capabilities(
+            HelianthusRadioDeviceCoordinator, hass, client, scan_interval, capabilities
+        ),
+        fm5_coordinator=_with_capabilities(
+            HelianthusFM5Coordinator, hass, client, scan_interval, capabilities
+        ),
         system_coordinator=_with_capabilities(
             HelianthusSystemCoordinator, hass, client, scan_interval, capabilities
         ),
         boiler_coordinator=_with_capabilities(
             HelianthusBoilerCoordinator, hass, client, scan_interval, capabilities
         ),
-        schedule_coordinator=HelianthusScheduleCoordinator(hass, client, scan_interval),
-        adapter_info_coordinator=HelianthusAdapterInfoCoordinator(hass, client, scan_interval),
+        schedule_coordinator=_with_capabilities(
+            HelianthusScheduleCoordinator, hass, client, scan_interval, capabilities
+        ),
+        adapter_info_coordinator=_with_capabilities(
+            HelianthusAdapterInfoCoordinator, hass, client, scan_interval, capabilities
+        ),
     )
     for coordinator in coordinators.in_order():
         await coordinator.async_config_entry_first_refresh()

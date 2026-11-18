@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The circuit update, the radio update, the functional-module update, the
+  schedule update, and the adapter update each send one query when the
+  recorded schema offers every path that query selects. When a path is
+  absent, the update returns an empty result and one warning names the path.
+  A later poll does not warn again and does not send the query. A rejected
+  field or a transport error fails that update. The adapter update does not
+  send a shorter query. The schedule update does not keep a support flag.
+  The semantic snapshot read does the same for the snapshot root: a recorded
+  schema that omits it leaves the consumer unsupported until the next setup,
+  and a rejected field on an offered root fails that read and keeps polling.
+
 - The system update, the energy update, and the boiler update each send one
   query. The hot-water bound is part of the system query. A rejected bound
   fails that update. The installer query, the sensitive query, and the gateway

@@ -15,7 +15,7 @@ This is the documentation slice for [issue #362](https://github.com/Project-Heli
 | `semantic_target_payload` | [Semantic helpers] return the matching dictionary or `{}`. This projection neither checks refresh success nor distinguishes absent DHW from an empty DHW dictionary. Do not derive availability from its truthiness. |
 | `semantic_target_available` | [Semantic helpers] require refresh success and a dictionary for DHW or a matching zone dictionary in a list. Staleness does not itself revoke this projection. |
 | `semantic_target_is_stale` / `semantic_freshness_attributes` | [Semantic helpers] force stale on an explicitly failed refresh; otherwise use `dhw_is_stale`, callable `zone_is_stale(zone_id)`, or, only without that callable, `zones_is_stale`. The attribute projection is `{'is_stale': bool}`. |
-| `optional_query_available` / `next_optional_query_state` | [Optional helpers] project and advance a separate support state. [Coordinators] own `_system_installer_available`, `_system_sensitive_available`, `_boiler_installer_available`, `_boiler_sensitive_available` independently. Their public properties use `optional_query_available`. They do not set zone/DHW freshness or presence. |
+| `system_installer_available`, `system_sensitive_available`, `boiler_installer_available`, `boiler_sensitive_available` | [System coordinator] and [Boiler coordinator] report whether [recorded paths] offer that separate query. With no schema recorded, each property is true and that query is sent. A recorded schema that omits a selected path makes that property false and the query is not sent. These properties do not set zone or hot-water freshness or presence. |
 
 Compatibility defaults in the semantic helpers are permissive for missing attributes: absent `last_update_success` defaults to success and absent stale flags to false. The failure override tests `is False`, not arbitrary false-like values. These are current adapter defaults, not evidence that missing refresh or freshness inputs are known good. Production input owners must supply the actual state; this page adds no alternative unknown-state policy.
 
@@ -46,10 +46,10 @@ The final entity property can impose additional existing conditions. [Climate en
 | First empty, missing or wrong-shaped inventory | No prior zone to retain | No prior DHW to retain | Successful materialization can still mean unavailable targets and `is_stale: false`. No removal or unsupported-family conclusion follows. |
 | Positive full poll | Each observed zone replaces its prior object and clears its own gap/stale state | A DHW dictionary replaces prior DHW and clears its gap/stale state | Successful refresh permits presence-based availability; unrelated missing targets follow their own grace. |
 | Full poll omits a previously seen target | First two gaps retain that zone; third drops it | First two gaps retain DHW; third drops it | Existing grace counts coordinator materializations, not native time. Expired stale markers can remain true. |
-| Every semantic query hits a recoverable missing-field error | Falls through with no payload and materializes empty zone input | Materializes absent DHW input | The path returns successfully and advances the gap counters like a transport gap. It never raises `UpdateFailed`, even when nothing remains materialized. **Proven** by reading `_async_update_data`. |
+| Recorded schema omits a path of the zones query | Returns no zones | Returns no hot water | The update does not send the query. One warning names the path. A later poll does not warn again, does not send the query, and does not advance the gap counters. It does not raise `UpdateFailed`. **Proven** by reading `_async_update_data`. |
 | Handled `GraphQLClientError` | `_retain_transport_gap` advances existing zone retention | It also advances DHW retention | Returns successfully while any zone or DHW remains materialized; when none remains it raises `UpdateFailed`. A surviving DHW can coexist with an expired zone and vice versa. |
+| Rejected field on the zones query | Does not manufacture a new zone value | Does not manufacture a new DHW value | Raises `UpdateFailed`. Installer and sensitive availability stay on the recorded paths. |
 | Other unhandled semantic query error | Does not manufacture a new zone value | Does not manufacture a new DHW value | Raises `UpdateFailed`; failed refresh overrides freshness/availability even if previous `coordinator.data` remains readable. |
-| Recognized missing `zones` / `dhw` schema field | Materializes empty zone input | Materializes absent DHW input | Uses bounded retention, not optional-query support flags or an immediate authoritative removal. |
 | Fresh zone subscription | Clears only the named zone's gap/stale marker; siblings keep theirs | Preserves current DHW | Listener publication does not itself clear failed `last_update_success` or postpone the full poll deadline. **Proven:** subscription deltas are merged recursively into the existing, possibly retained, object; target-level `is_stale` is not field-level freshness, so unchanged retained fields are not individually proven fresh; a null in a delta preserves the prior value rather than clearing it. |
 | DHW subscription | Preserves current zones | Positive dictionary clears DHW stale state; ambiguous absent update advances DHW grace | No zone freshness reset. A full refresh failure remains an override until successful refresh recovery. **Proven:** subscription deltas are merged recursively into the existing, possibly retained, object; target-level `is_stale` is not field-level freshness, so unchanged retained fields are not individually proven fresh; a null in a delta preserves the prior value rather than clearing it. |
 | Reload / new identity generation | New in-memory retention state | New in-memory retention state | No persistence claim. Existing entity IDs and admission rules are unchanged. |
@@ -58,18 +58,19 @@ The [Existing consumer description] states that current queries provide no compl
 
 Zone identity has a current boundary (see [Semantic helpers] and [Coordinators]): payload lookup normalizes positive numeric/prefixed aliases (`001` and `zone-1`), but coordinator stale keys and `zone_is_stale` only trim whitespace and case. Zero tokens `0` and `zone-0` remain distinct for payload lookup. An alias can therefore find a payload without finding its stale marker. **Proven:** [Zone/DHW transition assertions] and [Independent DHW assertions] encode this difference. Required follow-up: an approved identity contract and matching implementation/evidence before promising alias-equivalent freshness. Do not silently normalize stale keys or use collection freshness to hide this gap. The valve sensor's zone lookup matches the payload `id` exactly as a string while availability uses the normalized lookup, so a positive alias can be available with a `None` native value.
 
-## Optional-query support is a different axis
+## Separate queries follow recorded paths
 
-| Support state / event | Next support state | `optional_query_available` | Meaning and limit |
-| --- | --- | --- | --- |
-| `None`, no decisive response or transient error | `None` | True | Unknown support stays retryable; this is not a known value or successful entity refresh. |
-| `None`, response received | True | True | Response establishes the helper's support state, even without a useful optional value. |
-| True, transient error or another response | True | True | Support persists; current optional fields can still be absent. |
-| `None` or True, recognized schema-field absence | False | False | Only that optional query is disabled; base payload and peer queries remain independent. |
-| False, later helper response event | False | False | State is sticky. Current coordinators stop issuing that optional query for their lifetime. |
-| New coordinator instance | `None` | True | Unknown/retryable again; not proof of successful schema recovery. |
+Installer availability and sensitive availability report whether the recorded schema offers every path of that separate query. [Recorded paths] answer that for one document. [System coordinator] and [Boiler coordinator] send the separate query when every selected path is present, and when no schema was recorded.
 
-`next_optional_query_state` prioritizes `schema_field_missing` if both event inputs are true. The coordinators pass recognized absence separately from transient failures. [Optional sequence assertions] encode independent system installer/sensitive transitions and continued base payload refresh. Optional-query flags do not grant admission or access, establish target presence, or turn the whole zone collection unavailable. Required gap: in-place re-probing after support became False is not implemented; no automatic recovery claim is made. Equivalent boiler sequence execution evidence is **Unknown** here. These helpers do not promise retention of optional fields from one base response to the next.
+| Recorded paths for that query | Availability property | What this connection does |
+| --- | --- | --- |
+| No schema recorded | True | The separate query is sent on each update. |
+| Every selected path is present | True | The separate query is sent on each update. |
+| Any selected path is absent | False | The separate query is not sent. Entities that read it are unavailable. The base payload stays independent. |
+| The paths still offer the query, and the separate query returns a resolver error | True | The base update stays in place. The next update sends that separate query again. |
+| The paths still omit the query | False | Later polls on this connection do not send it. A new setup reads the schema again. |
+
+[Optional sequence assertions] run the system installer query and the system sensitive query again after a resolver error, and they keep the base payload. [Boiler sequence assertions] keep `boiler_installer_available` and `boiler_sensitive_available` true after a resolver error on one separate query. These properties do not grant admission or access, establish target presence, or turn the whole zone collection unavailable. They do not promise retention of optional fields from one base response to the next. A path the recorded schema omits stays omitted for this connection.
 
 ## Synthetic value examples
 
@@ -83,7 +84,7 @@ These are reasoned examples of the tables, not device observations or executed t
 | Retained `zone-1` value 20, fresh `zone-2` value 19, `zones_is_stale: true`, callable target checker marks only `zone-1` | Both semantic targets available; only `zone-1` stale. DHW uses its own flag. |
 | Retained DHW value 45, then `last_update_success: false` | Payload remains accessible to the helper, but availability false and `is_stale: true`. No visible healthy-value claim. |
 | Zone missing after expiry, successful refresh, stale marker true | Unavailable; stale marker alone does not retain a value. Positive return restores presence; clearing stale is a separate input. |
-| Optional installer support False, sensitive support True, fresh zone present | Installer query disabled, sensitive query retryable, zone availability unaffected by either support flag. |
+| Recorded paths omit the installer query and offer the sensitive query, fresh zone present | The installer query is not sent. The sensitive query is sent. Zone availability follows the zone rows above. |
 
 ## Current evidence and remaining acceptance
 
@@ -95,7 +96,10 @@ Required future behavior must be evaluated against the published API; missing au
 
 [Semantic helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/semantic_freshness.py
 [Coordinators]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_semantic.py
-[Optional helpers]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
+[Recorded paths]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_availability.py
+[System coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_system.py
+[Boiler coordinator]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/coordinator_boiler.py
+[Boiler sequence assertions]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/tests/test_coordinator_boiler.py
 [Climate entities]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/climate.py
 [Water heater entities]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/water_heater.py
 [Sensor entities]: https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/custom_components/helianthus/sensor.py

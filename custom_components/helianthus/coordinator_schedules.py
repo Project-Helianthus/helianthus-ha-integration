@@ -8,8 +8,9 @@ from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .coordinator import is_missing_field_error as _is_missing_field_error
-from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
+from .coordinator_availability import recorded_document_absent
+from .gateway_capabilities import GatewayCapabilities
+from .graphql import GraphQLClient, GraphQLClientError
 
 
 QUERY_SCHEDULES = """
@@ -47,7 +48,13 @@ query Schedules {
 class HelianthusScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching B555 timer schedule data."""
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: GatewayCapabilities | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -55,20 +62,16 @@ class HelianthusScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=max(scan_interval, 300)),
         )
         self._client = client
-        self.schedule_supported = True
+        self._capabilities = capabilities
+        self._absence_warned = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         empty: dict[str, Any] = {"programs": []}
-        if not self.schedule_supported:
+        if recorded_document_absent(self, "schedules", QUERY_SCHEDULES):
             return empty
 
         try:
             payload = await self._client.execute(QUERY_SCHEDULES)
-        except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, ["schedules", "programs"]):
-                self.schedule_supported = False
-                return empty
-            raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
 
