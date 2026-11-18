@@ -55,8 +55,6 @@ and cylinders), `coordinator_system.py` (system state and configuration), `coord
 `coordinator_boiler.py` (boiler status), `coordinator_schedules.py` (weekly timer programs) and
 `coordinator_adapter_info.py` (adapter hardware information). `coordinator.py` keeps only what the domains share,
 and `entry_coordinators.py` creates the coordinators and runs their first refreshes in order.
-`scripts/split_coordinator_domains.py` is the offline script that produced this split from the single coordinator
-module.
 
 After the gateway connection is up, setup reads the query schema once and builds the dotted field paths of the
 query root. A domain whose query needs a path the schema does not offer is unavailable for that connection: setup
