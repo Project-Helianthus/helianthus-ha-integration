@@ -364,14 +364,17 @@ def test_zone_names_and_display_fallbacks_are_kept() -> None:
     ]
 
 
-def test_solar_parent_and_enabled_default_follow_payload() -> None:
+def test_solar_parent_and_visible_default_follow_payload() -> None:
     calls = _run_setup(_full_runtime([]))
     solar = [
         entity for entity in calls[0] if isinstance(entity, binary_sensor_platform.HelianthusSolarBinarySensor)
     ]
 
     assert [entity.device_info.get("via_device") for entity in solar] == [VR71_ID, VR71_ID, VR71_ID]
-    assert [entity._attr_entity_registry_enabled_default for entity in solar] == [True, False, False]
+    assert [entity._attr_entity_registry_visible_default for entity in solar] == [True, False, False]
+    assert all(
+        getattr(entity, "_attr_entity_registry_enabled_default", True) is True for entity in solar
+    )
 
 
 def test_solar_falls_back_to_regulator_parent_and_derived_device() -> None:

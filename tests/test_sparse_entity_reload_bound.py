@@ -1,20 +1,19 @@
-"""Automatic sparse-entity enable and disable: the bound on entry reloads.
+"""Sparse entities across many polls: the enabled state and the bound on reloads.
 
 The real ``entry_setup.async_setup_entry`` and the real unload run across many
 trusted polls. Between polls only the sparse value changes. When the setup
 asks for a reload, the entry is unloaded and set up again on the same
 registries and the same ``hass.data``, as a reload does in Home Assistant.
 
-Home Assistant behaviour that the bench models: an entity that becomes
-disabled in the registry removes itself, with no reload; when an entity of the
-entry is enabled in the registry, Home Assistant reloads the entry itself after
-a delay. The bench runs that deferred reload after the reload the integration
+Home Assistant behaviour that the bench models: when an entity of the entry
+is enabled in the registry, Home Assistant reloads the entry itself after a
+delay. The bench runs that deferred reload after the reload the integration
 asked for.
 
-The stated rule: the integration schedules at most one reload per sparse
-entity per Home Assistant run, and an entity that alternates settles enabled.
-Home Assistant itself reloads the entry once more after an entity is enabled;
-that reload is counted apart from the integration's own.
+The stated rules: the integration never writes the enabled state of an
+entity, so a sparse entity keeps its state whatever its value and causes no
+reload. The optional status sensor, created only while live or after its
+reload, has at most one reload per entry per Home Assistant run.
 """
 
 from __future__ import annotations
@@ -51,7 +50,6 @@ ENTRY = "entry-a"
 SETTLED_KEY = "_sparse_reload_unique_ids"
 POLLS = 60
 VALUE = {"boiler": 120, "repair": "synthetic_repair"}
-LIVE_SPARSE = "sparse entities became live"
 LIVE_STATUS = "sparse status entities became live"
 LISTENED = ("device_coordinator", "status_coordinator", "boiler_coordinator")
 RUNTIME_KEYS = {"HelianthusBoilerCoordinator": "boiler_coordinator",
@@ -234,27 +232,24 @@ def boiler_bench(harness, *, disabled_by, entry_id=ENTRY, setup=None):
 
 @pytest.mark.parametrize("phase", (1, 3), ids=("every-poll", "every-third-poll"))
 @pytest.mark.parametrize("value_first", (False, True), ids=("null-first", "value-first"))
-@pytest.mark.parametrize("disabled_by", (None, "integration"), ids=("enabled", "disabled"))
-def test_alternating_sparse_entity_settles_enabled_after_one_integration_reload(
+@pytest.mark.parametrize("disabled_by", (None, "user", "integration"),
+                         ids=("enabled", "user-disabled", "integration-disabled"))
+def test_alternating_sparse_entity_keeps_its_state_without_a_reload(
         paths_harness, logs, disabled_by, value_first, phase):
+    """Fields varied: the registry state, which value comes first and the
+    length of each phase. Every step keeps the state the entity had; a disable
+    on null, an enable on a live value or any reload fails."""
     bench = boiler_bench(paths_harness, disabled_by=disabled_by)
     values = [alternating(i, VALUE["boiler"], value_first=value_first, phase=phase)
               for i in range(POLLS)]
 
     history = drive(paths_harness, bench, values, boiler_uid())
 
-    # An enabled entity whose value is live when the single trusted clean-up of
-    # the setup runs is never disabled, so it needs no reload at all.
-    never_disabled = disabled_by is None and value_first
-    assert reload_reasons(logs) == ([] if never_disabled else [LIVE_SPARSE])
     entity_id = f"sensor.{boiler_uid().replace('-', '_')}"
-    assert history[-1] == (entity_id, None)
-    assert {state[0] for state in history} == {entity_id}
-    unsettled = [i for i, state in enumerate(history) if state != (entity_id, None)]
-    assert max(unsettled, default=0) < POLLS // 3, history
-    assert bench.ha_reloads == (0 if never_disabled else 1)
-    assert bench.setups == (1 if never_disabled else 3)
-    assert settled_ids(bench.setup) == (set() if never_disabled else {boiler_uid()})
+    assert set(history) == {(entity_id, disabled_by)}
+    assert reload_reasons(logs) == []
+    assert (bench.ha_reloads, bench.setups) == (0, 1)
+    assert settled_ids(bench.setup) == set()
 
 
 @pytest.mark.parametrize("phase", (1, 3), ids=("every-poll", "every-third-poll"))
@@ -283,33 +278,34 @@ def test_alternating_repair_code_sensor_settles_present_after_one_integration_re
     assert settled_ids(setup) == (set() if value_first else {repair_uid()})
 
 
-def test_null_from_the_start_is_disabled_once_without_a_reload(paths_harness, logs):
-    """Pinned: disabled once and stays disabled; Home Assistant removes it itself."""
+def test_null_from_the_start_stays_enabled_without_a_reload(paths_harness, logs):
+    """Pinned: an enabled entity whose value never arrives stays enabled."""
     bench = boiler_bench(paths_harness, disabled_by=None)
 
     history = drive(paths_harness, bench, [None] * POLLS, boiler_uid())
 
     entity_id = f"sensor.{boiler_uid().replace('-', '_')}"
-    assert transitions(history) == [((entity_id, None), (entity_id, "integration"))]
-    assert history[-1] == (entity_id, "integration")
+    assert transitions(history) == []
+    assert history[-1] == (entity_id, None)
     assert reload_reasons(logs) == []
     assert (bench.ha_reloads, bench.setups) == (0, 1)
 
 
-def test_value_gained_once_is_enabled_once_with_one_integration_reload(paths_harness, logs):
-    """Pinned: an integration-disabled entity that gains a value is enabled once.
-
-    One reload is the integration's; Home Assistant adds its own deferred one.
-    """
-    bench = boiler_bench(paths_harness, disabled_by="integration")
+@pytest.mark.parametrize("disabled_by", ("user", "integration"))
+def test_value_gained_leaves_a_disabled_entity_disabled(paths_harness, logs, disabled_by):
+    """Pinned: a disabled entity that gains a value is not enabled and causes no
+    reload, whoever disabled it. A row an earlier release disabled is enabled
+    outside the integration, not by it."""
+    bench = boiler_bench(paths_harness, disabled_by=disabled_by)
     values = [None] * 6 + [VALUE["boiler"]] * (POLLS - 6)
 
     history = drive(paths_harness, bench, values, boiler_uid())
 
     entity_id = f"sensor.{boiler_uid().replace('-', '_')}"
-    assert transitions(history) == [((entity_id, "integration"), (entity_id, None))]
-    assert reload_reasons(logs) == [LIVE_SPARSE]
-    assert (bench.ha_reloads, bench.setups) == (1, 3)
+    assert transitions(history) == []
+    assert history[-1] == (entity_id, disabled_by)
+    assert reload_reasons(logs) == []
+    assert (bench.ha_reloads, bench.setups) == (0, 1)
 
 
 def test_repair_code_null_from_the_start_is_removed_once_without_a_reload(paths_harness, logs):
@@ -402,24 +398,33 @@ def test_the_public_record_reader_is_entry_scoped_and_read_only():
     assert not hasattr(sensor_setup, "_SPARSE_RELOAD_KEY")
 
 
+def repair_bench(harness, *, entry_id=ENTRY, setup=None):
+    if setup is None:
+        setup, _ = shared_hass(entry_id)
+    entry = next(e for e in setup.hass.config_entries.async_entries(DOMAIN)
+                 if e.entry_id == entry_id)
+    harness.data["HelianthusCoordinator"] = [paths.INVENTORY_DEVICE]
+    return Bench(harness, setup, entry, "repair")
+
+
 def test_each_unique_id_of_an_entry_has_its_own_bound(paths_harness, logs):
-    """A settled entity does not use up the reload of another entity of the entry."""
-    number_uid = boiler_uid(key="maximum_heating_flow_temperature_setpoint")
-    bench = boiler_bench(paths_harness, disabled_by=None)
-    paths_harness.entities.add(ENTRY, number_uid, domain="number")
-    paths_harness.entities.async_update_entity(
-        f"number.{number_uid.replace('-', '_')}", disabled_by="integration")
-    alternate = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
-    history = drive(paths_harness, bench, alternate[:POLLS // 2], number_uid)
-    bench.extra = {"maximum_heating_flow_temperature_setpoint": 55}
+    """The status reload records only its own unique ID, and a person's enable
+    of another entity of the entry records only that one."""
+    bench = repair_bench(paths_harness)
+    boiler_entity_id = f"sensor.{boiler_uid().replace('-', '_')}"
+    paths_harness.entities.add(ENTRY, boiler_uid())
+    paths_harness.entities.async_update_entity(boiler_entity_id, disabled_by="user")
+    alternate = [alternating(i, VALUE["repair"], value_first=False) for i in range(POLLS)]
+    drive(paths_harness, bench, alternate[:POLLS // 2], repair_uid())
+    assert settled_ids(bench.setup) == {repair_uid()}
 
-    history += drive_more(paths_harness, bench, alternate[POLLS // 2:], number_uid)
+    paths_harness.entities.async_update_entity(boiler_entity_id, disabled_by=None)
+    drive_more(paths_harness, bench, alternate[POLLS // 2:], repair_uid())
 
-    assert reload_reasons(logs) == [LIVE_SPARSE, LIVE_SPARSE]
-    assert bench.ha_reloads == 2
-    assert history[-1] == (f"number.{number_uid.replace('-', '_')}", None)
-    assert entity_state(paths_harness, boiler_uid())[1] is None
-    assert settled_ids(bench.setup) == {boiler_uid(), number_uid}
+    assert reload_reasons(logs) == [LIVE_STATUS]
+    assert bench.ha_reloads == 1
+    assert entity_state(paths_harness, boiler_uid()) == (boiler_entity_id, None)
+    assert settled_ids(bench.setup) == {repair_uid(), boiler_uid()}
 
 
 def drive_more(harness, bench, values, unique_id):
@@ -435,55 +440,52 @@ def drive_more(harness, bench, values, unique_id):
 
 
 def test_each_entry_has_its_own_bound(paths_harness, logs):
-    """Two entries in one run: each entry's entity gets its own reload."""
+    """Two entries in one run: each entry's status sensor gets its own reload."""
     setup, _ = shared_hass("entry-a", "entry-b")
-    benches = [boiler_bench(paths_harness, disabled_by=None, entry_id=entry_id, setup=setup)
+    benches = [repair_bench(paths_harness, entry_id=entry_id, setup=setup)
                for entry_id in ("entry-a", "entry-b")]
-    values = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
+    values = [alternating(i, VALUE["repair"], value_first=False) for i in range(POLLS)]
 
     for bench in benches:
-        drive(paths_harness, bench, values, boiler_uid(bench.entry.entry_id))
+        drive(paths_harness, bench, values, repair_uid(bench.entry.entry_id))
 
-    assert [bench.ha_reloads for bench in benches] == [1, 1]
-    assert reload_reasons(logs, "entry-a") == [LIVE_SPARSE]
-    assert reload_reasons(logs, "entry-b") == [LIVE_SPARSE]
+    assert reload_reasons(logs, "entry-a") == [LIVE_STATUS]
+    assert reload_reasons(logs, "entry-b") == [LIVE_STATUS]
     assert setup.hass.data[DOMAIN][SETTLED_KEY] == {
-        "entry-a": {boiler_uid("entry-a")}, "entry-b": {boiler_uid("entry-b")}}
+        "entry-a": {repair_uid("entry-a")}, "entry-b": {repair_uid("entry-b")}}
 
 
 def test_a_new_home_assistant_run_starts_a_new_period(paths_harness, logs):
     """The bound ends with the run: fresh domain data admits one more reload."""
-    values = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
-    first = boiler_bench(paths_harness, disabled_by=None)
-    drive(paths_harness, first, values, boiler_uid())
-    setup, (entry,) = shared_hass(ENTRY)
-    second = Bench(paths_harness, setup, entry, "boiler")
+    values = [alternating(i, VALUE["repair"], value_first=False) for i in range(POLLS)]
+    first = repair_bench(paths_harness)
+    drive(paths_harness, first, values, repair_uid())
+    second = repair_bench(paths_harness)
 
-    history = drive(paths_harness, second, values, boiler_uid())
+    history = drive(paths_harness, second, values, repair_uid())
 
-    assert reload_reasons(logs) == [LIVE_SPARSE, LIVE_SPARSE]
-    assert (first.ha_reloads, second.ha_reloads) == (1, 1)
-    assert history[-1] == (f"sensor.{boiler_uid().replace('-', '_')}", None)
+    assert reload_reasons(logs) == [LIVE_STATUS, LIVE_STATUS]
+    assert history[-1] == (f"sensor.{repair_uid().replace('-', '_')}", None)
 
 
 def test_the_record_of_a_removed_entry_is_dropped(paths_harness, logs):
     """A later setup drops the record of an entry that is no longer configured."""
     setup, entries = shared_hass("entry-a", "entry-b")
-    benches = [boiler_bench(paths_harness, disabled_by=None, entry_id=entry_id, setup=setup)
+    benches = [repair_bench(paths_harness, entry_id=entry_id, setup=setup)
                for entry_id in ("entry-a", "entry-b")]
-    values = [alternating(i, VALUE["boiler"], value_first=False) for i in range(POLLS)]
+    values = [alternating(i, VALUE["repair"], value_first=False) for i in range(POLLS)]
     for bench in benches:
-        drive(paths_harness, bench, values, boiler_uid(bench.entry.entry_id))
+        drive(paths_harness, bench, values, repair_uid(bench.entry.entry_id))
     assert set(setup.hass.data[DOMAIN][SETTLED_KEY]) == {"entry-a", "entry-b"}
     entry_a = entries[0]
     setup.hass.config_entries.async_entries = lambda domain: [entry_a]
 
     async def reload_entry_a():
         assert await entry_cleanup.async_unload_entry(setup.hass, entry_a) is True
-        await benches[0].start(VALUE["boiler"])
+        await benches[0].start(VALUE["repair"])
     asyncio.run(asyncio.wait_for(reload_entry_a(), timeout=20))
 
-    assert setup.hass.data[DOMAIN][SETTLED_KEY] == {"entry-a": {boiler_uid("entry-a")}}
+    assert setup.hass.data[DOMAIN][SETTLED_KEY] == {"entry-a": {repair_uid("entry-a")}}
 
 
 @pytest.fixture
@@ -620,24 +622,22 @@ def test_real_platform_repair_code_null_at_its_reload_then_shown_without_more_re
     assert entry_setup.sparse_entity_has_reloaded(bench.setup.hass, ENTRY, repair_uid())
 
 
-def test_real_platform_radio_metadata_null_at_its_reload_then_shown_without_more_reloads(
+def test_real_platform_radio_metadata_that_goes_null_stays_shown_without_reloads(
         paths_harness, logs):
-    """The same for an optional radio metadata sensor disabled while null."""
-    bench = platform_bench(paths_harness, "radio", null_at_reload=True)
-    paths_harness.entities.add(ENTRY, radio_uid())
-    values = [None] * 4 + [RADIO_ZONE] * (POLLS - 4)
+    """An optional radio metadata sensor created while live stays enabled and
+    shown through a null phase, and shows the value again when it returns."""
+    bench = platform_bench(paths_harness, "radio")
+    values = [RADIO_ZONE] * 4 + [None] * 6 + [RADIO_ZONE] * (POLLS - 10)
 
     history = drive(paths_harness, bench, values, radio_uid())
 
     entity_id = f"sensor.{radio_uid().replace('-', '_')}"
-    assert (entity_id, "integration") in history  # disabled once while null
+    assert set(history) == {(entity_id, None)}
     entity = bench.live_entity(radio_uid())
     assert entity is not None, history
     assert entity.native_value == RADIO_ZONE
-    assert history[-1] == (entity_id, None)
-    assert reload_reasons(logs) == [LIVE_SPARSE]
-    assert (bench.ha_reloads, bench.setups) == (1, 3)
-    assert entry_setup.sparse_entity_has_reloaded(bench.setup.hass, ENTRY, radio_uid())
+    assert reload_reasons(logs) == []
+    assert (bench.ha_reloads, bench.setups) == (0, 1)
 
 
 @pytest.mark.parametrize(("kind", "unique_id"), (("repair", repair_uid()), ("radio", radio_uid())),

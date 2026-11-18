@@ -379,7 +379,7 @@ def test_async_setup_entry_skips_reduced_boiler_sensors_without_physical_bai00()
     assert boiler_entities == []
 
 
-def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_null() -> None:
+def test_reduced_boiler_temperature_sensors_are_enabled_and_hidden_when_value_null() -> None:
     boiler_device_id = ("helianthus", "entry-1-bus-BAI00-08")
     payload = _build_payload(boiler_device_id=boiler_device_id)
     payload["boiler_coordinator"].data["boiler_status"]["state"]["return_temperature_c"] = None
@@ -395,8 +395,10 @@ def test_reduced_boiler_temperature_sensors_are_disabled_by_default_when_value_n
         if isinstance(entity, sensor_platform.HelianthusBoilerTemperatureSensor)
     }
 
-    assert boiler_entities["entry-1-boiler-flow_temperature"]._attr_entity_registry_enabled_default is True
-    assert boiler_entities["entry-1-boiler-return_temperature_c"]._attr_entity_registry_enabled_default is False
+    for entity in boiler_entities.values():
+        assert getattr(entity, "_attr_entity_registry_enabled_default", True) is True
+    assert boiler_entities["entry-1-boiler-flow_temperature"]._attr_entity_registry_visible_default is True
+    assert boiler_entities["entry-1-boiler-return_temperature_c"]._attr_entity_registry_visible_default is False
 
 
 def test_async_setup_entry_adds_boiler_diagnostic_sensors() -> None:
@@ -548,7 +550,7 @@ def test_async_setup_entry_creates_live_optional_status_sensor() -> None:
     assert entity.native_value == "admission_degraded"
 
 
-def test_sparse_demand_and_adapter_sensors_are_disabled_by_default_when_value_null() -> None:
+def test_sparse_demand_and_adapter_sensors_are_enabled_and_hidden_when_value_null() -> None:
     semantic = _FakeCoordinator(
         {
             "zones": [
@@ -586,9 +588,11 @@ def test_sparse_demand_and_adapter_sensors_are_disabled_by_default_when_value_nu
         label="Adapter WiFi Signal",
     )
 
-    assert zone_demand._attr_entity_registry_enabled_default is False
-    assert dhw_demand._attr_entity_registry_enabled_default is True
-    assert adapter._attr_entity_registry_enabled_default is False
+    for entity in (zone_demand, dhw_demand, adapter):
+        assert getattr(entity, "_attr_entity_registry_enabled_default", True) is True
+    assert zone_demand._attr_entity_registry_visible_default is False
+    assert dhw_demand._attr_entity_registry_visible_default is True
+    assert adapter._attr_entity_registry_visible_default is False
 
 
 def test_all_semantic_sensors_expose_retained_freshness_and_expire_unavailable() -> None:

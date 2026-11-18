@@ -66,38 +66,24 @@ def _cylinder_count_is_published(setup_fm5_mode: str, current_fm5_mode: str) -> 
     return setup_fm5_mode == "INTERPRETED" and current_fm5_mode == "INTERPRETED"
 
 
-def _sparse_entities_to_disable(
+def _record_disabled_sparse_entities(
     entity_entries: tuple,
     seen_disabled: set[str],
-    reloaded: set[str],
     is_candidate: Callable[[str], bool],
-    is_live: Callable[[str], bool],
-) -> list:
-    """Return the null sparse entities that the automatic disable may act on.
+) -> None:
+    """Record in ``seen_disabled`` every sparse entity that is disabled now.
 
-    Rule: the automatic disable acts only on an enabled sparse entity that
-    has not been seen disabled during this Home Assistant run and has not had
-    its sparse reload. An entity that was disabled, by the integration, the
-    user or anything else, and is enabled again was enabled by an action (the
-    user's, or the integration's own enable, which also spends its reload), so
-    it stays enabled. Every disabled sparse entity, and every entity returned
-    here, is recorded in ``seen_disabled``. The automatic enable acts only on
-    entities that the integration disabled, so a user-disabled entity stays
-    disabled.
+    The integration never writes the enabled state of an entity; a disabled
+    entity was disabled by someone else and stays disabled. The record only
+    lets entry setup recognise a later enable of that entity in this Home
+    Assistant run.
     """
-    selected = []
     for entity_entry in entity_entries:
         unique_id = str(entity_entry.unique_id or "")
         if entity_entry.platform != DOMAIN or not is_candidate(unique_id):
             continue
         if entity_entry.disabled_by is not None:
             seen_disabled.add(unique_id)
-            continue
-        if unique_id in reloaded or unique_id in seen_disabled or is_live(unique_id):
-            continue
-        seen_disabled.add(unique_id)
-        selected.append(entity_entry)
-    return selected
 
 
 def claim_sparse_reloads(reloaded: set[str], unique_ids: list[str]) -> list[str]:
@@ -126,17 +112,6 @@ def _missing_live_sparse_ids(
     )
 
 
-def _schedule_unclaimed_sparse_reload(
-    reloaded: set[str],
-    unique_ids: list[str],
-    schedule_reload: Callable[[str], None],
-    reason: str,
-) -> None:
-    """Schedule a reload only for IDs that have not caused one in this run."""
-    if claim_sparse_reloads(reloaded, unique_ids):
-        schedule_reload(reason)
-
-
 def _live_keys(payload: object) -> set[str]:
     if not isinstance(payload, dict):
         return set()
@@ -157,7 +132,8 @@ class EntryEntityReconciler:
     and whether it has run) and the sparse run record (the sparse unique IDs
     that have had their reload and those seen disabled in this Home Assistant
     run). Entry setup creates one per setup and calls it from its listeners
-    and after platform forwarding. The coordinators and the inventory of the
+    and after platform forwarding. It never writes the enabled state of an
+    entity. The coordinators and the inventory of the
     first refresh are read through the objects handed in, so every check sees
     the latest coordinator data.
     """
@@ -687,19 +663,14 @@ class EntryEntityReconciler:
                 reason,
             )
 
-    def _integration_disabler(self) -> object:
-        registry_disabler = getattr(self._er, "RegistryEntryDisabler", None)
-        integration_disabler = "integration"
-        if registry_disabler is not None:
-            integration_disabler = getattr(
-                registry_disabler,
-                "INTEGRATION",
-                integration_disabler,
-            )
-        return integration_disabler
-
     def auto_enable_sparse_entities(self, reason: str) -> None:
-        integration_disabler = self._integration_disabler()
+        """Schedule the one reload that creates a live status entity without a row.
+
+        The sensor platform creates an optional status sensor only while its
+        value is present or after its reload in this run. Nothing here writes
+        the entity registry: the enabled state of an entity is never the
+        integration's decision.
+        """
         missing_live_status_ids = _missing_live_sparse_ids(
             self.status_sparse_unique_ids,
             self.sparse_reloaded_ids,
@@ -717,56 +688,19 @@ class EntryEntityReconciler:
                 reason,
             )
             self._schedule_reload("sparse status entities became live")
-            return
-        enabled: list[str] = []
-        for entity_entry in self._entry_entities():
-            if entity_entry.platform != DOMAIN:
-                continue
-            if entity_entry.disabled_by != integration_disabler:
-                continue
-            if not self._is_sparse_entity_live(str(entity_entry.unique_id or "")):
-                continue
-            self._entity_registry.async_update_entity(entity_entry.entity_id, disabled_by=None)
-            enabled.append(str(entity_entry.unique_id or ""))
-        if enabled:
-            _LOGGER.info(
-                "Helianthus auto-enabled %d sparse entities for entry %s (%s)",
-                len(enabled),
-                self._entry_id,
-                reason,
-            )
-            _schedule_unclaimed_sparse_reload(
-                self.sparse_reloaded_ids, enabled, self._schedule_reload, "sparse entities became live"
-            )
 
     def auto_disable_sparse_entities(self, reason: str) -> None:
-        integration_disabler = self._integration_disabler()
-        disabled = 0
-        # Only an enabled null sparse entity that no action has touched in
-        # this run: one that was disabled and is enabled again (by the user,
-        # or by the integration after its reload) stays enabled. See
-        # _sparse_entities_to_disable for the full rule.
-        for entity_entry in _sparse_entities_to_disable(
+        """Record the sparse entities that are disabled now; never disable one.
+
+        A sparse entity stays enabled whatever its value: the platforms hide
+        one whose value is absent at creation. A disabled entity is left as it
+        is and only recorded, so entry setup recognises its later enable.
+        """
+        _record_disabled_sparse_entities(
             self._entry_entities(),
             self.sparse_seen_disabled_ids,
-            self.sparse_reloaded_ids,
             self._is_sparse_entity_candidate,
-            self._is_sparse_entity_live,
-        ):
-            self._entity_registry.async_update_entity(
-                entity_entry.entity_id,
-                disabled_by=integration_disabler,
-            )
-            disabled += 1
-        # Home Assistant removes an entity disabled in the registry by itself;
-        # no reload is needed.
-        if disabled:
-            _LOGGER.info(
-                "Helianthus auto-disabled %d sparse entities for entry %s (%s)",
-                disabled,
-                self._entry_id,
-                reason,
-            )
+        )
 
     def run_trusted_cleanup(self, reason: str) -> None:
         if self.cleanup_ran:

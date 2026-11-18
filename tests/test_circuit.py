@@ -394,7 +394,7 @@ def test_circuit_sensor_platform_adds_expected_sensors_without_zone_link_attrs()
     assert "connected_zone_names" not in attrs
 
 
-def test_circuit_sparse_sensors_are_disabled_by_default_when_value_null() -> None:
+def test_circuit_sparse_sensors_are_enabled_and_hidden_when_value_null() -> None:
     payload, _, _ = _build_payload()
     payload["circuit_coordinator"].data["circuits"][0]["state"]["calc_flow_temp_c"] = None
     hass = _FakeHass()
@@ -409,7 +409,8 @@ def test_circuit_sparse_sensors_are_disabled_by_default_when_value_null() -> Non
         if isinstance(entity, sensor_platform.HelianthusCircuitSensor)
         and entity._attr_unique_id == "entry-1-circuit-0-sensor-calc_flow_temp_c"
     )
-    assert calc_flow._attr_entity_registry_enabled_default is False
+    assert getattr(calc_flow, "_attr_entity_registry_enabled_default", True) is True
+    assert calc_flow._attr_entity_registry_visible_default is False
 
 
 def test_circuit_number_select_entities_call_circuit_config_mutation_without_cooling_enabled() -> None:

@@ -287,7 +287,8 @@ def test_interpreted_mode_creates_solar_and_cylinder_sensors_only() -> None:
         for entity in sensor_entities
     )
     assert all(
-        entity._attr_entity_registry_enabled_default is True
+        entity._attr_entity_registry_visible_default is True
+        and getattr(entity, "_attr_entity_registry_enabled_default", True) is True
         for entity in binary_sensor_entities
         if isinstance(entity, binary_sensor_platform.HelianthusSolarBinarySensor)
     )

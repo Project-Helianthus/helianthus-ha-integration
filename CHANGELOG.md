@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Every valid entity is created enabled, whether or not its value is present
+  at creation. A sensor, number, text or binary sensor whose value is absent
+  at creation, and every sensitive number or text, is created hidden instead.
+  The integration no longer disables an entity whose value is null, no longer
+  enables it again when a value appears, and schedules no reload for either.
+  An entity disabled by a person, or disabled by an earlier release, stays
+  disabled. Unique IDs do not change.
+
 - Device-scoped entities take their English names from the entity translations.
   The names shown in English stay the same. `translations/en.json` is generated
   from the descriptor tables, and each adopted entity publishes the translation

@@ -311,7 +311,7 @@ def _solar_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) -
             parent_device_id=parent_device_id,
             key=key,
             label=label,
-            enabled_by_default=bool(isinstance(solar, dict) and solar.get(key) is not None),
+            visible_by_default=bool(isinstance(solar, dict) and solar.get(key) is not None),
         )
         for key, label in _SOLAR_ROWS
     ]
@@ -643,7 +643,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
 
 class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Sparse solar binary sensor that auto-enables when live data appears."""
+    """Sparse solar binary sensor, hidden by default when its value is absent at creation."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -658,7 +658,7 @@ class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         parent_device_id: tuple[str, str] | None,
         key: str,
         label: str,
-        enabled_by_default: bool,
+        visible_by_default: bool,
     ) -> None:
         super().__init__(coordinator)
         self._manufacturer = manufacturer
@@ -667,7 +667,7 @@ class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._key = key
         self._attr_translation_key = key
         self._attr_unique_id = f"{entry_id}-solar-binary-{key}"
-        self._attr_entity_registry_enabled_default = enabled_by_default
+        self._attr_entity_registry_visible_default = visible_by_default
         _SOLAR_ICONS: dict[str, str] = {
             "pump_active": "mdi:pump",
             "solar_enabled": "mdi:solar-power",
