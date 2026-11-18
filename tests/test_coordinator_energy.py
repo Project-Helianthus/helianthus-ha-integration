@@ -106,8 +106,13 @@ def _energy(client: _ScriptedClient, capabilities: object):
     coordinator._client = client
     coordinator._capabilities = capabilities
     coordinator._last_valid_energy_totals = None
-    coordinator._monthly_supported = True
     return coordinator
+
+
+def test_partial_energy_coordinator_omits_the_monthly_support_flag() -> None:
+    """A monthly support flag on the partial coordinator fails this test."""
+    coordinator = _energy(_ScriptedClient([]), None)
+    assert not hasattr(coordinator, "_monthly_supported")
 
 
 def test_energy_module_keeps_one_query_document() -> None:

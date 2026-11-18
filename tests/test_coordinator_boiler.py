@@ -108,8 +108,6 @@ def _boiler(client: _ScriptedClient, capabilities: object):
     coordinator._client = client
     coordinator._capabilities = capabilities
     coordinator.boiler_supported = True
-    coordinator._boiler_installer_available = None
-    coordinator._boiler_sensitive_available = None
     return coordinator
 
 
@@ -176,6 +174,13 @@ def _entities(coordinator):
         hours._attr_unique_id: hours,
         number._attr_unique_id: number,
     }
+
+
+def test_partial_boiler_coordinator_omits_support_flags() -> None:
+    """Support flags on the partial boiler coordinator fail this test."""
+    coordinator = _boiler(_ScriptedClient([]), None)
+    assert not hasattr(coordinator, "_boiler_installer_available")
+    assert not hasattr(coordinator, "_boiler_sensitive_available")
 
 
 def test_boiler_module_keeps_one_boiler_query_and_the_separate_queries() -> None:

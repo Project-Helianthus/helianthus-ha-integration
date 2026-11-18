@@ -124,8 +124,6 @@ def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordi
     coordinator = object.__new__(HelianthusBoilerCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator.boiler_supported = True  # type: ignore[attr-defined]
-    coordinator._boiler_installer_available = None  # type: ignore[attr-defined]
-    coordinator._boiler_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -138,8 +136,6 @@ def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoor
 def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordinator:
     coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
-    coordinator._system_installer_available = None  # type: ignore[attr-defined]
-    coordinator._system_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -188,6 +184,17 @@ def _energy_totals_payload(today: float = 3.5) -> dict[str, dict]:
             },
         }
     }
+
+
+def test_partial_domain_coordinators_omit_support_flags() -> None:
+    """Support flags on the partial boiler or system coordinator fail this test."""
+    client = _ScriptedClient([])
+    boiler = _build_boiler_coordinator(client)
+    system = _build_system_coordinator(client)
+    assert not hasattr(boiler, "_boiler_installer_available")
+    assert not hasattr(boiler, "_boiler_sensitive_available")
+    assert not hasattr(system, "_system_installer_available")
+    assert not hasattr(system, "_system_sensitive_available")
 
 
 def test_device_inventory_returns_devices_from_one_query() -> None:

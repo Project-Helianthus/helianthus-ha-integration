@@ -129,9 +129,6 @@ def _system(client: _ScriptedClient, capabilities: object):
     coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client
     coordinator._capabilities = capabilities
-    coordinator._system_installer_available = None
-    coordinator._system_sensitive_available = None
-    coordinator._system_dhw_bound_next_probe = None
     return coordinator
 
 
@@ -230,6 +227,14 @@ def _entities(coordinator):
     entities[number._attr_unique_id] = number
     entities[sensor._attr_unique_id] = sensor
     return entities
+
+
+def test_partial_system_coordinator_omits_support_flags() -> None:
+    """Support flags or a bound probe time on the partial coordinator fail this test."""
+    coordinator = _system(_ScriptedClient([]), None)
+    assert not hasattr(coordinator, "_system_installer_available")
+    assert not hasattr(coordinator, "_system_sensitive_available")
+    assert not hasattr(coordinator, "_system_dhw_bound_next_probe")
 
 
 def test_system_module_keeps_one_system_query_and_the_separate_queries() -> None:

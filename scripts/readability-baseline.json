@@ -50,12 +50,6 @@
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/coordinator_boiler.py",
-      "symbol": "HelianthusBoilerCoordinator._async_update_data",
-      "rule": "C901",
-      "count": 17
-    },
-    {
       "path": "custom_components/helianthus/coordinator_fm5.py",
       "symbol": "HelianthusFM5Coordinator._async_update_data",
       "rule": "C901",
@@ -78,18 +72,6 @@
       "symbol": "HelianthusStatusCoordinator._async_update_data",
       "rule": "C901",
       "count": 13
-    },
-    {
-      "path": "custom_components/helianthus/coordinator_system.py",
-      "symbol": "HelianthusSystemCoordinator._async_update_data",
-      "rule": "C901",
-      "count": 24
-    },
-    {
-      "path": "custom_components/helianthus/coordinator_system.py",
-      "symbol": "HelianthusSystemCoordinator._async_update_data",
-      "rule": "PLR0915",
-      "count": 68
     },
     {
       "path": "custom_components/helianthus/date.py",
@@ -1696,12 +1678,6 @@
     {
       "path": "tests/test_number_dhw_bivalence.py",
       "symbol": "modules.UpdateFailed",
-      "rule": "N818",
-      "count": 1
-    },
-    {
-      "path": "tests/test_optional_query_sequences.py",
-      "symbol": "coordinator_module.UpdateFailed",
       "rule": "N818",
       "count": 1
     },

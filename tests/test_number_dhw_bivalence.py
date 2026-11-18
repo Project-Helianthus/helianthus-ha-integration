@@ -183,8 +183,6 @@ def test_missing_or_malformed_bound_uses_conservative_fallback(modules, config):
 def _system_coordinator(module, client):
     coordinator = object.__new__(module.HelianthusSystemCoordinator)
     coordinator._client = client
-    coordinator._system_installer_available = None
-    coordinator._system_sensitive_available = None
     return coordinator
 
 
@@ -199,6 +197,13 @@ def _cycle(module, query, config, *, marker=1):
         (module.QUERY_SYSTEM_INSTALLER, {"system": {"config": {"maintenance_date": None}}}),
         (module.QUERY_SYSTEM_SENSITIVE, {"system": {"config": {"installer_access_code": None}}}),
     ]
+
+
+def test_bivalence_refresh_coordinator_omits_support_flags(modules):
+    """Support flags on the bivalence refresh coordinator fail this test."""
+    coordinator = _system_coordinator(modules.coordinator, _Client())
+    assert not hasattr(coordinator, "_system_installer_available")
+    assert not hasattr(coordinator, "_system_sensitive_available")
 
 
 def test_refresh_uses_same_snapshot_for_limits_and_writes(modules):
