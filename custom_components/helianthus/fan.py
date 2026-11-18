@@ -191,12 +191,9 @@ class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
         self._pump_name = pump_name
         self._data_key = data_key
         self._pump_has_speed = pump_has_speed
-        self._attr_name, self._attr_translation_key = pump_name, _FAN_FIELDS[2][0]
+        self._attr_translation_key = _FAN_FIELDS[2][0]
+        self._attr_translation_placeholders = {"pump_name": self._pump_name}
         self._attr_unique_id = f"{entry_id}-boiler-{data_key}"
-
-    @property
-    def translation_placeholders(self) -> dict[str, str]:
-        return {"pump_name": self._pump_name}
 
     def _state(self) -> dict[str, Any]:
         return _boiler_state(self.coordinator.data)
@@ -275,10 +272,6 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
             if _parse_circuit_index(circuit.get("index")) == self._circuit_index:
                 return circuit
         return {}
-
-    @property
-    def name(self) -> str | None:
-        return _FAN_FIELDS[1][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()

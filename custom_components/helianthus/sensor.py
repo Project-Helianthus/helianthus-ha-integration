@@ -416,7 +416,7 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
         self._initial_name = initial_name
         self._field = field
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-sensor-{field.key}"
-        self._attr_name, self._attr_translation_key = field.label, entity_translation_key(field)
+        self._attr_translation_key = entity_translation_key(field)
         if field.device_class is not None:
             self._attr_device_class = field.device_class
         if field.native_unit is not None:
@@ -437,10 +437,6 @@ class HelianthusCircuitSensor(CoordinatorEntity, SensorEntity):
             if parse_circuit_index(circuit.get("index")) == self._circuit_index:
                 return circuit
         return {}
-
-    @property
-    def name(self) -> str | None:
-        return self._field.label
 
     def _device_name(self) -> str:
         circuit = self._circuit()

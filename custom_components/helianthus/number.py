@@ -511,7 +511,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
         self._initial_name = initial_name
         self._field = field
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-number-{field.key}"
-        self._attr_name, self._attr_translation_key = field.label, _number_translation_key(field)
+        self._attr_translation_key = _number_translation_key(field)
         self._attr_native_min_value = field.minimum
         self._attr_native_max_value = field.maximum
         self._attr_native_step = field.step
@@ -529,10 +529,6 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
             if _parse_circuit_index(circuit.get("index")) == self._circuit_index:
                 return circuit
         return {}
-
-    @property
-    def name(self) -> str | None:
-        return self._field.label
 
     def _device_name(self) -> str:
         circuit = self._circuit()

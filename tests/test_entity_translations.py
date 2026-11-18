@@ -285,9 +285,144 @@ def test_energy_names_follow_the_setup_source_and_usage() -> None:
             assert section[f"{source}_{usage}"]["name"] == expected
 
 
-def test_dynamic_names_substitute_to_the_supplied_text() -> None:
+def _resolved_name(entity: object, translations: dict[str, str]) -> str | None:
+    """Resolve a name the way Home Assistant resolves an entity name.
+
+    A name property on the entity class is returned unchanged. A stored name
+    wins over the catalog. Otherwise the catalog string is formatted with the
+    entity placeholders.
+    """
+    if "name" in type(entity).__dict__:
+        value = getattr(entity, "name")
+        return None if value is None else str(value)
+    if hasattr(entity, "_attr_name"):
+        return str(entity._attr_name)
+    key = getattr(entity, "_attr_translation_key", None)
+    if not isinstance(key, str):
+        return None
+    return translations[key].format(**_placeholders(entity))
+
+
+def _placeholders(entity: object) -> dict[str, str]:
+    if "translation_placeholders" in type(entity).__dict__:
+        return dict(getattr(entity, "translation_placeholders"))
+    stored = getattr(entity, "_attr_translation_placeholders", None)
+    if isinstance(stored, dict):
+        return dict(stored)
+    return {}
+
+
+def _coordinator():  # noqa: ANN202
+    from test_entity_icon_gate import _FakeCoordinator
+
+    return _FakeCoordinator({})
+
+
+def _circuit_kwargs() -> dict:
+    return {
+        "coordinator": _coordinator(),
+        "entry_id": "entry",
+        "manufacturer": "Vaillant",
+        "circuit_index": 0,
+        "initial_name": "Circuit 1",
+    }
+
+
+def _static_entities() -> tuple:
+    from test_entity_icon_gate import (
+        HelianthusCircuitCoolingEnabledSwitch,
+        HelianthusCircuitMixingValve,
+        HelianthusCircuitPumpFan,
+        HelianthusCircuitRoomTempControlSelect,
+        HelianthusZoneValve,
+    )
+    from custom_components.helianthus.number import (
+        HelianthusCircuitNumber,
+        _CIRCUIT_NUMBER_FIELDS,
+    )
+    from custom_components.helianthus.sensor import (
+        CIRCUIT_SENSOR_FIELDS,
+        HelianthusCircuitSensor,
+    )
+
+    common = _circuit_kwargs()
+    return (
+        ("select", HelianthusCircuitRoomTempControlSelect(**common, client=None)),
+        ("switch", HelianthusCircuitCoolingEnabledSwitch(**common, client=None)),
+        ("fan", HelianthusCircuitPumpFan(**_circuit_kwargs())),
+        ("valve", HelianthusCircuitMixingValve(**_circuit_kwargs())),
+        (
+            "valve",
+            HelianthusZoneValve(
+                coordinator=_coordinator(),
+                entry_id="entry",
+                manufacturer="Vaillant",
+                zone_id="zone-1",
+                initial_name="Zone 1",
+            ),
+        ),
+        (
+            "sensor",
+            HelianthusCircuitSensor(
+                **_circuit_kwargs(),
+                field=CIRCUIT_SENSOR_FIELDS[0],
+            ),
+        ),
+        (
+            "number",
+            HelianthusCircuitNumber(
+                **_circuit_kwargs(),
+                client=None,
+                field=_CIRCUIT_NUMBER_FIELDS[0],
+            ),
+        ),
+    )
+
+
+def _placeholder_entities() -> tuple:
+    from test_entity_icon_gate import HelianthusBoilerPumpFan, HelianthusSolarSwitch
+
+    pump = HelianthusBoilerPumpFan(
+        coordinator=_coordinator(),
+        entry_id="entry",
+        manufacturer="Vaillant",
+        hydraulics_device_id=("helianthus", "hydraulics"),
+        parent_device_id=None,
+        pump_name="Feed Pump",
+        data_key="central_heating_pump_active",
+    )
+    switch = HelianthusSolarSwitch(
+        coordinator=_coordinator(),
+        entry_id="entry",
+        manufacturer="Vaillant",
+        solar_device_id=("helianthus", "solar"),
+        parent_device_id=None,
+        key="solar_enabled",
+        label="Solar Enabled",
+    )
+    return pump, switch
+
+
+def test_entity_names_follow_translations_not_a_fixed_english_property() -> None:
     section = _entity_section()
-    pump = section["fan"]["boiler_pump"]["name"].replace("{pump_name}", "Feed Pump")
-    switch = section["switch"]["solar_switch"]["name"].replace("{label}", "Solar Enabled")
-    assert pump == "Feed Pump"
-    assert switch == "Solar Enabled"
+    for platform, entity in _static_entities():
+        key = entity._attr_translation_key
+        english = section[platform][key]["name"]
+        wrapped = f"Wrapped {english}"
+        assert _resolved_name(entity, {key: wrapped}) == wrapped
+        assert _resolved_name(entity, {key: english}) == english
+
+
+def test_dynamic_names_substitute_entity_placeholders() -> None:
+    section = _entity_section()
+    pump, switch = _placeholder_entities()
+    assert pump._attr_translation_placeholders == {"pump_name": "Feed Pump"}
+    assert switch._attr_translation_placeholders == {"label": "Solar Enabled"}
+    pump_name = section["fan"]["boiler_pump"]["name"]
+    switch_name = section["switch"]["solar_switch"]["name"]
+    wrapped_pump = _resolved_name(pump, {"boiler_pump": "Wrapped {pump_name}"})
+    wrapped_switch = _resolved_name(switch, {"solar_switch": "Wrapped {label}"})
+    assert wrapped_pump == "Wrapped Feed Pump"
+    assert wrapped_switch == "Wrapped Solar Enabled"
+    assert _resolved_name(pump, {"boiler_pump": pump_name}) == "Feed Pump"
+    assert _resolved_name(switch, {"solar_switch": switch_name}) == "Solar Enabled"

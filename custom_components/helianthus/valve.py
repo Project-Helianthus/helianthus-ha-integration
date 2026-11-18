@@ -214,10 +214,6 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
                 return circuit
         return {}
 
-    @property
-    def name(self) -> str | None:
-        return _VALVE_FIELDS[1][1]
-
     def _device_name(self) -> str:
         circuit = self._circuit()
         if circuit:
@@ -271,10 +267,6 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
             if _normalize_zone_id(zone.get("id")) == self._zone_id:
                 return zone
         return {}
-
-    @property
-    def name(self) -> str | None:
-        return _VALVE_FIELDS[2][1]
 
     @property
     def device_info(self) -> DeviceInfo:

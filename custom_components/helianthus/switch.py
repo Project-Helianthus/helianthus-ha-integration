@@ -95,7 +95,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-circuit_cooling_enabled"
-        self._attr_translation_key, self._attr_name = _SWITCH_FIELDS[0]
+        self._attr_translation_key = _SWITCH_FIELDS[0][0]
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -105,10 +105,6 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
             if _parse_circuit_index(circuit.get("index")) == self._circuit_index:
                 return circuit
         return {}
-
-    @property
-    def name(self) -> str | None:
-        return _SWITCH_FIELDS[0][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -196,12 +192,9 @@ class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
         self._key, self._label = key, label
-        self._attr_name, self._attr_translation_key = self._label, _SWITCH_FIELDS[1][0]
+        self._attr_translation_key = _SWITCH_FIELDS[1][0]
+        self._attr_translation_placeholders = {"label": self._label}
         self._attr_unique_id = f"{entry_id}-solar-switch-{key}"
-
-    @property
-    def translation_placeholders(self) -> dict[str, str]:
-        return {"label": self._label}
 
     @property
     def available(self) -> bool:
