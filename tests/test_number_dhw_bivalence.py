@@ -237,38 +237,35 @@ def test_refresh_uses_same_snapshot_for_limits_and_writes(modules):
             _set(number, maximum)
 
 
-@pytest.mark.parametrize("missing_field", ["dhw_outdoor_bivalence_temperature_limit_bound", "dhw_outdoor_bivalence_temperature_limit_bound"])
-def test_old_gateway_retries_once_and_keeps_system_and_optional_data(modules, missing_field):
+def test_a_rejected_bound_fails_after_one_system_query(modules):
+    """The bound stays on the one system query. A rejection sends no second query."""
     module = modules.coordinator
     missing = module.GraphQLResponseError([
-        {"message": f'Cannot query field "{missing_field}" on type "SystemConfig".'}
+        {"message": 'Cannot query field "dhw_outdoor_bivalence_temperature_limit_bound" on type "SystemConfig".'}
     ])
-    client = _Client()
+    client = _Client([(module.QUERY_SYSTEM, missing)])
     coordinator = _system_coordinator(module, client)
     assert "dhw_outdoor_bivalence_temperature_limit_bound {" in module.QUERY_SYSTEM
     assert "min_c\n" in module.QUERY_SYSTEM and "max_c\n" in module.QUERY_SYSTEM
     assert "source\n" in module.QUERY_SYSTEM
-    assert "dhw_outdoor_bivalence_temperature_limit_bound" not in module.QUERY_SYSTEM_LEGACY
-    for marker in (1, 2):
-        config = {"dhw_outdoor_bivalence_temperature_limit": marker, "room_humidity_limit_maximum": 40 + marker}
-        client.actions = _cycle(module, module.QUERY_SYSTEM_LEGACY, config, marker=marker)
-        if marker == 1:
-            client.actions.insert(0, (module.QUERY_SYSTEM, missing))
-        expected_calls = [query for query, _ in client.actions]
-        client.calls = []
-        result = asyncio.run(coordinator._async_update_data())
-        assert client.calls == expected_calls
-        assert client.actions == []
-        assert result == {
-            "state": {"outdoor_temperature": marker},
-            "config": {**config, "maintenance_date": None, "installer_access_code": None},
-            "properties": {"hydraulic_scheme_code": marker},
-            "metadata": {"gateway_brand": "Synthetic"},
-        }
-        number, _, _, _ = _entity(modules, result["config"])
-        assert (number.native_min_value, number.native_max_value) == (-20, 20)
-        assert coordinator.system_installer_available is True
-        assert coordinator.system_sensitive_available is True
+    with pytest.raises(module.UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
+    assert client.calls == [module.QUERY_SYSTEM]
+    assert client.actions == []
+    config = {"dhw_outdoor_bivalence_temperature_limit": 4, "room_humidity_limit_maximum": 44}
+    client.actions = _cycle(module, module.QUERY_SYSTEM, config, marker=4)
+    result = asyncio.run(coordinator._async_update_data())
+    assert client.actions == []
+    assert result == {
+        "state": {"outdoor_temperature": 4},
+        "config": {**config, "maintenance_date": None, "installer_access_code": None},
+        "properties": {"hydraulic_scheme_code": 4},
+        "metadata": {"gateway_brand": "Synthetic"},
+    }
+    number, _, _, _ = _entity(modules, result["config"])
+    assert (number.native_min_value, number.native_max_value) == (-20, 20)
+    assert coordinator.system_installer_available is True
+    assert coordinator.system_sensitive_available is True
 
 
 @pytest.mark.parametrize("kind", ["transport", "resolver"])
@@ -287,19 +284,19 @@ def test_transient_system_failure_does_not_mark_bound_unsupported(modules, kind)
     assert client.actions == []
 
 
-def test_legacy_retry_failure_remains_failed_and_is_bounded(modules):
+def test_a_rejected_bound_does_not_send_a_second_query(modules):
     module = modules.coordinator
     client = _Client([
         (module.QUERY_SYSTEM, module.GraphQLResponseError([
             {"message": 'Cannot query field "dhw_outdoor_bivalence_temperature_limit_bound" on type "SystemConfig".'}
         ])),
-        (module.QUERY_SYSTEM_LEGACY, module.GraphQLClientError("Synthetic transport failure")),
+        (module.QUERY_SYSTEM, module.GraphQLClientError("Synthetic transport failure")),
     ])
     coordinator = _system_coordinator(module, client)
     with pytest.raises(module.UpdateFailed):
         asyncio.run(coordinator._async_update_data())
-    assert client.calls == [module.QUERY_SYSTEM, module.QUERY_SYSTEM_LEGACY]
-    assert client.actions == []
+    assert client.calls == [module.QUERY_SYSTEM]
+    assert len(client.actions) == 1
 
 
 @pytest.mark.parametrize("trusted,last_success", [(False, True), (True, False)])

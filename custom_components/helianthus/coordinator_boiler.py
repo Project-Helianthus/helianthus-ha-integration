@@ -9,10 +9,7 @@ from typing import Any
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .coordinator import is_missing_field_error as _is_missing_field_error
-from .coordinator_availability import (
-    next_optional_query_state,
-    optional_query_available,
-)
+from .coordinator_availability import recorded_query_offered
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
@@ -77,10 +74,46 @@ query BoilerSensitive {
 """
 
 
+_BOILER_ABSENT_FIELDS = [
+    "boiler_status",
+    "flow_temperature",
+    "return_temperature_c",
+    "central_heating_pump_active",
+    "flame_active",
+    "modulation_setpoint",
+    "gas_valve_active",
+    "fan_speed",
+    "flame_ionization_current",
+    "external_pump_active",
+    "circulation_pump_active",
+    "storage_loading_pump_level",
+    "diverter_valve_position",
+    "maximum_heating_flow_temperature_setpoint",
+    "maximum_dhw_flow_temperature_setpoint",
+    "heating_partial_load_power",
+    "dhw_partial_load_power",
+    "heating_status_raw",
+    "central_heating_operating_time",
+    "dhw_operating_time",
+    "central_heating_start_count",
+    "dhw_start_count",
+    "pump_operating_time",
+    "fan_operating_time",
+    "fire_control_deactivation_count",
+    "temperature_limiter_deactivation_count",
+]
+
+
 class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching boiler semantic status."""
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: object | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -88,135 +121,58 @@ class HelianthusBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
+        self._capabilities = capabilities
         self.boiler_supported = True
-        self._boiler_installer_available: bool | None = None
-        self._boiler_sensitive_available: bool | None = None
 
     @property
     def client(self) -> GraphQLClient:
         return self._client
 
+    def _offered(self, document: str) -> bool:
+        return recorded_query_offered(getattr(self, "_capabilities", None), document)
+
     @property
     def boiler_installer_available(self) -> bool:
-        return optional_query_available(self._boiler_installer_available)
+        return self._offered(QUERY_BOILER_INSTALLER)
 
     @property
     def boiler_sensitive_available(self) -> bool:
-        return optional_query_available(self._boiler_sensitive_available)
+        return self._offered(QUERY_BOILER_SENSITIVE)
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             payload = await self._client.execute(QUERY_BOILER)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(
-                exc.errors,
-                [
-                    "boiler_status",
-                    "flow_temperature",
-                    "return_temperature_c",
-                    "central_heating_pump_active",
-                    "flame_active",
-                    "modulation_setpoint",
-                    "gas_valve_active",
-                    "fan_speed",
-                    "flame_ionization_current",
-                    "external_pump_active",
-                    "circulation_pump_active",
-                    "storage_loading_pump_level",
-                    "diverter_valve_position",
-                    "maximum_heating_flow_temperature_setpoint",
-                    "maximum_dhw_flow_temperature_setpoint",
-                    "heating_partial_load_power",
-                    "dhw_partial_load_power",
-                    "heating_status_raw",
-                    "central_heating_operating_time",
-                    "dhw_operating_time",
-                    "central_heating_start_count",
-                    "dhw_start_count",
-                    "pump_operating_time",
-                    "fan_operating_time",
-                    "fire_control_deactivation_count",
-                    "temperature_limiter_deactivation_count",
-                ],
-            ):
+            if _is_missing_field_error(exc.errors, _BOILER_ABSENT_FIELDS):
                 self.boiler_supported = False
                 return {"boiler_status": None}
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
-
         if not isinstance(payload, dict):
             self.boiler_supported = False
             return {"boiler_status": None}
         self.boiler_supported = True
-        result = {"boiler_status": payload.get("boiler_status")}
-
-        boiler_status = result.get("boiler_status")
+        boiler_status = payload.get("boiler_status")
+        result = {"boiler_status": boiler_status}
         if not isinstance(boiler_status, dict):
             return result
         config = boiler_status.get("config")
         if not isinstance(config, dict):
             config = {}
             boiler_status["config"] = config
-
-        # Optional installer query (backward-compat).
-        if self._boiler_installer_available is not False:
-            try:
-                inst_payload = await self._client.execute(QUERY_BOILER_INSTALLER)
-                inst_boiler = (
-                    inst_payload.get("boiler_status", {})
-                    if isinstance(inst_payload, dict)
-                    else {}
-                )
-                inst_cfg = (
-                    inst_boiler.get("config", {})
-                    if isinstance(inst_boiler, dict)
-                    else {}
-                )
-                if isinstance(inst_cfg, dict):
-                    config.update(inst_cfg)
-                self._boiler_installer_available = next_optional_query_state(
-                    self._boiler_installer_available,
-                    response_received=True,
-                )
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(
-                    exc.errors, ["installer_phone_number", "service_time_remaining"]
-                ):
-                    self._boiler_installer_available = next_optional_query_state(
-                        self._boiler_installer_available,
-                        schema_field_missing=True,
-                    )
-            except GraphQLClientError:
-                pass
-
-        # Optional sensitive query (independent).
-        if self._boiler_sensitive_available is not False:
-            try:
-                sens_payload = await self._client.execute(QUERY_BOILER_SENSITIVE)
-                sens_boiler = (
-                    sens_payload.get("boiler_status", {})
-                    if isinstance(sens_payload, dict)
-                    else {}
-                )
-                sens_cfg = (
-                    sens_boiler.get("config", {})
-                    if isinstance(sens_boiler, dict)
-                    else {}
-                )
-                if isinstance(sens_cfg, dict):
-                    config.update(sens_cfg)
-                self._boiler_sensitive_available = next_optional_query_state(
-                    self._boiler_sensitive_available,
-                    response_received=True,
-                )
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["central_heating_pump_mode"]):
-                    self._boiler_sensitive_available = next_optional_query_state(
-                        self._boiler_sensitive_available,
-                        schema_field_missing=True,
-                    )
-            except GraphQLClientError:
-                pass
-
+        await self._attach_config(config, QUERY_BOILER_INSTALLER)
+        await self._attach_config(config, QUERY_BOILER_SENSITIVE)
         return result
+
+    async def _attach_config(self, config: dict[str, Any], document: str) -> None:
+        if not self._offered(document):
+            return
+        try:
+            payload = await self._client.execute(document)
+        except GraphQLClientError:
+            return
+        boiler = payload.get("boiler_status") if isinstance(payload, dict) else None
+        extra = boiler.get("config") if isinstance(boiler, dict) else None
+        if isinstance(extra, dict):
+            config.update(extra)

@@ -1,4 +1,4 @@
-"""Fake-clock consumer coverage for slow DHW bound schema re-probing."""
+"""The system update asks for the hot-water bound on its one query."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from test_number_dhw_bivalence import _Client, _bound, _cycle, _entity, modules
 @pytest.fixture
 def harness(modules, monkeypatch):
     module = modules.coordinator
-    clock = types.SimpleNamespace(now=100.0)
-    monkeypatch.setattr(module, "time", types.SimpleNamespace(monotonic=lambda: clock.now))
     monkeypatch.setattr(
         module.DataUpdateCoordinator, "__init__", lambda self, *args, **kwargs: None
     )
@@ -27,7 +25,7 @@ def harness(modules, monkeypatch):
         coordinator.last_update_success = True
         return coordinator, client
 
-    return types.SimpleNamespace(module=module, modules=modules, clock=clock, make=make)
+    return types.SimpleNamespace(module=module, modules=modules, make=make)
 
 
 def _missing(module, field="dhw_outdoor_bivalence_temperature_limit_bound"):
@@ -36,23 +34,24 @@ def _missing(module, field="dhw_outdoor_bivalence_temperature_limit_bound"):
     ])
 
 
-def _refresh(h, pair, query, *, unsupported=False, field="dhw_outdoor_bivalence_temperature_limit_bound", bound=None):
+def _refresh(h, pair, *, bound=None, marker=1):
     coordinator, client = pair
-    config = {"dhw_outdoor_bivalence_temperature_limit": 3, "room_humidity_limit_maximum": 45}
+    config = {
+        "dhw_outdoor_bivalence_temperature_limit": marker,
+        "room_humidity_limit_maximum": 45,
+    }
     if bound is not None:
         config["dhw_outdoor_bivalence_temperature_limit_bound"] = bound
-    client.actions = _cycle(h.module, query, config)
-    if unsupported:
-        client.actions.insert(0, (h.module.QUERY_SYSTEM, _missing(h.module, field)))
+    client.actions = _cycle(h.module, h.module.QUERY_SYSTEM, config, marker=marker)
     expected_queries = [query for query, _ in client.actions]
     client.calls = []
     coordinator.data = asyncio.run(coordinator._async_update_data())
     assert client.calls == expected_queries
     assert client.actions == []
     assert coordinator.data == {
-        "state": {"outdoor_temperature": 1},
+        "state": {"outdoor_temperature": marker},
         "config": {**config, "maintenance_date": None, "installer_access_code": None},
-        "properties": {"hydraulic_scheme_code": 1},
+        "properties": {"hydraulic_scheme_code": marker},
         "metadata": {"gateway_brand": "Synthetic"},
     }
     number, _, _, _ = _entity(h.modules, {})
@@ -62,45 +61,29 @@ def _refresh(h, pair, query, *, unsupported=False, field="dhw_outdoor_bivalence_
     return coordinator.data
 
 
-@pytest.mark.parametrize("elapsed", [899.999, 900.0, 900.001])
-def test_cooldown_boundary_and_upgrade(harness, elapsed):
+def test_each_refresh_sends_one_system_query_with_the_bound(harness):
+    """Two refreshes each send the system query once and take the supplied bound."""
     h = harness
     pair = h.make()
-    assert h.module.SYSTEM_DHW_BOUND_REPROBE_COOLDOWN_SECONDS == 900
-    _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY, unsupported=True)
-    h.clock.now += elapsed
-    if elapsed < 900:
-        _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY)
-    else:
-        _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-7, 35))
-        # Successful schema recovery restores the full query on every ordinary poll.
-        h.clock.now += 1
-        _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-6, 34))
+    _refresh(h, pair, bound=_bound(-7, 35))
+    _refresh(h, pair, bound=_bound(-6, 34), marker=2)
 
 
-@pytest.mark.parametrize("field", ["dhw_outdoor_bivalence_temperature_limit_bound", "dhw_outdoor_bivalence_temperature_limit_bound"])
-def test_repeated_unsupported_reschedules_from_response(harness, field):
+def test_a_snapshot_without_a_bound_keeps_the_released_range(harness):
     h = harness
-    pair = h.make()
-    _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY, unsupported=True, field=field)
-    h.clock.now = 1001  # A delayed ordinary refresh, after the first deadline.
-    _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY, unsupported=True, field=field)
-    h.clock.now = 1900.999
-    _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY)
-    h.clock.now = 1901
-    _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-8, 31))
+    _refresh(h, h.make())
 
 
-@pytest.mark.parametrize("reprobe", [False, True])
-@pytest.mark.parametrize("kind", ["transport", "resolver", "unrelated_field"])
-def test_transient_failure_keeps_snapshot_and_retries_full_query(harness, kind, reprobe):
+@pytest.mark.parametrize(
+    "kind",
+    ["bound", "transport", "resolver", "unrelated_field"],
+)
+def test_a_failed_refresh_keeps_the_snapshot_after_one_query(harness, kind):
+    """Each failure kind is one system query. A queued second query stays queued."""
     h = harness
     pair = h.make()
     coordinator, client = pair
-    _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-9, 30))
-    if reprobe:
-        _refresh(h, pair, h.module.QUERY_SYSTEM_LEGACY, unsupported=True)
-        h.clock.now += 900
+    _refresh(h, pair, bound=_bound(-9, 30))
     previous = deepcopy(coordinator.data)
     if kind == "transport":
         failure = h.module.GraphQLClientError("Synthetic transport failure")
@@ -108,38 +91,32 @@ def test_transient_failure_keeps_snapshot_and_retries_full_query(harness, kind, 
         failure = h.module.GraphQLResponseError([
             {"message": "Synthetic resolver failure for dhw_outdoor_bivalence_temperature_limit_bound"}
         ])
-    else:
+    elif kind == "unrelated_field":
         failure = _missing(h.module, "unrelated_synthetic_field")
+    else:
+        failure = _missing(h.module)
     client.calls = []
-    client.actions = [(h.module.QUERY_SYSTEM, failure)]
+    client.actions = [
+        (h.module.QUERY_SYSTEM, failure),
+        (h.module.QUERY_SYSTEM, {}),
+    ]
     with pytest.raises(h.module.UpdateFailed):
-        coordinator.data = asyncio.run(coordinator._async_update_data())
+        asyncio.run(coordinator._async_update_data())
     assert client.calls == [h.module.QUERY_SYSTEM]
-    assert client.actions == []
+    assert len(client.actions) == 1
     assert coordinator.data == previous
-    h.clock.now += 1
-    _refresh(h, pair, h.module.QUERY_SYSTEM, bound=_bound(-5, 33))
+    _refresh(h, pair, bound=_bound(-5, 33), marker=2)
 
 
-def test_new_instance_probes_while_existing_instance_cools_down(harness):
-    h = harness
-    first = h.make()
-    _refresh(h, first, h.module.QUERY_SYSTEM_LEGACY, unsupported=True)
-    h.clock.now += 1
-    replacement = h.make()
-    _refresh(h, replacement, h.module.QUERY_SYSTEM, bound=_bound(-4, 32))
-    _refresh(h, first, h.module.QUERY_SYSTEM_LEGACY)
-
-
-def test_two_coordinators_have_independent_deadlines(harness):
+def test_two_coordinators_each_send_the_system_query(harness):
+    """A failure on one coordinator does not change the query the other sends."""
     h = harness
     first, second = h.make(), h.make()
-    _refresh(h, first, h.module.QUERY_SYSTEM_LEGACY, unsupported=True)
-    h.clock.now = 200
-    _refresh(h, second, h.module.QUERY_SYSTEM_LEGACY, unsupported=True)
-    h.clock.now = 1000
-    _refresh(h, first, h.module.QUERY_SYSTEM, bound=_bound(-3, 36))
-    _refresh(h, second, h.module.QUERY_SYSTEM_LEGACY)
-    h.clock.now = 1100
-    _refresh(h, second, h.module.QUERY_SYSTEM, bound=_bound(-2, 37))
-    _refresh(h, first, h.module.QUERY_SYSTEM, bound=_bound(-1, 38))
+    _refresh(h, first, bound=_bound(-4, 32))
+    coordinator, client = second
+    client.actions = [(h.module.QUERY_SYSTEM, _missing(h.module))]
+    with pytest.raises(h.module.UpdateFailed):
+        asyncio.run(coordinator._async_update_data())
+    assert client.calls == [h.module.QUERY_SYSTEM]
+    _refresh(h, first, bound=_bound(-1, 38), marker=2)
+    _refresh(h, second, bound=_bound(-2, 37))

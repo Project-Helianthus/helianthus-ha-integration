@@ -6,9 +6,10 @@ object that publishes it (``surfaces.graphql``) and, where the gateway renamed
 the field, the spelling it published before (``previous_published_name``; a
 ``bound`` carries its own pair). The tests check that the system and boiler
 documents request the published names under their objects and never a
-previous one, that a missing published name is handled as an older gateway and
-a previous one is not, and that every entity reads its value from the
-published field, with its unique ID keyed on that name.
+previous one, that a missing published name of the base query returns an empty
+snapshot and a previous name fails the update, that a missing name on a
+separate query does not change availability, and that every entity reads its
+value from the published field, with its unique ID keyed on that name.
 """
 from __future__ import annotations
 
@@ -134,7 +135,6 @@ OPTIONAL_DOCUMENT = {
 BASE_DOCUMENT = {"system": QUERY_SYSTEM, "boiler": QUERY_BOILER}
 DOCUMENTS = (
     QUERY_SYSTEM,
-    coordinator_system.QUERY_SYSTEM_LEGACY,
     QUERY_SYSTEM_INSTALLER,
     QUERY_SYSTEM_SENSITIVE,
     QUERY_BOILER,
@@ -205,7 +205,13 @@ REQUESTED_RENAMED = [f for f in RENAMED if (f["plane"], f["name"]) not in UNREAD
 
 
 @pytest.mark.parametrize("field", REQUESTED_RENAMED, ids=lambda f: f"{f['plane']}.{f['name']}")
-def test_missing_published_field_is_an_older_gateway_and_a_previous_one_fails(field) -> None:  # noqa: ANN001
+def test_missing_published_field_returns_empty_and_a_former_name_fails(field) -> None:  # noqa: ANN001
+    """A separate query stays offered when a field is rejected.
+
+    The published name and the former name are each rejected once. Clearing
+    the path gate for either name, or sending a second system query for the
+    bound, fails this test.
+    """
     name, former, plane = field["name"], field["previous"], field["plane"]
     key = (plane, name)
     if key in OPTIONAL_DOCUMENT:
@@ -214,32 +220,42 @@ def test_missing_published_field_is_an_older_gateway_and_a_previous_one_fails(fi
             ("boiler", coordinator_boiler.QUERY_BOILER_INSTALLER): "boiler_installer_available",
             ("boiler", coordinator_boiler.QUERY_BOILER_SENSITIVE): "boiler_sensitive_available",
         }[(plane, OPTIONAL_DOCUMENT[key])]
-        for missing, expected in ((name, False), (former, True)):
+        for missing in (name, former):
             if plane == "system":
                 base = {"system": {"state": {}, "config": {}, "properties": {}}}
                 script = [base, {}, _missing(missing), {}]
-                coordinator = _build_system_coordinator(_ScriptedClient(script))
+                expected = [
+                    QUERY_SYSTEM,
+                    coordinator_system.QUERY_SYSTEM_GATEWAY_METADATA,
+                    QUERY_SYSTEM_INSTALLER,
+                    QUERY_SYSTEM_SENSITIVE,
+                ]
+                client = _ScriptedClient(script)
+                coordinator = _build_system_coordinator(client)
             else:
                 base = {"boiler_status": {"state": {}, "config": {}, "diagnostics": {}}}
                 if OPTIONAL_DOCUMENT[key] is coordinator_boiler.QUERY_BOILER_INSTALLER:
                     script = [base, _missing(missing), {}]
                 else:
                     script = [base, {}, _missing(missing)]
-                coordinator = _build_boiler_coordinator(_ScriptedClient(script))
+                expected = [
+                    QUERY_BOILER,
+                    coordinator_boiler.QUERY_BOILER_INSTALLER,
+                    coordinator_boiler.QUERY_BOILER_SENSITIVE,
+                ]
+                client = _ScriptedClient(script)
+                coordinator = _build_boiler_coordinator(client)
             asyncio.run(coordinator._async_update_data())
-            assert getattr(coordinator, attribute) is expected, missing
+            assert client.calls == expected, missing
+            assert getattr(coordinator, attribute) is True, missing
         return
 
     if field["name"].endswith("_bound"):
-        base = {"system": {"state": {}, "config": {}, "properties": {}}}
-        client = _ScriptedClient([_missing(name), base, {}, {}, {}])
-        asyncio.run(_build_system_coordinator(client)._async_update_data())
-        assert client.calls[:2] == [QUERY_SYSTEM, coordinator_system.QUERY_SYSTEM_LEGACY]
-        assert f"system.config.{name}" not in _leaf_paths(coordinator_system.QUERY_SYSTEM_LEGACY)
-        with pytest.raises(coordinator_system.UpdateFailed):
-            asyncio.run(
-                _build_system_coordinator(_ScriptedClient([_missing(former)]))._async_update_data()
-            )
+        for missing_name in (name, former):
+            client = _ScriptedClient([_missing(missing_name)])
+            with pytest.raises(coordinator_system.UpdateFailed):
+                asyncio.run(_build_system_coordinator(client)._async_update_data())
+            assert client.calls == [QUERY_SYSTEM]
         return
 
     if plane == "system":

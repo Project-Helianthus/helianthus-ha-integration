@@ -6,9 +6,10 @@ other in the order below. A refresh that raises stops the phase; coordinators
 later in the order are not refreshed. Its result is a ``DomainCoordinators``.
 
 Discovery runs before this phase and does not hand its paths in. The paths it
-returned for this client are recorded here. The status coordinator and the
-zones coordinator use those paths, or paths the caller passes, to choose a
-query before the first refresh.
+returned for this client are recorded here. The status coordinator, the zones
+coordinator, the energy coordinator, the system coordinator, and the boiler
+coordinator use those paths, or paths the caller passes, before the first
+refresh.
 """
 
 from __future__ import annotations
@@ -155,12 +156,18 @@ async def async_create_domain_coordinators(
         semantic_coordinator=_with_capabilities(
             HelianthusSemanticCoordinator, hass, client, scan_interval, capabilities
         ),
-        energy_coordinator=HelianthusEnergyCoordinator(hass, client, scan_interval),
+        energy_coordinator=_with_capabilities(
+            HelianthusEnergyCoordinator, hass, client, scan_interval, capabilities
+        ),
         circuit_coordinator=HelianthusCircuitCoordinator(hass, client, scan_interval),
         radio_coordinator=HelianthusRadioDeviceCoordinator(hass, client, scan_interval),
         fm5_coordinator=HelianthusFM5Coordinator(hass, client, scan_interval),
-        system_coordinator=HelianthusSystemCoordinator(hass, client, scan_interval),
-        boiler_coordinator=HelianthusBoilerCoordinator(hass, client, scan_interval),
+        system_coordinator=_with_capabilities(
+            HelianthusSystemCoordinator, hass, client, scan_interval, capabilities
+        ),
+        boiler_coordinator=_with_capabilities(
+            HelianthusBoilerCoordinator, hass, client, scan_interval, capabilities
+        ),
         schedule_coordinator=HelianthusScheduleCoordinator(hass, client, scan_interval),
         adapter_info_coordinator=HelianthusAdapterInfoCoordinator(hass, client, scan_interval),
     )

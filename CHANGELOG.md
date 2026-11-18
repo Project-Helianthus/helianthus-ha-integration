@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The system update, the energy update, and the boiler update each send one
+  query. The hot-water bound is part of the system query. A rejected bound
+  fails that update. The installer query, the sensitive query, and the gateway
+  metadata query stay separate. Each is sent when the recorded schema offers
+  every path it selects. A resolver error on one of those queries leaves the
+  system or boiler update in place and does not change which entities stay
+  available. The energy update keeps the last accepted totals when a read
+  fails, and returns no totals before the first accepted sample.
+
 - The status update and the zones update choose one query from the paths
   discovery recorded for the connection. When every status path is present,
   the status update sends the full status query once and reads admission
