@@ -273,22 +273,24 @@ Setup calls the reconciler from its listeners and after platform forwarding:
   that reports non-exportable slots. It removes the entity rows of those slots
   and of missing radio slots, then their device rows that no entity uses.
 - `auto_enable_sparse_entities` on the status, semantic, circuit, radio,
-  function-module, boiler and adapter-info updates. A live sparse status
-  value without an entity schedules one reload; otherwise each entity that the
-  integration disabled and whose value is live is enabled, and a reload is
-  scheduled only for unique IDs that have not had one in this run.
+  function-module, boiler and adapter-info updates. It writes nothing to the
+  entity registry: a live sparse status value without an entity schedules one
+  reload, once per unique ID in this run, so the sensor platform creates that
+  entity.
 - `run_trusted_cleanup` after platform forwarding and on trusted device and
   status refreshes. It runs at most once per setup and only when admitted:
-  obsolete entity removal, the sparse disable, the sparse enable and obsolete
-  device removal, in that order. Otherwise it logs that the clean-up waits for
-  trusted admission and inventory.
+  obsolete entity removal, the record of the sparse entities that are
+  disabled, the status-sensor reload check above and obsolete device removal,
+  in that order. Otherwise it logs that the clean-up waits for trusted
+  admission and inventory.
 
-The sparse disable acts only on an enabled sparse entity whose value is null,
-that has not been seen disabled in this run and has not had its reload. An
-entity that was disabled and is enabled again stays enabled, and the enable
-acts only on entities that the integration disabled, so a disable by anyone
-else is never undone. The reconciler is not a runtime field; only the
-listeners and the platform-registration phase reach it.
+A sparse entity, one whose value is absent when it is created, is created
+enabled and hidden through its visibility default; it is never disabled. The
+integration never writes the enabled state of an entity, neither to disable
+nor to enable, so no reload is tied to an enable by the integration. An entity
+that someone disabled stays disabled: the reconciler only records it as seen
+disabled, so setup recognises a later enable. The reconciler is not a runtime
+field; only the listeners and the platform-registration phase reach it.
 
 ## Coordinator listeners and bounded reloads
 
@@ -299,20 +301,22 @@ the setup was built from:
 
 - device and status updates: a bus device outside the first-refresh
   inventory requests a reload; otherwise they record the admission evidence
-  and run the trusted clean-up when it is admitted (the status update enables
-  sparse entities first);
+  and run the trusted clean-up when it is admitted (the status update runs the
+  status-sensor reload check first);
 - semantic update: a changed zone-parent resolution requests the bounded
   zone-parent reload; a new zone or a newly present hot-water payload requests
-  a reload; otherwise sparse entities are enabled;
+  a reload; otherwise the status-sensor reload check runs;
 - circuit update: a new circuit index requests a reload;
 - radio update: the non-exportable slots are removed from the registry and
   kept for the clean-up after platform forwarding; a changed zone-parent
   resolution requests the bounded zone-parent reload; a new exportable slot
-  requests a reload after sparse entities are enabled;
+  requests a reload after the status-sensor reload check;
 - function-module update: a mode change into or out of the interpreted mode
   requests the bounded mode reload; a new cylinder in the interpreted mode
   requests a reload;
-- boiler and adapter-info updates enable sparse entities.
+- boiler and adapter-info updates run the status-sensor reload check.
+
+No listener enables or disables an entity.
 
 The two bounded triggers, the function-module mode and the zone-parent
 mapping, each schedule at most one reload per

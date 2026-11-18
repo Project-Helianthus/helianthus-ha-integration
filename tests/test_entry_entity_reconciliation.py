@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -708,6 +709,25 @@ def test_a_person_s_disable_and_enable_of_a_null_sparse_entity_are_kept(harness,
 
     assert SPARSE_UID in run_record(setup, RELOADED_KEY)
     assert reload_reasons(logs) == []
+
+
+def test_the_lifecycle_page_describes_hidden_sparse_entities_not_a_disable_cycle():
+    """The entry lifecycle page states the registry rule the reconciler
+    follows: a sparse entity is hidden and never disabled, the integration
+    never writes the enabled state and no reload is tied to an enable."""
+    page = (Path(__file__).resolve().parents[1] / "docs" / "entry-runtime-lifecycle.md")
+    text = " ".join(page.read_text(encoding="utf-8").split())
+
+    for retired in ("the sparse disable", "the sparse enable",
+                    "integration disabled", "sparse entities are enabled",
+                    "enables sparse entities", "enable sparse entities"):
+        assert retired not in text, retired
+    for stated in ("is created enabled and hidden through its visibility default",
+                   "it is never disabled",
+                   "never writes the enabled state of an entity",
+                   "no reload is tied to an enable by the integration",
+                   "An entity that someone disabled stays disabled"):
+        assert stated in text, stated
 
 
 # ---------------------------------------------------------------------------
