@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Device-scoped entities take their English names from the entity translations.
+  The names shown in English stay the same. `translations/en.json` is generated
+  from the descriptor tables, and each adopted entity publishes the translation
+  key of its descriptor.
+
 - The circuit update, the radio update, the functional-module update, the
   schedule update, and the adapter update each send one query when the
   recorded schema offers every path that query selects. When a path is

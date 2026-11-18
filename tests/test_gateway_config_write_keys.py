@@ -16,6 +16,7 @@ import re
 
 import pytest
 
+from test_entity_translations import catalog_entity_name
 from test_system import (
     _build_payload,
     _FakeCoordinator,
@@ -203,7 +204,9 @@ def test_every_config_write_control_sends_an_accepted_key_of_its_mutation() -> N
         query, variables = client.calls[-1]
         identity = _write_identity(query, variables)
         _check_write(identity)
-        sent[(_control_kind(entity), entity._attr_name)] = identity
+        assert not hasattr(entity, "_attr_name")
+        label = catalog_entity_name(_catalog_platform(entity), entity._attr_translation_key)
+        sent[(_control_kind(entity), label)] = identity
 
     assert sent == EXPECTED_WRITES
     rejected = {
@@ -323,9 +326,30 @@ def test_a_boiler_control_writing_selector_0x4904_is_caught(mutation_field) -> N
         _check_write(_write_identity(*client.calls[-1]))
 
 
+def _catalog_platform(entity) -> str:  # noqa: ANN001
+    if isinstance(entity, (number_platform.HelianthusSystemNumber, number_platform.HelianthusBoilerNumber)):
+        return "number"
+    if isinstance(
+        entity,
+        (
+            text_platform.HelianthusInstallerMenuCodeText,
+            text_platform.HelianthusSystemText,
+            text_platform.HelianthusBoilerText,
+        ),
+    ):
+        return "text"
+    if isinstance(entity, date_platform.HelianthusMaintenanceDate):
+        return "date"
+    raise AssertionError(type(entity))
+
+
 def test_no_control_is_created_for_the_boiler_register_0x4904() -> None:
     controls, _client = _write_controls()
-    labels = {entity._attr_name for entity in controls}
+    labels = {
+        catalog_entity_name(_catalog_platform(entity), entity._attr_translation_key)
+        for entity in controls
+    }
+    assert all(not hasattr(entity, "_attr_name") for entity in controls)
     assert "Boiler Installer Menu Code" not in labels
     assert not [
         entity

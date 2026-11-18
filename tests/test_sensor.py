@@ -10,6 +10,7 @@ import sys
 import types
 
 from runtime_fixtures import attach_runtime, build_runtime
+from test_entity_translations import catalog_entity_name
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -333,12 +334,15 @@ def test_async_setup_entry_adds_reduced_boiler_temperature_sensors_on_bai00_only
         "entry-1-boiler-dhw_temperature_c",
         "entry-1-boiler-dhw_storage_temperature_c",
     }
-    assert {entity._attr_name for entity in boiler_entities} == {
+    assert {
+        catalog_entity_name("sensor", entity._attr_translation_key) for entity in boiler_entities
+    } == {
         "Flow Temperature",
         "Return Temperature",
         "DHW Temperature",
         "DHW Storage Temperature",
     }
+    assert all(not hasattr(entity, "_attr_name") for entity in boiler_entities)
     assert {entity.native_value for entity in boiler_entities} == {
         63.1,
         51.0,

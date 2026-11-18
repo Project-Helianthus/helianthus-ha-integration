@@ -33,6 +33,7 @@ release remains subject to the public documentation gate.
 - Home Assistant config flow and options flow (`custom_components/helianthus/config_flow.py`, `options_flow.py`).
 - GraphQL client/discovery handling for endpoint consumption (`graphql.py`, `discovery.py`).
 - Entity modeling for diagnostics, climate, water heater, and energy (`sensor.py`, `climate.py`, `water_heater.py`, `energy.py`).
+- Device-scoped entity names are English translation strings: `custom_components/helianthus/strings.json` holds the entity section, and `scripts/generate_entity_translations.py` writes that section into `custom_components/helianthus/translations/en.json` from the descriptor tables.
 - Local operator smoke profile tooling (`scripts/smoke_profile.py`, `scripts/run-ha-dual-topology-smoke.sh`).
 
 ### What does not belong in this repository

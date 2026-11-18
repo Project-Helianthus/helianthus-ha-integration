@@ -46,6 +46,7 @@ class InstallerTextField:
     max_length: int
     source: str  # "system" or "boiler"
     icon: str = "mdi:card-account-details-outline"
+    translation_key: str | None = None
 
 
 _SYSTEM_TEXT_FIELDS = [
@@ -54,8 +55,18 @@ _SYSTEM_TEXT_FIELDS = [
 ]
 
 _BOILER_TEXT_FIELDS = [
-    InstallerTextField(read_key="installer_phone_number", write_key="installer_phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline"),
+    InstallerTextField(read_key="installer_phone_number", write_key="installer_phone_number", label="Boiler Installer Phone", max_length=16, source="boiler", icon="mdi:phone-outline", translation_key="boiler_installer_phone"),
 ]
+
+
+def _text_translation_key(field: InstallerTextField | InstallerMenuCodeField) -> str:
+    explicit = getattr(field, "translation_key", None)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    key = getattr(field, "key", None)
+    if isinstance(key, str) and key:
+        return key
+    return field.write_key
 
 
 @dataclass(frozen=True)
@@ -177,7 +188,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-system-text-{field.write_key}"
-        self._attr_name = field.label
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
         self._attr_entity_registry_enabled_default = self.native_value is not None
@@ -258,7 +269,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         self._device_id = device_id
         self._field = field
         self._attr_unique_id = f"{entry_id}-boiler-text-{field.write_key}"
-        self._attr_name = field.label
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
         self._attr_entity_registry_enabled_default = self.native_value is not None
@@ -346,7 +357,7 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
         self._mutation = mutation
         self._mutation_key = mutation_key
         self._attr_unique_id = f"{entry_id}-{field.source}-text-{field.key}"
-        self._attr_name = field.label
+        self._attr_translation_key = _text_translation_key(field)
         self._attr_icon = field.icon
 
     @property

@@ -7,6 +7,7 @@ import sys
 import types
 
 from runtime_fixtures import attach_runtime
+from test_entity_translations import catalog_entity_name
 
 
 def _ensure_homeassistant_stubs() -> None:
@@ -697,7 +698,8 @@ def test_adr027_merged_binary_sensor_reparented_to_bus_device() -> None:
     # Must be parented to bus device, not to radio device.
     assert entity._radio_device_id == _VR71_BUS_DEVICE_ID
     # Must be labelled "B524 Connected" when merged.
-    assert entity._attr_name == "B524 Connected"
+    assert not hasattr(entity, "_attr_name")
+    assert catalog_entity_name("binary_sensor", entity._attr_translation_key) == "B524 Connected"
 
 
 def test_adr027_unmerged_binary_sensor_stays_on_radio_device() -> None:
@@ -727,7 +729,8 @@ def test_adr027_unmerged_binary_sensor_stays_on_radio_device() -> None:
     # Must stay on radio device, NOT merged into BASV2.
     expected_radio_id = ("helianthus", "entry-1-radio-g09-i01")
     assert entity._radio_device_id == expected_radio_id
-    assert entity._attr_name == "Device Connected"
+    assert not hasattr(entity, "_attr_name")
+    assert catalog_entity_name("binary_sensor", entity._attr_translation_key) == "Device Connected"
 
 
 def test_adr027_idempotency_multiple_runs_same_result() -> None:

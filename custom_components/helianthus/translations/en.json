@@ -1,0 +1,594 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Helianthus",
+        "description": "Enter the Helianthus GraphQL host and port.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "path": "GraphQL path",
+          "transport": "Transport",
+          "version": "API version"
+        },
+        "data_description": {
+          "path": "GraphQL endpoint path (default /graphql).",
+          "transport": "Transport scheme (http/https).",
+          "version": "Discovered API version (optional)."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Helianthus GraphQL endpoint.",
+      "invalid_response": "Helianthus responded with an invalid identity payload.",
+      "requires_gateway_upgrade": "The Helianthus gateway must be updated before this integration can bind to it.",
+      "missing_instance_guid": "The Helianthus gateway did not expose a stable instance GUID.",
+      "identity_mismatch": "Discovered identity did not match the verified Helianthus gateway.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This Helianthus endpoint is already configured.",
+      "invalid_discovery_info": "Discovery data is invalid.",
+      "cannot_connect": "Failed to connect to the discovered Helianthus GraphQL endpoint.",
+      "invalid_response": "The discovered Helianthus gateway returned an invalid identity payload.",
+      "requires_gateway_upgrade": "The discovered Helianthus gateway must be updated before it can be added.",
+      "missing_instance_guid": "The discovered Helianthus gateway did not advertise a stable instance GUID.",
+      "identity_mismatch": "Discovery TXT data did not match the verified Helianthus gateway identity.",
+      "duplicate_instance_guid": "Another live Helianthus endpoint already claims this instance GUID. Automatic rebinding was refused.",
+      "reconfigured": "The existing Helianthus entry was rebound to the rediscovered endpoint."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "settings": "Integration settings",
+          "eebus_pairing": "eeBUS pairing and repair"
+        }
+      },
+      "settings": {
+        "data_description": {
+          "semantic_asset_ids": "Enter up to 32 distinct opaque IDs, each 1–256 UTF-8 bytes. Each list item is one complete ID; spaces, case, commas and newlines are preserved. An empty list clears selection. Changes take effect on entry reload."
+        },
+        "data": {
+          "semantic_asset_ids": "Semantic asset IDs",
+          "scan_interval": "Scan interval",
+          "use_subscriptions": "Use subscriptions",
+          "zone_schedule_helpers": "Zone schedule helpers",
+          "dhw_schedule_helper": "DHW schedule helper",
+          "pv_m2m_enabled": "Enable SemReg PV",
+          "pv_m2m_endpoint": "PV M2M HTTPS endpoint",
+          "pv_m2m_asset_ref": "PV asset reference",
+          "pv_m2m_ca_cert_file": "Server CA certificate file",
+          "pv_m2m_client_cert_file": "Client certificate file (optional)",
+          "pv_m2m_client_key_file": "Client key file (optional)",
+          "storage_m2m_enabled": "Enable SemReg storage",
+          "storage_m2m_endpoint": "Storage M2M HTTPS endpoint",
+          "storage_m2m_asset_ref": "Storage asset reference",
+          "storage_m2m_ca_cert_file": "Storage server CA certificate file",
+          "storage_m2m_client_cert_file": "Storage client certificate file (optional)",
+          "storage_m2m_client_key_file": "Storage client key file (optional)",
+          "evse_m2m_enabled": "Enable SemReg EVSE current limits",
+          "evse_m2m_endpoint": "EVSE M2M HTTPS endpoint",
+          "evse_m2m_asset_ref": "EVSE asset reference",
+          "evse_m2m_ca_cert_file": "EVSE server CA certificate file",
+          "evse_m2m_client_cert_file": "EVSE client certificate file (optional)",
+          "evse_m2m_client_key_file": "EVSE client key file (optional)"
+        }
+      },
+      "eebus_pairing": {
+        "description": "eeBUS readiness: {readiness}. Pairing window: {pairing_window}. Trusted: {trusted_count}; connected: {connected_count}; discovered: {discovered_count}; candidate: {candidate_count}; action: {active_action_state}.",
+        "menu_options": {
+          "eebus_open_window": "Open pairing window",
+          "eebus_close_window": "Close pairing window",
+          "eebus_discovered": "Select a discovered device",
+          "eebus_candidate": "Compare the current candidate",
+          "eebus_trusted": "Manage a trusted partner",
+          "eebus_action": "Resume current pairing action",
+          "eebus_refresh": "Refresh status",
+          "eebus_finish": "Finish"
+        }
+      },
+      "eebus_open_window": {
+        "data": {
+          "duration_seconds": "Pairing window duration (seconds)"
+        }
+      },
+      "eebus_close_window": {
+        "data": {
+          "confirm": "Close the current pairing window"
+        }
+      },
+      "eebus_discovered": {
+        "data": {
+          "observation_id": "Discovered device"
+        }
+      },
+      "eebus_compare_observation": {
+        "description": "Compare the complete certificate identifier shown on the device or independent channel: {remote_ski}",
+        "data": {
+          "expected_ski": "Complete 40-character certificate identifier"
+        }
+      },
+      "eebus_connect": {
+        "description": "The optional PIN is used only for this Connect request and is cleared immediately after submission.",
+        "data": {
+          "pin": "Optional eeBUS PIN"
+        }
+      },
+      "eebus_action": {
+        "description": "The identity-free pairing action is {action_state}. Submit to poll again."
+      },
+      "eebus_connection_completed": {
+        "description": "The SHIP connection completed. Continue to compare the complete TLS-bound candidate identifier before confirming trust."
+      },
+      "eebus_result": {
+        "description": "The pairing action reached a sanitized terminal result. Submit to return to eeBUS status."
+      },
+      "eebus_candidate": {
+        "description": "Compare the complete TLS-bound certificate identifier: {remote_ski}",
+        "menu_options": {
+          "eebus_confirm_candidate": "Confirm candidate",
+          "eebus_cancel_candidate": "Cancel candidate"
+        }
+      },
+      "eebus_confirm_candidate": {
+        "description": "Enter the complete identifier only after an independent comparison with {remote_ski}.",
+        "data": {
+          "expected_ski": "Complete 40-character certificate identifier"
+        }
+      },
+      "eebus_cancel_candidate": {
+        "data": {
+          "confirm": "Cancel the current candidate"
+        }
+      },
+      "eebus_trusted": {
+        "data": {
+          "partner_id": "Trusted partner"
+        }
+      },
+      "eebus_trusted_action": {
+        "menu_options": {
+          "eebus_retry_trusted": "Retry trusted partner",
+          "eebus_untrust": "Remove trust"
+        }
+      },
+      "eebus_untrust": {
+        "data": {
+          "confirm": "Durably revoke trust and request live withdrawal"
+        }
+      }
+    },
+    "error": {
+      "semantic_asset_ids_invalid": "Use a list of up to 32 distinct, nonempty strings, each at most 256 UTF-8 bytes. IDs are preserved exactly.",
+      "pv_m2m_invalid": "SemReg PV requires the dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
+      "semantic_m2m_invalid": "Each enabled SemReg consumer requires its dedicated HTTPS route, one asset reference, and a server CA certificate file reference. Client certificate and key files are optional and must be configured together.",
+      "invalid_request": "The eeBUS action request was rejected as invalid.",
+      "invalid_response": "The eeBUS admin boundary returned a malformed or unknown response.",
+      "idempotency_conflict": "This action key was already used for different input. Start a fresh action.",
+      "state_conflict": "The eeBUS state changed. Refresh and start the action again.",
+      "snapshot_expired": "The eeBUS snapshot expired. Refresh and select again.",
+      "observation_stale": "The discovery observation is no longer current. Refresh and select again.",
+      "candidate_expired": "The pairing candidate expired. Refresh and start again.",
+      "candidate_busy": "Another pairing candidate is active. Refresh before continuing.",
+      "pairing_closed": "Open a bounded pairing window before continuing.",
+      "endpoint_scope_unavailable": "The discovered link-local endpoint has no unambiguous interface scope.",
+      "listener_unavailable": "The eeBUS listener is unavailable.",
+      "discovery_unavailable": "eeBUS discovery is unavailable.",
+      "admin_boundary_unavailable": "The optional eeBUS admin boundary is unavailable; the main integration remains active.",
+      "identity_mismatch": "The complete certificate identifier did not match.",
+      "pin_required": "This action requires an eeBUS PIN. Select the device again and enter it explicitly.",
+      "pin_optional": "The peer reports an optional PIN path. Start a fresh explicit Connect action.",
+      "pin_busy": "PIN admission is busy. Start a fresh explicit action.",
+      "pin_rejected": "The peer rejected the transient PIN.",
+      "pin_unavailable": "The local PIN facility is unavailable.",
+      "pin_protocol_error": "The protocol reported a sanitized PIN failure.",
+      "trust_denied": "The current trust policy denied the action.",
+      "attempt_timeout": "The bounded eeBUS attempt timed out.",
+      "disconnected": "The eeBUS partner disconnected.",
+      "spine_topology_unavailable": "The current session has no browseable SPINE topology.",
+      "backoff_active": "Retry remains in server-controlled backoff. Refresh at the displayed deadline.",
+      "revocation_withdrawal_incomplete": "Trust was revoked durably, but live withdrawal did not complete.",
+      "terminal_quarantine": "The eeBUS association is in terminal quarantine and requires repair.",
+      "persistence_failure": "The durable eeBUS operation did not complete safely.",
+      "association_incomplete": "The eeBUS association is incomplete and requires repair.",
+      "unknown_state": "The eeBUS action failed closed with an unknown sanitized state."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "firmware_version": {
+        "name": "Firmware Version"
+      },
+      "updates_available": {
+        "name": "Updates Available"
+      },
+      "initiator_address": {
+        "name": "eBUS Initiator Address"
+      },
+      "admission_trusted": {
+        "name": "Admission Trusted"
+      },
+      "admission_repair_code": {
+        "name": "Admission Repair Code"
+      },
+      "source_selection_state": {
+        "name": "Source Selection State"
+      },
+      "source_selection_reason": {
+        "name": "Source Selection Reason"
+      },
+      "source_selection_selected_source": {
+        "name": "Selected Source"
+      },
+      "flow_temperature": {
+        "name": "Flow Temperature"
+      },
+      "return_temperature_c": {
+        "name": "Return Temperature"
+      },
+      "dhw_temperature_c": {
+        "name": "DHW Temperature"
+      },
+      "dhw_storage_temperature_c": {
+        "name": "DHW Storage Temperature"
+      },
+      "circuit_flow_temperature": {
+        "name": "Flow Temperature"
+      },
+      "circuit_flow_temperature_setpoint": {
+        "name": "Flow Setpoint"
+      },
+      "calc_flow_temp_c": {
+        "name": "Calculated Flow Temperature"
+      },
+      "circuit_mixer_position": {
+        "name": "Mixing Valve Position"
+      },
+      "circuit_state": {
+        "name": "State"
+      },
+      "circuit_room_humidity": {
+        "name": "Humidity"
+      },
+      "circuit_dew_point_temperature": {
+        "name": "Dew Point"
+      },
+      "circuit_pump_operating_time_total": {
+        "name": "Pump Hours"
+      },
+      "circuit_pump_start_count_total": {
+        "name": "Pump Starts"
+      },
+      "water_pressure": {
+        "name": "System Water Pressure"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor Temperature"
+      },
+      "outdoor_temperature_daily_average": {
+        "name": "Outdoor Temperature 24h Average"
+      },
+      "system_flow_temperature": {
+        "name": "System Flow Temperature"
+      },
+      "dhw_cylinder_top_temperature": {
+        "name": "HWC Cylinder Temperature Top"
+      },
+      "dhw_cylinder_bottom_temperature": {
+        "name": "HWC Cylinder Temperature Bottom"
+      },
+      "hydraulic_scheme_code": {
+        "name": "System Scheme"
+      },
+      "modulation_setpoint": {
+        "name": "Burner Modulation"
+      },
+      "fan_speed": {
+        "name": "Burner Fan Speed"
+      },
+      "flame_ionization_current": {
+        "name": "Burner Ionisation"
+      },
+      "storage_loading_pump_level": {
+        "name": "Hydraulics Storage Load Pump"
+      },
+      "diverter_valve_position": {
+        "name": "Hydraulics Diverter Valve Position"
+      },
+      "central_heating_operating_time": {
+        "name": "Central Heating Hours"
+      },
+      "dhw_operating_time": {
+        "name": "DHW Hours"
+      },
+      "pump_operating_time": {
+        "name": "Pump Hours"
+      },
+      "fan_operating_time": {
+        "name": "Fan Hours"
+      },
+      "central_heating_start_count": {
+        "name": "Central Heating Starts"
+      },
+      "dhw_start_count": {
+        "name": "DHW Starts"
+      },
+      "fire_control_deactivation_count": {
+        "name": "Deactivations IFC"
+      },
+      "temperature_limiter_deactivation_count": {
+        "name": "Deactivations Temperature Limiter"
+      },
+      "max_setpoint_c": {
+        "name": "Max Setpoint"
+      },
+      "charge_hysteresis_c": {
+        "name": "Charge Hysteresis"
+      },
+      "charge_offset_c": {
+        "name": "Charge Offset"
+      },
+      "reception_strength": {
+        "name": "Signal Quality"
+      },
+      "room_temperature_c": {
+        "name": "Room Temperature"
+      },
+      "room_humidity_pct": {
+        "name": "Room Humidity"
+      },
+      "device_class_address": {
+        "name": "Device Class Address"
+      },
+      "hardware_identifier": {
+        "name": "Hardware Identifier"
+      },
+      "remote_control_address": {
+        "name": "Remote Control Address"
+      },
+      "zone_assignment": {
+        "name": "Zone Assignment"
+      },
+      "collector_temperature_c": {
+        "name": "Collector Temperature"
+      },
+      "current_yield": {
+        "name": "Current Yield"
+      },
+      "pump_hours": {
+        "name": "Pump Hours"
+      },
+      "temperature_c": {
+        "name": "Adapter Temperature"
+      },
+      "supply_voltage_mv": {
+        "name": "Adapter Supply Voltage"
+      },
+      "bus_voltage_max_dv": {
+        "name": "eBUS Voltage Max"
+      },
+      "bus_voltage_min_dv": {
+        "name": "eBUS Voltage Min"
+      },
+      "restart_count": {
+        "name": "Adapter Restart Count"
+      },
+      "reset_cause": {
+        "name": "Adapter Reset Cause"
+      },
+      "wifi_rssi_dbm": {
+        "name": "Adapter WiFi Signal"
+      },
+      "gas_dhw": {
+        "name": "Gas DHW"
+      },
+      "gas_climate": {
+        "name": "Gas CLIMATE"
+      },
+      "electric_dhw": {
+        "name": "Electric DHW"
+      },
+      "electric_climate": {
+        "name": "Electric CLIMATE"
+      },
+      "solar_dhw": {
+        "name": "Solar DHW"
+      },
+      "solar_climate": {
+        "name": "Solar CLIMATE"
+      },
+      "ebus_address": {
+        "name": "eBUS Address"
+      },
+      "eebus_admin_available": {
+        "name": "eeBUS Admin Available"
+      },
+      "fm5_semantic_mode": {
+        "name": "FM5 Semantic Mode"
+      },
+      "cylinder_temperature": {
+        "name": "Temperature"
+      },
+      "zone_valve_position": {
+        "name": "Valve Position"
+      },
+      "heating_demand": {
+        "name": "Heating Demand"
+      },
+      "hwc_status": {
+        "name": "HWC Status"
+      },
+      "hours_till_service": {
+        "name": "Hours Till Service"
+      }
+    },
+    "binary_sensor": {
+      "schedule": {
+        "name": "Daily Schedule Active"
+      },
+      "quickveto": {
+        "name": "Quick Veto Active"
+      },
+      "away": {
+        "name": "Away Schedule Active"
+      },
+      "flame_active": {
+        "name": "Burner Flame Active"
+      },
+      "gas_valve_active": {
+        "name": "Burner Gas Valve Active"
+      },
+      "central_heating_pump_active": {
+        "name": "Hydraulics CH Pump"
+      },
+      "external_pump_active": {
+        "name": "Hydraulics External Pump"
+      },
+      "circulation_pump_active": {
+        "name": "Hydraulics Circulation Pump"
+      },
+      "pump_active": {
+        "name": "Solar Pump Active"
+      },
+      "solar_enabled": {
+        "name": "Solar Enabled"
+      },
+      "function_mode": {
+        "name": "Solar Function Mode"
+      },
+      "maintenance_active": {
+        "name": "Maintenance Due"
+      },
+      "adaptive_heating_curve_enabled": {
+        "name": "Adaptive Heating Curve"
+      },
+      "overrun_active": {
+        "name": "Overrun Active"
+      },
+      "circuit_pump_active": {
+        "name": "Pump Active"
+      },
+      "boiler_central_heating_pump": {
+        "name": "Central Heating Pump Active"
+      },
+      "zone_valve": {
+        "name": "Valve"
+      },
+      "device_connected": {
+        "name": "Device Connected"
+      },
+      "b524_connected": {
+        "name": "B524 Connected"
+      }
+    },
+    "number": {
+      "circuit_heating_curve_factor": {
+        "name": "Heating Curve"
+      },
+      "heating_circuit_flow_temperature_setpoint_maximum": {
+        "name": "Flow Temperature Maximum"
+      },
+      "circuit_flow_temperature_setpoint_minimum": {
+        "name": "Flow Temperature Minimum"
+      },
+      "heating_circuit_outdoor_temperature_limit_maximum": {
+        "name": "Summer Limit"
+      },
+      "heating_outdoor_bivalence_temperature_limit": {
+        "name": "HC Bivalence Point"
+      },
+      "dhw_outdoor_bivalence_temperature_limit": {
+        "name": "DHW Bivalence Point"
+      },
+      "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault": {
+        "name": "HC Emergency Temperature"
+      },
+      "dhw_flow_temperature_setpoint_maximum": {
+        "name": "HWC Max Flow Temperature"
+      },
+      "room_humidity_limit_maximum": {
+        "name": "Max Room Humidity"
+      },
+      "max_setpoint_c": {
+        "name": "Max Setpoint"
+      },
+      "charge_hysteresis_c": {
+        "name": "Charge Hysteresis"
+      },
+      "charge_offset_c": {
+        "name": "Charge Offset"
+      },
+      "maximum_heating_flow_temperature_setpoint": {
+        "name": "CH Max Flow Setpoint"
+      },
+      "maximum_dhw_flow_temperature_setpoint": {
+        "name": "DHW Max Flow Setpoint"
+      },
+      "heating_partial_load_power": {
+        "name": "CH Partload"
+      },
+      "dhw_partial_load_power": {
+        "name": "DHW Partload"
+      }
+    },
+    "select": {
+      "room_temperature_control": {
+        "name": "Room Temperature Control"
+      }
+    },
+    "switch": {
+      "cooling_enabled": {
+        "name": "Cooling Enabled"
+      },
+      "solar_switch": {
+        "name": "{label}"
+      }
+    },
+    "text": {
+      "installer_name": {
+        "name": "Installer Name"
+      },
+      "installer_phone_number": {
+        "name": "Installer Phone"
+      },
+      "boiler_installer_phone": {
+        "name": "Boiler Installer Phone"
+      },
+      "installer_access_code": {
+        "name": "Installer Menu Code"
+      }
+    },
+    "date": {
+      "maintenance_date": {
+        "name": "Maintenance Date"
+      }
+    },
+    "fan": {
+      "burner": {
+        "name": "Burner"
+      },
+      "pump": {
+        "name": "Pump"
+      },
+      "boiler_pump": {
+        "name": "{pump_name}"
+      }
+    },
+    "valve": {
+      "diverter_valve": {
+        "name": "Diverter Valve"
+      },
+      "mixing_valve": {
+        "name": "Mixing Valve"
+      },
+      "zone_valve": {
+        "name": "Valve"
+      }
+    }
+  }
+}

@@ -12,12 +12,14 @@ class InventoryField:
     name: str
     icon: str | None = None
     optional: bool = False
+    translation_key: str | None = None
 
 
 @dataclass(frozen=True)
 class BoilerTemperatureField:
     key: str
     label: str
+    translation_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class CircuitSensorField:
     cast_int: bool = False
     include_circuit_attributes: bool = False
     icon: str | None = None
+    translation_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ class SystemSensorField:
     cast_int: bool = False
     icon: str | None = None
     optional: bool = False
+    translation_key: str | None = None
 
 
 STATUS_FIELDS = [
@@ -175,6 +179,7 @@ SYSTEM_SENSOR_FIELDS = [
     SystemSensorField(
         key="flow_temperature",
         label="System Flow Temperature",
+        translation_key="system_flow_temperature",
         source="state",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit=UnitOfTemperature.CELSIUS,
@@ -343,4 +348,74 @@ CYLINDER_CONFIG_SENSOR_FIELDS = [
         "entity_category": EntityCategory.DIAGNOSTIC,
         "icon": "mdi:thermometer",
     },
+]
+
+
+def _descriptor_text(field: object, name: str) -> str | None:
+    if isinstance(field, dict):
+        value = field.get(name)
+    else:
+        value = getattr(field, name, None)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def entity_translation_key(field: object) -> str:
+    """Return the English catalog key for one descriptor."""
+    explicit = _descriptor_text(field, "translation_key")
+    if explicit is not None:
+        return explicit
+    for name in ("key", "write_key", "mutation_field"):
+        value = _descriptor_text(field, name)
+        if value is not None:
+            return value
+    raise KeyError("translation key")
+
+
+RADIO_SENSOR_FIELDS = [
+    ("reception_strength", "Signal Quality"),
+    ("room_temperature_c", "Room Temperature"),
+    ("room_humidity_pct", "Room Humidity"),
+    ("device_class_address", "Device Class Address"),
+    ("hardware_identifier", "Hardware Identifier"),
+    ("remote_control_address", "Remote Control Address"),
+    ("zone_assignment", "Zone Assignment"),
+]
+
+SOLAR_SENSOR_FIELDS = [
+    ("collector_temperature_c", "Collector Temperature"),
+    ("return_temperature_c", "Return Temperature"),
+    ("current_yield", "Current Yield"),
+    ("pump_hours", "Pump Hours"),
+]
+
+ADAPTER_INFO_FIELDS = [
+    ("temperature_c", "Adapter Temperature"),
+    ("supply_voltage_mv", "Adapter Supply Voltage"),
+    ("bus_voltage_max_dv", "eBUS Voltage Max"),
+    ("bus_voltage_min_dv", "eBUS Voltage Min"),
+    ("restart_count", "Adapter Restart Count"),
+    ("reset_cause", "Adapter Reset Cause"),
+    ("wifi_rssi_dbm", "Adapter WiFi Signal"),
+]
+
+ENERGY_SENSOR_FIELDS = [
+    ("gas_dhw", "Gas DHW"),
+    ("gas_climate", "Gas CLIMATE"),
+    ("electric_dhw", "Electric DHW"),
+    ("electric_climate", "Electric CLIMATE"),
+    ("solar_dhw", "Solar DHW"),
+    ("solar_climate", "Solar CLIMATE"),
+]
+
+STATIC_SENSOR_FIELDS = [
+    ("ebus_address", "eBUS Address"),
+    ("eebus_admin_available", "eeBUS Admin Available"),
+    ("fm5_semantic_mode", "FM5 Semantic Mode"),
+    ("cylinder_temperature", "Temperature"),
+    ("zone_valve_position", "Valve Position"),
+    ("heating_demand", "Heating Demand"),
+    ("hwc_status", "HWC Status"),
+    ("hours_till_service", "Hours Till Service"),
 ]

@@ -195,5 +195,400 @@
       "association_incomplete": "The eeBUS association is incomplete and requires repair.",
       "unknown_state": "The eeBUS action failed closed with an unknown sanitized state."
     }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "firmware_version": {
+        "name": "Firmware Version"
+      },
+      "updates_available": {
+        "name": "Updates Available"
+      },
+      "initiator_address": {
+        "name": "eBUS Initiator Address"
+      },
+      "admission_trusted": {
+        "name": "Admission Trusted"
+      },
+      "admission_repair_code": {
+        "name": "Admission Repair Code"
+      },
+      "source_selection_state": {
+        "name": "Source Selection State"
+      },
+      "source_selection_reason": {
+        "name": "Source Selection Reason"
+      },
+      "source_selection_selected_source": {
+        "name": "Selected Source"
+      },
+      "flow_temperature": {
+        "name": "Flow Temperature"
+      },
+      "return_temperature_c": {
+        "name": "Return Temperature"
+      },
+      "dhw_temperature_c": {
+        "name": "DHW Temperature"
+      },
+      "dhw_storage_temperature_c": {
+        "name": "DHW Storage Temperature"
+      },
+      "circuit_flow_temperature": {
+        "name": "Flow Temperature"
+      },
+      "circuit_flow_temperature_setpoint": {
+        "name": "Flow Setpoint"
+      },
+      "calc_flow_temp_c": {
+        "name": "Calculated Flow Temperature"
+      },
+      "circuit_mixer_position": {
+        "name": "Mixing Valve Position"
+      },
+      "circuit_state": {
+        "name": "State"
+      },
+      "circuit_room_humidity": {
+        "name": "Humidity"
+      },
+      "circuit_dew_point_temperature": {
+        "name": "Dew Point"
+      },
+      "circuit_pump_operating_time_total": {
+        "name": "Pump Hours"
+      },
+      "circuit_pump_start_count_total": {
+        "name": "Pump Starts"
+      },
+      "water_pressure": {
+        "name": "System Water Pressure"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor Temperature"
+      },
+      "outdoor_temperature_daily_average": {
+        "name": "Outdoor Temperature 24h Average"
+      },
+      "system_flow_temperature": {
+        "name": "System Flow Temperature"
+      },
+      "dhw_cylinder_top_temperature": {
+        "name": "HWC Cylinder Temperature Top"
+      },
+      "dhw_cylinder_bottom_temperature": {
+        "name": "HWC Cylinder Temperature Bottom"
+      },
+      "hydraulic_scheme_code": {
+        "name": "System Scheme"
+      },
+      "modulation_setpoint": {
+        "name": "Burner Modulation"
+      },
+      "fan_speed": {
+        "name": "Burner Fan Speed"
+      },
+      "flame_ionization_current": {
+        "name": "Burner Ionisation"
+      },
+      "storage_loading_pump_level": {
+        "name": "Hydraulics Storage Load Pump"
+      },
+      "diverter_valve_position": {
+        "name": "Hydraulics Diverter Valve Position"
+      },
+      "central_heating_operating_time": {
+        "name": "Central Heating Hours"
+      },
+      "dhw_operating_time": {
+        "name": "DHW Hours"
+      },
+      "pump_operating_time": {
+        "name": "Pump Hours"
+      },
+      "fan_operating_time": {
+        "name": "Fan Hours"
+      },
+      "central_heating_start_count": {
+        "name": "Central Heating Starts"
+      },
+      "dhw_start_count": {
+        "name": "DHW Starts"
+      },
+      "fire_control_deactivation_count": {
+        "name": "Deactivations IFC"
+      },
+      "temperature_limiter_deactivation_count": {
+        "name": "Deactivations Temperature Limiter"
+      },
+      "max_setpoint_c": {
+        "name": "Max Setpoint"
+      },
+      "charge_hysteresis_c": {
+        "name": "Charge Hysteresis"
+      },
+      "charge_offset_c": {
+        "name": "Charge Offset"
+      },
+      "reception_strength": {
+        "name": "Signal Quality"
+      },
+      "room_temperature_c": {
+        "name": "Room Temperature"
+      },
+      "room_humidity_pct": {
+        "name": "Room Humidity"
+      },
+      "device_class_address": {
+        "name": "Device Class Address"
+      },
+      "hardware_identifier": {
+        "name": "Hardware Identifier"
+      },
+      "remote_control_address": {
+        "name": "Remote Control Address"
+      },
+      "zone_assignment": {
+        "name": "Zone Assignment"
+      },
+      "collector_temperature_c": {
+        "name": "Collector Temperature"
+      },
+      "current_yield": {
+        "name": "Current Yield"
+      },
+      "pump_hours": {
+        "name": "Pump Hours"
+      },
+      "temperature_c": {
+        "name": "Adapter Temperature"
+      },
+      "supply_voltage_mv": {
+        "name": "Adapter Supply Voltage"
+      },
+      "bus_voltage_max_dv": {
+        "name": "eBUS Voltage Max"
+      },
+      "bus_voltage_min_dv": {
+        "name": "eBUS Voltage Min"
+      },
+      "restart_count": {
+        "name": "Adapter Restart Count"
+      },
+      "reset_cause": {
+        "name": "Adapter Reset Cause"
+      },
+      "wifi_rssi_dbm": {
+        "name": "Adapter WiFi Signal"
+      },
+      "gas_dhw": {
+        "name": "Gas DHW"
+      },
+      "gas_climate": {
+        "name": "Gas CLIMATE"
+      },
+      "electric_dhw": {
+        "name": "Electric DHW"
+      },
+      "electric_climate": {
+        "name": "Electric CLIMATE"
+      },
+      "solar_dhw": {
+        "name": "Solar DHW"
+      },
+      "solar_climate": {
+        "name": "Solar CLIMATE"
+      },
+      "ebus_address": {
+        "name": "eBUS Address"
+      },
+      "eebus_admin_available": {
+        "name": "eeBUS Admin Available"
+      },
+      "fm5_semantic_mode": {
+        "name": "FM5 Semantic Mode"
+      },
+      "cylinder_temperature": {
+        "name": "Temperature"
+      },
+      "zone_valve_position": {
+        "name": "Valve Position"
+      },
+      "heating_demand": {
+        "name": "Heating Demand"
+      },
+      "hwc_status": {
+        "name": "HWC Status"
+      },
+      "hours_till_service": {
+        "name": "Hours Till Service"
+      }
+    },
+    "binary_sensor": {
+      "schedule": {
+        "name": "Daily Schedule Active"
+      },
+      "quickveto": {
+        "name": "Quick Veto Active"
+      },
+      "away": {
+        "name": "Away Schedule Active"
+      },
+      "flame_active": {
+        "name": "Burner Flame Active"
+      },
+      "gas_valve_active": {
+        "name": "Burner Gas Valve Active"
+      },
+      "central_heating_pump_active": {
+        "name": "Hydraulics CH Pump"
+      },
+      "external_pump_active": {
+        "name": "Hydraulics External Pump"
+      },
+      "circulation_pump_active": {
+        "name": "Hydraulics Circulation Pump"
+      },
+      "pump_active": {
+        "name": "Solar Pump Active"
+      },
+      "solar_enabled": {
+        "name": "Solar Enabled"
+      },
+      "function_mode": {
+        "name": "Solar Function Mode"
+      },
+      "maintenance_active": {
+        "name": "Maintenance Due"
+      },
+      "adaptive_heating_curve_enabled": {
+        "name": "Adaptive Heating Curve"
+      },
+      "overrun_active": {
+        "name": "Overrun Active"
+      },
+      "circuit_pump_active": {
+        "name": "Pump Active"
+      },
+      "boiler_central_heating_pump": {
+        "name": "Central Heating Pump Active"
+      },
+      "zone_valve": {
+        "name": "Valve"
+      },
+      "device_connected": {
+        "name": "Device Connected"
+      },
+      "b524_connected": {
+        "name": "B524 Connected"
+      }
+    },
+    "number": {
+      "circuit_heating_curve_factor": {
+        "name": "Heating Curve"
+      },
+      "heating_circuit_flow_temperature_setpoint_maximum": {
+        "name": "Flow Temperature Maximum"
+      },
+      "circuit_flow_temperature_setpoint_minimum": {
+        "name": "Flow Temperature Minimum"
+      },
+      "heating_circuit_outdoor_temperature_limit_maximum": {
+        "name": "Summer Limit"
+      },
+      "heating_outdoor_bivalence_temperature_limit": {
+        "name": "HC Bivalence Point"
+      },
+      "dhw_outdoor_bivalence_temperature_limit": {
+        "name": "DHW Bivalence Point"
+      },
+      "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault": {
+        "name": "HC Emergency Temperature"
+      },
+      "dhw_flow_temperature_setpoint_maximum": {
+        "name": "HWC Max Flow Temperature"
+      },
+      "room_humidity_limit_maximum": {
+        "name": "Max Room Humidity"
+      },
+      "max_setpoint_c": {
+        "name": "Max Setpoint"
+      },
+      "charge_hysteresis_c": {
+        "name": "Charge Hysteresis"
+      },
+      "charge_offset_c": {
+        "name": "Charge Offset"
+      },
+      "maximum_heating_flow_temperature_setpoint": {
+        "name": "CH Max Flow Setpoint"
+      },
+      "maximum_dhw_flow_temperature_setpoint": {
+        "name": "DHW Max Flow Setpoint"
+      },
+      "heating_partial_load_power": {
+        "name": "CH Partload"
+      },
+      "dhw_partial_load_power": {
+        "name": "DHW Partload"
+      }
+    },
+    "select": {
+      "room_temperature_control": {
+        "name": "Room Temperature Control"
+      }
+    },
+    "switch": {
+      "cooling_enabled": {
+        "name": "Cooling Enabled"
+      },
+      "solar_switch": {
+        "name": "{label}"
+      }
+    },
+    "text": {
+      "installer_name": {
+        "name": "Installer Name"
+      },
+      "installer_phone_number": {
+        "name": "Installer Phone"
+      },
+      "boiler_installer_phone": {
+        "name": "Boiler Installer Phone"
+      },
+      "installer_access_code": {
+        "name": "Installer Menu Code"
+      }
+    },
+    "date": {
+      "maintenance_date": {
+        "name": "Maintenance Date"
+      }
+    },
+    "fan": {
+      "burner": {
+        "name": "Burner"
+      },
+      "pump": {
+        "name": "Pump"
+      },
+      "boiler_pump": {
+        "name": "{pump_name}"
+      }
+    },
+    "valve": {
+      "diverter_valve": {
+        "name": "Diverter Valve"
+      },
+      "mixing_valve": {
+        "name": "Mixing Valve"
+      },
+      "zone_valve": {
+        "name": "Valve"
+      }
+    }
   }
 }
