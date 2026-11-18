@@ -44,12 +44,6 @@
       "count": 12
     },
     {
-      "path": "custom_components/helianthus/coordinator_adapter_info.py",
-      "symbol": "HelianthusAdapterInfoCoordinator._async_update_data",
-      "rule": "C901",
-      "count": 12
-    },
-    {
       "path": "custom_components/helianthus/coordinator_fm5.py",
       "symbol": "HelianthusFM5Coordinator._async_update_data",
       "rule": "C901",

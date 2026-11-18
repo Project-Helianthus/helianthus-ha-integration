@@ -58,6 +58,12 @@ def test_repository_baseline_has_no_shipped_undefined_name_row():
     guard.load_baseline(ROOT / "scripts/readability-baseline.json")
 
 
+def test_repository_readability_check_passes(monkeypatch):
+    """A resolved complexity row fails the ratchet until it is removed."""
+    monkeypatch.setattr("sys.argv", ["check_readability.py", "--check"])
+    assert guard.main() == 0
+
+
 def test_refusal_fails_the_check_closed(tmp_path, monkeypatch, capsys):
     """A refused baseline makes --check unavailable (exit 2), never a pass."""
     scripts = tmp_path / "scripts"
