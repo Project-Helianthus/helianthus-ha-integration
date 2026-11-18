@@ -618,11 +618,13 @@ def _computed_documents() -> list[Document]:
     from test_sensor import _ensure_homeassistant_stubs
 
     _ensure_homeassistant_stubs()
-    from custom_components.helianthus import coordinator_system, semantic_snapshot
+    from custom_components.helianthus import semantic_snapshot
 
     return [
-        Document("semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY", semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY),
-        Document("coordinator_system.QUERY_SYSTEM_LEGACY", coordinator_system.QUERY_SYSTEM_LEGACY),
+        Document(
+            "semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY",
+            semantic_snapshot.SEMANTIC_SNAPSHOT_QUERY,
+        ),
     ]
 
 
@@ -780,7 +782,7 @@ def test_computed_document_names_finds_plain_and_annotated_assignments(source: s
 
 def test_computed_documents_are_listed() -> None:
     """A module-level document built by an expression must be added to _computed_documents."""
-    listed = {"SEMANTIC_SNAPSHOT_QUERY", "QUERY_SYSTEM_LEGACY"}
+    listed = {"SEMANTIC_SNAPSHOT_QUERY"}
     found: set[str] = set()
     for path in sorted(PACKAGE_DIR.rglob("*.py")):
         found |= _computed_document_names(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))

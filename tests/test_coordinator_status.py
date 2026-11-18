@@ -353,11 +353,14 @@ class _SchemaClient:
         return self.response
 
 
-def test_recorded_discovery_is_what_status_and_zones_are_given(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Discovery's object is the capabilities argument of status and zones only.
+def test_recorded_discovery_is_what_the_domain_coordinators_are_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discovery's object is the capabilities argument of the domain coordinators.
 
-    Passing that object to another coordinator, or dropping it from status or
-    zones, fails this test. An explicit object replaces the recorded one.
+    Status, zones, energy, system, and boiler receive it. Passing it to another
+    coordinator, or dropping it from one of those five, fails this test. An
+    explicit object replaces the recorded one for each of them.
     """
     from custom_components.helianthus import gateway_capabilities
     from custom_components.helianthus.entry_coordinators import async_create_domain_coordinators
@@ -375,7 +378,13 @@ def test_recorded_discovery_is_what_status_and_zones_are_given(monkeypatch: pyte
     hass = object()
     created = asyncio.run(async_create_domain_coordinators(hass, client, 30))
     assert created is not None
-    chosen = {"HelianthusStatusCoordinator", "HelianthusSemanticCoordinator"}
+    chosen = {
+        "HelianthusStatusCoordinator",
+        "HelianthusSemanticCoordinator",
+        "HelianthusEnergyCoordinator",
+        "HelianthusSystemCoordinator",
+        "HelianthusBoilerCoordinator",
+    }
     assert set(recorded) == {class_name for _, class_name in DOMAIN_MODULES}
     for class_name, args in recorded.items():
         if class_name in chosen:
@@ -385,6 +394,9 @@ def test_recorded_discovery_is_what_status_and_zones_are_given(monkeypatch: pyte
     override = GatewayCapabilities(frozenset())
     recorded.clear()
     asyncio.run(async_create_domain_coordinators(hass, client, 30, override))
-    assert recorded["HelianthusStatusCoordinator"] == (hass, client, 30, override)
-    assert recorded["HelianthusSemanticCoordinator"] == (hass, client, 30, override)
+    for class_name, args in recorded.items():
+        if class_name in chosen:
+            assert args == (hass, client, 30, override)
+        else:
+            assert args == (hass, client, 30)
     assert discover is gateway_capabilities.async_discover_gateway_capabilities

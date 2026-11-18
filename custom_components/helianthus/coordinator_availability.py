@@ -5,11 +5,19 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from .gateway_capabilities import GatewayCapabilities, query_field_paths
 
-def optional_query_available(state: bool | None) -> bool:
-    """Return the established public availability projection for an optional query."""
 
-    return state is not False
+def recorded_query_offered(capabilities: object, document: str) -> bool:
+    """Return whether the recorded schema offers every path of one document.
+
+    Paths that were not recorded still offer the document. A recorded set
+    offers it only when every selected path is present.
+    """
+
+    if not isinstance(capabilities, GatewayCapabilities):
+        return True
+    return all(path in capabilities.paths for path in query_field_paths(document))
 
 
 def next_optional_query_state(

@@ -4,16 +4,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
-import time
 from typing import Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .coordinator import is_missing_field_error as _is_missing_field_error
-from .coordinator_availability import (
-    next_optional_query_state,
-    optional_query_available,
-)
+from .coordinator_availability import recorded_query_offered
 from .graphql import GraphQLClient, GraphQLClientError, GraphQLResponseError
 
 
@@ -50,15 +46,6 @@ query System {
 }
 """
 
-QUERY_SYSTEM_LEGACY = QUERY_SYSTEM.replace(
-    "      dhw_outdoor_bivalence_temperature_limit_bound {\n"
-    "        min_c\n"
-    "        max_c\n"
-    "        source\n"
-    "      }\n",
-    "",
-)
-
 QUERY_SYSTEM_GATEWAY_METADATA = """
 query SystemGatewayMetadata {
   system {
@@ -92,13 +79,62 @@ query SystemSensitive {
 """
 
 
-SYSTEM_DHW_BOUND_REPROBE_COOLDOWN_SECONDS = 15 * 60
+_SYSTEM_ABSENT_FIELDS = [
+    "system",
+    "state",
+    "config",
+    "properties",
+    "water_pressure",
+    "flow_temperature",
+    "outdoor_temperature",
+    "outdoor_temperature_daily_average",
+    "maintenance_active",
+    "dhw_cylinder_top_temperature",
+    "dhw_cylinder_bottom_temperature",
+    "adaptive_heating_curve_enabled",
+    "heating_outdoor_bivalence_temperature_limit",
+    "dhw_outdoor_bivalence_temperature_limit",
+    "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
+    "dhw_flow_temperature_setpoint_maximum",
+    "room_humidity_limit_maximum",
+    "hydraulic_scheme_code",
+    "functional_module_configuration_code",
+]
+
+
+def _empty_system() -> dict[str, Any]:
+    return {"state": {}, "config": {}, "properties": {}, "metadata": {}}
+
+
+def _system_snapshot(payload: object) -> dict[str, Any]:
+    """Return the system state, configuration, and properties from one payload."""
+
+    if not isinstance(payload, dict):
+        return _empty_system()
+    system = payload.get("system")
+    if not isinstance(system, dict):
+        return _empty_system()
+    state = system.get("state")
+    config = system.get("config")
+    properties = system.get("properties")
+    return {
+        "state": state if isinstance(state, dict) else {},
+        "config": config if isinstance(config, dict) else {},
+        "properties": properties if isinstance(properties, dict) else {},
+        "metadata": {},
+    }
 
 
 class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator fetching semantic system data."""
 
-    def __init__(self, hass, client: GraphQLClient, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass,
+        client: GraphQLClient,
+        scan_interval: int,
+        capabilities: object | None = None,
+    ) -> None:
         super().__init__(
             hass,
             logger=logging.getLogger(__name__),
@@ -106,162 +142,61 @@ class HelianthusSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
-        self._system_installer_available: bool | None = None
-        self._system_sensitive_available: bool | None = None
-        self._system_dhw_bound_next_probe: float | None = None
+        self._capabilities = capabilities
+
+    def _offered(self, document: str) -> bool:
+        return recorded_query_offered(getattr(self, "_capabilities", None), document)
 
     @property
     def system_installer_available(self) -> bool:
-        return optional_query_available(self._system_installer_available)
+        return self._offered(QUERY_SYSTEM_INSTALLER)
 
     @property
     def system_sensitive_available(self) -> bool:
-        return optional_query_available(self._system_sensitive_available)
+        return self._offered(QUERY_SYSTEM_SENSITIVE)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        empty = {"state": {}, "config": {}, "properties": {}, "metadata": {}}
-        missing_fields = [
-            "system",
-            "state",
-            "config",
-            "properties",
-            "water_pressure",
-            "flow_temperature",
-            "outdoor_temperature",
-            "outdoor_temperature_daily_average",
-            "maintenance_active",
-            "dhw_cylinder_top_temperature",
-            "dhw_cylinder_bottom_temperature",
-            "adaptive_heating_curve_enabled",
-            "heating_outdoor_bivalence_temperature_limit",
-            "dhw_outdoor_bivalence_temperature_limit",
-            "heating_flow_temperature_setpoint_maximum_at_heat_pump_fault",
-            "dhw_flow_temperature_setpoint_maximum",
-            "room_humidity_limit_maximum",
-            "hydraulic_scheme_code",
-            "functional_module_configuration_code",
-        ]
-
         try:
-            next_probe = getattr(self, "_system_dhw_bound_next_probe", None)
-            probe_bounds = next_probe is None or time.monotonic() >= next_probe
-            query = QUERY_SYSTEM if probe_bounds else QUERY_SYSTEM_LEGACY
-            try:
-                payload = await self._client.execute(query)
-            except GraphQLResponseError as exc:
-                if not probe_bounds or not _is_missing_field_error(
-                    exc.errors, ["dhw_outdoor_bivalence_temperature_limit_bound"]
-                ):
-                    raise
-                self._system_dhw_bound_next_probe = (
-                    time.monotonic() + SYSTEM_DHW_BOUND_REPROBE_COOLDOWN_SECONDS
-                )
-                payload = await self._client.execute(QUERY_SYSTEM_LEGACY)
-            else:
-                if probe_bounds:
-                    self._system_dhw_bound_next_probe = None
+            payload = await self._client.execute(QUERY_SYSTEM)
         except GraphQLResponseError as exc:
-            if _is_missing_field_error(exc.errors, missing_fields):
-                return empty
+            if _is_missing_field_error(exc.errors, _SYSTEM_ABSENT_FIELDS):
+                return _empty_system()
             raise UpdateFailed(str(exc)) from exc
         except GraphQLClientError as exc:
             raise UpdateFailed(str(exc)) from exc
-
-        if not isinstance(payload, dict):
-            return empty
-
-        system = payload.get("system")
+        system = payload.get("system") if isinstance(payload, dict) else None
         if not isinstance(system, dict):
-            return empty
+            return _empty_system()
+        result = _system_snapshot(payload)
+        await self._attach_metadata(result)
+        await self._attach_config(result, QUERY_SYSTEM_INSTALLER)
+        await self._attach_config(result, QUERY_SYSTEM_SENSITIVE)
+        return result
 
-        state = system.get("state")
-        config = system.get("config")
-        properties = system.get("properties")
-        result = {
-            "state": state if isinstance(state, dict) else {},
-            "config": config if isinstance(config, dict) else {},
-            "properties": properties if isinstance(properties, dict) else {},
-            "metadata": {},
+    async def _attach_metadata(self, result: dict[str, Any]) -> None:
+        if not self._offered(QUERY_SYSTEM_GATEWAY_METADATA):
+            return
+        try:
+            payload = await self._client.execute(QUERY_SYSTEM_GATEWAY_METADATA)
+        except GraphQLClientError:
+            return
+        system = payload.get("system") if isinstance(payload, dict) else None
+        if not isinstance(system, dict):
+            return
+        result["metadata"] = {
+            key: system[key]
+            for key in ("gateway_brand", "gateway_vendor")
+            if key in system
         }
 
-        # Keep gateway metadata optional and isolated from the base system
-        # query: older gateways must retain their system state/config payload.
+    async def _attach_config(self, result: dict[str, Any], document: str) -> None:
+        if not self._offered(document):
+            return
         try:
-            metadata_payload = await self._client.execute(QUERY_SYSTEM_GATEWAY_METADATA)
-            metadata_system = (
-                metadata_payload.get("system")
-                if isinstance(metadata_payload, dict)
-                else None
-            )
-            if isinstance(metadata_system, dict):
-                result["metadata"] = {
-                    key: metadata_system[key]
-                    for key in ("gateway_brand", "gateway_vendor")
-                    if key in metadata_system
-                }
-        except GraphQLResponseError as exc:
-            if not _is_missing_field_error(
-                exc.errors, ["gateway_brand", "gateway_vendor"]
-            ):
-                raise UpdateFailed(str(exc)) from exc
+            payload = await self._client.execute(document)
         except GraphQLClientError:
-            pass
-
-        # Optional installer query (backward-compat with older gateways).
-        if self._system_installer_available is not False:
-            try:
-                inst_payload = await self._client.execute(QUERY_SYSTEM_INSTALLER)
-                inst_sys = (
-                    inst_payload.get("system", {})
-                    if isinstance(inst_payload, dict)
-                    else {}
-                )
-                inst_cfg = (
-                    inst_sys.get("config", {}) if isinstance(inst_sys, dict) else {}
-                )
-                if isinstance(inst_cfg, dict):
-                    result["config"].update(inst_cfg)
-                self._system_installer_available = next_optional_query_state(
-                    self._system_installer_available,
-                    response_received=True,
-                )
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(
-                    exc.errors,
-                    ["maintenance_date", "installer_name", "installer_phone_number"],
-                ):
-                    self._system_installer_available = next_optional_query_state(
-                        self._system_installer_available,
-                        schema_field_missing=True,
-                    )
-            except GraphQLClientError:
-                pass  # transient — retry next cycle
-
-        # Optional sensitive query (independent of installer query).
-        if self._system_sensitive_available is not False:
-            try:
-                sens_payload = await self._client.execute(QUERY_SYSTEM_SENSITIVE)
-                sens_sys = (
-                    sens_payload.get("system", {})
-                    if isinstance(sens_payload, dict)
-                    else {}
-                )
-                sens_cfg = (
-                    sens_sys.get("config", {}) if isinstance(sens_sys, dict) else {}
-                )
-                if isinstance(sens_cfg, dict):
-                    result["config"].update(sens_cfg)
-                self._system_sensitive_available = next_optional_query_state(
-                    self._system_sensitive_available,
-                    response_received=True,
-                )
-            except GraphQLResponseError as exc:
-                if _is_missing_field_error(exc.errors, ["installer_access_code"]):
-                    self._system_sensitive_available = next_optional_query_state(
-                        self._system_sensitive_available,
-                        schema_field_missing=True,
-                    )
-            except GraphQLClientError:
-                pass  # transient — retry next cycle
-
-        return result
+            return
+        system = payload.get("system") if isinstance(payload, dict) else None
+        config = system.get("config") if isinstance(system, dict) else None
+        if isinstance(config, dict):
+            result["config"].update(config)

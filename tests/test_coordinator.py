@@ -58,7 +58,6 @@ QUERY_ADAPTER_HARDWARE_INFO_MINIMAL = coordinator_adapter_info.QUERY_ADAPTER_HAR
 QUERY_BOILER = coordinator_boiler.QUERY_BOILER
 QUERY_CIRCUITS = coordinator_circuits.QUERY_CIRCUITS
 QUERY_ENERGY = coordinator_energy.QUERY_ENERGY
-QUERY_ENERGY_LEGACY = coordinator_energy.QUERY_ENERGY_LEGACY
 QUERY_EXTENDED_V3 = coordinator_devices.QUERY_EXTENDED_V3
 QUERY_FM5 = coordinator_fm5.QUERY_FM5
 QUERY_RADIO_DEVICES = coordinator_radio.QUERY_RADIO_DEVICES
@@ -125,8 +124,6 @@ def _build_boiler_coordinator(client: _ScriptedClient) -> HelianthusBoilerCoordi
     coordinator = object.__new__(HelianthusBoilerCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator.boiler_supported = True  # type: ignore[attr-defined]
-    coordinator._boiler_installer_available = None  # type: ignore[attr-defined]
-    coordinator._boiler_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -139,8 +136,6 @@ def _build_circuit_coordinator(client: _ScriptedClient) -> HelianthusCircuitCoor
 def _build_system_coordinator(client: _ScriptedClient) -> HelianthusSystemCoordinator:
     coordinator = object.__new__(HelianthusSystemCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
-    coordinator._system_installer_available = None  # type: ignore[attr-defined]
-    coordinator._system_sensitive_available = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -148,7 +143,7 @@ def _build_energy_coordinator(client: _ScriptedClient) -> HelianthusEnergyCoordi
     coordinator = object.__new__(HelianthusEnergyCoordinator)
     coordinator._client = client  # type: ignore[attr-defined]
     coordinator._last_valid_energy_totals = None  # type: ignore[attr-defined]
-    coordinator._monthly_supported = True  # type: ignore[attr-defined]
+    coordinator._capabilities = None  # type: ignore[attr-defined]
     return coordinator
 
 
@@ -189,6 +184,17 @@ def _energy_totals_payload(today: float = 3.5) -> dict[str, dict]:
             },
         }
     }
+
+
+def test_partial_domain_coordinators_omit_support_flags() -> None:
+    """Support flags on the partial boiler or system coordinator fail this test."""
+    client = _ScriptedClient([])
+    boiler = _build_boiler_coordinator(client)
+    system = _build_system_coordinator(client)
+    assert not hasattr(boiler, "_boiler_installer_available")
+    assert not hasattr(boiler, "_boiler_sensitive_available")
+    assert not hasattr(system, "_system_installer_available")
+    assert not hasattr(system, "_system_sensitive_available")
 
 
 def test_device_inventory_returns_devices_from_one_query() -> None:
@@ -806,7 +812,7 @@ def test_energy_query_returns_unavailable_before_first_valid_sample() -> None:
     assert second == {"energy_totals": None}
 
 
-def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
+def test_energy_query_keeps_one_document_when_monthly_is_rejected() -> None:
     client = _ScriptedClient(
         [
             GraphQLResponseError(
@@ -820,11 +826,12 @@ def test_energy_query_falls_back_to_legacy_when_monthly_unsupported() -> None:
 
     first = asyncio.run(coordinator._async_update_data())
     second = asyncio.run(coordinator._async_update_data())
+    third = asyncio.run(coordinator._async_update_data())
 
-    assert first["energy_totals"]["gas"]["dhw"]["today"] == 5.0
-    assert second["energy_totals"]["gas"]["dhw"]["today"] == 6.0
-    assert client.calls == [QUERY_ENERGY, QUERY_ENERGY_LEGACY, QUERY_ENERGY_LEGACY]
-    assert coordinator._monthly_supported is False
+    assert first == {"energy_totals": None}
+    assert second["energy_totals"]["gas"]["dhw"]["today"] == 5.0
+    assert third["energy_totals"]["gas"]["dhw"]["today"] == 6.0
+    assert client.calls == [QUERY_ENERGY, QUERY_ENERGY, QUERY_ENERGY]
 
 
 def _build_schedule_coordinator(
@@ -1350,7 +1357,7 @@ def test_system_gateway_metadata_is_optional_and_preserves_existing_system_paylo
 def test_system_optional_query_schema_failure_preserves_base_payload_and_other_availability() -> (
     None
 ):
-    """Characterize independent optional-schema availability after a partial fetch."""
+    """A rejected installer field leaves the system update and both path gates."""
 
     client = _ScriptedClient(
         [
@@ -1382,7 +1389,7 @@ def test_system_optional_query_schema_failure_preserves_base_payload_and_other_a
         "properties": {"hydraulic_scheme_code": 3},
         "metadata": {},
     }
-    assert coordinator.system_installer_available is False
+    assert coordinator.system_installer_available is True
     assert coordinator.system_sensitive_available is True
     assert client.calls == [
         QUERY_SYSTEM,
