@@ -63,6 +63,12 @@ def _assert_admission_trusted(status_coordinator: object | None) -> None:
         raise HomeAssistantError(str(exc)) from exc
 
 
+_SWITCH_FIELDS = (
+    ("cooling_enabled", "Cooling Enabled"),
+    ("solar_switch", "{label}"),
+)
+
+
 class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
     """Writable switch for circuit cooling mode."""
 
@@ -89,7 +95,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-circuit_cooling_enabled"
-        self._attr_name = "Cooling Enabled"
+        self._attr_translation_key, self._attr_name = _SWITCH_FIELDS[0]
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -102,7 +108,7 @@ class HelianthusCircuitCoolingEnabledSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def name(self) -> str | None:
-        return "Cooling Enabled"
+        return _SWITCH_FIELDS[0][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -189,9 +195,13 @@ class HelianthusSolarSwitch(CoordinatorEntity, SwitchEntity):
         self._manufacturer = manufacturer
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
-        self._key = key
-        self._attr_name = label
+        self._key, self._label = key, label
+        self._attr_name, self._attr_translation_key = self._label, _SWITCH_FIELDS[1][0]
         self._attr_unique_id = f"{entry_id}-solar-switch-{key}"
+
+    @property
+    def translation_placeholders(self) -> dict[str, str]:
+        return {"label": self._label}
 
     @property
     def available(self) -> bool:

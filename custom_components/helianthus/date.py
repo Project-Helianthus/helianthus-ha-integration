@@ -77,6 +77,11 @@ def _assert_admission_trusted(status_coordinator: object | None) -> None:
         raise HomeAssistantError(str(exc)) from exc
 
 
+_DATE_FIELDS = (
+    ("maintenance_date", "Maintenance Date"),
+)
+
+
 class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
     """Writable maintenance date from B524 controller."""
 
@@ -100,7 +105,7 @@ class HelianthusMaintenanceDate(CoordinatorEntity, DateEntity):
         self._status_coordinator = status_coordinator
         self._device_id = device_id
         self._attr_unique_id = f"{entry_id}-system-date-maintenance_date"
-        self._attr_name = "Maintenance Date"
+        self._attr_translation_key, self._attr_name = _DATE_FIELDS[0]
 
     @property
     def device_info(self) -> DeviceInfo:

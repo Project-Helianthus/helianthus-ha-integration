@@ -94,6 +94,13 @@ def _coerce_percentage(value: object | None) -> int | None:
     return int(round(parsed))
 
 
+_FAN_FIELDS = (
+    ("burner", "Burner"),
+    ("pump", "Pump"),
+    ("boiler_pump", "{pump_name}"),
+)
+
+
 class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
     """Read-only burner state exposed as a fan."""
 
@@ -114,7 +121,7 @@ class HelianthusBoilerBurnerFan(HelianthusReadOnlyFan):
         self._manufacturer = manufacturer
         self._burner_device_id = burner_device_id
         self._parent_device_id = parent_device_id
-        self._attr_name = "Burner"
+        self._attr_translation_key, self._attr_name = _FAN_FIELDS[0]
         self._attr_unique_id = f"{entry_id}-boiler-burner"
 
     def _state(self) -> dict[str, Any]:
@@ -184,8 +191,12 @@ class HelianthusBoilerPumpFan(HelianthusReadOnlyFan):
         self._pump_name = pump_name
         self._data_key = data_key
         self._pump_has_speed = pump_has_speed
-        self._attr_name = pump_name
+        self._attr_name, self._attr_translation_key = pump_name, _FAN_FIELDS[2][0]
         self._attr_unique_id = f"{entry_id}-boiler-{data_key}"
+
+    @property
+    def translation_placeholders(self) -> dict[str, str]:
+        return {"pump_name": self._pump_name}
 
     def _state(self) -> dict[str, Any]:
         return _boiler_state(self.coordinator.data)
@@ -238,6 +249,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:pump"
+    _attr_translation_key = _FAN_FIELDS[1][0]
 
     def __init__(
         self,
@@ -266,7 +278,7 @@ class HelianthusCircuitPumpFan(HelianthusReadOnlyFan):
 
     @property
     def name(self) -> str | None:
-        return "Pump"
+        return _FAN_FIELDS[1][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -325,7 +337,7 @@ class HelianthusSolarPumpFan(CoordinatorEntity, FanEntity):
         self._manufacturer = manufacturer
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
-        self._attr_name = "Pump"
+        self._attr_translation_key, self._attr_name = _FAN_FIELDS[1]
         self._attr_unique_id = f"{entry_id}-solar-pump"
 
     @property

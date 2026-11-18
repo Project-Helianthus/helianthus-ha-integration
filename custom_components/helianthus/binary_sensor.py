@@ -123,6 +123,34 @@ _SOLAR_ROWS = (
     ("solar_enabled", "Solar Enabled"),
     ("function_mode", "Solar Function Mode"),
 )
+_SYSTEM_ROWS = (
+    ("maintenance_active", "Maintenance Due"),
+    ("adaptive_heating_curve_enabled", "Adaptive Heating Curve"),
+)
+_STATIC_BINARY_ROWS = (
+    ("overrun_active", "Overrun Active"),
+    ("circuit_pump_active", "Pump Active"),
+    ("boiler_central_heating_pump", "Central Heating Pump Active"),
+    ("zone_valve", "Valve"),
+)
+_RADIO_CONNECTED_ROWS = (
+    ("device_connected", "Device Connected"),
+    ("b524_connected", "B524 Connected"),
+)
+
+
+def _binary_pair(key: str) -> tuple[str, str]:
+    for row_key, name in _STATIC_BINARY_ROWS:
+        if row_key == key:
+            return name, row_key
+    raise KeyError(key)
+
+
+def _radio_connected_key(label: str) -> str:
+    for key, name in _RADIO_CONNECTED_ROWS:
+        if name == label:
+            return key
+    raise KeyError(label)
 
 
 def _zone_parent_device_id(
@@ -302,8 +330,8 @@ def _system_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) 
             manufacturer=manufacturer,
             regulator_device_id=regulator_device_id,
             source="state",
-            key="maintenance_active",
-            label="Maintenance Due",
+            key=_SYSTEM_ROWS[0][0],
+            label=_SYSTEM_ROWS[0][1],
             device_class=_BINARY_SENSOR_DEVICE_CLASS_PROBLEM,
             entity_category=EntityCategory.DIAGNOSTIC,
         ),
@@ -313,8 +341,8 @@ def _system_entities(data: HelianthusRuntime, entry_id: str, manufacturer: str) 
             manufacturer=manufacturer,
             regulator_device_id=regulator_device_id,
             source="config",
-            key="adaptive_heating_curve_enabled",
-            label="Adaptive Heating Curve",
+            key=_SYSTEM_ROWS[1][0],
+            label=_SYSTEM_ROWS[1][1],
             device_class=None,
             entity_category=EntityCategory.DIAGNOSTIC,
         ),
@@ -402,7 +430,7 @@ class HelianthusScheduleBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._target_name = target_name
         self._target_device_id = target_device_id
         self._schedule_key = schedule_key
-        self._attr_name = schedule_label
+        self._attr_name, self._attr_translation_key = schedule_label, schedule_key
         unique_target = target_id or "dhw"
         self._attr_unique_id = f"{entry_id}-{target_kind}-{unique_target}-schedule-{schedule_key}"
         _SCHEDULE_ICONS: dict[str, str] = {
@@ -483,7 +511,7 @@ class HelianthusDhwOverrunBinarySensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._manufacturer = manufacturer
-        self._attr_name = "Overrun Active"
+        self._attr_name, self._attr_translation_key = _binary_pair("overrun_active")
         self._attr_unique_id = f"{entry_id}-dhw-binary-overrun_active"
 
     @property
@@ -533,7 +561,7 @@ class HelianthusBoilerStateBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._manufacturer = manufacturer
         self._boiler_device_id = boiler_device_id
         self._key = key
-        self._attr_name = label
+        self._attr_name, self._attr_translation_key = label, key
         self._attr_unique_id = f"{entry_id}-boiler-binary-{key}"
         _BOILER_STATE_ICONS: dict[str, str] = {
             "flame_active": "mdi:fire",
@@ -585,7 +613,7 @@ class HelianthusCircuitPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._manufacturer = manufacturer
         self._circuit_index = circuit_index
         self._initial_name = initial_name
-        self._attr_name = "Pump Active"
+        self._attr_name, self._attr_translation_key = _binary_pair("circuit_pump_active")
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-binary-circuit_pump_unknown_8"
 
     def _circuit(self) -> dict[str, Any]:
@@ -637,7 +665,7 @@ class HelianthusSolarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._solar_device_id = solar_device_id
         self._parent_device_id = parent_device_id
         self._key = key
-        self._attr_name = label
+        self._attr_name, self._attr_translation_key = label, key
         self._attr_unique_id = f"{entry_id}-solar-binary-{key}"
         self._attr_entity_registry_enabled_default = enabled_by_default
         _SOLAR_ICONS: dict[str, str] = {
@@ -693,7 +721,7 @@ class HelianthusBoilerPumpBinarySensor(CoordinatorEntity, BinarySensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._boiler_device_id = boiler_device_id
-        self._attr_name = "Central Heating Pump Active"
+        self._attr_name, self._attr_translation_key = _binary_pair("boiler_central_heating_pump")
         self._attr_unique_id = f"{entry_id}-boiler-central-heating-pump-active"
 
     @property
@@ -734,7 +762,7 @@ class HelianthusSystemBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._regulator_device_id = regulator_device_id
         self._source = source
         self._key = key
-        self._attr_name = label
+        self._attr_name, self._attr_translation_key = label, key
         self._attr_unique_id = f"{entry_id}-system-binary-{key}"
         if device_class is not None:
             self._attr_device_class = device_class
@@ -789,7 +817,7 @@ class HelianthusRadioConnectedBinarySensor(CoordinatorEntity, BinarySensorEntity
         self._radio_device_id = radio_device_id
         self._group = group
         self._instance = instance
-        self._attr_name = label
+        self._attr_name, self._attr_translation_key = label, _radio_connected_key(label)
         self._attr_unique_id = f"{entry_id}-radio-{group:02x}-{instance:02d}-connected"
 
     def _device(self) -> dict[str, Any] | None:
@@ -848,7 +876,7 @@ class HelianthusZoneValveBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._manufacturer = manufacturer
         self._zone_id = zone_id
         self._target_device_id = target_device_id
-        self._attr_name = "Valve"
+        self._attr_name, self._attr_translation_key = _binary_pair("zone_valve")
         self._attr_unique_id = f"{entry_id}-zone-{zone_id}-binary-valve"
 
     def _zone(self) -> dict[str, Any]:

@@ -93,6 +93,11 @@ def _assert_admission_trusted(status_coordinator: object | None) -> None:
         raise HomeAssistantError(str(exc)) from exc
 
 
+_SELECT_FIELDS = (
+    ("room_temperature_control", "Room Temperature Control"),
+)
+
+
 class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
     """Circuit room temperature control select."""
 
@@ -120,7 +125,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
         self._circuit_index = circuit_index
         self._initial_name = initial_name
         self._attr_unique_id = f"{entry_id}-circuit-{circuit_index}-circuit_room_temperature_influence_mode"
-        self._attr_name = "Room Temperature Control"
+        self._attr_translation_key, self._attr_name = _SELECT_FIELDS[0]
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -133,7 +138,7 @@ class HelianthusCircuitRoomTempControlSelect(CoordinatorEntity, SelectEntity):
 
     @property
     def name(self) -> str | None:
-        return "Room Temperature Control"
+        return _SELECT_FIELDS[0][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()

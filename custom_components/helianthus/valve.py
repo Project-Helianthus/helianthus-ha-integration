@@ -126,6 +126,13 @@ def _boiler_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     return state
 
 
+_VALVE_FIELDS = (
+    ("diverter_valve", "Diverter Valve"),
+    ("mixing_valve", "Mixing Valve"),
+    ("zone_valve", "Valve"),
+)
+
+
 class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
     """Read-only diverter valve position under the Hydraulics sub-device."""
 
@@ -145,7 +152,7 @@ class HelianthusBoilerDiverterValve(HelianthusReadOnlyValve):
         self._manufacturer = manufacturer
         self._hydraulics_device_id = hydraulics_device_id
         self._parent_device_id = parent_device_id
-        self._attr_name = "Diverter Valve"
+        self._attr_translation_key, self._attr_name = _VALVE_FIELDS[0]
         self._attr_unique_id = f"{entry_id}-boiler-diverter-valve"
 
     @property
@@ -180,6 +187,7 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
     """Read-only circuit mixing valve position."""
 
     _attr_has_entity_name = True
+    _attr_translation_key = _VALVE_FIELDS[1][0]
 
     def __init__(
         self,
@@ -208,7 +216,7 @@ class HelianthusCircuitMixingValve(HelianthusReadOnlyValve):
 
     @property
     def name(self) -> str | None:
-        return "Mixing Valve"
+        return _VALVE_FIELDS[1][1]
 
     def _device_name(self) -> str:
         circuit = self._circuit()
@@ -237,6 +245,7 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
     """Read-only zone valve status (0/100)."""
 
     _attr_has_entity_name = True
+    _attr_translation_key = _VALVE_FIELDS[2][0]
 
     def __init__(
         self,
@@ -265,7 +274,7 @@ class HelianthusZoneValve(HelianthusReadOnlyValve):
 
     @property
     def name(self) -> str | None:
-        return "Valve"
+        return _VALVE_FIELDS[2][1]
 
     @property
     def device_info(self) -> DeviceInfo:
