@@ -183,7 +183,64 @@ def test_async_setup_entry_skips_boiler_config_numbers_without_physical_bai00() 
     assert not any(isinstance(entity, number_platform.HelianthusBoilerNumber) for entity in entities)
 
 
-def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None:
+@pytest.mark.parametrize("null_key", (
+    "dhw_partial_load_power",
+    "maximum_heating_flow_temperature_setpoint",
+))
+def test_a_null_config_number_is_created_enabled_and_hidden(null_key: str) -> None:
+    """Fields varied: which boiler config value is null at creation.
+
+    The null number is created enabled and hidden; the one with a value is
+    enabled and visible. Taking the enabled default from the value, or not
+    hiding the null one, fails.
+    """
+    payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
+    payload["boiler_coordinator"].data["boiler_status"]["config"][null_key] = None
+    hass = _FakeHass()
+    entry = _FakeEntry("entry-1", payload)
+    entities: list = []
+
+    asyncio.run(number_platform.async_setup_entry(hass, entry, entities.extend))
+
+    boiler_numbers = {
+        entity._field.config_key: entity
+        for entity in entities
+        if isinstance(entity, number_platform.HelianthusBoilerNumber)
+    }
+    for key in ("dhw_partial_load_power", "maximum_heating_flow_temperature_setpoint"):
+        number = boiler_numbers[key]
+        assert getattr(number, "_attr_entity_registry_enabled_default", True) is True, key
+        assert number._attr_entity_registry_visible_default is (key != null_key), key
+
+
+@pytest.mark.parametrize("value", (None, 7.0), ids=("null", "present"))
+@pytest.mark.parametrize("kind", ("boiler", "system"))
+def test_a_sensitive_number_is_created_enabled_and_hidden(kind: str, value) -> None:
+    """Fields varied: the class (boiler or system number) and whether the
+    value is present. A sensitive number is hidden either way and never
+    created disabled; creating it disabled, or showing a sensitive number
+    whose value is present, fails.
+    """
+    common = {"entry_id": "entry-1", "manufacturer": "Synthetic", "client": None}
+    if kind == "boiler":
+        field = number_platform.BoilerNumberField(
+            "synthetic_setting", "synthetic_setting", "Synthetic", 0.0, 10.0, 1.0, sensitive=True)
+        number = number_platform.HelianthusBoilerNumber(
+            coordinator=_FakeCoordinator(
+                {"boiler_status": {"config": {"synthetic_setting": value}}}),
+            boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"), field=field, **common)
+    else:
+        field = number_platform.SystemNumberField(
+            "synthetic_setting", "synthetic_setting", "Synthetic", 0.0, 10.0, 1.0, sensitive=True)
+        number = number_platform.HelianthusSystemNumber(
+            coordinator=_FakeCoordinator({"config": {"synthetic_setting": value}}),
+            regulator_device_id=("helianthus", "entry-1-bus-BASV-15"), field=field, **common)
+
+    assert getattr(number, "_attr_entity_registry_enabled_default", True) is True
+    assert number._attr_entity_registry_visible_default is False
+
+
+def test_boiler_config_numbers_are_hidden_by_default_when_value_null() -> None:
     payload, _coordinator, _client = _payload(boiler_device_id=("helianthus", "entry-1-bus-BAI00-08"))
     payload["boiler_coordinator"].data["boiler_status"]["config"]["dhw_partial_load_power"] = None
     hass = _FakeHass()
@@ -198,8 +255,8 @@ def test_boiler_config_numbers_are_disabled_by_default_when_value_null() -> None
         if isinstance(entity, number_platform.HelianthusBoilerNumber)
     }
 
-    assert boiler_numbers["maximum_heating_flow_temperature_setpoint"]._attr_entity_registry_enabled_default is True
-    assert boiler_numbers["dhw_partial_load_power"]._attr_entity_registry_enabled_default is False
+    assert boiler_numbers["maximum_heating_flow_temperature_setpoint"]._attr_entity_registry_visible_default is True
+    assert boiler_numbers["dhw_partial_load_power"]._attr_entity_registry_visible_default is False
 
 
 def test_boiler_number_entities_write_set_boiler_config_mutation() -> None:

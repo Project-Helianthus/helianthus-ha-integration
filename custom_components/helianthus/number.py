@@ -425,11 +425,9 @@ class HelianthusBoilerNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_unit_of_measurement = field.unit
         if field.icon is not None:
             self._attr_icon = field.icon
-        if field.sensitive:
-            self._attr_entity_registry_visible_default = False
-            self._attr_entity_registry_enabled_default = False
-        else:
-            self._attr_entity_registry_enabled_default = self.native_value is not None
+        self._attr_entity_registry_visible_default = (
+            not field.sensitive and self.native_value is not None
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -519,7 +517,7 @@ class HelianthusCircuitNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_unit_of_measurement = field.unit
         if field.icon is not None:
             self._attr_icon = field.icon
-        self._attr_entity_registry_enabled_default = self.native_value is not None
+        self._attr_entity_registry_visible_default = self.native_value is not None
 
     def _circuit(self) -> dict[str, Any]:
         payload = self.coordinator.data or {}
@@ -631,7 +629,6 @@ class HelianthusSystemNumber(CoordinatorEntity, NumberEntity):
             self._attr_icon = field.icon
         if field.sensitive:
             self._attr_entity_registry_visible_default = False
-            self._attr_entity_registry_enabled_default = False
 
     @property
     def device_info(self) -> DeviceInfo:

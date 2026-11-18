@@ -9,10 +9,10 @@ bench runs that reload too.
 
 Stated rules:
 
-- The automatic disable acts only on an enabled sparse entity that has not
-  been seen disabled during this Home Assistant run. An entity that was
-  disabled (by the integration, the user or anything else) and is enabled
-  again stays enabled. A user-disabled entity is never enabled.
+- The integration never writes the enabled state of an entity. A null
+  sparse entity stays enabled; a disabled one (by the user, or a row an
+  earlier release disabled) stays disabled whatever its value, and an entity
+  the user enables again stays enabled.
 - The FM5 mode trigger and the zone-parent mapping trigger each schedule at
   most one reload per ``TRIGGER_RELOAD_PERIOD_SECONDS``. When the input still
   differs from what the running setup was built with at a poll after the
@@ -362,40 +362,38 @@ def test_null_sparse_entity_enabled_by_the_user_stays_enabled(harness, logs, fir
     assert sparse.reload_reasons(logs) == []
 
 
-def test_untouched_null_sparse_entity_is_still_disabled_once(harness, logs):
+def test_untouched_null_sparse_entity_stays_enabled(harness, logs):
     bench = boiler_bench(harness, disabled_by=None)
 
     history = drive(bench, None, [None] * 20, lambda: disabled_by(harness))
 
-    assert history == ["integration"] * 20
+    assert history == [None] * 20
     assert sparse.reload_reasons(logs) == []
     assert len(bench.seen) == 1
 
 
-def test_integration_disabled_entity_is_still_enabled_when_live(harness, logs):
-    bench = boiler_bench(harness, disabled_by="integration")
+@pytest.mark.parametrize("first", (None, 120), ids=("null-first", "value-first"))
+@pytest.mark.parametrize("disabler", ("user", "integration"))
+def test_disabled_entity_stays_disabled_whatever_its_value(harness, logs, disabler, first):
+    """Fields varied: the disabler and the value at setup; the value then
+    changes. Enabling the entity when a value appears, or reloading for it,
+    fails."""
+    bench = boiler_bench(harness, disabled_by=disabler)
+    later = 120 if first is None else None
 
-    history = drive(bench, None, [None] * 3 + [120] * 5, lambda: disabled_by(harness))
+    history = drive(bench, first, [first] * 3 + [later] * 5 + [first] * 5,
+                    lambda: disabled_by(harness))
 
-    assert history == ["integration"] * 3 + [None] * 5
-    assert sparse.reload_reasons(logs) == [sparse.LIVE_SPARSE]
-
-
-@pytest.mark.parametrize("value", (None, 120))
-def test_user_disabled_entity_stays_disabled(harness, logs, value):
-    bench = boiler_bench(harness, disabled_by="user")
-
-    history = drive(bench, value, [value] * 20, lambda: disabled_by(harness))
-
-    assert history == ["user"] * 20
+    assert history == [disabler] * 13
     assert sparse.reload_reasons(logs) == []
+    assert (bench.ha_reloads, len(bench.seen)) == (0, 1)
 
 
-def test_the_user_enable_of_one_entity_does_not_exempt_another(harness, logs):
-    """Catches a record of the entry rather than of the unique ID."""
-    bench = boiler_bench(harness, disabled_by="integration")
+def test_the_user_enable_of_one_entity_is_recorded_for_that_entity_only(harness, logs):
+    """Catches a record of the entry rather than of the unique ID: the other
+    null sparse entity of the entry stays enabled and unrecorded."""
+    bench = boiler_bench(harness, disabled_by="user")
     drive(bench, None, [None] * 2)
-    # A second null sparse entity of the same entry that nobody has touched.
     number_uid = sparse.boiler_uid(key="maximum_heating_flow_temperature_setpoint")
     harness.entities.add(ENTRY, number_uid, domain="number")
     number = harness.entities.entities[f"number.{number_uid.replace('-', '_')}"]
@@ -404,23 +402,28 @@ def test_the_user_enable_of_one_entity_does_not_exempt_another(harness, logs):
     more_polls(harness, bench, [None] * 5, lambda: None)
 
     assert disabled_by(harness) is None
-    assert number.disabled_by == "integration"
+    assert number.disabled_by is None
+    domain = bench.setup.hass.data[DOMAIN]
+    assert domain[DISABLED_KEY][ENTRY] == {sparse.boiler_uid()}
+    assert domain[sparse.SETTLED_KEY][ENTRY] == {sparse.boiler_uid()}
 
 
-def test_the_user_enable_in_one_entry_does_not_exempt_another_entry(harness, logs):
+def test_the_user_enable_in_one_entry_does_not_touch_another_entry(harness, logs):
     """Catches a record shared by the entries."""
     setup, _ = sparse.shared_hass(ENTRY, OTHER)
-    first = boiler_bench(harness, disabled_by="integration", entry_id=ENTRY, setup=setup)
+    first = boiler_bench(harness, disabled_by="user", entry_id=ENTRY, setup=setup)
     drive(first, None, [None] * 2)
     user_enables(harness, first)
-    second = boiler_bench(harness, disabled_by=None, entry_id=OTHER, setup=setup)
+    second = boiler_bench(harness, disabled_by="user", entry_id=OTHER, setup=setup)
 
     drive(second, None, [None] * 5)
 
     assert disabled_by(harness, ENTRY) is None
-    assert disabled_by(harness, OTHER) == "integration"
+    assert disabled_by(harness, OTHER) == "user"
     assert setup.hass.data[DOMAIN][DISABLED_KEY] == {
         ENTRY: {sparse.boiler_uid(ENTRY)}, OTHER: {sparse.boiler_uid(OTHER)}}
+    assert setup.hass.data[DOMAIN][sparse.SETTLED_KEY] == {
+        ENTRY: {sparse.boiler_uid(ENTRY)}, OTHER: set()}
 
 
 # ---------------------------------------------------------------------------

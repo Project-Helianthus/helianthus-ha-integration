@@ -7,12 +7,11 @@ The real ``entry_setup.async_setup_entry`` runs on the doubles of
 - removal of the rows of non-exportable radio slots, which runs after the
   platforms whether or not the trusted clean-up is admitted, and again on a
   radio update;
-- every sparse unique-ID pattern: a live value enables an entity that the
-  integration disabled, a null value disables an untouched enabled entity, and
-  a value published under any other slot, bucket, key or entry does not count;
-- the enable and disable transitions, including the rule that an entity that
-  was seen disabled and is enabled again stays enabled, and that a disable by
-  anyone but the integration is never undone;
+- every sparse unique-ID pattern, null, live or published elsewhere: the
+  integration never writes the enabled state of an entity, so an enabled one
+  stays enabled and a disabled one stays disabled, and no reload follows;
+- the run records setup keeps from what it reads: a disabled entity is recorded
+  as seen disabled, and its later enable claims its reload;
 - the admission counter that admits the trusted clean-up only from the second
   consecutive trusted, non-empty observation.
 """
@@ -410,8 +409,6 @@ SPARSE_PATTERNS = {
         {"HelianthusSystemCoordinator": {"config": {"installer_phone_number": "0"}}},
         {"key": {"HelianthusSystemCoordinator": {"config": {"installer_phone": "0"}}}}),
 }
-VARIED_FIELDS = [(name, field) for name, (_, _, varied) in SPARSE_PATTERNS.items()
-                 for field in varied]
 
 # Unique IDs that share a prefix or shape with a sparse pattern but are not
 # sparse: the setup leaves them enabled while their value is null.
@@ -460,61 +457,73 @@ def _sparse_setup(harness, data, unique_id, disabled_by):
     return admitted_setup(harness, ENTRY, OTHER)
 
 
-@pytest.mark.parametrize("name", SPARSE_PATTERNS)
-def test_live_value_enables_an_entity_the_integration_disabled(harness, logs, name):
-    template, live, _ = SPARSE_PATTERNS[name]
-    unique_id = template.format(e=ENTRY)
-    setup = _sparse_setup(harness, live, unique_id, INTEGRATION)
+def _record_registry_writes(harness):
+    """Record every entity-registry update the setup makes, then apply it."""
+    writes = []
+    apply = harness.entities.async_update_entity
 
-    assert run(setup, config_entry(ENTRY)) is True
+    def record(entity_id, **attrs):
+        writes.append((entity_id, attrs))
+        apply(entity_id, **attrs)
 
-    assert entity(harness, unique_id).disabled_by is None
-    assert unique_id in run_record(setup, RELOADED_KEY)
-    assert reload_reasons(logs) == [ENABLE_REASON]
-    setup.hass.config_entries.async_reload.assert_awaited_once_with(ENTRY)
-
-
-@pytest.mark.parametrize("name", SPARSE_PATTERNS)
-def test_null_value_disables_an_untouched_enabled_entity_without_a_reload(harness, logs, name):
-    template, _, _ = SPARSE_PATTERNS[name]
-    unique_id = template.format(e=ENTRY)
-    setup = _sparse_setup(harness, {}, unique_id, None)
-
-    assert run(setup, config_entry(ENTRY)) is True
-
-    assert entity(harness, unique_id).disabled_by == INTEGRATION
-    assert unique_id in run_record(setup, SEEN_DISABLED_KEY)
-    assert unique_id not in run_record(setup, RELOADED_KEY)
-    assert reload_reasons(logs) == []
+    harness.entities.async_update_entity = record
+    return writes
 
 
-@pytest.mark.parametrize(("name", "field"), VARIED_FIELDS)
-def test_a_value_under_another_field_does_not_enable(harness, logs, name, field):
-    template, _, varied = SPARSE_PATTERNS[name]
-    unique_id = template.format(e=ENTRY)
-    setup = _sparse_setup(harness, varied[field], unique_id, INTEGRATION)
+# The coordinator each pattern's data is published on.
+POLLED = {
+    "HelianthusSemanticCoordinator": "semantic_coordinator",
+    "HelianthusRadioDeviceCoordinator": "radio_coordinator",
+    "HelianthusFM5Coordinator": "fm5_coordinator",
+    "HelianthusBoilerCoordinator": "boiler_coordinator",
+    "HelianthusCircuitCoordinator": "circuit_coordinator",
+    "HelianthusAdapterInfoCoordinator": "adapter_info_coordinator",
+    "HelianthusSystemCoordinator": "system_coordinator",
+}
+# Every pattern with no value, its live value, and each value published
+# under another slot, bucket, key, mode or previous field name.
+PATTERN_DATA = [(name, data_id) for name, (_, _, varied) in SPARSE_PATTERNS.items()
+                for data_id in ("null", "live", *varied)]
 
-    assert run(setup, config_entry(ENTRY)) is True
 
-    assert entity(harness, unique_id).disabled_by == INTEGRATION
-    assert reload_reasons(logs) == []
+def _pattern_data(name, data_id):
+    _, live, varied = SPARSE_PATTERNS[name]
+    if data_id == "null":
+        return {}
+    return live if data_id == "live" else varied[data_id]
 
 
-@pytest.mark.parametrize("live", (True, False), ids=("live", "null"))
-@pytest.mark.parametrize("name", SPARSE_PATTERNS)
-def test_a_pattern_of_another_entry_is_not_sparse_for_this_entry(harness, logs, name, live):
-    """The entry ID is part of every pattern: a row of this entry that carries
-    the other entry's unique ID is neither enabled on a live value nor disabled
-    on a null one."""
+@pytest.mark.parametrize("before", (None, "user", "config_entry", INTEGRATION),
+                         ids=("enabled", "user-disabled", "entry-disabled",
+                              "integration-disabled"))
+@pytest.mark.parametrize(("name", "data_id"), PATTERN_DATA)
+def test_the_integration_never_writes_the_enabled_state_of_a_sparse_entity(
+        harness, logs, name, data_id, before):
+    """Fields varied: every sparse pattern; no value, the live value and each
+    value published elsewhere; and the registry state before setup (enabled,
+    disabled by a person, disabled with its config entry, and a row an earlier
+    release disabled). Setup, the trusted clean-up and a later live poll write
+    nothing to the entity registry: an enabled entity stays enabled whatever
+    its value, a disabled one stays disabled, and no reload is scheduled for
+    an enable. Writing ``disabled_by`` on a null value, clearing it on a live
+    one, or reloading for a live value each fail.
+    """
     template, live_data, _ = SPARSE_PATTERNS[name]
-    foreign = template.format(e=OTHER)
-    before = INTEGRATION if live else None
-    setup = _sparse_setup(harness, live_data if live else {}, foreign, before)
+    unique_id = template.format(e=ENTRY)
+    setup = _sparse_setup(harness, _pattern_data(name, data_id), unique_id, before)
+    writes = _record_registry_writes(harness)
 
     assert run(setup, config_entry(ENTRY)) is True
+    assert writes == []
+    assert entity(harness, unique_id).disabled_by == before
+    for coordinator_class, data in live_data.items():
+        notify(setup, POLLED[coordinator_class], copy.deepcopy(data))
 
-    assert entity(harness, foreign).disabled_by == before
-    assert reload_reasons(logs) == []
+    assert writes == []
+    assert entity(harness, unique_id).disabled_by == before
+    assert ENABLE_REASON not in reload_reasons(logs)
+    if before is not None:
+        assert unique_id in run_record(setup, SEEN_DISABLED_KEY)
 
 
 @pytest.mark.parametrize("template", NOT_SPARSE)
@@ -532,8 +541,8 @@ def test_published_circuit_fields_leave_former_sensor_unique_ids_unchanged(harne
     """The second trusted refresh keeps the previous circuit-sensor rows.
 
     The sensor created for a live published field stays enabled. An enabled
-    row whose suffix is a previous name stays enabled, and one the integration
-    already disabled stays disabled.
+    row whose suffix is a previous name stays enabled, and a disabled one
+    stays disabled.
     """
     index = 1
     former = [
@@ -543,7 +552,7 @@ def test_published_circuit_fields_leave_former_sensor_unique_ids_unchanged(harne
     for unique_id in former:
         harness.entities.add(ENTRY, unique_id)
     harness.entities.add(ENTRY, published)
-    entity(harness, former[0]).disabled_by = INTEGRATION
+    entity(harness, former[0]).disabled_by = "user"
     harness.data.update(trusted_data(**_circuit(
         index,
         "state",
@@ -561,7 +570,7 @@ def test_published_circuit_fields_leave_former_sensor_unique_ids_unchanged(harne
 
     assert run(setup, config_entry(ENTRY)) is True
 
-    assert entity(harness, former[0]).disabled_by == INTEGRATION
+    assert entity(harness, former[0]).disabled_by == "user"
     assert former[0] not in run_record(setup, RELOADED_KEY)
     for unique_id in former[1:]:
         assert entity(harness, unique_id).disabled_by is None
@@ -577,21 +586,27 @@ def _repair_status(code):
     return {"HelianthusStatusCoordinator": status}
 
 
-def test_repair_code_sensor_is_removed_while_null_and_enabled_when_live(harness, logs):
-    """The status pattern is removed rather than disabled while its value is null."""
+@pytest.mark.parametrize("before", (None, "user", INTEGRATION))
+def test_repair_code_sensor_is_removed_while_null_and_kept_as_it_is_when_live(
+        harness, logs, before):
+    """The status row is removed rather than disabled while its value is null.
+    A row that exists while the value is live keeps its enabled state and
+    causes no reload."""
     unique_id = f"daemon-{ENTRY}-admission_repair_code"
-    setup = _sparse_setup(harness, {}, unique_id, None)
+    setup = _sparse_setup(harness, {}, unique_id, before)
     assert run(setup, config_entry(ENTRY)) is True
     assert unique_id not in harness.entities.unique_ids()
     assert reload_reasons(logs) == []
 
     harness.entities.add(ENTRY, unique_id)
-    entity(harness, unique_id).disabled_by = INTEGRATION
+    entity(harness, unique_id).disabled_by = before
     harness.data.update(_repair_status("synthetic_repair"))
     setup = admitted_setup(harness, ENTRY, OTHER)
+    writes = _record_registry_writes(harness)
     assert run(setup, config_entry(ENTRY)) is True
-    assert entity(harness, unique_id).disabled_by is None
-    assert reload_reasons(logs) == [ENABLE_REASON]
+    assert writes == []
+    assert entity(harness, unique_id).disabled_by == before
+    assert reload_reasons(logs) == []
 
 
 def test_a_live_repair_code_without_an_entity_schedules_one_reload(harness, logs):
@@ -608,37 +623,37 @@ def test_a_live_repair_code_without_an_entity_schedules_one_reload(harness, logs
 
 
 # ---------------------------------------------------------------------------
-# Enable and disable transitions
+# Enabled state and the run records
 # ---------------------------------------------------------------------------
 
 SPARSE_UID = f"{ENTRY}-boiler-sensor-service_time_remaining"
 LIVE = _boiler("config", service_time_remaining=100)
 
-# (case, disabled_by before, seen disabled before, reloaded before, live,
-#  disabled_by after, reload scheduled)
-TRANSITIONS = (
-    ("untouched-null-is-disabled", None, False, False, False, INTEGRATION, False),
-    ("re-enabled-after-seen-disabled-stays-enabled", None, True, False, False, None, False),
-    ("enabled-after-its-reload-stays-enabled", None, False, True, False, None, False),
-    ("integration-disabled-null-stays-disabled", INTEGRATION, False, False, False,
-     INTEGRATION, False),
-    ("integration-disabled-live-is-enabled-with-one-reload", INTEGRATION, False, False, True,
-     None, True),
-    ("integration-disabled-live-after-its-reload-is-enabled-without-reload", INTEGRATION,
-     True, True, True, None, False),
-    ("user-disabled-live-stays-disabled", "user", False, False, True, "user", False),
-    ("user-disabled-null-stays-disabled", "user", False, False, False, "user", False),
-    ("config-entry-disabled-live-stays-disabled", "config_entry", False, False, True,
-     "config_entry", False),
-    ("enabled-live-stays-enabled", None, False, False, True, None, False),
+# (case, disabled_by before, seen disabled before, reloaded before, live)
+STATES = (
+    ("enabled-null", None, False, False, False),
+    ("enabled-live", None, False, False, True),
+    ("re-enabled-after-seen-disabled", None, True, False, False),
+    ("enabled-after-its-reload", None, False, True, False),
+    ("user-disabled-null", "user", False, False, False),
+    ("user-disabled-live", "user", False, False, True),
+    ("entry-disabled-live", "config_entry", False, False, True),
+    ("integration-disabled-null", INTEGRATION, False, False, False),
+    ("integration-disabled-live", INTEGRATION, False, False, True),
+    ("integration-disabled-live-after-its-reload", INTEGRATION, True, True, True),
 )
 
 
 @pytest.mark.parametrize(
-    ("before", "seen", "reloaded", "live", "after", "reloads"),
-    [case[1:] for case in TRANSITIONS], ids=[case[0] for case in TRANSITIONS])
-def test_enable_and_disable_transitions(harness, logs, before, seen, reloaded, live, after,
-                                        reloads):
+    ("before", "seen", "reloaded", "live"),
+    [case[1:] for case in STATES], ids=[case[0] for case in STATES])
+def test_setup_keeps_the_enabled_state_and_records_only_what_it_reads(
+        harness, logs, before, seen, reloaded, live):
+    """Fields varied: the registry state, the seen-disabled and reload records
+    before setup, and the value. The enabled state after setup is the one
+    before it and no reload is scheduled. A disabled entity is recorded as
+    seen disabled; an entity seen disabled and enabled again has its reload
+    claimed, because Home Assistant reloaded the entry for that enable."""
     setup = _sparse_setup(harness, LIVE if live else {}, SPARSE_UID, before)
     records = setup.hass.data[DOMAIN]
     if seen:
@@ -648,56 +663,51 @@ def test_enable_and_disable_transitions(harness, logs, before, seen, reloaded, l
 
     assert run(setup, config_entry(ENTRY)) is True
 
-    assert entity(harness, SPARSE_UID).disabled_by == after
-    assert reload_reasons(logs) == ([ENABLE_REASON] if reloads else [])
-    if before is not None or after is not None:
-        assert SPARSE_UID in run_record(setup, SEEN_DISABLED_KEY)
-    if seen and before is None:
-        # The registry enable reloaded the entry already; it spends the allowance.
-        assert SPARSE_UID in run_record(setup, RELOADED_KEY)
+    assert entity(harness, SPARSE_UID).disabled_by == before
+    assert reload_reasons(logs) == []
+    assert (SPARSE_UID in run_record(setup, SEEN_DISABLED_KEY)) == (before is not None or seen)
+    assert (SPARSE_UID in run_record(setup, RELOADED_KEY)) == (
+        reloaded or (seen and before is None))
 
 
-def test_the_disable_selection_skips_a_seen_disabled_entity_on_its_own():
-    """Setup claims the reload of a re-enabled entity before the selection runs,
-    so through setup the seen-disabled record and the reload record coincide.
-    The selection rule still excludes an entity seen disabled whose reload is
-    not recorded, and records every entity it selects or finds disabled."""
-    rows = [SimpleNamespace(unique_id=uid, platform=DOMAIN, disabled_by=disabled_by)
-            for uid, disabled_by in (("seen", None), ("fresh", None), ("off", "user"),
-                                     ("live", None), ("not-sparse", None))]
-    rows.append(SimpleNamespace(unique_id="foreign", platform="other_domain", disabled_by=None))
-    seen = {"seen"}
+def test_the_disabled_record_reads_only_disabled_sparse_rows_of_the_integration():
+    """Fields varied: the disabler (none, a person, the config entry, the
+    integration), the platform and whether the unique ID is sparse. Only a
+    disabled sparse row of this integration is recorded; nothing is written
+    and nothing is returned for the caller to act on."""
+    rows = [SimpleNamespace(unique_id=uid, platform=platform, disabled_by=disabled_by)
+            for uid, platform, disabled_by in (
+                ("enabled", DOMAIN, None), ("by-user", DOMAIN, "user"),
+                ("by-entry", DOMAIN, "config_entry"), ("by-integration", DOMAIN, INTEGRATION),
+                ("not-sparse", DOMAIN, "user"), ("foreign", "other_domain", "user"))]
+    before = [dict(vars(row)) for row in rows]
+    seen = {"earlier"}
 
-    selected = entry_entity_cleanup._sparse_entities_to_disable(
-        tuple(rows), seen, set(), lambda uid: uid != "not-sparse", lambda uid: uid == "live")
+    result = entry_entity_cleanup._record_disabled_sparse_entities(
+        tuple(rows), seen, lambda uid: uid != "not-sparse")
 
-    assert [row.unique_id for row in selected] == ["fresh"]
-    assert seen == {"seen", "fresh", "off"}
+    assert result is None
+    assert seen == {"earlier", "by-user", "by-entry", "by-integration"}
+    assert [dict(vars(row)) for row in rows] == before
 
 
-def test_user_enable_of_an_integration_disabled_null_entity_survives_later_setups(harness, logs):
+def test_a_person_s_disable_and_enable_of_a_null_sparse_entity_are_kept(harness, logs):
     setup = _sparse_setup(harness, {}, SPARSE_UID, None)
     assert run(setup, config_entry(ENTRY)) is True
-    assert entity(harness, SPARSE_UID).disabled_by == INTEGRATION
+    assert entity(harness, SPARSE_UID).disabled_by is None
 
-    entity(harness, SPARSE_UID).disabled_by = None  # the user enables it
+    entity(harness, SPARSE_UID).disabled_by = "user"  # the person disables it
+    for _ in range(2):
+        assert run(setup, config_entry(ENTRY)) is True
+        assert entity(harness, SPARSE_UID).disabled_by == "user"
+
+    entity(harness, SPARSE_UID).disabled_by = None  # the person enables it
     for _ in range(2):
         assert run(setup, config_entry(ENTRY)) is True
         assert entity(harness, SPARSE_UID).disabled_by is None
 
     assert SPARSE_UID in run_record(setup, RELOADED_KEY)
     assert reload_reasons(logs) == []
-
-
-def test_a_later_live_poll_enables_an_integration_disabled_entity(harness, logs):
-    setup = _sparse_setup(harness, {}, SPARSE_UID, None)
-    assert run(setup, config_entry(ENTRY)) is True
-    assert entity(harness, SPARSE_UID).disabled_by == INTEGRATION
-
-    notify(setup, "boiler_coordinator", {"boiler_status": {"config": {"service_time_remaining": 1}}})
-
-    assert entity(harness, SPARSE_UID).disabled_by is None
-    assert reload_reasons(logs) == [ENABLE_REASON]
 
 
 # ---------------------------------------------------------------------------
@@ -734,8 +744,6 @@ def test_admission_counter_admits_the_cleanup_from_the_second_trusted_observatio
     for index, (_, status, inventory, _, _) in enumerate(OBSERVATIONS):
         if PROBE_FAN not in harness.entities.unique_ids():
             harness.entities.add(ENTRY, PROBE_FAN, domain="fan")
-        entity(harness, PROBE_SPARSE).disabled_by = None
-        setup.hass.data[DOMAIN].pop(SEEN_DISABLED_KEY, None)
         # A distinct registry id per round for the same retired identifier.
         burner = harness.devices.add(ENTRY, (DOMAIN, f"{ENTRY}-boiler-burner-{index}"))
         burner.identifiers = {(DOMAIN, f"{ENTRY}-boiler-burner")}
@@ -746,11 +754,11 @@ def test_admission_counter_admits_the_cleanup_from_the_second_trusted_observatio
         assert run(setup, config_entry(ENTRY)) is True
 
         ran = (PROBE_FAN not in harness.entities.unique_ids(),
-               entity(harness, PROBE_SPARSE).disabled_by == INTEGRATION,
                burner.id not in harness.devices.devices)
         observed.append((setup.hass.data[DOMAIN][COUNTS_KEY][ENTRY], ran))
+        assert entity(harness, PROBE_SPARSE).disabled_by is None
 
-    assert observed == [(count, (ran,) * 3) for _, _, _, count, ran in OBSERVATIONS]
+    assert observed == [(count, (ran,) * 2) for _, _, _, count, ran in OBSERVATIONS]
     assert setup.hass.data[DOMAIN][COUNTS_KEY][OTHER] == 5
     skipped = [r.getMessage() for r in logs.records if "cleanup skipped" in r.getMessage()]
     assert len(skipped) == sum(1 for *_, ran in OBSERVATIONS if not ran)

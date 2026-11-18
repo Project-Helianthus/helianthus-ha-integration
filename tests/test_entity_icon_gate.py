@@ -833,7 +833,7 @@ def test_solar_binary_sensor_icons() -> None:
             parent_device_id=None,
             key=key,
             label=f"{key} Label",
-            enabled_by_default=True,
+            visible_by_default=True,
         )
         assert sensor._attr_icon == expected_icon, (
             f"SolarBinary[{key}] icon should be {expected_icon}"

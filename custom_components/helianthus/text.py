@@ -191,7 +191,7 @@ class HelianthusSystemText(CoordinatorEntity, TextEntity):
         self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
-        self._attr_entity_registry_enabled_default = self.native_value is not None
+        self._attr_entity_registry_visible_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -272,7 +272,7 @@ class HelianthusBoilerText(CoordinatorEntity, TextEntity):
         self._attr_translation_key = _text_translation_key(field)
         self._attr_native_max = field.max_length
         self._attr_icon = field.icon
-        self._attr_entity_registry_enabled_default = self.native_value is not None
+        self._attr_entity_registry_visible_default = self.native_value is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -331,7 +331,7 @@ class HelianthusInstallerMenuCodeText(CoordinatorEntity, TextEntity):
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = TextMode.TEXT
-    _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_visible_default = False
     _attr_native_max = 3
     _attr_pattern = r"^\d{1,3}$"
 
