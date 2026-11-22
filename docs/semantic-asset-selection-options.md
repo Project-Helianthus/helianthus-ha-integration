@@ -3,7 +3,7 @@
 Refs [issue #378](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/378),
 a partial slice of Project #2. Integration settings expose `semantic_asset_ids`
 for the [shared semantic snapshot consumer](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/docs/semantic-snapshot-consumer.md).
-The public [shared snapshot read contract](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/api/semantic-snapshot-read.md)
+The public [shared snapshot read contract](https://github.com/Project-Helianthus/helianthus-docs/blob/main/api/semantic-snapshot-read.md)
 owns the API semantics; this control only selects IDs and persists options.
 
 Enter a list of zero to 32 distinct opaque strings. Each ID must contain one to

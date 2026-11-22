@@ -40,7 +40,7 @@ release remains subject to the public documentation gate.
 
 - eBUS transport/protocol implementations (handled in `helianthus-ebusgo`).
 - Device/plane registry semantics (handled in `helianthus-ebusreg`).
-- Gateway runtime/API serving (handled in `helianthus-ebusgateway`).
+- Gateway runtime/API serving (handled in `helianthus-gateway`).
 
 ## Status and Maturity
 
@@ -58,7 +58,7 @@ release remains subject to the public documentation gate.
 ## Helianthus Dependency Chain
 
 ```text
-helianthus-ebusgo -> helianthus-ebusreg -> helianthus-ebusgateway -> helianthus-ha-integration -> Home Assistant automations
+helianthus-ebusgo -> helianthus-ebusreg -> helianthus-gateway -> helianthus-ha-integration -> Home Assistant automations
   (transport)        (registry/schema)     (GraphQL/MCP runtime)      (HA integration layer)
 ```
 
@@ -71,7 +71,7 @@ required. Client certificate and key file references are optional; leave both
 blank to connect without a client certificate, or configure both to present one.
 Only file paths are stored, never certificate or private-key contents.
 
-This follows the [0.7 gateway M2M decision](https://github.com/Project-Helianthus/helianthus-ebusgateway/issues/1127).
+This follows the [0.7 gateway M2M decision](https://github.com/Project-Helianthus/helianthus-gateway/issues/1127).
 Protocol-native SHIP pairing, SKI allow-lists, SPINE bindings, and Matter ACLs
 remain unchanged.
 
@@ -128,7 +128,7 @@ Missing, malformed, inhibited, correlation-mismatched, zero-timeout, or expired
 provisional evidence withholds allocated current while retaining an independently
 valid configured current. There is no native Tesla/Modbus query, fallback,
 shadow, dual publication, charging-state inference, topology inference, control,
-or write path. Gateway https://github.com/Project-Helianthus/helianthus-ebusgateway/issues/965
+or write path. Gateway https://github.com/Project-Helianthus/helianthus-gateway/issues/965
 owns one Tesla production-acquisition producer; it does not constrain this
 protocol-neutral consumer's SemReg lifecycle or loss policy. This consumer
 does not perform acquisition, credential, device, or Home Assistant actions.
@@ -325,9 +325,9 @@ use_subscriptions: true
 
 Issue #105 adds a deterministic, fixture-only consumer gate for the accepted
 `adversarial-runtime-report-v1` contract at
-[helianthus-docs-ebus](https://github.com/Project-Helianthus/helianthus-docs-ebus).
+[helianthus-docs](https://github.com/Project-Helianthus/helianthus-docs).
 The four gateway inputs are copied byte-for-byte from
-[helianthus-ebusgateway](https://github.com/Project-Helianthus/helianthus-ebusgateway).
+[helianthus-gateway](https://github.com/Project-Helianthus/helianthus-gateway).
 It is an offline regression gate; it does not contact a gateway, start Home
 Assistant, sleep, parse cache bytes, or establish physical acceptance.
 
@@ -541,10 +541,11 @@ Relative link targets are checked offline; remote URL reachability is unverified
 
 ### Related Helianthus repos/docs
 
-- Gateway runtime/API: https://github.com/Project-Helianthus/helianthus-ebusgateway
+- Gateway runtime/API: https://github.com/Project-Helianthus/helianthus-gateway
 - Registry layer: https://github.com/Project-Helianthus/helianthus-ebusreg
 - eBUS core transport/protocol: https://github.com/Project-Helianthus/helianthus-ebusgo
-- Protocol and architecture docs: https://github.com/Project-Helianthus/helianthus-docs-ebus
+- Architecture docs: https://github.com/Project-Helianthus/helianthus-docs
+- eBUS protocol docs: https://github.com/Project-Helianthus/helianthus-docs-ebus
 
 ### Issue workflow conventions
 

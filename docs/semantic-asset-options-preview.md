@@ -7,7 +7,7 @@ delivers no new UI, persistence, options save or entity behavior.
 
 The input is an already normalized **current** shared GraphQL view, as defined
 by the [snapshot consumer](https://github.com/Project-Helianthus/helianthus-ha-integration/blob/main/docs/semantic-snapshot-consumer.md)
-and the public [read contract](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/api/semantic-snapshot-read.md).
+and the public [read contract](https://github.com/Project-Helianthus/helianthus-docs/blob/main/api/semantic-snapshot-read.md).
 The reducer does not validate raw GraphQL responses or issue queries. A view can
 cover only some retained selections. The caller passes `None` when no current
 snapshot is available, including after a transport failure; retained last-known-good

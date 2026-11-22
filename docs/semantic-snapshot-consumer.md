@@ -2,7 +2,7 @@
 
 This is the documentation slice for [issue #358](https://github.com/Project-Helianthus/helianthus-ha-integration/issues/358),
 Refs Project #2 INT-15; it does not close the parent. The authoritative API is
-[M07 shared snapshot read](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/api/semantic-snapshot-read.md).
+[M07 shared snapshot read](https://github.com/Project-Helianthus/helianthus-docs/blob/main/api/semantic-snapshot-read.md).
 M07 specifies a target contract, not evidence that either surface is implemented.
 This page specifies consumption of that contract without defining new API fields
 or native semantics.
