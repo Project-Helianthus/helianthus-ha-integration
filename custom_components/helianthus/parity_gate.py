@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-REQUIRED_SOURCE_REPO = "Project-Helianthus/helianthus-ebusgateway"
+REQUIRED_SOURCE_REPO = "Project-Helianthus/helianthus-gateway"
 SOURCE_REPO_ENV = "HELIANTHUS_GATEWAY_SOURCE_REPO"
 REQUIRED_GATES = ("parity_contract", "tool_classification")
 

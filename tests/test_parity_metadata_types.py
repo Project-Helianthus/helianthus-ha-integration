@@ -5,7 +5,7 @@ import pytest
 from custom_components.helianthus import parity_gate
 
 
-_PARITY_SOURCE_REPO = "Project-Helianthus/helianthus-ebusgateway"
+_PARITY_SOURCE_REPO = "Project-Helianthus/helianthus-gateway"
 _PARITY_METADATA_FIELDS = ("source_ref", "generated_at")
 _PARITY_GATE_NAMES = ("parity_contract", "tool_classification")
 
